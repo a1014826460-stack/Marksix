@@ -1,0 +1,467 @@
+:root {
+  color-scheme: light;
+  --bg: #f3efe5;
+  --surface: rgba(255, 250, 242, 0.92);
+  --surface-strong: #fffdf9;
+  --text: #1f1a17;
+  --muted: #6f6258;
+  --line: rgba(93, 70, 51, 0.12);
+  --red: #d94f45;
+  --blue: #3d68d8;
+  --green: #2e9b62;
+  --gold: #c89a35;
+  --shadow: 0 22px 60px rgba(61, 37, 18, 0.12);
+  --serif: "Georgia", "Times New Roman", serif;
+  --sans: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--text);
+  font-family: var(--sans);
+  background:
+    radial-gradient(circle at top left, rgba(217, 79, 69, 0.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(200, 154, 53, 0.2), transparent 32%),
+    linear-gradient(180deg, #f8f3ea 0%, #efe8dc 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.3;
+  background-image:
+    linear-gradient(rgba(93, 70, 51, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(93, 70, 51, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+a {
+  color: inherit;
+}
+
+.site-shell {
+  position: relative;
+  z-index: 1;
+  width: min(1220px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+}
+
+.hero-card,
+.module-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+  gap: 20px;
+  padding: 28px;
+  border-radius: 30px;
+}
+
+.hero-card__content h1,
+.module-card h2 {
+  margin: 0;
+  font-family: var(--serif);
+  letter-spacing: 0.01em;
+}
+
+.hero-card__content h1 {
+  font-size: clamp(2rem, 3vw, 3.4rem);
+}
+
+.hero-card__eyebrow,
+.module-card__eyebrow,
+.draw-card__title {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.hero-card__issue {
+  margin: 12px 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.hero-card__summary {
+  max-width: 64ch;
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.announcement-box {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(200, 154, 53, 0.24);
+  background: rgba(255, 246, 227, 0.88);
+  line-height: 1.7;
+}
+
+.draw-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(31, 26, 23, 0.95), rgba(59, 42, 28, 0.95));
+  color: #fff8ef;
+}
+
+.draw-balls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.draw-plus {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.draw-ball {
+  width: 76px;
+  min-height: 86px;
+  padding: 12px 10px;
+  border-radius: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.draw-ball-red {
+  background: linear-gradient(180deg, #ec766b 0%, var(--red) 100%);
+}
+
+.draw-ball-blue {
+  background: linear-gradient(180deg, #6d94ff 0%, var(--blue) 100%);
+}
+
+.draw-ball-green {
+  background: linear-gradient(180deg, #5cc78e 0%, var(--green) 100%);
+}
+
+.draw-ball__value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.draw-ball__zodiac {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  opacity: 0.92;
+}
+
+.module-grid {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.module-card {
+  border-radius: 24px;
+  padding: 22px 22px 18px;
+}
+
+.module-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.module-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.history-table-wrap {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.history-table th,
+.history-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.history-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.history-result-open {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.history-result-pending {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.empty-state {
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px dashed rgba(93, 70, 51, 0.22);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.hero-card-error {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 900px) {
+  .site-shell {
+    width: min(100vw - 20px, 1220px);
+    padding-top: 18px;
+  }
+
+  .hero-card {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    border-radius: 24px;
+  }
+
+  .module-card {
+    padding: 18px 16px 14px;
+  }
+
+  .module-card__header {
+    flex-direction: column;
+  }
+
+  .module-card__meta {
+    text-align: left;
+  }
+
+  .draw-ball {
+    width: 68px;
+    min-height: 80px;
+  }
+
+  .history-table {
+    min-width: 640px;
+  }
+}
+
+/* ============================================================
+   旧站兼容样式
+   以下类名在旧站 TSX 组件中被引用，但在旧 CSS 文件中未定义。
+   此处统一补齐，使 React 组件使用旧 CSS 类名时能正确渲染。
+   ============================================================ */
+
+/* ---- 文字颜色类 ---- */
+.blue-text { color: #0000FF; }
+.black-text { color: #000000; }
+.sky-text { color: #87CEEB; }
+.legacy-red { color: #FF0000; }
+
+/* ---- 旧站导航栏 nav2（原定义在 index.html 内联 <style> 中） ---- */
+.nav2 {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 2px;
+  font-size: 13px;
+  background: #66FFCC;
+}
+.nav2 ul {
+  padding: 2px 0;
+  display: flex;
+  justify-content: space-between;
+  margin: 1px;
+}
+.nav2 ul li {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 2px;
+  list-style: none;
+}
+.nav2 ul li a {
+  display: block;
+  padding: 3px 0;
+  text-align: center;
+  color: #fff;
+  border-radius: 50px;
+  background: #008080;
+  text-decoration: none;
+}
+.nav2 ul li a:hover {
+  background: #008000;
+  text-decoration: none;
+}
+#nav2[data-fixed='fixed'] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: auto;
+  z-index: 1;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, .1);
+}
+@media screen and (min-width:720px) {
+  .nav2 { padding: 4px; font-size: 16px; }
+  .nav2 ul { padding: 4px 0; }
+  .nav2 ul li { padding: 0 4px; }
+  .nav2 ul li a { padding: 5px 0; cursor: pointer; }
+}
+
+/* ---- 旧站参考资料表格 djck（原定义在 djck.js 中注入） ---- */
+.djck { font-family: "微软雅黑"; background: #000; }
+.djck td { height: 50px; text-align: center; background: #000; }
+.djck td a { text-decoration: none; color: #fff; }
+.djck td h2 { font-size: 20px !important; font-weight: bold; margin: 0 !important; padding: 0 !important; }
+.djck td img { vertical-align: middle; }
+.djck td p { font-size: 12px; padding-left: 10px; }
+.djck td.djck1 h2 { color: #f00; }
+.djck td.djck1 p span { color: #FF0; }
+.djck td.djck2 h2 { color: #0FF; }
+.djck td.djck2 p span { color: #0FF; }
+
+/* ---- 开奖结果标签 KJ-TabBox（原定义在 kj.js 中注入） ---- */
+.KJ-TabBox {
+  height: auto;
+  overflow: hidden;
+  color: #333;
+  background: #fff;
+  font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif;
+}
+.KJ-TabBox ul,
+.KJ-TabBox li {
+  margin: 0;
+  list-style: none;
+  padding: 0;
+  border: 0;
+  font-size: 18px;
+}
+.KJ-TabBox ul {
+  display: flex;
+  height: 36px;
+  padding: 8px 0 0 8px;
+  box-sizing: border-box;
+  border-bottom: solid 2px #FFF;
+}
+.KJ-TabBox li {
+  flex: 1;
+  height: 26px;
+  line-height: 26px;
+  margin-right: 8px;
+  text-align: center;
+  border-radius: 4px;
+  background: #eee;
+  cursor: pointer;
+}
+.KJ-TabBox li.cur { color: #fff; background: #FF9900; }
+.KJ-TabBox li:nth-child(1).cur { background: #1FB61D; }
+.KJ-TabBox li:nth-child(2).cur { background: #E71607; }
+.KJ-TabBox li:nth-child(3).cur { background: #2389E9; }
+
+/* ---- 开奖号码展示 ---- */
+.react-kj-box { padding: 4px; }
+.react-kj-content { padding: 8px 4px; }
+.kj-title { font-size: 16px; font-weight: bold; padding: 4px 0; }
+.kj-balls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+.kj-ball {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 60px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: bold;
+  font-size: 18px;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,0.3);
+}
+.kj-ball em { font-size: 11px; font-style: normal; margin-top: 2px; }
+.kj-ball-red { background: linear-gradient(180deg, #ec766b, #d94f45); }
+.kj-ball-blue { background: linear-gradient(180deg, #6d94ff, #3d68d8); }
+.kj-ball-green { background: linear-gradient(180deg, #5cc78e, #2e9b62); }
+.kj-plus { font-size: 24px; font-weight: bold; margin: 0 4px; }
+
+/* ---- 旧站开奖 iframe（对应 kj.js 中的 .KJ-IFRAME） ---- */
+.KJ-IFRAME { height: 130px; }
+@media screen and (max-width: 650px) and (min-width: 501px) {
+  .KJ-IFRAME { height: 170px; }
+}
+@media screen and (max-width: 500px) and (min-width: 451px) {
+  .KJ-IFRAME { height: 150px; }
+}
+@media screen and (max-width: 450px) and (min-width: 351px) {
+  .KJ-IFRAME { height: 140px; }
+}
+@media screen and (max-width: 350px) {
+  .KJ-IFRAME { height: 130px; }
+}
+
+/* ---- 备用网址表格 ---- */
+.ymgg {
+  background: #ff0;
+  font-family: '微软雅黑';
+  font-size: 13pt;
+  color: #00f;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+.ymgg table { border-collapse: collapse; }
+.ymgg td { padding: 0.4em 0; border: solid 1px #ccc; }
+.ymgg-tit1 { color: #fff; background: #f00; }
+.ymgg-tit2 { color: #ff0; background: #00f; }
+
+/* ---- 页面底部 ---- */
+.foot-img { text-align: center; padding: 10px; }
+.back-top-text { font-weight: 700; font-size: 36px; font-family: '微软雅黑'; }
+
+/* ---- 高频中特公告 ---- */
+.news-box .haoju {
+  font-size: 20pt;
+  text-align: center;
+  font-weight: bold;
+  padding: 3px 0px;
+}
