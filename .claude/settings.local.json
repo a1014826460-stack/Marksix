@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/src/app.py',encoding='utf-8'\\).read\\(\\)\\); print\\('app.py syntax OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/src/config.py',encoding='utf-8'\\).read\\(\\)\\); print\\('config.py syntax OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/src/utils/data_fetch.py',encoding='utf-8'\\).read\\(\\)\\); print\\('data_fetch.py syntax OK'\\)\")",
+      "Bash(timeout 5 python backend/src/app.py --host 127.0.0.1 --port 8001)",
+      "Bash(python -c ' *)",
+      "Bash(python backend/src/app.py --host 127.0.0.1 --port 8000 --db-path \"postgresql://postgres:2225427@localhost:5432/liuhecai\")",
+      "Bash(curl -s http://127.0.0.1:8000/api/public/site-page)",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/legacy/module-rows?modes_id=1&web=4&type=3&limit=3\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/legacy/module-rows?modes_id=12&limit=1\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/predict/mechanisms\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/public/site-page?history_limit=3\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'站点: {d[\\\\\"site\\\\\"][\\\\\"name\\\\\"]}'\\); print\\(f'当前期号: {d[\\\\\"draw\\\\\"][\\\\\"current_issue\\\\\"]}'\\); print\\(f'模块数: {len\\(d[\\\\\"modules\\\\\"]\\)}'\\); print\\('---'\\); [print\\(f'  [{m[\\\\\"id\\\\\"]}] {m[\\\\\"mechanism_key\\\\\"]} → \\\\\"{m[\\\\\"title\\\\\"]}\\\\\" \\(表: {m[\\\\\"default_table\\\\\"]}, history: {len\\(m[\\\\\"history\\\\\"]\\)} 行\\)'\\) for m in d['modules']]\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/public/site-page?history_limit=2\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

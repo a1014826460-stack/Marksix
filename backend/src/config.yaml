@@ -1,0 +1,79 @@
+# ============================================================
+# 彩票后台管理系统 - 配置文件
+# ============================================================
+# 本文件包含系统运行所需的默认常量和初始值。
+# 首次启动时会读取此文件创建初始数据。
+# 生产部署前请修改以下所有密码和 Token。
+
+# -----------------------------------------------------------
+# 数据库配置
+# -----------------------------------------------------------
+database:
+  # 默认 PostgreSQL 连接字符串
+  # 可通过环境变量 LOTTERY_DB_PATH 或 DATABASE_URL 覆盖
+  default_postgres_dsn: "postgresql://postgres:2225427@localhost:5432/liuhecai"
+
+# -----------------------------------------------------------
+# 管理员默认账号（首次启动时创建）
+# -----------------------------------------------------------
+admin:
+  username: "admin"
+  password: "admin123"
+  display_name: "系统管理员"
+  role: "super_admin"
+
+# -----------------------------------------------------------
+# JWT / 认证配置
+# -----------------------------------------------------------
+auth:
+  # session 过期时间（秒），默认 24 小时
+  session_ttl_seconds: 86400
+
+# -----------------------------------------------------------
+# 默认站点配置（data_fetch 模块使用）
+# -----------------------------------------------------------
+site:
+  # 站点后台管理页面 URL 模板
+  manage_url_template: "https://admin.shengshi8800.com/ds67BvM/web/webManage?id={web_id}"
+  # 数据列表 API 地址
+  modes_data_url: "https://admin.shengshi8800.com/ds67BvM/web/getModesDataList"
+  # 默认认证 Token
+  default_token: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJhdWQiOiIiLCJpYXQiOjE3Nzc4ODM3MTEsIm5iZiI6MTc3Nzg4MzcxNCwiZXhwIjoxNzc3OTcwMTExLCJkYXRhIjp7ImlkIjoxLCJuYW1lIjoiYWRtaW4iLCJzaWduIjoiXHU4ZDg1XHU3ZWE3XHU3YmExXHU3NDA2XHU1NDU4IiwianVyIjpudWxsfX0.8sdm1dQ40Cq_JFGXfRC_9_GyRreeqmLnLjfqBuof1zg"
+  # 默认站点名称
+  default_site_name: "默认盛世站点"
+  # 默认域名
+  default_domain: "admin.shengshi8800.com"
+  # 默认 web_id 起止
+  start_web_id: 1
+  end_web_id: 10
+  # 默认请求限制和延迟
+  request_limit: 250
+  request_delay: 0.5
+  # 默认公告
+  default_announcement: "欢迎使用彩票网站数据管理后台。"
+  # 默认备注
+  default_notes: "系统内置默认抓取配置，可在管理后台修改 token 和接口地址。"
+
+# -----------------------------------------------------------
+# 抓取配置
+# -----------------------------------------------------------
+fetch:
+  # 请求 User-Agent
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+
+# -----------------------------------------------------------
+# 爬虫定时任务配置
+# -----------------------------------------------------------
+crawler:
+  # 自动抓取间隔（秒），默认 3600 秒 = 1 小时
+  interval_seconds: 3600
+
+# -----------------------------------------------------------
+# 历史遗留配置
+# -----------------------------------------------------------
+legacy:
+  images_dir: "data/Images"
+  images_upload_bucket: "20250322"
+  post_list_pc: 305
+  post_list_web: 4
+  post_list_type: 3
