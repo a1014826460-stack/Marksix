@@ -41,8 +41,12 @@ type LegacyModuleDef = {
   key: string
   /** 最大获取行数 */
   limit: number
+  /** 数据来源 web_id（旧站 JS 中有些用 web=2，大部分用 web=4） */
+  web?: number
   /** 额外的 URL 查询参数 */
   params?: Record<string, string>
+  /** 渲染使用的 CSS 表格类名（默认 "duilianpt1"） */
+  tableClass?: string
 }
 
 /** 后端 /api/legacy/module-rows 返回的原始行类型 */
@@ -88,7 +92,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getHbnx",     modesId: 45,  title: "特邀高手→【黑白无双】", key: "legacy_hbnx", limit: 6 },
 
   // ---- 一句真言（诗句） ----
-  { endpoint: "getYjzy",     modesId: 50,  title: "一句真言",   key: "legacy_yjzy",    limit: 8 },
+  { endpoint: "getYjzy",     modesId: 50,  title: "一句真言",   key: "legacy_yjzy",    limit: 8,    tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 六肖中特 ----
   { endpoint: "lxzt",        modesId: 46,  title: "六肖中特",   key: "legacy_lxzt",    limit: 10 },
@@ -127,7 +131,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getCodeDuan", modesId: 65,  title: "特段",       key: "legacy_teduan",  limit: 10 },
 
   // ---- 欲钱买特码 ----
-  { endpoint: "getJuzi",     modesId: 68,  title: "欲钱买特码", key: "legacy_yqmtm",   limit: 10, params: { num: "yqmtm" } },
+  { endpoint: "getJuzi",     modesId: 68,  title: "欲钱买特码", key: "legacy_yqmtm",   limit: 10, params: { num: "yqmtm" }, tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 杀三肖 ----
   { endpoint: "getShaXiao",  modesId: 42,  title: "杀三肖",     key: "legacy_shaxiao", limit: 10 },
@@ -136,7 +140,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getCode",     modesId: 34,  title: "特码",       key: "legacy_tema",    limit: 10 },
 
   // ---- 琴棋书画 ----
-  { endpoint: "qqsh",        modesId: 26,  title: "琴棋书画",   key: "legacy_qqsh",    limit: 10 },
+  { endpoint: "qqsh",        modesId: 26,  title: "琴棋书画",   key: "legacy_qqsh",    limit: 10, tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 绝杀半波 ----
   { endpoint: "getShaBanbo", modesId: 58,  title: "绝杀半波",   key: "legacy_shabanbo", limit: 10 },
@@ -145,10 +149,10 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getShaWei",   modesId: 20,  title: "绝杀一尾",   key: "legacy_shawei",  limit: 10, params: { num: "1" } },
 
   // ---- 四字玄机 ----
-  { endpoint: "getSzxj",     modesId: 52,  title: "四字玄机",   key: "legacy_szxj",    limit: 10 },
+  { endpoint: "getSzxj",     modesId: 52,  title: "四字玄机",   key: "legacy_szxj",    limit: 10, tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 幽默 ----
-  { endpoint: "getDjym",     modesId: 59,  title: "幽默",       key: "legacy_djym",    limit: 10 },
+  { endpoint: "getDjym",     modesId: 59,  title: "幽默",       key: "legacy_djym",    limit: 10, tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 四季三肖（春夏秋冬） ----
   { endpoint: "getSjsx",     modesId: 61,  title: "四季三肖",   key: "legacy_sjsx",    limit: 10 },
@@ -156,17 +160,17 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   // ---- 肉菜草肖 ----
   { endpoint: "getRccx",     modesId: 3,   title: "肉菜草肖",   key: "legacy_rccx",    limit: 10, params: { num: "2" } },
 
-  // ---- 一句平特佳 ----
-  { endpoint: "yyptj",       modesId: 244, title: "一句平特佳", key: "legacy_yyptj",   limit: 10 },
+  // ---- 一句平特佳（旧站 1.js 使用 web=2） ----
+  { endpoint: "yyptj",       modesId: 244, title: "一句平特佳", key: "legacy_yyptj",   limit: 10, web: 2, tableClass: "duilianpt1 legacy-module-text" },
 
-  // ---- 五肖中特 ----
-  { endpoint: "wxzt",        modesId: 48,  title: "五肖中特",   key: "legacy_wxzt",    limit: 6 },
+  // ---- 五肖中特（旧站 5xiao.js 使用 web=2） ----
+  { endpoint: "wxzt",        modesId: 48,  title: "五肖中特",   key: "legacy_wxzt",    limit: 6,  web: 2 },
 
-  // ---- 六尾中特 ----
-  { endpoint: "getWei",      modesId: 2,   title: "六尾中特",   key: "legacy_6wei",    limit: 10, params: { num: "6" } },
+  // ---- 六尾中特（旧站 6w.js 使用 web=2） ----
+  { endpoint: "getWei",      modesId: 2,   title: "六尾中特",   key: "legacy_6wei",    limit: 10, params: { num: "6" }, web: 2 },
 
-  // ---- 九肖中特 ----
-  { endpoint: "jxzt",        modesId: 49,  title: "九肖中特",   key: "legacy_jxzt",    limit: 10 },
+  // ---- 九肖中特（旧站 9xiao.js 使用 web=2） ----
+  { endpoint: "jxzt",        modesId: 49,  title: "九肖中特",   key: "legacy_jxzt",    limit: 10, web: 2 },
 
   // ---- 平特一肖 ----
   { endpoint: "getPingte",   modesId: 56,  title: "平特一肖",   key: "legacy_ptyx",    limit: 8 },
@@ -181,7 +185,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getPmxjcz",   modesId: 331, title: "跑马",       key: "legacy_pmxjcz",  limit: 6 },
 
   // ---- 句子（普通） ----
-  { endpoint: "getJuzi",     modesId: 62,  title: "句子",       key: "legacy_juzi",    limit: 10 },
+  { endpoint: "getJuzi",     modesId: 62,  title: "句子",       key: "legacy_juzi",    limit: 10, tableClass: "duilianpt1 legacy-module-text" },
 
   // ---- 七肖七码（新版 qxbm） ----
   { endpoint: "qxbm",        modesId: 246, title: "七肖七码",   key: "legacy_qxbm",    limit: 10 },
@@ -190,13 +194,77 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
 // ===================== 工具函数 =====================
 
 /**
+ * 判断预测是否命中开奖结果
+ * ---------------------------------------------------------------
+ * 通过比对预测文本中的生肖/数字与开奖结果来判断正确性。
+ * 支持解析 JSON 格式的预测内容（如六尾中特、九肖一码）。
+ *
+ * @param content - 预测文本
+ * @param resSx   - 开奖生肖（逗号分隔）
+ * @param resCode - 开奖号码（逗号分隔）
+ * @returns true=命中, false=未命中, null=无开奖数据
+ */
+const ZODIAC_SET = new Set(["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"])
+
+function isPredictionCorrect(
+  content: string,
+  resSx: string,
+  resCode: string
+): boolean | null {
+  if (!resSx && !resCode) return null
+
+  const sxList = resSx.split(",").filter(Boolean).map((s) => s.trim())
+  const codeList = resCode.split(",").filter(Boolean).map((s) => s.trim())
+
+  // 展开 JSON 数组内容（六尾中特、九肖一码等用 JSON 存储）
+  let textToCheck = content
+  try {
+    const parsed = JSON.parse(content)
+    if (Array.isArray(parsed)) textToCheck = parsed.join(",")
+  } catch {
+    // 不是 JSON，保持原始文本
+  }
+
+  // 检查预测中的生肖是否出现在开奖生肖中
+  for (const char of textToCheck) {
+    if (ZODIAC_SET.has(char) && sxList.includes(char)) {
+      return true
+    }
+  }
+
+  // 提取所有数字，检查是否出现在开奖号码中
+  const allNumbers = textToCheck.match(/\d+/g) || []
+  for (const num of allNumbers) {
+    if (codeList.includes(num)) return true
+  }
+
+  // 有开奖数据但未匹配到 → 预测错误
+  return false
+}
+
+/**
+ * 格式化开奖结果文本
+ * ---------------------------------------------------------------
+ * 格式：最后一个生肖 + 最后一个号码
+ * 如 "蛇14"、"马01"
+ */
+function formatResultLabel(resCode: string, resSx: string): string {
+  const codeSplit = resCode.split(",").filter(Boolean)
+  const sxSplit = resSx.split(",").filter(Boolean)
+  if (codeSplit.length === 0 && sxSplit.length === 0) return "待开奖"
+  const lastCode = codeSplit.length > 0 ? codeSplit[codeSplit.length - 1] : ""
+  const lastSx = sxSplit.length > 0 ? sxSplit[sxSplit.length - 1] : ""
+  return `${lastSx}${lastCode}`
+}
+
+/**
  * 将后端原始行数据转换为 PublicHistoryRow 格式
  * ---------------------------------------------------------------
  * 每个旧模块的行数据字段类似：
  *   { term: "269", year: "2026", res_code: "01,02", res_sx: "鼠,牛", content: "虎羊" }
  *
  * 转换为：
- *   { issue: "269期", prediction_text: "虎羊", result_text: "牛02准", is_opened: true, ... }
+ *   { issue: "269期", prediction_text: "虎羊", result_text: "牛02", is_opened: true, is_correct: true, ... }
  *
  * @param row - 后端返回的原始行数据
  * @returns 标准化后的历史行
@@ -211,15 +279,15 @@ function rowToHistoryRow(row: LegacyRawRow): PublicHistoryRow {
   // 解析开奖结果：res_code 和 res_sx 是逗号分隔的字符串
   const resCodeRaw = String(row.res_code || "")
   const resSxRaw = String(row.res_sx || "")
-  const codeSplit = resCodeRaw.split(",").filter(Boolean)
-  const sxSplit = resSxRaw.split(",").filter(Boolean)
 
-  const hasResult = codeSplit.length > 0 || sxSplit.length > 0
-  const lastCode = codeSplit.length > 0 ? codeSplit[codeSplit.length - 1] : "00"
-  const lastSx = sxSplit.length > 0 ? sxSplit[sxSplit.length - 1] : "？"
+  const hasResult = resCodeRaw.split(",").filter(Boolean).length > 0 ||
+                    resSxRaw.split(",").filter(Boolean).length > 0
 
-  // 格式化结果文本：如 "蛇14准"、"待开奖"
-  const resultText = hasResult ? `${lastSx}${lastCode}准` : "待开奖"
+  // 判断正确性
+  const isCorrect = isPredictionCorrect(predictionText, resSxRaw, resCodeRaw)
+
+  // 格式化结果文本（不含"准/不准"字样，由前端组件根据 is_correct 渲染颜色）
+  const resultText = hasResult ? formatResultLabel(resCodeRaw, resSxRaw) : "待开奖"
 
   return {
     issue,
@@ -228,10 +296,14 @@ function rowToHistoryRow(row: LegacyRawRow): PublicHistoryRow {
     prediction_text: predictionText,
     result_text: resultText,
     is_opened: hasResult,
+    is_correct: isCorrect,
     source_web_id: null,
     raw: { ...row },
   }
 }
+
+// 自增计数器，为每个旧模块生成唯一负整数 ID（避免与 site-page API 的正数 ID 冲突）
+let _legacyIdCounter = 0
 
 /**
  * 为特定模块定义获取数据
@@ -242,34 +314,43 @@ function rowToHistoryRow(row: LegacyRawRow): PublicHistoryRow {
  * @param def - 模块定义
  * @returns PublicModule 格式的模块数据（行数据为空时返回 null）
  */
-async function fetchLegacyModule(def: LegacyModuleDef): Promise<PublicModule | null> {
+async function fetchLegacyModule(def: LegacyModuleDef, type: number = 3): Promise<PublicModule | null> {
   try {
     const payload = await backendFetchJson<BackendLegacyPayload>("/legacy/module-rows", {
       query: {
         modes_id: def.modesId,
         limit: def.limit,
-        web: 4,
-        type: 3,
+        web: def.web ?? 4,
+        type,
         ...def.params,
       },
     })
 
     const rows = payload.rows || []
-    if (rows.length === 0) return null
+    if (rows.length === 0) {
+      console.warn(`[legacy-modules] 模块 "${def.title}" (modes_id=${def.modesId}, type=${type}) 无数据`)
+      return null
+    }
+
+    // 使用负整数 ID，确保与 site-page API 返回的正数 ID 不冲突
+    _legacyIdCounter--
+    const uniqueId = _legacyIdCounter
 
     return {
-      id: def.modesId,
+      id: uniqueId,
       mechanism_key: def.key,
       title: def.title,
       default_modes_id: def.modesId,
       default_table: payload.table_name || `mode_payload_${def.modesId}`,
       sort_order: 0,
       status: true,
+      cssClass: def.tableClass,  // 指定渲染 CSS 类（旧站 style.css 中的表格类）
       history: rows.map(rowToHistoryRow),
     }
   } catch (err) {
     // 单个模块失败不应影响整体页面渲染
-    console.warn(`[legacy-modules] 获取模块失败: ${def.title}`, err)
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    console.warn(`[legacy-modules] 获取模块失败: ${def.title} (modes_id=${def.modesId}) — ${msg}`)
     return null
   }
 }
@@ -277,31 +358,87 @@ async function fetchLegacyModule(def: LegacyModuleDef): Promise<PublicModule | n
 // ===================== 主导出函数 =====================
 
 /**
+ * 带并发限制的批量获取函数
+ * ---------------------------------------------------------------
+ * 为避免 Python 后端（ThreadingHTTPServer）无法处理过多并发连接，
+ * 将请求分批执行，每批最多 concurrent 个并行请求。
+ */
+async function batchFetch<T>(
+  items: T[],
+  fetcher: (item: T) => Promise<PublicModule | null>,
+  concurrent = 6
+): Promise<(PublicModule | null)[]> {
+  const results: (PublicModule | null)[] = []
+  for (let i = 0; i < items.length; i += concurrent) {
+    const batch = items.slice(i, i + concurrent)
+    const batchResults = await Promise.all(batch.map(fetcher))
+    results.push(...batchResults)
+  }
+  return results
+}
+
+/**
  * 并行获取所有旧站预测模块数据
  * ---------------------------------------------------------------
- * 一次性获取 36+ 个旧模块，过滤掉空结果。
+ * 分批获取 36+ 个旧模块（每批 6 个并发），过滤掉空结果。
  * 在 page.tsx 中与 getPublicSitePageData() 的结果合并。
  *
  * @param excludeKeys - 需要排除的 key 列表（避免与已有模块重复）
+ * @param type         - 彩种类型：1=香港彩, 2=澳门彩, 3=台湾彩（默认 3）
  * @returns PublicModule 数组
  *
  * 用法示例：
- *   const legacyModules = await fetchAllLegacyModules(["pt2xiao", "3zxt", "hllx"])
+ *   const legacyModules = await fetchAllLegacyModules([], 1)  // 香港彩
  *   // 合并到 apiData.modules
  *   apiData.modules = [...apiData.modules, ...legacyModules]
  */
-export async function fetchAllLegacyModules(excludeKeys: string[] = []): Promise<PublicModule[]> {
+export async function fetchAllLegacyModules(
+  excludeKeys: string[] = [],
+  type: number = 3
+): Promise<PublicModule[]> {
   // 过滤掉已由其他组件（如 PreResultBlocks）处理的模块
   const activeDefs = LEGACY_MODULE_DEFS.filter(
     (def) => !excludeKeys.includes(def.key.replace("legacy_", "")) &&
              !excludeKeys.includes(def.key)
   )
 
-  // 并行获取所有模块
-  const results = await Promise.all(activeDefs.map(fetchLegacyModule))
+  // 分批获取所有模块（每批 6 个并发，避免后端过载）
+  const results = await batchFetch(activeDefs, (def) => fetchLegacyModule(def, type), 6)
 
   // 过滤掉 null（获取失败或空数据）
   return results.filter((m): m is PublicModule => m !== null)
+}
+
+/**
+ * 游戏类型 → 后端 type 参数映射
+ * ---------------------------------------------------------------
+ * 前端 LotteryGame 枚举值 => 后端 /api/legacy/module-rows 的 type 参数
+ */
+export const GAME_TYPE_MAP: Record<string, number> = {
+  taiwan: 3,
+  macau: 2,
+  hongkong: 1,
+}
+
+/**
+ * 并行获取所有 3 种彩种的旧站模块数据
+ * ---------------------------------------------------------------
+ * 一次性获取台湾彩(type=3)、澳门彩(type=2)、香港彩(type=1) 的旧模块数据，
+ * 返回按游戏类型分组的 Record。
+ * 三种彩种并行获取，每种内部按 6 并发分批。
+ */
+export async function fetchAllLegacyModulesByGame(): Promise<Record<string, PublicModule[]>> {
+  const [taiwanMods, macauMods, hongkongMods] = await Promise.all([
+    fetchAllLegacyModules([], GAME_TYPE_MAP.taiwan),
+    fetchAllLegacyModules([], GAME_TYPE_MAP.macau),
+    fetchAllLegacyModules([], GAME_TYPE_MAP.hongkong),
+  ])
+
+  return {
+    taiwan: taiwanMods,
+    macau: macauMods,
+    hongkong: hongkongMods,
+  }
 }
 
 /**

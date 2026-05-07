@@ -44,6 +44,7 @@ export type PublicHistoryRow = {
   prediction_text: string     // 预测文本（如 "虎羊"、"红波+绿波"）
   result_text: string         // 开奖结果文本（如 "蛇14准"）
   is_opened: boolean          // 是否已开奖（false 表示该期尚未开奖）
+  is_correct: boolean | null  // 预测是否正确：true=准, false=不准, null=待开奖
   source_web_id: number | null // 数据来源站点 web_id
   raw: Record<string, unknown> // 原始数据（扩展字段，供未来兼容）
 }
@@ -58,6 +59,8 @@ export type PublicModule = {
   sort_order: number      // 排序号（值越小越靠前）
   status: boolean         // 启用状态（true=启用，false=禁用）
   history: PublicHistoryRow[] // 该模块的历史预测行数据列表
+  /** 渲染该模块使用的 CSS 类名，对应旧站 style.css 中的表格类 */
+  cssClass?: string
 }
 
 // ===================== 站点相关类型 =====================

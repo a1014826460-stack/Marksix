@@ -1,0 +1,4 @@
+# 六合彩 Python API 依赖
+# 纯标准库为主，仅额外依赖 PostgreSQL 驱动和 HTTP 请求库
+psycopg>=3.2,<4
+requests>=2.31,<3

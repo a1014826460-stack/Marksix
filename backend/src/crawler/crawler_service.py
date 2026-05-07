@@ -19,10 +19,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
 
 
-def _get_lottery_ids(db_path: str | Path) -> dict[str, int]:
+def _get_lottery_meta(db_path: str | Path) -> dict[str, dict[str, Any]]:
+    """
+    从数据库 lottery_types 表中读取所有彩种的配置信息。
+
+    返回一个字典，key 为彩种名称（如 "香港彩"、"澳门彩"），
+    value 为包含 id, collect_url, draw_time 等字段的字典。
+
+    这样采集地址（collect_url）和开奖时间（draw_time）就完全由数据库管理，
+    不再硬编码在爬虫脚本中。
+    """
     with db_connect(db_path) as conn:
-        rows = conn.execute("SELECT id, name FROM lottery_types").fetchall()
-        return {row["name"]: row["id"] for row in rows}
+        rows = conn.execute(
+            "SELECT id, name, collect_url, draw_time FROM lottery_types"
+        ).fetchall()
+        return {
+            row["name"]: {
+                "id": row["id"],
+                "collect_url": row["collect_url"] or "",
+                "draw_time": row["draw_time"] or "",
+            }
+            for row in rows
+        }
 
 
 def _upsert_draw(
@@ -53,15 +71,35 @@ def _upsert_draw(
 
 
 def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
-    """Fetch Hong Kong lottery data and save to lottery_draws table."""
-    raw, status_code = fetch_hongkong_history_data()
+    """
+    执行香港彩历史数据采集任务。
+
+    工作流程：
+    1. 从数据库 lottery_types 表读取香港彩的配置（采集地址 collect_url）
+    2. 调用 fetch_hongkong_history_data() 拉取原始数据
+    3. 转换数据格式后存入 lottery_draws 表
+
+    注意：采集地址不再写死在脚本中，而是由管理员在后台"彩种管理"页面配置，
+    存储在 PostgreSQL 数据库的 lottery_types.collect_url 字段中。
+    """
+    # ── 从数据库获取香港彩的配置信息 ──
+    meta_map = _get_lottery_meta(db_path)
+    hk_meta = meta_map.get("香港彩") or meta_map.get("六合彩")
+    if hk_meta is None:
+        raise ValueError("香港彩 lottery type not found - please ensure 香港彩 exists")
+
+    # ── 使用数据库中的采集地址发起请求，
+    #     如果数据库未配置采集地址则使用爬虫函数默认值（兼容旧数据） ──
+    collect_url = hk_meta["collect_url"]
+    if collect_url:
+        raw, status_code = fetch_hongkong_history_data(collect_url=collect_url)
+    else:
+        raw, status_code = fetch_hongkong_history_data()
+
     if status_code != 200:
         raise RuntimeError(f"HK crawler returned status {status_code}")
+
     records = transform_standard_list(raw)
-    ids = _get_lottery_ids(db_path)
-    hk_id = ids.get("香港彩", ids.get("六合彩"))
-    if hk_id is None:
-        raise ValueError("香港彩 lottery type not found - please ensure 香港彩 exists")
     now = datetime.now(UTC).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -70,8 +108,8 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
                 open_time = item["open_time"]
                 year = int(open_time[:4])
                 term_num = int(item["issue"])
-                _upsert_draw(conn, hk_id, year, term_num, item["result"],
-                             open_time, 1, now)
+                _upsert_draw(conn, hk_meta["id"], year, term_num,
+                             item["result"], open_time, 1, now)
                 saved += 1
             except (ValueError, KeyError) as e:
                 print(f"  SKIP: {item.get('issue', '?')} - {e}")
@@ -79,15 +117,34 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
 
 
 def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
-    """Fetch Macau lottery data and save to lottery_draws table."""
-    raw, status_code = fetch_macau_history_data()
+    """
+    执行澳门彩历史数据采集任务。
+
+    工作流程：
+    1. 从数据库 lottery_types 表读取澳门彩的配置（采集地址 collect_url）
+    2. 调用 fetch_macau_history_data() 拉取原始数据
+    3. 转换数据格式后存入 lottery_draws 表
+
+    注意：采集地址不再写死在脚本中，而是由管理员在后台"彩种管理"页面配置，
+    存储在 PostgreSQL 数据库的 lottery_types.collect_url 字段中。
+    """
+    # ── 从数据库获取澳门彩的配置信息 ──
+    meta_map = _get_lottery_meta(db_path)
+    macau_meta = meta_map.get("澳门彩")
+    if macau_meta is None:
+        raise ValueError("澳门彩 lottery type not found")
+
+    # ── 使用数据库中的采集地址发起请求 ──
+    collect_url = macau_meta["collect_url"]
+    if collect_url:
+        raw, status_code = fetch_macau_history_data(collect_url=collect_url)
+    else:
+        raw, status_code = fetch_macau_history_data()
+
     if status_code != 200:
         raise RuntimeError(f"Macau crawler returned status {status_code}")
+
     records = transform_macau_api(raw)
-    ids = _get_lottery_ids(db_path)
-    macau_id = ids.get("澳门彩")
-    if macau_id is None:
-        raise ValueError("澳门彩 lottery type not found")
     now = datetime.now(UTC).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -96,8 +153,8 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
                 expect = item["issue"]
                 year = int(expect[:4])
                 term_num = int(expect[4:])
-                _upsert_draw(conn, macau_id, year, term_num, item["result"],
-                             item["open_time"], 1, now)
+                _upsert_draw(conn, macau_meta["id"], year, term_num,
+                             item["result"], item["open_time"], 1, now)
                 saved += 1
             except (ValueError, KeyError) as e:
                 print(f"  SKIP: {item.get('issue', '?')} - {e}")
@@ -105,15 +162,23 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
 
 
 def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, Any]:
-    """Import Taiwan lottery data from JSON file to lottery_draws table."""
+    """
+    从 JSON 文件导入台湾彩历史开奖数据。
+
+    台湾彩数据来源于本地 JSON 文件，不需要线上采集地址（collect_url），
+    因此该函数不涉及爬虫调用，直接从文件读取并存入数据库。
+    """
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     records = data.get("data", [])
     total_in_file = data.get("total", len(records))
-    ids = _get_lottery_ids(db_path)
-    taiwan_id = ids.get("台湾彩")
-    if taiwan_id is None:
+
+    # ── 台湾彩不需要采集地址，直接从数据库获取彩种ID即可 ──
+    meta_map = _get_lottery_meta(db_path)
+    taiwan_meta = meta_map.get("台湾彩")
+    if taiwan_meta is None:
         raise ValueError("台湾彩 lottery type not found")
+
     now = datetime.now(UTC).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -126,7 +191,7 @@ def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, 
                 is_opened = 1 if item.get("is_kj") == 1 else 0
                 if not numbers:
                     continue
-                _upsert_draw(conn, taiwan_id, year, term_num, numbers,
+                _upsert_draw(conn, taiwan_meta["id"], year, term_num, numbers,
                              draw_time, is_opened, now)
                 saved += 1
             except (ValueError, KeyError) as e:

@@ -97,6 +97,10 @@ export type LotteryPageData = {
   // ---- 原始后端模块数据（供通用渲染器使用） ----
   /** 后端返回的完整模块列表，由 PredictionModules 组件消费 */
   rawModules: PublicModule[]
+
+  // ---- 按游戏类型分组的预测模块数据 ----
+  /** 三种彩种各自的完整模块列表，由 HomePageClient 根据 activeGame 切换 */
+  modulesByGame: Record<LotteryGame, PublicModule[]>
 }
 
 // ===================== 游戏切换标签配置 =====================
@@ -166,6 +170,13 @@ const baseData: LotteryPageData = {
 
   // 原始后端模块数据（mock 数据中没有后端模块，保持空数组）
   rawModules: [],
+
+  // 按游戏类型分组的模块（mock 数据均为空）
+  modulesByGame: {
+    taiwan: [],
+    macau: [],
+    hongkong: [],
+  },
 }
 
 // ===================== 各游戏类型的 Mock 数据 =====================
@@ -269,7 +280,16 @@ function extractModuleRows(modules: PublicModule[], key: string): PlainRow[] {
  *   const apiData = await getPublicSitePageData({ siteId: 1 })
  *   const pageData = transformSitePageData(apiData)
  */
-export function transformSitePageData(apiData: PublicSitePageData): LotteryPageData {
+export function transformSitePageData(
+  apiData: PublicSitePageData,
+  modulesByGame?: Record<LotteryGame, PublicModule[]>
+): LotteryPageData {
+  const defaultModulesByGame: Record<LotteryGame, PublicModule[]> = {
+    taiwan: apiData.modules,
+    macau: [],
+    hongkong: [],
+  }
+
   return {
     /* ---- 游戏信息 ---- */
     game: resolveGameType(apiData.site.lottery_type_id, apiData.site.lottery_name),
@@ -293,6 +313,9 @@ export function transformSitePageData(apiData: PublicSitePageData): LotteryPageD
     /* ---- 原始模块数据（供通用渲染器使用） ---- */
     /** 保留后端返回的完整模块列表，供 PredictionModules 组件消费 */
     rawModules: apiData.modules,
+
+    /* ---- 按游戏类型分组的预测模块数据 ---- */
+    modulesByGame: modulesByGame ?? defaultModulesByGame,
   }
 }
 

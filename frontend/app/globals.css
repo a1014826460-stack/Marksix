@@ -439,6 +439,19 @@ a {
   .KJ-IFRAME { height: 130px; }
 }
 
+/* ---- JSON 数组内容展示（六尾中特、九肖一码等） ---- */
+.legacy-json-content {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2px 0;
+}
+.legacy-json-item {
+  font-size: 14pt;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 /* ---- 备用网址表格 ---- */
 .ymgg {
   background: #ff0;
@@ -464,4 +477,25 @@ a {
   text-align: center;
   font-weight: bold;
   padding: 3px 0px;
+}
+
+/* ============================================================
+   旧站预测模块兼容样式
+   解决 PredictionModules 中不同模块数据格式不兼容的问题
+   ============================================================ */
+
+/**
+ * 长文本内容类（诗句、句子、欲钱买特码等）：
+ * 覆盖 duilianpt1 的居中红字大号，改为左对齐黑色可读字号
+ */
+.legacy-module-text {
+  text-align: left !important;
+  color: #000 !important;
+}
+.legacy-module-text td {
+  font-size: 14pt !important;
+  text-align: left;
+  padding: 6px 10px;
+  word-break: break-word;
+  line-height: 1.5;
 }

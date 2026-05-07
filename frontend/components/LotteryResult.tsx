@@ -63,22 +63,22 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
             </li>
           ))}
         </ul>
-        {/* 每个游戏标签对应一个面板，仅当前活跃的面板可见 */}
+        {/* 每个游戏标签对应一个面板，始终挂载所有 iframe，仅隐藏非活跃的 */}
+        {/* 避免 iframe 卸载重挂载导致的外部页面 scrollTo 干扰 */}
         {games.map((game) => (
           <div
             key={game.key}
             className={activeGame === game.key ? "cur" : ""}
+            style={{ display: activeGame === game.key ? "" : "none" }}
           >
-            {activeGame === game.key && (
-              <iframe
-                className="KJ-IFRAME"
-                src={IFRAME_URLS[game.key]}
-                width="100%"
-                height={IFRAME_HEIGHT}
-                style={{ border: "none", overflow: "hidden" }}
-                title={`${game.label}开奖结果`}
-              />
-            )}
+            <iframe
+              className="KJ-IFRAME"
+              src={IFRAME_URLS[game.key]}
+              width="100%"
+              height={IFRAME_HEIGHT}
+              style={{ border: "none", overflow: "hidden" }}
+              title={`${game.label}开奖结果`}
+            />
           </div>
         ))}
       </div>

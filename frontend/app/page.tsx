@@ -21,7 +21,8 @@
 
 import { getPublicSitePageData, getConfiguredSiteId } from "@/lib/backend-api"
 import { transformSitePageData } from "@/lib/lotteryData"
-import { fetchAllLegacyModules } from "@/lib/legacy-modules"
+import type { PublicModule } from "@/lib/site-page"
+import { fetchAllLegacyModulesByGame } from "@/lib/legacy-modules"
 import { HomePageClient } from "./HomePageClient"
 
 export default async function HomePage() {
@@ -33,36 +34,39 @@ export default async function HomePage() {
     historyLimit: 8,
   })
 
-  // ========== 并行获取旧站 36+ 个预测模块数据 ==========
-  // 旧站通过独立 JS 文件调用 /api/kaijiang/xxx 端点获取数据，
-  // 此处直接调用后端 /api/legacy/module-rows 并行获取所有模块。
-  //
-  // 排除已在 site_prediction_modules 中配置且由专用组件渲染的 key：
-  // pt2xiao（两肖平特王）、3zxt（三期中特）、hllx（双波中特）
-  const excludeLegacyKeys = ["pt2xiao", "3zxt", "hllx"]
-  const legacyModules = await fetchAllLegacyModules(excludeLegacyKeys)
+  // ========== 并行获取旧站 36+ 个预测模块数据（三种彩种） ==========
+  // 一次性获取台湾彩(type=3)、澳门彩(type=2)、香港彩(type=1) 的旧模块数据，
+  // 每种内部按 6 并发分批获取，三种彩种之间并行请求。
+  const legacyByGame = await fetchAllLegacyModulesByGame()
 
-  // ========== 合并新旧模块数据 ==========
-  // 将旧模块追加到 apiData.modules 中，
-  // 保证 site_prediction_modules 配置的模块优先（靠前）
-  // 旧模块使用 legacy_xxx 作为 mechanism_key
-  const mergedModules = [...apiData.modules]
-
-  for (const legacyMod of legacyModules) {
-    // 避免模块重复（按 key 去重）
-    const isDuplicate = mergedModules.some(
-      (m) => m.mechanism_key === legacyMod.mechanism_key
-    )
-    if (!isDuplicate) {
-      mergedModules.push(legacyMod)
+  // ========== 构建按游戏类型分组的完整模块列表 ==========
+  // 每个彩种 = site-page 模块（四字词语）+ 对应类型的旧模块
+  // 避免模块重复（按 mechanism_key 去重）
+  function mergeSiteAndLegacy(
+    siteModules: PublicModule[],
+    legacyModules: PublicModule[]
+  ): PublicModule[] {
+    const merged = [...siteModules]
+    for (const legacyMod of legacyModules) {
+      const isDuplicate = merged.some(
+        (m) => m.mechanism_key === legacyMod.mechanism_key
+      )
+      if (!isDuplicate) {
+        merged.push(legacyMod)
+      }
     }
+    return merged
   }
 
-  // ========== 将合并后的数据注入回 apiData ==========
-  apiData.modules = mergedModules
+  const modulesByGame = {
+    taiwan: mergeSiteAndLegacy(apiData.modules, legacyByGame.taiwan),
+    macau: mergeSiteAndLegacy(apiData.modules, legacyByGame.macau),
+    hongkong: mergeSiteAndLegacy(apiData.modules, legacyByGame.hongkong),
+  }
 
   // ========== 转换为前端组件所需的数据格式 ==========
-  const pageData = transformSitePageData(apiData)
+  // 传入 modulesByGame 让 transformSitePageData 将其注入到 LotteryPageData
+  const pageData = transformSitePageData(apiData, modulesByGame)
 
   // ========== 渲染客户端交互页面 ==========
   return <HomePageClient data={pageData} />

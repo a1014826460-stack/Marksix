@@ -3,17 +3,33 @@ import json
 from typing import Union, List, Dict, Any
 
 
-def fetch_hongkong_history_data(date: int = 2026) -> tuple[str, int]:
+# ──────────────────────────────────────────────────────────────
+# 香港彩（六合彩）历史数据采集器
+# ──────────────────────────────────────────────────────────────
+# 该模块负责从香港彩官方API拉取历史开奖数据。
+# 注意：采集地址（collect_url）和开奖时间（draw_time）不再硬编码在此脚本中，
+# 而是统一存储在 PostgreSQL 数据库的 lottery_types 表中，
+# 由 crawler_service.py 在调用时从数据库读取并传入。
+# ──────────────────────────────────────────────────────────────
+
+
+def fetch_hongkong_history_data(
+    date: int = 2026,
+    collect_url: str = "https://www.lnlllt.com/api.php",
+) -> tuple[str, int]:
     """
-    获取历史数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
+    获取香港彩历史数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
 
-        Args:
-            date (int): 需要查询的年份，默认为2026年。
+    Args:
+        date (int): 需要查询的年份，默认为2026年。
+        collect_url (str): 采集接口的完整URL地址，
+            由调用方从数据库 lottery_types 表的 collect_url 字段获取并传入，
+            避免将URL硬编码在脚本中。
 
-
-        returns:
-            tuple[str, int]: 包含响应文本和状态码的元组。
+    Returns:
+        tuple[str, int]: 包含响应文本（JSON字符串）和HTTP状态码的元组。
     """
+    # ── 构造请求头，模拟浏览器访问 ──
     headers = {
         "accept": "*/*",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -30,9 +46,11 @@ def fetch_hongkong_history_data(date: int = 2026) -> tuple[str, int]:
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
     }
     cookies = {
-    
+        # 当前接口不需要cookie，保留空字典以便后续扩展
     }
-    url = "https://www.lnlllt.com/api.php"
+
+    # ── 构造查询参数，请求指定年份的历史开奖数据 ──
+    # lottery_id=20 表示香港六合彩，page=1取第一页，limit=50每页最多50条
     params = {
         "action": "history_page",
         "lottery_id": "20",
@@ -40,7 +58,9 @@ def fetch_hongkong_history_data(date: int = 2026) -> tuple[str, int]:
         "page": "1",
         "limit": "50"
     }
-    response = requests.get(url, headers=headers, cookies=cookies, params=params)
+
+    # ── 使用从数据库传入的 collect_url 发起请求 ──
+    response = requests.get(collect_url, headers=headers, cookies=cookies, params=params)
 
     return response.text, response.status_code
 

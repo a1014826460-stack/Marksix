@@ -40,21 +40,43 @@ type PredictionModulesProps = {
 
 /**
  * 渲染单个模块的表格行
- * 格式：期号: 预测内容 → 开:结果
+ * 格式：期号: 预测内容  开:结果
  *
- * @param issue   - 期号（如 "2026124"）
- * @param content - 预测内容（如 "鸡飞狗跳"、"虎羊"）
- * @param result  - 开奖结果（如 "待开奖"、"蛇14准"）
+ * @param issue     - 期号（如 "124期"）
+ * @param content   - 预测内容（如 "虎羊" 或 JSON 数组）
+ * @param result    - 开奖结果文本（如 "蛇14"）
+ * @param isCorrect - 预测正确性：true=准, false=不准, null=待开奖
  */
-function ModuleRow({ issue, content, result }: { issue: string; content: string; result: string }) {
+function ModuleRow({ issue, content, result, isCorrect }: {
+  issue: string; content: string; result: string; isCorrect: boolean | null
+}) {
+  // 尝试解析 JSON 数组内容（六尾中特、九肖一码等）
+  let parsedItems: string[] | null = null
+  try {
+    const parsed = JSON.parse(content)
+    if (Array.isArray(parsed)) parsedItems = parsed
+  } catch { /* 不是 JSON，保持普通文本 */ }
+
+  // 结果文字颜色：命中=红, 未命中=黑, 待开奖=灰
+  const resultColor = isCorrect === null ? "#999" : isCorrect ? "#FF0000" : "#000"
+  const resultSuffix = isCorrect === null ? "" : isCorrect ? "✓" : "✗"
+
   return (
     <tr>
       <td>
         <span className="blue-text">{issue}:</span>
-        <span className="black-text">
-          <span className="zl">[{content}]</span>
-        </span>
-        {" "}开:{result}
+        {parsedItems ? (
+          /* JSON 数组格式（六尾中特、九肖一码等）分行展示 */
+          <div className="legacy-json-content">
+            {parsedItems.map((item, i) => (
+              <span key={i} className="legacy-json-item">{item}</span>
+            ))}
+          </div>
+        ) : (
+          /* 普通文本格式 */
+          <span className="zl">{content}</span>
+        )}
+        {" "}开:<span style={{ color: resultColor }}>{result}{resultSuffix}</span>
       </td>
     </tr>
   )
@@ -76,18 +98,19 @@ function ModuleSection({ module }: { module: PublicModule }) {
       <table
         border={1}
         width="100%"
-        className="duilianpt1"
+        className={module.cssClass || "duilianpt1"}
         bgcolor="#ffffff"
         cellSpacing={0}
         cellPadding={2}
       >
         <tbody>
-          {module.history.map((row) => (
+          {module.history.map((row, idx) => (
             <ModuleRow
-              key={`${module.mechanism_key}-${row.issue}-${row.prediction_text}`}
+              key={`${module.mechanism_key}-${row.issue}-${row.prediction_text}-${idx}`}
               issue={row.issue}
               content={row.prediction_text}
               result={row.result_text}
+              isCorrect={row.is_correct}
             />
           ))}
         </tbody>
@@ -125,7 +148,7 @@ export function PredictionModules({ modules, excludeKeys = [] }: PredictionModul
   return (
     <>
       {visibleModules.map((module) => (
-        <ModuleSection key={module.id || module.mechanism_key} module={module} />
+        <ModuleSection key={module.mechanism_key} module={module} />
       ))}
     </>
   )
