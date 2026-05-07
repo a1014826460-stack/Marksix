@@ -25,3 +25,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ---- 运行时数据（不应提交到 Git） ----
+# SQLite 数据库文件
+*.sqlite3
+*.db
+*.sqlite
+
+# 爬虫采集数据
+data/lottery_data/
+
+# API 缓存数据
+data/api_data/
+
+# 下载的图片
+data/Images/
+
+# Python 缓存
+__pycache__/
+*.pyc
