@@ -16,7 +16,13 @@
 |---------|--------------|--------|------|
 | 四字词语(澳欲钱料) | title_234 | mode_payload_234 | 四字成语预测 |
 
-> **注意**：旧站（`/vendor/shengshi8800/index.html`）原有 43 个独立 JS 渲染的模块，由于后端数据库目前只配置了上述模块，新 React 页面仅展示已配置的模块。随着后端逐步添加更多 `site_prediction_modules` 记录，React 页面会自动显示它们，无需修改前端代码。
+> **注意**：旧站（`/vendor/shengshi8800/index.html`）原有 43 个独立 JS 渲染的模块，其中 35 个由本前端页面展示：
+
+- **1 个模块**来自 `/api/public/site-page`（`site_prediction_modules` 表配置的"四字词语"）
+- **34 个模块**来自旧站兼容端点（通过 `fetchAllLegacyModules()` 并行获取）
+- 剩余约 4 个模块在数据库中无对应数据（旧站同样不显示）
+
+未来后端在 `site_prediction_modules` 表中添加更多记录后，React 页面会自动合并显示，无需修改前端代码。
 
 ---
 
@@ -28,16 +34,19 @@
 │  /api/public/site-page                                          │
 │    └─ site: 站点信息                                             │
 │    └─ draw: 开奖快照（期号 + 号码球 + 特码）                       │
-│    └─ modules[]: 预测模块列表                                     │
-│         └─ history[]: 历史预测行                                   │
+│    └─ modules[]: 预测模块（仅 site_prediction_modules 已配置的）    │
+│                                                                  │
+│  /api/legacy/module-rows?modes_id=X                              │
+│    └─ 旧站兼容接口：通过 modes_id 查询 36+ 种不同预测表             │
 └──────────────────────┬──────────────────────────────────────────┘
-                       │ fetch (服务端)
+                       │ fetch (服务端并行)
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Next.js 前端 (port 3000)                                      │
 │  page.tsx (Server Component)                                    │
-│    └─ getPublicSitePageData() → 后端 API                        │
-│    └─ transformSitePageData() → LotteryPageData                 │
+│    ├─ getPublicSitePageData()     → 站点 + 开奖 + 已配置模块     │
+│    ├─ fetchAllLegacyModules()     → 35+ 旧模块批量获取（6并发）   │
+│    └─ merge + transformSitePageData() → LotteryPageData         │
 │    └─ HomePageClient (Client Component)                          │
 └──────────────────────┬──────────────────────────────────────────┘
                        │ props
@@ -46,9 +55,9 @@
 │  子组件                                                         │
 │  ┌─ Header ─────── 日期/农历/时钟/头图                          │
 │  ├─ NavTabs ────── 导航链接（一肖一码、四肖八码等）               │
-│  ├─ PreResultBlocks ─ 核心3模块专用渲染（两肖平特王/三期中特/双波中特）│
-│  ├─ PredictionModules ─ 通用模块渲染器（所有其他模块自动渲染）    │
-│  ├─ LotteryResult ── 开奖号码球展示                              │
+│  ├─ PreResultBlocks ─ 核心3模块专用渲染（数据来自 site-page API） │
+│  ├─ PredictionModules ─ 通用模块渲染器（所有模块自动渲染）        │
+│  ├─ LotteryResult ── 开奖结果（iframe 嵌入旧站开奖页面）          │
 │  └─ Footer ─────── 版权/返回顶部                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -64,6 +73,7 @@
 | [lib/backend-api.ts](lib/backend-api.ts) | 后端 API 客户端，封装 `fetch`，提供 `getPublicSitePageData()` |
 | [lib/site-page.ts](lib/site-page.ts) | 后端 API 响应类型定义（`PublicSitePageData`、`PublicModule` 等） |
 | [lib/lotteryData.ts](lib/lotteryData.ts) | 前端数据类型（`LotteryPageData`）+ 数据转换函数 `transformSitePageData()` |
+| [lib/legacy-modules.ts](lib/legacy-modules.ts) | **旧站模块注册表**：36+ 个端点的 modes_id 映射 + 并行获取函数 |
 
 ### 组件层
 
@@ -73,7 +83,7 @@
 | [components/NavTabs.tsx](components/NavTabs.tsx) | 导航链接（锚点跳转）+ 推广资料 | 静态配置 |
 | [components/PreResultBlocks.tsx](components/PreResultBlocks.tsx) | **两肖平特王**、**三期中特**、**双波中特** | `LotteryPageData.flatKingRows / threeIssueRows / doubleWaveRows` |
 | [components/PredictionModules.tsx](components/PredictionModules.tsx) | 所有其他预测模块（通用渲染器） | `LotteryPageData.rawModules` |
-| [components/LotteryResult.tsx](components/LotteryResult.tsx) | 开奖号码球（6 普通球 + 1 特码球） | `LotteryPageData.resultBalls / specialBall` |
+| [components/LotteryResult.tsx](components/LotteryResult.tsx) | 开奖结果（iframe 嵌入旧站开奖页面） | iframe（admin.shengshi8800.com） |
 | [components/InfoCard.tsx](components/InfoCard.tsx) | 信息卡片（如"一肖中特"） | `LotteryPageData.infoSections` |
 | [components/RecordRow.tsx](components/RecordRow.tsx) | 单行预测记录 | `PlainRow` |
 | [components/Footer.tsx](components/Footer.tsx) | 免责声明 + 返回顶部 | — |
@@ -82,7 +92,8 @@
 
 | 文件 | 职责 |
 |------|------|
-| [app/page.tsx](app/page.tsx) | **服务端组件**：获取 API 数据 → 转换 → 传给客户端组件 |
+| [app/page.tsx](app/page.tsx) | **服务端组件**：获取 site-page API + 旧模块数据 → 合并 → 转换 → 传给客户端组件 |
+| [lib/legacy-modules.ts](lib/legacy-modules.ts) | **旧模块注册表**：定义 36+ 个 endpoints → modes_id 映射，提供并行获取函数 |
 | [app/HomePageClient.tsx](app/HomePageClient.tsx) | **客户端组件**：状态管理（时钟、游戏切换）+ 子组件编排 |
 | [app/layout.tsx](app/layout.tsx) | 根布局：导入全局 CSS + 旧站 CSS |
 
@@ -114,12 +125,19 @@ rawModules      ← modules[]（完整副本）
 
 ## 如何添加新的预测模块
 
-### 场景一：后端已配置新模块
+### 场景一：后端已配置新模块（site_prediction_modules 表）
 
 1. 在 `backend` 的 `site_prediction_modules` 表中添加新记录
 2. **无需修改前端代码**——`PredictionModules` 会自动渲染新模块
 
-### 场景二：需要专用组件渲染
+### 场景二：添加旧站样式的新模块（通过 modes_id）
+
+1. 在 `lib/legacy-modules.ts` 的 `LEGACY_MODULE_DEFS` 数组中添加一条新记录：
+   - 指定 `endpoint`（可复用已有或新建）、`modesId`、`title`、`key`、`limit`
+   - 如果旧站 JS 使用了 `web=2`，需要添加 `web: 2`
+2. **无需其他修改**——`page.tsx` 的 `fetchAllLegacyModules()` 会自动获取并渲染
+
+### 场景三：需要专用组件渲染
 
 1. 创建新的 React 组件（如 `MyNewModule.tsx`）
 2. 在 `lotteryData.ts` 的 `transformSitePageData()` 中添加 `mechanism_key` 映射
@@ -132,8 +150,8 @@ rawModules      ← modules[]（完整副本）
 
 | 对比项 | 旧站（redirect） | 新 React 版本 |
 |--------|-----------------|---------------|
-| 数据获取 | 43 个独立 JS × 各自 AJAX | 1 次调用 `/api/public/site-page` |
-| 模块数量 | 43 个（硬编码） | 动态（由后端控制） |
+| 数据获取 | 43 个独立 JS × 各自 AJAX | 1 次 site-page API + 并行获取旧模块（6 并发） |
+| 模块数量 | 43 个（硬编码） | 动态合并（site-page + 旧模块注册表，当前约 35 个） |
 | CSS | 内联 + 外部 CSS | 复用旧站 CSS 文件 |
 | 访问路径 | `/vendor/shengshi8800/index.html` | `/`（首页） |
 | 维护性 | 每个模块改 CSS/JS | 通用渲染器 + 按需专用组件 |

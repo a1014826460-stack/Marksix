@@ -328,15 +328,71 @@ def ensure_admin_tables(db_path: str | Path) -> None:
                 (_admin_user, _admin_display, hash_password(_admin_pass), _admin_role, now, now),
             )
 
-        # Migrate existing "六合彩" -> "香港彩"; add missing types
+        # ──────────────────────────────────────────────────────────
+        # 播种彩种数据（确保三种彩种存在）
+        # ──────────────────────────────────────────────────────────
+        # 将旧的 "六合彩" 统一更名为 "香港彩"
         conn.execute("UPDATE lottery_types SET name = ? WHERE name = ?", ("香港彩", "六合彩"))
-        for _lt_name, _lt_time in [("澳门彩", "21:00"), ("台湾彩", "20:30")]:
-            _exists = conn.execute("SELECT COUNT(*) AS total FROM lottery_types WHERE name = ?", (_lt_name,)).fetchone()["total"]
-            if _exists == 0:
-                conn.execute(
-                    "INSERT INTO lottery_types (name, draw_time, collect_url, status, created_at, updated_at) VALUES (?, ?, '', 1, ?, ?)",
-                    (_lt_name, _lt_time, now, now),
-                )
+
+        # 如果 "香港彩" 不存在则创建，默认采集地址为香港彩官方API
+        _hk_exists = conn.execute(
+            "SELECT COUNT(*) AS total FROM lottery_types WHERE name = ?", ("香港彩",)
+        ).fetchone()["total"]
+        if _hk_exists == 0:
+            conn.execute(
+                """
+                INSERT INTO lottery_types
+                    (name, draw_time, collect_url, status, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    "香港彩",
+                    "21:30",
+                    "https://www.lnlllt.com/api.php",
+                    now,
+                    now,
+                ),
+            )
+
+        # 如果 "澳门彩" 不存在则创建，默认采集地址为澳门彩官方API
+        _macau_exists = conn.execute(
+            "SELECT COUNT(*) AS total FROM lottery_types WHERE name = ?", ("澳门彩",)
+        ).fetchone()["total"]
+        if _macau_exists == 0:
+            conn.execute(
+                """
+                INSERT INTO lottery_types
+                    (name, draw_time, collect_url, status, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    "澳门彩",
+                    "21:00",
+                    "https://history.macaumarksix.com/history/macaujc2",
+                    now,
+                    now,
+                ),
+            )
+
+        # 如果 "台湾彩" 不存在则创建
+        # 注意：台湾彩数据来源于本地 JSON 文件导入，不需要线上采集地址（collect_url 留空）
+        _tw_exists = conn.execute(
+            "SELECT COUNT(*) AS total FROM lottery_types WHERE name = ?", ("台湾彩",)
+        ).fetchone()["total"]
+        if _tw_exists == 0:
+            conn.execute(
+                """
+                INSERT INTO lottery_types
+                    (name, draw_time, collect_url, status, created_at, updated_at)
+                VALUES (?, ?, '', 1, ?, ?)
+                """,
+                (
+                    "台湾彩",
+                    "20:30",
+                    now,
+                    now,
+                ),
+            )
 
         default_lottery_id = conn.execute(
             "SELECT id FROM lottery_types ORDER BY id LIMIT 1"
@@ -1796,7 +1852,7 @@ ADMIN_HTML = f"""<!doctype html>
   <button class="nav-item" onclick="switchTab('lotteries',this)">彩种管理</button>
   <button class="nav-item" onclick="switchTab('draws',this)">开奖管理</button>
   <button class="nav-item" onclick="switchTab('sites',this)">站点管理</button>
-  <button class="nav-item" onclick="switchTab('numbers',this)">号码管理</button>
+  <button class="nav-item" onclick="switchTab('numbers',this)">静态数据管理</button>
   <button class="nav-item" onclick="switchTab('predictions',this)">预测模块</button>
   <button class="nav-item" onclick="switchTab('sitedata',this)">站点数据</button>
 </div>

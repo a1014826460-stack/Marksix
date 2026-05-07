@@ -25,7 +25,7 @@ const menuItems = [
   { icon: Trophy, label: "彩种管理", href: "/lottery-types" },
   { icon: Ticket, label: "开奖管理", href: "/draws" },
   { icon: Globe2, label: "站点管理", href: "/sites" },
-  { icon: Hash, label: "号码管理", href: "/numbers" },
+  { icon: Hash, label: "静态数据管理", href: "/numbers" },
   { icon: BarChart3, label: "预测模块", href: "/prediction-modules" },
 ]
 

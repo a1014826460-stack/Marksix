@@ -97,9 +97,15 @@ export function HomePageClient({ data }: HomePageClientProps) {
   ]
 
   /* ========== 排除已由专用组件渲染的模块 ========== */
-  // PreResultBlocks 已渲染 flatKingRows / threeIssueRows / doubleWaveRows，
-  // PredictionModules 需跳过这些 mechanism_key 避免重复
-  const preResultKeys = ["pt2xiao", "3zxt", "hllx"]
+  // PreResultBlocks 渲染 flatKingRows / threeIssueRows / doubleWaveRows，
+  // 这些数据来自 site-page API 的 pt2xiao / 3zxt / hllx 模块。
+  // 目前 site_prediction_modules 表未配置这 3 个模块，所以 site-page API
+  // 不返回它们。如果以后后端配置了，这里可以防止重复渲染。
+  //
+  // 注意：旧模块的 mechanism_key 以 legacy_ 开头（如 legacy_pt2xiao），
+  // 当前 site-page API 不返回 pt2xiao/3zxt/hllx，因此也不需要排除 legacy_ 版本。
+  // 如果 site-page API 开始返回这些模块，请同时排除 legacy_ 版本。
+  const preResultKeys: string[] = []
 
   /* ========== 滚动监听：导航栏固定 ========== */
   const [navFixed, setNavFixed] = useState(false)
@@ -137,17 +143,17 @@ export function HomePageClient({ data }: HomePageClientProps) {
         <PreResultBlocks data={data} />
       ) : null}
 
-      {/* 通用模块渲染器：渲染所有其他预测模块 */}
-      {/* excludeKeys 排除已由 PreResultBlocks 处理的模块 */}
-      <PredictionModules
-        modules={data.rawModules}
-        excludeKeys={preResultKeys}
-      />
-
       {/* ===== 开奖结果（使用 iframe 嵌入旧站开奖页面） ===== */}
       <LotteryResult
         activeGame={activeGame}
         onGameChange={setActiveGame}
+      />
+
+      {/* 通用模块渲染器：渲染所有其他预测模块 */}
+      {/* 根据当前选中的游戏类型，渲染对应彩种的预测数据 */}
+      <PredictionModules
+        modules={data.modulesByGame[activeGame] || data.rawModules}
+        excludeKeys={preResultKeys}
       />
 
       {/* ===== 底部信息 ===== */}
