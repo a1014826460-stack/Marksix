@@ -167,11 +167,18 @@ class ConnectionAdapter:
         return CursorAdapter(cursor)
 
     def executemany(self, sql_text: str, seq_of_params: Iterable[Sequence[Any]]) -> CursorAdapter:
-        cursor = self._raw.executemany(
-            self._rewrite_sql(sql_text),
-            [normalize_params(item) for item in seq_of_params],
-        )
-        return CursorAdapter(cursor)
+        if self.engine == "postgres":
+            raw_cursor = self._raw.cursor()
+            raw_cursor.executemany(
+                self._rewrite_sql(sql_text),
+                [normalize_params(item) for item in seq_of_params],
+            )
+        else:
+            raw_cursor = self._raw.executemany(
+                self._rewrite_sql(sql_text),
+                [normalize_params(item) for item in seq_of_params],
+            )
+        return CursorAdapter(raw_cursor)
 
     def commit(self) -> None:
         self._raw.commit()
