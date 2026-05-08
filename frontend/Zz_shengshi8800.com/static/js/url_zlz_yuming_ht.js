@@ -1,1 +1,0 @@
-﻿var httpApi = 'https://admin.shengshi8800.com';
