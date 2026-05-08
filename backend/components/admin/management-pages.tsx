@@ -42,7 +42,17 @@ type LotteryType = {
   name: string
   draw_time: string
   collect_url: string
+  next_time?: string
   status: boolean
+}
+
+function formatNextTime(ts: string | undefined) {
+  if (!ts) return ""
+  try {
+    const n = Number(ts)
+    if (n > 0) return new Date(n).toLocaleString("zh-CN")
+  } catch { /* ignore */ }
+  return ts
 }
 
 type Draw = {
@@ -403,6 +413,7 @@ export function LotteryTypesPageClient() {
         name: formValue(form, "name"),
         draw_time: formValue(form, "draw_time"),
         collect_url: formValue(form, "collect_url"),
+        next_time: formValue(form, "next_time"),
         status: boolValue(form, "status"),
       }),
     })
@@ -429,6 +440,7 @@ export function LotteryTypesPageClient() {
             <form className="space-y-3" onSubmit={submit}>
               <Field label="彩种名称"><Input name="name" defaultValue={editing?.name || ""} required /></Field>
               <Field label="开奖时间"><Input name="draw_time" defaultValue={editing?.draw_time || ""} placeholder="21:30" /></Field>
+              <Field label="下次开奖时间 (毫秒时间戳)"><Input name="next_time" defaultValue={editing?.next_time || ""} placeholder="1778419800000" /></Field>
               <Field label="采集地址"><Input name="collect_url" defaultValue={editing?.collect_url || ""} /></Field>
               <Field label="状态">
                 <select name="status" defaultValue={editing?.status === false ? "0" : "1"} className="h-9 rounded-md border bg-background px-3 text-sm">
@@ -446,11 +458,11 @@ export function LotteryTypesPageClient() {
 
         <Card className="space-y-4 p-4">
           <Table>
-            <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>彩种</TableHead><TableHead>开奖时间</TableHead><TableHead>采集地址</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>彩种</TableHead><TableHead>开奖时间</TableHead><TableHead>下次开奖</TableHead><TableHead>采集地址</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{row.id}</TableCell><TableCell>{row.name}</TableCell><TableCell>{row.draw_time}</TableCell><TableCell className="max-w-[280px] truncate">{row.collect_url}</TableCell><TableCell><StatusBadge value={row.status} /></TableCell>
+                  <TableCell>{row.id}</TableCell><TableCell>{row.name}</TableCell><TableCell>{row.draw_time}</TableCell><TableCell className="text-xs">{formatNextTime(row.next_time)}</TableCell><TableCell className="max-w-[200px] truncate">{row.collect_url}</TableCell><TableCell><StatusBadge value={row.status} /></TableCell>
                   <TableCell><Button variant="outline" size="sm" onClick={() => { setEditing(row); setFormOpen(true) }}>修改</Button></TableCell>
                 </TableRow>
               ))}

@@ -505,6 +505,33 @@ def list_opened_draws_in_issue_range(
 # 批量生成 & 单表重生成
 # ─────────────────────────────────────────────────────────
 
+def _compute_res_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> tuple[str, str]:
+    """根据开奖号码字符串计算 res_sx 和 res_color 逗号分隔值。"""
+    res_sx_parts: list[str] = []
+    res_color_parts: list[str] = []
+    for num_str in (numbers_str or "").split(","):
+        num_str = num_str.strip()
+        if not num_str:
+            continue
+        try:
+            num_zf = f"{int(num_str):02d}"
+        except ValueError:
+            continue
+        sx = ""
+        for z, codes in zodiac_map.items():
+            if num_zf in codes:
+                sx = z
+                break
+        res_sx_parts.append(sx)
+        col = ""
+        for c, codes in color_map.items():
+            if num_zf in codes:
+                col = c
+                break
+        res_color_parts.append(col)
+    return ",".join(res_sx_parts), ",".join(res_color_parts)
+
+
 def bulk_generate_site_prediction_data(
     db_path: str | Path,
     site_id: int,
@@ -618,27 +645,6 @@ def bulk_generate_site_prediction_data(
                         else:
                             content = ",".join(f"{i:02d}" for i in range(37, 50))
 
-                        res_sx_parts = []
-                        res_color_parts = []
-                        for num_str in numbers:
-                            try:
-                                num_val = int(num_str)
-                                num_zf = f"{num_val:02d}"
-                            except ValueError:
-                                continue
-                            sx = ""
-                            for z, codes in zodiac_map.items():
-                                if num_zf in codes:
-                                    sx = z
-                                    break
-                            res_sx_parts.append(sx)
-                            col = ""
-                            for c, codes in color_map.items():
-                                if num_zf in codes:
-                                    col = c
-                                    break
-                            res_color_parts.append(col)
-
                         row_data = build_generated_prediction_row_data(
                             mode_id=mode_id,
                             lottery_type=str(lottery_type),
@@ -648,10 +654,9 @@ def bulk_generate_site_prediction_data(
                             res_code=safe_res_code or "",
                             generated_content=content,
                         )
-                        # 补充 res_sx / res_color 以通过 require_result_consistency 过滤
-                        row_data["res_sx"] = ",".join(res_sx_parts)
-                        row_data["res_color"] = ",".join(res_color_parts)
-
+                        row_data["res_sx"], row_data["res_color"] = _compute_res_fields(
+                            draw["numbers_str"], zodiac_map, color_map,
+                        )
                         stored = upsert_created_prediction_row(conn, table_name, row_data)
                         if stored.get("action") == "inserted":
                             module_report["inserted"] += 1
@@ -676,6 +681,11 @@ def bulk_generate_site_prediction_data(
                         web_value="4",
                         res_code=safe_res_code or "",
                         generated_content=result["prediction"]["content"],
+                    )
+                    # 统一补充 res_sx / res_color，避免 enrich_prediction_result_fields
+                    # 因 public 表无历史样本而跳过填充
+                    row_data["res_sx"], row_data["res_color"] = _compute_res_fields(
+                        draw["numbers_str"], zodiac_map, color_map,
                     )
                     stored = upsert_created_prediction_row(conn, table_name, row_data)
                     if stored.get("action") == "inserted":
