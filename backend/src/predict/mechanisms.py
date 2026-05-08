@@ -82,7 +82,7 @@ SIZE_NUMBER_MAP: dict[str, list[str]] = {
 TABLE_FIXED_MAPPING_KEYS: dict[str, str] = {
     "mode_payload_12": "头",
     "mode_payload_20": "尾",
-    "mode_payload_26": "琴棋书画",
+    "mode_payload_26": "四艺生肖",
     "mode_payload_28": "单双",
     "mode_payload_38": "波色",
     "mode_payload_53": "五行肖",
@@ -468,7 +468,7 @@ def build_qinqi_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]
     生肖，例如 9 个生肖即 3 个标签各 3 个生肖。因此这里按 title 顺序切片还原映射。
     """
     labels = ("琴", "棋", "书", "画")
-    fixed_mapping = load_fixed_value_map(conn, "琴棋书画", labels)
+    fixed_mapping = load_fixed_value_map(conn, "四艺生肖", labels)
     if fixed_mapping and all(fixed_mapping.get(label) for label in labels):
         return fixed_mapping
 
@@ -574,13 +574,16 @@ def format_zodiac_groups(table_name: str, labels: tuple[str, ...]):
     return formatter
 
 
-def format_qinqi_content(labels: tuple[str, ...], conn: sqlite3.Connection) -> str:
-    """琴棋书画原始 content 是按标签展开后的生肖字符串。"""
+def format_qinqi_content(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
+    """琴棋书画返回 title（标签）和 content（展开后的生肖）。"""
     mapping = build_qinqi_value_map(conn)
     values: list[str] = []
     for label in labels:
         values.extend(mapping.get(label, ()))
-    return ",".join(values)
+    return {
+        "title": ",".join(labels),
+        "content": ",".join(values),
+    }
 
 
 def format_xiao_pair(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
@@ -1413,7 +1416,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_parser=parse_zodiac_content,
         content_formatter=format_qinqi_content,
         hit_checker=contains_hit,
-        labels_loader=labels_from_fixed("琴棋书画", ("琴", "棋", "书", "画")),
+        labels_loader=labels_from_fixed("四艺生肖", ("琴", "棋", "书", "画")),
         explanation=(
             "琴棋书画把生肖分为琴、棋、书、画四类，每次选择三类。",
             "该表 title 存预测标签，content 存按标签展开的生肖；脚本用 title/content 还原映射。",
@@ -3566,14 +3569,13 @@ _title_configs_loaded = False
 def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_PATH) -> None:
     """在服务启动时加载动态预测配置。
 
-    仅在首次调用时执行；后续调用直接返回。
     传入实际数据库路径（如 PostgreSQL DSN），避免依赖本地 SQLite。
     """
     global _title_configs_loaded
-    if _title_configs_loaded:
-        return
-    PREDICTION_CONFIGS.update(build_title_prediction_configs(db_path))
+    dynamic = build_title_prediction_configs(db_path)
+    PREDICTION_CONFIGS.update(dynamic)
     _title_configs_loaded = True
+    print(f"[init] Loaded {len(dynamic)} dynamic prediction configs from {db_path}, total: {len(PREDICTION_CONFIGS)}")
 
 
 def supported_prediction_keys() -> tuple[str, ...]:

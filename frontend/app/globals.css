@@ -427,25 +427,25 @@ a {
 /* ---- 旧站开奖 iframe（对应 kj.js 中的 .KJ-IFRAME） ---- */
 .KJ-IFRAME {
   display: block;
-  height: 190px;
-  margin-bottom: 12px;
+  height: 160px;
+  margin-bottom: 2px;
 }
 @media screen and (max-width: 650px) and (min-width: 501px) {
-  .KJ-IFRAME { height: 230px; }
+  .KJ-IFRAME { height: 210px; }
 }
 @media screen and (max-width: 500px) and (min-width: 451px) {
-  .KJ-IFRAME { height: 230px; }
+  .KJ-IFRAME { height: 210px; }
 }
 @media screen and (max-width: 450px) and (min-width: 351px) {
-  .KJ-IFRAME { height: 240px; }
+  .KJ-IFRAME { height: 220px; }
 }
 @media screen and (max-width: 350px) {
-  .KJ-IFRAME { height: 250px; }
+  .KJ-IFRAME { height: 230px; }
 }
 
 .waibox {
   clear: both;
-  margin-top: 12px !important;
+  margin-top: 1px !important;
 }
 
 /* ============================================================
@@ -826,7 +826,7 @@ a {
 
 .legacy-shell-frame {
   width: 100%;
-  min-height: 720px;
+  min-height: 420px;
   border: 1px solid #d7e2d8;
   border-radius: 16px;
   background: #ffffff;

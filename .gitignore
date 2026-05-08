@@ -20,8 +20,11 @@ yarn-error.log*
 *.log
 *.bak
 
-# env files
-.env*
+# env files (allow .env.example template)
+.env
+.env.local
+.env.production
+.env.development
 
 # vercel
 .vercel
@@ -38,9 +41,7 @@ next-env.d.ts
 # 临时/生成 JSON 数据文件（不影响 package.json / tsconfig.json 等）
 tmp_*.json
 *_dump*.json
-# 日志
-*.log
-*.json
+# 日志（*.log 已在 debug 段定义，此处保留以覆盖子目录）
 
 # 爬虫采集数据
 data/lottery_data/

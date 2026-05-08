@@ -118,3 +118,23 @@ site:
 ```
 
 修改配置后重启 API 服务生效。
+
+问题预测模块：
+1，一语破天机 mode_id=244 无法与public.text_history_mappings建立映射
+返回API
+{"id": 175, "web": 2, "type": 3, "term": "295", "year": "2025", "content": "黑夜冬季微风凉，初夏一到细雨香", "res_code": "38,21,36,10,47,44,07", "res_sx": "龙,鸡,马,猴,羊,狗,猪", "status": 1, "res_color": "green,green,blue,blue,blue,green,red"}
+2，绝杀一尾 mode_id=20 生成预测数据过于重复
+返回API
+{"id": 1556, "web": "5", "type": "3", "year": "2026", "term": "125", "res_code": "04,27,38,11,45,08,40", "res_sx": "兔,龙,蛇,猴,狗,猪,兔", "res_color": "blue,green,green,green,red,red,red", "status": 1, "content": "[\"2尾|02,12,22,32,42\"]"}
+3，琴棋书画 mode_id=26 public.fixed_data的映射路径
+223	"2026"	"四艺生肖"	2	"画"	2	"羊,猴,猪"
+222	"2026"	"四艺生肖"	2	"书"	2	"虎,龙,马"
+221	"2026"	"四艺生肖"	2	"棋"	2	"鼠,牛,狗"
+220	"2026"	"四艺生肖"	2	"琴"	2	"兔,蛇,鸡"
+
+返回API
+{"id": 3453, "web": 5, "type": 3, "term": "126", "year": "2026", "title": "画,琴,书", "content": "羊,猴,猪,兔,蛇,鸡,虎,龙,马", "res_code": "20,34,07,18,41,02,03", "res_sx": "猪,鸡,鼠,牛,虎,蛇,龙", "res_color": "blue,red,red,red,blue,red,blue", "status": 1}
+
+特码段数
+
+绝杀三肖

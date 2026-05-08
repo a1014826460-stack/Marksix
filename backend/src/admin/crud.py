@@ -127,16 +127,6 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
                     ),
                 )
 
-        if allowed_keys:
-            placeholders = ", ".join("?" for _ in allowed_keys)
-            conn.execute(
-                f"""
-                DELETE FROM site_prediction_modules
-                WHERE site_id = ?
-                  AND mechanism_key NOT IN ({placeholders})
-                """,
-                (current_site_id, *allowed_keys),
-            )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -621,6 +611,8 @@ def delete_number(db_path: str | Path, number_id: int) -> None:
 # ─────────────────────────────────────────────────────────────────
 
 def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str, Any]:
+    from predict.mechanisms import ensure_prediction_configs_loaded as _ensure_loaded
+    _ensure_loaded(db_path)
     ensure_admin_tables(db_path)
     site = get_site(db_path, site_id)
     with connect(db_path) as conn:
@@ -694,6 +686,8 @@ def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str,
 def add_site_prediction_module(
     db_path: str | Path, site_id: int, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    from predict.mechanisms import ensure_prediction_configs_loaded as _ensure_loaded
+    _ensure_loaded(db_path)
     ensure_admin_tables(db_path)
     now = utc_now()
     mechanism_key = str(payload.get("mechanism_key") or "").strip()

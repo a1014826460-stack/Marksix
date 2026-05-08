@@ -32,6 +32,7 @@ const SECTION_ROWS = [
     { id: "lx", label: "复式连肖" },
   ],
 ] as const
+const SHELL_TITLE = "台湾六合彩论坛"
 
 function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
@@ -69,8 +70,6 @@ function LegacyShellContent() {
   const [activeGame, setActiveGame] = useState<LotteryGame>(initialGame)
   const [anchorMap, setAnchorMap] = useState<Record<string, number>>({})
 
-  const forumTitle = useMemo(() => getForumTitle(activeGame), [activeGame])
-
   useEffect(() => {
     setActiveGame(initialGame)
   }, [initialGame])
@@ -105,7 +104,7 @@ function LegacyShellContent() {
       }}
     >
       <div className="box news-box">
-        <div className="riqi">{forumTitle}</div>
+        <div className="riqi">{SHELL_TITLE}</div>
       </div>
       <div className="box pad" id="yxym">
         <img alt="论坛头图" src="/vendor/shengshi8800/static/picture/header.jpg" width="100%" />
@@ -120,13 +119,13 @@ function LegacyShellContent() {
           boxShadow: "0 5px 10px rgba(0, 0, 0, .1)",
         }}
       >
-        <ul>
-          <li>
-            <a>
-              <b>{forumTitle}</b>
-            </a>
-          </li>
-        </ul>
+          <ul>
+            <li>
+              <a>
+              <b>{SHELL_TITLE}</b>
+              </a>
+            </li>
+          </ul>
         {SECTION_ROWS.map((row, index) => (
           <ul key={index}>
             {row.map((item) => (

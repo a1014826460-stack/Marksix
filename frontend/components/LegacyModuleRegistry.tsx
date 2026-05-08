@@ -326,6 +326,22 @@ function hList(content: string, resSx: string, resCode: string): string {
   }).join(",")
 }
 
+function getSeasonAnimals(season: string): string {
+  if (season === "春") return "兔虎龙"
+  if (season === "夏") return "羊蛇马"
+  if (season === "秋") return "狗鸡猴"
+  if (season === "冬") return "猪牛鼠"
+  return ""
+}
+
+function getArtAnimals(art: string): string {
+  if (art === "琴") return "兔蛇鸡"
+  if (art === "棋") return "鼠牛狗"
+  if (art === "书") return "虎龙马"
+  if (art === "画") return "羊猴猪"
+  return ""
+}
+
 // ===================== 五肖中特（5xiao.js）=====================
 // 旧站格式：{term}期: 五肖中特 ╠{5zodiacs}╣ 开{result}准
 // 颜色：标签teal(#008080) 内容magenta(#FF00FF) 结果blue(#0000FF)
@@ -564,7 +580,6 @@ function HblxSection({ module }: { module: PublicModule }) {
 // 完整版：表头显示季节生肖映射，行显示预测季节（高亮命中季节）
 // content: JSON ["春|兔虎龙","夏|羊蛇马","秋|狗鸡猴","冬|猪牛鼠"] 或部分
 function CxqdSection({ module }: { module: PublicModule }) {
-  const seasonMap = { "春":"兔虎龙", "夏":"羊蛇马", "秋":"狗鸡猴", "冬":"猪牛鼠" }
   return (
     <div className="box pad" id={`module-${module.mechanism_key}`}>
       <div className="list-title">台湾六合彩→<span className="legacy-red">【</span>春夏秋冬<span className="legacy-red">】</span>→</div>
@@ -585,7 +600,7 @@ function CxqdSection({ module }: { module: PublicModule }) {
                   const p = item.split('|')
                   const s = p[0].split('')[0]
                   // Yellow highlight if drawn zodiac matches this season's codes
-                  if (lastSx && p[1] && (String(p[1]).includes(lastSx) || String(seasonMap[s as keyof typeof seasonMap] || "").includes(lastSx))) {
+                  if (lastSx && p[1] && (String(p[1]).includes(lastSx) || getSeasonAnimals(s).includes(lastSx))) {
                     return `<span class="highlight">${s}</span>`
                   }
                   return s
@@ -996,8 +1011,7 @@ function QqshSection({ module }: { module: PublicModule }) {
                 arts = artLabels.map((art, i) => {
                   const grpCodes = codes.slice(i*3, (i+1)*3)
                   const resSx = String(row.raw?.res_sx || "").split(",").filter(Boolean).pop() || ""
-                  const artMap: Record<string, string> = { "琴":"兔蛇鸡", "棋":"鼠牛狗", "书":"虎龙马", "画":"羊猴猪" }
-                  if (resSx && artMap[art]?.includes(resSx)) {
+                  if (resSx && getArtAnimals(art).includes(resSx)) {
                     return `<span class="highlight">${art}</span>`
                   }
                   return art

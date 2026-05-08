@@ -2,6 +2,7 @@ import argparse
 import itertools
 import json
 import math
+import random
 import re
 import sqlite3
 import sys
@@ -517,9 +518,13 @@ def predict(
             config.selection_groups, config.selection_widths,
         )
 
+        # 绝杀类单选模块随机化：避免每次都生成相同结果
+        is_exclude = config.hit_checker is excludes_hit
+        if is_exclude and config.label_count == 1 and len(labels) > 1:
+            predicted_labels = (random.choice(labels),)
+
         # 若传入了当期 res_code，将真实结果注入预测标签，保证必中
         latest = history[-1]
-        is_exclude = config.hit_checker is excludes_hit
         if res_code and latest.outcome and not is_exclude:
             predicted_labels = _ensure_outcome_included(
                 predicted_labels, latest.outcome, config.label_count,

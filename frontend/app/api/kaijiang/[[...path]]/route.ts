@@ -182,6 +182,7 @@ function mapStructuredTitleRows(rows: LegacyRow[]) {
       jiexi: asString(row.jiexi),
       image_url: asString(row.image_url),
       x7m14: asString(row.x7m14),
+      code: asString(row.code),
     }),
   )
 }

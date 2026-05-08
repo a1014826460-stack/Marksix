@@ -52,6 +52,11 @@ prepare_env() {
         log_info ".env 文件已存在"
     fi
 
+    # 加载 .env 变量到当前 shell
+    set -a
+    source .env
+    set +a
+
     # 检查密码是否为默认值
     if grep -q "POSTGRES_PASSWORD=change_me_in_production" .env 2>/dev/null; then
         log_warn "检测到数据库密码仍为默认值，强烈建议修改!"
