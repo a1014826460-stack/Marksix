@@ -35,8 +35,12 @@ next-env.d.ts
 *.sqlite3
 *.db
 *.sqlite
-*.json
+# 临时/生成 JSON 数据文件（不影响 package.json / tsconfig.json 等）
+tmp_*.json
+*_dump*.json
+# 日志
 *.log
+*.json
 
 # 爬虫采集数据
 data/lottery_data/

@@ -120,9 +120,9 @@ export const games: ReadonlyArray<{ key: LotteryGame; label: string }> = [
  * 与 games 分开维护，确保按钮文案、按钮样式绑定类名、切换业务逻辑彼此独立。
  */
 export const lotteryResultIframes: Readonly<Record<LotteryGame, { url: string; height: number }>> = {
-  taiwan: { url: "https://admin.shengshi8800.com/xgkj3.html", height: 130 },
-  macau: { url: "https://admin.shengshi8800.com/amkj2.html", height: 130 },
-  hongkong: { url: "https://admin.shengshi8800.com/xgkj2.html", height: 130 },
+  taiwan: { url: "/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9", height: 170 },
+  macau: { url: "/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%BD%A9", height: 170 },
+  hongkong: { url: "/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%BD%A9", height: 170 },
 }
 
 // ===================== 静态 Mock 数据 =====================

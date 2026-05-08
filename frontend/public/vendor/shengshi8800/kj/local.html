@@ -13,13 +13,25 @@
     * { margin: 0; padding: 0; }
     body { background: #fff; }
 
-    .new-KJ-TabBox-box { font-size: 16px; height: 130px; box-sizing: border-box; color:#333; padding: 8px; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif; }
+    .new-KJ-TabBox-box { font-size: 16px; min-height: 170px; box-sizing: border-box; color:#333; padding: 8px; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif; }
     .new-KJ-TabBox-box a { text-decoration: none; }
     .new-KJ-TabBox-box .kj-font-red { color: #f00 !important; }
-    .new-KJ-TabBox-box-tit { display: flex; align-items: center; height: 17px; line-height: 17px; font-size: 17px; }
-    .new-KJ-TabBox-box-tit-l {}
-    .new-KJ-TabBox-box-tit-m { flex: 1; text-align: center; font-weight: bold; }
-    .new-KJ-TabBox-box-tit-r {}
+    .new-KJ-TabBox-box-tit { display: flex; align-items: center; gap: 8px; min-height: 24px; line-height: 1.4; font-size: 17px; }
+    .new-KJ-TabBox-box-tit-l { flex: 1; min-width: 0; }
+    .new-KJ-TabBox-box-tit-r { margin-left: auto; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .beijing-time-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 1px 9px;
+      border: 1px solid #ff7a00;
+      border-radius: 4px;
+      background: linear-gradient(180deg, #fff8d8 0%, #ffe58f 100%);
+      color: #d90000;
+      font-size: 15px;
+      font-weight: 900;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 1px 4px rgba(255, 122, 0, .28);
+    }
     .new-KJ-TabBox-box-con { display: flex; margin: 8px 0; }
     .new-KJ-TabBox-box-con .kj-ball { flex: 1; display: flex; align-items: center; justify-content: center; height: 61px; text-align: center; border-radius: 4px; margin-right: 6px; box-sizing: border-box; flex-direction: column; }
     .new-KJ-TabBox-box-con .kj-ball:last-child { margin-right: 0; }
@@ -27,10 +39,21 @@
     .new-KJ-TabBox-box-con .kj-ball h2 { margin: 0; padding: 0; color: #fff; line-height: 24px; font-size: 28px; font-weight: 900; font-family: Tahoma, Geneva, sans-serif; }
     .new-KJ-TabBox-box-con .kj-ball .whsx { display: inline-block; height: 19px; line-height: 19px; margin-top: 6px; padding: 0 6px; border-radius: 2px; color: #333; font-size: 14px; background: #fff; }
     .new-KJ-TabBox-box-con .kj-add { display: flex; align-items: center; margin-right: 8px; font-size: 32px; font-weight: bold; }
-    .new-KJ-TabBox-box-foot { display: flex; align-items: center; font-size: 16px; }
-    .new-KJ-TabBox-box-foot-l { flex: 1; }
-    .new-KJ-TabBox-box-foot-r {}
-    .new-KJ-TabBox-box-foot-r-sx { display: inline-block; width: 40px; height: 20px; line-height: 20px; text-align: center; color: #fff; border-radius: 4px; background: #FF9900; }
+    .new-KJ-TabBox-box-foot { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+    .new-KJ-TabBox-box-foot-l { flex: 1; min-width: 0; }
+    .new-KJ-TabBox-box-foot-m { color: #666; font-size: 14px; white-space: nowrap; }
+    .new-KJ-TabBox-box-foot-r { margin-left: auto; }
+    .new-KJ-TabBox-box-foot-r-sx { display: inline-block; min-width: 40px; height: 20px; padding: 0 4px; line-height: 20px; text-align: center; color: #fff; border-radius: 4px; background: #FF9900; }
+    .new-KJ-TabBox-box-foot-r-sx.is-loading { opacity: .72; pointer-events: none; }
+    .refresh-state { margin-left: 6px; color: #888; font-size: 12px; }
+    .refresh-state.is-success { color: #008000; font-weight: 700; }
+    .refresh-state.is-error { color: #d90000; font-weight: 700; }
+    .new-KJ-TabBox-box.refresh-success { animation: refreshSuccessFlash 900ms ease-out; }
+    @keyframes refreshSuccessFlash {
+      0% { box-shadow: inset 0 0 0 0 rgba(255, 153, 0, 0); background: #fff; }
+      30% { box-shadow: inset 0 0 0 3px rgba(255, 153, 0, .78); background: #fff8d8; }
+      100% { box-shadow: inset 0 0 0 0 rgba(255, 153, 0, 0); background: #fff; }
+    }
     .ball-red { background: #e71607; }
     .ball-blue { background: #2389e9; }
     .ball-green { background: #1fb61d; }
@@ -40,6 +63,8 @@
     @media screen and (max-width: 650px) {
       .new-KJ-TabBox-box { font-size: 14px; }
       .new-KJ-TabBox-box-tit { font-size: 16px; }
+      .beijing-time-badge,
+      .new-KJ-TabBox-box-foot-m { font-size: 12px; }
       .new-KJ-TabBox-box-con .kj-ball { margin-right: 4px; }
       .new-KJ-TabBox-box-con .kj-ball:nth-last-child(3) { margin-right: 4px; }
       .new-KJ-TabBox-box-con .kj-ball h2 { font-size: 24px; }
@@ -49,7 +74,10 @@
     }
 
     @media screen and (max-width:450px) {
-      .new-KJ-TabBox-box-tit-m .kj-lotto-tit2 span:first-child { display: none; }
+      .new-KJ-TabBox-box-tit { align-items: flex-start; flex-wrap: wrap; }
+      .new-KJ-TabBox-box-tit-r { width: 100%; justify-content: space-between; }
+      .new-KJ-TabBox-box-foot { flex-wrap: wrap; }
+      .new-KJ-TabBox-box-foot-m { width: 100%; order: 3; white-space: normal; }
     }
   </style>
 </head>
@@ -61,9 +89,9 @@
       <div class="new-KJ-TabBox-box-tit-l">
         <span id="lotteryLabel">台湾彩</span> 第<font class="kj-font-red"><span id="q">--</span></font>期
       </div>
-      <div class="new-KJ-TabBox-box-tit-m"><div class="kj-lotto-tit2"><span></span></div></div>
       <div class="new-KJ-TabBox-box-tit-r">
-        <a id="historyLink" target="_blank" href="/vendor/shengshi8800/index.html" class="kj-font-red">查看历史记录</a>
+        <span id="beijingTime" class="beijing-time-badge">北京时间 --:--:--</span>
+        <a id="historyLink" target="_blank" href="/history?type=3" class="kj-font-red">查看历史记录</a>
       </div>
     </div>
     <div class="new-KJ-TabBox-box-con">
@@ -80,8 +108,10 @@
       <div id="statusText" class="new-KJ-TabBox-box-foot-l">
         当前期号：<font class="kj-font-red"><span id="currentIssue">--</span></font>
       </div>
+      <div id="beijingDate" class="new-KJ-TabBox-box-foot-m">星期-- ----/--/--</div>
       <div class="new-KJ-TabBox-box-foot-r">
         <a id="refreshButton" class="new-KJ-TabBox-box-foot-r-sx" style="cursor:pointer;">刷新</a>
+        <span id="refreshState" class="refresh-state"></span>
       </div>
     </div>
   </div>
@@ -95,9 +125,30 @@
       var ballPrefixIds = ["m1", "m2", "m3", "m4", "m5", "m6", "s1"];
       var zodiacPrefixIds = ["m1x", "m2x", "m3x", "m4x", "m5x", "m6x", "s1x"];
       var ballWrapIds = ["w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+      var beijingDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        weekday: "long"
+      });
+      var beijingTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
 
       function $(id) {
         return document.getElementById(id);
+      }
+
+      function updateHistoryLink() {
+        var historyLink = $("historyLink");
+        if (historyLink) {
+          historyLink.href = "/history?type=" + encodeURIComponent(String(lotteryType));
+        }
       }
 
       function pad2(value) {
@@ -123,6 +174,61 @@
         }
       }
 
+      function updateBeijingClock() {
+        var now = new Date();
+        var dateParts = beijingDateFormatter.formatToParts(now);
+        var timeText = beijingTimeFormatter.format(now);
+        var weekday = "";
+        var year = "";
+        var month = "";
+        var day = "";
+
+        for (var i = 0; i < dateParts.length; i++) {
+          var part = dateParts[i];
+          if (part.type === "weekday") weekday = part.value;
+          if (part.type === "year") year = part.value;
+          if (part.type === "month") month = part.value;
+          if (part.type === "day") day = part.value;
+        }
+
+        $("beijingTime").textContent = "北京时间 " + timeText;
+        $("beijingDate").textContent = weekday + " " + year + "-" + month + "-" + day;
+      }
+
+      function formatBeijingTime(date) {
+        return beijingTimeFormatter.format(date || new Date());
+      }
+
+      function setRefreshState(state, text) {
+        var refreshButton = $("refreshButton");
+        var refreshState = $("refreshState");
+        var resultBox = document.querySelector(".new-KJ-TabBox-box");
+        if (!refreshButton) return;
+
+        if (state === "loading") {
+          refreshButton.classList.add("is-loading");
+          refreshButton.textContent = "刷新中";
+          refreshButton.setAttribute("aria-busy", "true");
+        } else {
+          refreshButton.classList.remove("is-loading");
+          refreshButton.textContent = "刷新";
+          refreshButton.removeAttribute("aria-busy");
+        }
+
+        if (refreshState) {
+          refreshState.className = "refresh-state";
+          if (state === "done") refreshState.classList.add("is-success");
+          if (state === "error") refreshState.classList.add("is-error");
+          refreshState.textContent = text || "";
+        }
+
+        if (state === "done" && resultBox) {
+          resultBox.classList.remove("refresh-success");
+          void resultBox.offsetWidth;
+          resultBox.classList.add("refresh-success");
+        }
+      }
+
       function render(payload) {
         var issue = payload && payload.current_issue ? String(payload.current_issue) : "";
         var year = issue.length > 4 ? issue.slice(0, 4) : "";
@@ -143,6 +249,7 @@
         $("lotteryLabel").textContent = label || labelMap[lotteryType] || labelMap[3];
         $("q").textContent = term || "--";
         $("currentIssue").textContent = issue || "--";
+        updateHistoryLink();
 
         var statusText = $("statusText");
         if (statusText) {
@@ -167,9 +274,18 @@
         }
       }
 
-      async function load() {
+      async function load(options) {
+        var isManual = options && options.manual;
+        if (isManual) {
+          setRefreshState("loading", "");
+        }
+
         try {
-          var response = await fetch("/api/latest-draw?lottery_type=" + encodeURIComponent(String(lotteryType)), {
+          var query = new URLSearchParams({
+            lottery_type: String(lotteryType),
+            _ts: String(Date.now())
+          });
+          var response = await fetch("/api/latest-draw?" + query.toString(), {
             cache: "no-store"
           });
           if (!response.ok) {
@@ -177,16 +293,26 @@
           }
           var payload = await response.json();
           render(payload || {});
+          if (isManual) {
+            setRefreshState("done", "已刷新 " + formatBeijingTime(new Date()));
+          }
         } catch (error) {
           showError(error && error.message ? error.message : String(error));
+          if (isManual) {
+            setRefreshState("error", "刷新失败");
+          }
         }
       }
 
       $("refreshButton").addEventListener("click", function () {
-        load();
+        if ($("refreshButton").classList.contains("is-loading")) return;
+        load({ manual: true });
       });
 
       fillEmpty();
+      updateHistoryLink();
+      updateBeijingClock();
+      setInterval(updateBeijingClock, 1000);
       load();
     })();
   </script>

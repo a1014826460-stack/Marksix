@@ -1,6 +1,6 @@
 document.write(`
 <style>
-.KJ-TabBox { height: 166px; overflow: hidden; color:#333; background: #fff; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif;}
+.KJ-TabBox { min-height: 226px; height: auto; overflow: visible; color:#333; background: #fff; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif;}
 .KJ-TabBox ul,.KJ-TabBox li{margin:0;list-style:none;padding:0;border:0;font-size: 18px;}
 .KJ-TabBox ul { display: flex; height: 36px; padding: 8px 0 0 8px; box-sizing: border-box; border-bottom: solid 2px #FFF;}
 .KJ-TabBox li{ flex: 1; height: 26px; line-height: 26px; margin-right: 8px; text-align: center; border-radius: 4px; background: #eee; cursor: pointer;}
@@ -18,13 +18,13 @@ document.write(`
 </style>
 <div class="KJ-TabBox">
     <ul>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':190}">
     台湾彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':190}">
     澳门彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':190}">
     香港彩
     </li>
     </ul>
@@ -35,7 +35,7 @@ document.write(`
 
 <div class="waibox">
 <style>
-.waibox {text-align: center;background: linear-gradient(to top,#9C27B0,#673AB7);line-height: 55px;margin: 0;padding: 0;list-style-type: none;border: none;}
+.waibox {text-align: center;background: linear-gradient(to top,#9C27B0,#673AB7);line-height: 55px;margin: 14px 0 0;padding: 0;list-style-type: none;border: none;clear: both;}
 .waibox a:link {text-decoration: none;}
 .waibox .location_to {padding: 10px;background: beige;border-radius: 15px;color: #f44336;font-weight: 700;letter-spacing: 1px;box-shadow: 2px 2px 1px #f44336;}
 </style>
@@ -88,13 +88,13 @@ var KJTB ={
 				removeEl("kj-iframe-css");
 				var w = window.screen.availWidth;
 				if(w<=650 && w>500){
-					insert("kj-iframe-css",".KJ-IFRAME{height:170px;}");
+					insert("kj-iframe-css",".KJ-IFRAME{height:230px;}");
 				}else if(w<=500 && w>450){
-					insert("kj-iframe-css",".KJ-IFRAME{height:150px;}");
+					insert("kj-iframe-css",".KJ-IFRAME{height:230px;}");
 				}else if(w<=450 && w>350){
-					insert("kj-iframe-css",".KJ-IFRAME{height:140px;}");
+					insert("kj-iframe-css",".KJ-IFRAME{height:240px;}");
 				}else if(w<=350){
-					insert("kj-iframe-css",".KJ-IFRAME{height:130px;}");
+					insert("kj-iframe-css",".KJ-IFRAME{height:250px;}");
 				}
 			},false);
 		});

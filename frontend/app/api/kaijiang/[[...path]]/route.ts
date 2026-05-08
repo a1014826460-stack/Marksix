@@ -132,7 +132,9 @@ function findTextMappingPayload(row: LegacyRow, modesId: number, zodiacCandidate
 
   const payload = parsePayloadJson(mapping.payload_json)
   return payload || {
-    title: asString(mapping.text_content),
+    title: asString(mapping.title || mapping.text_content),
+    content: asString(mapping.content),
+    jiexi: asString(mapping.jiexi),
   }
 }
 

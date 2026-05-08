@@ -3,6 +3,7 @@ import random
 import re
 import sqlite3
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from db import connect as db_connect
@@ -897,10 +898,13 @@ def _text_history_preferred_column(conn: sqlite3.Connection, modes_id: int) -> s
     if not table_exists(conn, TEXT_HISTORY_MAPPING_TABLE):
         return None
     columns = set(_table_column_list(conn, TEXT_HISTORY_MAPPING_TABLE))
+    mode_column = "mode_id" if "mode_id" in columns else ("modes_id" if "modes_id" in columns else "")
     filters = []
     params: list[Any] = []
-    if "mode_id" in columns and modes_id >= 0:
-        filters.append("mode_id = ?")
+    if modes_id >= 0:
+        if not mode_column:
+            return None
+        filters.append(f"{quote_identifier(mode_column)} = ?")
         params.append(modes_id)
     for column in TEXT_HISTORY_COLUMN_PREFERENCE:
         if column not in columns:
@@ -921,8 +925,6 @@ def _text_history_preferred_column(conn: sqlite3.Connection, modes_id: int) -> s
         ).fetchone()
         if row:
             return column
-    if filters:
-        return _text_history_preferred_column(conn, -1)
     return None
 
 
@@ -939,11 +941,36 @@ def _random_text_history_mapping_row(
 
     columns = set(_table_column_list(conn, TEXT_HISTORY_MAPPING_TABLE))
     preferred_column = text_column or _text_history_preferred_column(conn, modes_id)
+    mode_column = "mode_id" if "mode_id" in columns else ("modes_id" if "modes_id" in columns else "")
     filters: list[str] = []
     params: list[Any] = []
-    if "mode_id" in columns and modes_id >= 0:
-        filters.append("mode_id = ?")
+    if modes_id >= 0:
+        if not mode_column:
+            return None
+        filters.append(f"{quote_identifier(mode_column)} = ?")
         params.append(modes_id)
+
+    if "payload_json" in columns or "text_content" in columns:
+        where_parts = list(filters)
+        legacy_text_parts = []
+        if "payload_json" in columns:
+            legacy_text_parts.append("COALESCE(payload_json, '') != ''")
+        if "text_content" in columns:
+            legacy_text_parts.append("COALESCE(text_content, '') != ''")
+        if legacy_text_parts:
+            where_parts.append(f"({' OR '.join(legacy_text_parts)})")
+            row = conn.execute(
+                f"""
+                SELECT *
+                FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
+                WHERE {" AND ".join(where_parts)}
+                ORDER BY RANDOM()
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+            if row:
+                return row
 
     if preferred_column and preferred_column in columns:
         where_parts = list(filters)
@@ -982,9 +1009,33 @@ def _random_text_history_mapping_row(
     if row:
         return row
 
-    if filters:
-        return _random_text_history_mapping_row(conn, -1, (), text_column)
     return None
+
+
+def _text_history_row_payload(row: Any) -> dict[str, Any]:
+    """Normalize old/new text_history_mappings rows to title/content/jiexi."""
+    result: dict[str, Any] = {}
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if "payload_json" in keys and row["payload_json"]:
+        try:
+            parsed = json.loads(str(row["payload_json"]))
+            if isinstance(parsed, dict):
+                for key in ("title", "content", "jiexi"):
+                    if parsed.get(key) not in (None, ""):
+                        result[key] = str(parsed.get(key) or "")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    for key in ("title", "content", "jiexi"):
+        if key in keys and row[key] not in (None, ""):
+            result.setdefault(key, str(row[key] or ""))
+
+    if "text_content" in keys and row["text_content"] not in (None, ""):
+        text_column = str(row["text_column"] or "").strip() if "text_column" in keys else ""
+        target_column = text_column if text_column in {"title", "content", "jiexi"} else "content"
+        result.setdefault(target_column, str(row["text_content"] or ""))
+
+    return result
 
 
 def _table_output_columns(
@@ -1064,11 +1115,7 @@ def format_text_history_mapping(title: str, modes_id: int, text_column: str | No
                 "_labels": list(labels),
             }
 
-        result: dict[str, Any] = {
-            key: str(row[key] or "")
-            for key in ("title", "content", "jiexi")
-            if key in row.keys() and row[key] not in (None, "")
-        }
+        result = _text_history_row_payload(row)
         if not result:
             source_text_column = text_column or "content"
             result[source_text_column] = title
@@ -1152,18 +1199,15 @@ def format_text_pool_jiexi(title: str, mapping_key: str):
             output_columns = _table_output_columns(conn, table_name, ("title", "content", "jiexi"))
             row = _random_text_history_mapping_row(conn, modes_id, labels, text_column)
             if row:
+                mapped_payload = _text_history_row_payload(row)
                 result: dict[str, Any] = {}
                 if "title" in output_columns:
-                    result["title"] = str(row["title"] or title) if "title" in row.keys() else title
+                    result["title"] = str(mapped_payload.get("title") or title)
                 if "content" in output_columns:
-                    content_value = ""
-                    if "content" in row.keys():
-                        content_value = str(row["content"] or "")
-                    if not content_value and text_column in row.keys():
-                        content_value = str(row[text_column] or "")
-                    result["content"] = content_value or f"{title}：{','.join(labels)}"
+                    content_value = str(mapped_payload.get("content") or "")
+                    result["content"] = content_value or f"{title}|{','.join(labels)}"
                 if "jiexi" in output_columns:
-                    jiexi_value = str(row["jiexi"] or "") if "jiexi" in row.keys() else ""
+                    jiexi_value = str(mapped_payload.get("jiexi") or "")
                     result["jiexi"] = jiexi_value or "".join(labels)
                 if not result:
                     result[text_column] = title
@@ -1177,7 +1221,7 @@ def format_text_pool_jiexi(title: str, mapping_key: str):
         if "title" in output_columns:
             result["title"] = (row or {}).get("title") or title
         if "content" in output_columns:
-            result["content"] = (row or {}).get("content") or f"{title}：{','.join(labels)}"
+            result["content"] = (row or {}).get("content") or f"{title}|{','.join(labels)}"
         if "jiexi" in output_columns:
             result["jiexi"] = (row or {}).get("jiexi") or "".join(labels)
         if not result:
@@ -3516,7 +3560,20 @@ def build_title_prediction_configs(db_path=DEFAULT_DB_PATH) -> dict[str, Predict
         return generated
 
 
-PREDICTION_CONFIGS.update(build_title_prediction_configs())
+_title_configs_loaded = False
+
+
+def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_PATH) -> None:
+    """在服务启动时加载动态预测配置。
+
+    仅在首次调用时执行；后续调用直接返回。
+    传入实际数据库路径（如 PostgreSQL DSN），避免依赖本地 SQLite。
+    """
+    global _title_configs_loaded
+    if _title_configs_loaded:
+        return
+    PREDICTION_CONFIGS.update(build_title_prediction_configs(db_path))
+    _title_configs_loaded = True
 
 
 def supported_prediction_keys() -> tuple[str, ...]:
