@@ -600,3 +600,109 @@ def delete_number(db_path: str | Path, number_id: int) -> None:
         ).fetchone()
         if not row:
             raise KeyError(f"number_id={number_id} 不存在")
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Site prediction module CRUD
+# ─────────────────────────────────────────────────────────────────
+
+def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str, Any]:
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+            FROM site_prediction_modules
+            WHERE site_id = ?
+            ORDER BY sort_order, id
+            """,
+            (site_id,),
+        ).fetchall()
+        return {
+            "site_id": site_id,
+            "modules": [dict(row) for row in rows],
+        }
+
+
+def add_site_prediction_module(
+    db_path: str | Path, site_id: int, payload: dict[str, Any]
+) -> dict[str, Any]:
+    ensure_admin_tables(db_path)
+    now = utc_now()
+    mechanism_key = str(payload.get("mechanism_key") or "").strip()
+    if not mechanism_key:
+        raise ValueError("mechanism_key 不能为空")
+    mode_id = int(payload.get("mode_id") or 0)
+    status = 1 if parse_bool(payload.get("status"), True) else 0
+    sort_order = int(payload.get("sort_order") or 0)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            INSERT INTO site_prediction_modules (
+                site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            RETURNING *
+            """,
+            (site_id, mechanism_key, mode_id, status, sort_order, now, now),
+        ).fetchone()
+        return dict(row)
+
+
+def update_site_prediction_module(
+    db_path: str | Path, site_id: int, module_id: int, payload: dict[str, Any]
+) -> dict[str, Any]:
+    ensure_admin_tables(db_path)
+    now = utc_now()
+
+    with connect(db_path) as conn:
+        existing = conn.execute(
+            "SELECT * FROM site_prediction_modules WHERE id = ? AND site_id = ?",
+            (module_id, site_id),
+        ).fetchone()
+        if not existing:
+            raise KeyError(f"module_id={module_id} 在 site_id={site_id} 下不存在")
+
+        mechanism_key = str(payload.get("mechanism_key") or existing["mechanism_key"]).strip()
+        mode_id = int(payload.get("mode_id") or existing.get("mode_id") or 0)
+        status = 1 if parse_bool(payload.get("status"), bool(existing.get("status"))) else 0
+        sort_order = int(payload.get("sort_order") or existing.get("sort_order") or 0)
+
+        row = conn.execute(
+            """
+            UPDATE site_prediction_modules
+            SET mechanism_key = ?, mode_id = ?, status = ?, sort_order = ?, updated_at = ?
+            WHERE id = ? AND site_id = ?
+            RETURNING *
+            """,
+            (mechanism_key, mode_id, status, sort_order, now, module_id, site_id),
+        ).fetchone()
+        return dict(row)
+
+
+def delete_site_prediction_module(db_path: str | Path, site_id: int, module_id: int) -> None:
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "DELETE FROM site_prediction_modules WHERE id = ? AND site_id = ? RETURNING id",
+            (module_id, site_id),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"module_id={module_id} 在 site_id={site_id} 下不存在")
+
+
+def run_site_prediction_module(db_path: str | Path, site_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_admin_tables(db_path)
+    mechanism_key = str(payload.get("mechanism_key") or "").strip()
+    if not mechanism_key:
+        raise ValueError("mechanism_key 不能为空")
+    config = get_prediction_config(mechanism_key)
+    return predict(
+        config=config,
+        res_code=str(payload.get("res_code") or "").strip() or None,
+        content=str(payload.get("content") or "").strip() or None,
+        source_table=str(payload.get("source_table") or "").strip() or None,
+        db_path=db_path,
+        target_hit_rate=float(payload.get("target_hit_rate") or DEFAULT_TARGET_HIT_RATE),
+    )

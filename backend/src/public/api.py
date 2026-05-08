@@ -12,12 +12,20 @@ _PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
 if str(_PREDICT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PREDICT_ROOT))
 
-from helpers import (
+from db import connect as db_connect  # noqa: E402
+from helpers import (  # noqa: E402
     apply_lottery_draw_overlay, build_draw_result_payload, color_name_to_key,
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
     merge_preferred_mode_payload_rows, split_csv,
 )
 from mechanisms import get_prediction_config  # noqa: E402
+from utils.created_prediction_store import (  # noqa: E402
+    CREATED_SCHEMA_NAME, created_table_exists,
+)
+
+
+def connect(db_path: str | Path) -> Any:
+    return db_connect(db_path)
 
 def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
     """从历史记录中提取特码号、生肖和波色，供前端公开页展示开奖号。"""
@@ -154,9 +162,11 @@ def load_public_module_history(
 
 
 def resolve_public_site(db_path: str | Path, site_id: int | None = None, domain: str | None = None) -> dict[str, Any]:
-    ensure_admin_tables(db_path)
+    from admin.crud import get_site as _get_site, public_site as _public_site
+    from tables import ensure_admin_tables as _ensure_tables
+    _ensure_tables(db_path)
     if site_id is not None:
-        return get_site(db_path, site_id)
+        return _get_site(db_path, site_id)
 
     normalized_domain = str(domain or "").strip().lower()
     with connect(db_path) as conn:
@@ -174,7 +184,7 @@ def resolve_public_site(db_path: str | Path, site_id: int | None = None, domain:
                 (normalized_domain,),
             ).fetchone()
             if row:
-                data = public_site(row)
+                data = _public_site(row)
                 data["enabled"] = bool(data["enabled"])
                 return data
 
@@ -190,7 +200,7 @@ def resolve_public_site(db_path: str | Path, site_id: int | None = None, domain:
         ).fetchone()
         if not row:
             raise KeyError("未找到可展示的站点配置")
-        data = public_site(row)
+        data = _public_site(row)
         data["enabled"] = bool(data["enabled"])
         return data
 

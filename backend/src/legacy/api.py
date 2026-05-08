@@ -12,12 +12,27 @@ _PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
 if str(_PREDICT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PREDICT_ROOT))
 
+from db import connect as db_connect
 from helpers import (
     build_mode_payload_filters, build_mode_payload_order_clause, load_fixed_data_maps,
     merge_preferred_mode_payload_rows, load_mode_payload_rows_from_source,
     normalize_issue_part, parse_issue_int, split_csv,
 )
 from mechanisms import get_prediction_config  # noqa: E402
+from utils.created_prediction_store import (  # noqa: E402
+    CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
+    quote_qualified_identifier as quote_schema_table, schema_table_exists,
+    table_column_names,
+)
+
+
+def connect(db_path: str | Path) -> Any:
+    return db_connect(db_path)
+
+def _ensure_tables(db_path):
+    from tables import ensure_admin_tables as _eat
+    _eat(db_path)
+
 
 def list_legacy_post_images(
     db_path: str | Path,
@@ -32,7 +47,7 @@ def list_legacy_post_images(
     We only expose persisted rows here. If a mapping is missing, the sync step in
     `ensure_admin_tables` is responsible for repairing it from disk.
     """
-    ensure_admin_tables(db_path)
+    _ensure_tables(db_path)
     with connect(db_path) as conn:
         clauses = ["enabled = 1", "source_key = ?"]
         params: list[Any] = ["legacy-post-list"]
@@ -65,7 +80,7 @@ def list_legacy_post_images(
 
 def get_legacy_current_term(db_path: str | Path, lottery_type_id: int = 1) -> dict[str, Any]:
     """旧静态页会先读取当前已开奖期号，再自行推导下一预测期。"""
-    ensure_admin_tables(db_path)
+    _ensure_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
             """

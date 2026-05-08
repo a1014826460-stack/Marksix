@@ -50,6 +50,7 @@ from db import (  # noqa: E402
     detect_database_engine,
     quote_identifier,
 )
+from mechanisms import list_prediction_configs  # noqa: E402
 
 
 def default_db_target() -> str:

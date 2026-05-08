@@ -150,6 +150,7 @@ from public.api import (  # noqa: E402
 )
 from tables import (  # noqa: E402
     database_summary,
+    default_db_target,
     ensure_admin_tables,
     sync_legacy_image_assets,
 )
