@@ -42,6 +42,7 @@ next-env.d.ts
 tmp_*.json
 *_dump*.json
 # 日志（*.log 已在 debug 段定义，此处保留以覆盖子目录）
+*.dump
 
 # 爬虫采集数据
 data/lottery_data/
