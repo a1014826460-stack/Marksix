@@ -17,6 +17,7 @@ import os
 import re
 import secrets
 import sys
+import threading
 import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -167,6 +168,37 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
     57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
     67, 68, 69, 151, 197,
 )
+
+# ── 后台异步任务 ─────────────────────────────────────────
+_background_jobs: dict[str, dict[str, Any]] = {}
+_background_jobs_lock = threading.Lock()
+
+
+def _start_background_job(target, *args, **kwargs) -> str:
+    """在后台线程中执行任务，返回 job_id。"""
+    job_id = secrets.token_hex(8)
+    with _background_jobs_lock:
+        _background_jobs[job_id] = {"status": "running", "started_at": utc_now(), "result": None}
+
+    def _run():
+        try:
+            result = target(*args, **kwargs)
+            with _background_jobs_lock:
+                _background_jobs[job_id]["status"] = "done"
+                _background_jobs[job_id]["result"] = result
+        except Exception as exc:
+            with _background_jobs_lock:
+                _background_jobs[job_id]["status"] = "error"
+                _background_jobs[job_id]["error"] = str(exc)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return job_id
+
+
+def _get_background_job(job_id: str) -> dict[str, Any] | None:
+    with _background_jobs_lock:
+        return dict(_background_jobs.get(job_id) or {}) or None
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -564,6 +596,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result = build_text_history_mappings(self.db_path, rebuild=True)
                 self.send_json(result)
                 return
+            if method == "GET" and path.startswith("/api/admin/jobs/"):
+                job_id = path.split("/")[-1]
+                job = _get_background_job(job_id)
+                if job is None:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, f"job_id={job_id} 不存在或已过期")
+                else:
+                    self.send_json(job)
+                return
             if path.startswith("/api/admin/sites/"):
                 self.handle_site_detail(method, path)
                 return
@@ -754,13 +794,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                 ensure_generation_permission(
                     auth_user_from_token(self.db_path, self.bearer_token())
                 )
-                self.send_json(
-                    bulk_generate_site_prediction_data(
-                        self.db_path,
-                        site_id,
-                        self.read_json(),
-                    )
+                body = self.read_json()
+                job_id = _start_background_job(
+                    bulk_generate_site_prediction_data,
+                    self.db_path,
+                    site_id,
+                    body,
                 )
+                self.send_json({
+                    "ok": True,
+                    "job_id": job_id,
+                    "message": "批量生成已放入后台执行，可通过 /api/admin/jobs/{job_id} 查询进度",
+                })
                 return
             if parts[6] == "run" and method == "POST":
                 ensure_generation_permission(

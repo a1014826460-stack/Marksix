@@ -43,6 +43,12 @@ npm run build
 npm run lint
 ```
 
+Public entry note:
+- Use `http://127.0.0.1:3000/legacy-shell?t=3` as the main frontend entry.
+- `http://127.0.0.1:3000/` now only redirects to `/legacy-shell?t=3`.
+- The old React homepage previously mounted at `/` is archived at `frontend/app/_archived/root-home-page.tsx` and is paused. Avoid using `/` as the working or acceptance URL.
+- Query param mapping for `legacy-shell`: `t=3` Taiwan, `t=2` Macau, `t=1` Hong Kong.
+
 ### Testing
 ```powershell
 # Run API smoke test (requires server running on port 8000)
@@ -81,7 +87,9 @@ Liuhecai/
 ├── frontend/
 │   ├── app/                       # Next.js public site pages (port 3000)
 │   │   ├── api/lottery-data/route.ts  # Proxy → Python API
-│   │   └── page.tsx               # Public site page
+│   │   ├── legacy-shell/page.tsx  # Main public entry, uses t=3/2/1 route param
+│   │   ├── _archived/root-home-page.tsx # Archived old React homepage, paused
+│   │   └── page.tsx               # Root redirect → /legacy-shell?t=3
 │   ├── components/                # UI components (Header, LotteryResult, etc.)
 │   ├── lib/
 │   │   ├── backend-api.ts         # Centralized API client for Python backend

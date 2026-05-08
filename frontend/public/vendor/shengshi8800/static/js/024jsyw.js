@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getShaWei?web=${web}&type=${type}&num=1`,
     type: 'GET',
@@ -63,7 +65,7 @@ $.ajax({
 </div>
 
 `
-        $("#jsyw").html(htmlBox)
+        $("#jsyw").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -147,3 +149,4 @@ document.writeln("			</tr>");
 document.writeln("			");
 document.writeln("			</table>");
 document.writeln("    </div>");*/
+

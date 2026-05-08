@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getXiaoma?web=${web}&type=${type}&num=7`,
     type: 'GET',
     dataType: 'json',
@@ -99,7 +101,7 @@
 </div>
 
 `
-        $("#7x1m").html(htmlBox)
+        $("#7x1m").html(replaceLegacySiteText(htmlBox))
     },
     error: function(xhr, status, error) {
         console.error('Error:', error);
@@ -327,3 +329,4 @@ document.writeln("</tr>");
 document.writeln("");
 document.writeln("</table></div>");
 document.writeln("");*/
+

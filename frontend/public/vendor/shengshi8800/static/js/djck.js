@@ -1,3 +1,5 @@
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
 ;(function () {
   var currentScript = document.currentScript
   if (!currentScript || !currentScript.parentNode) return
@@ -16,7 +18,7 @@
   ].join("\n")
 
   var wrapper = document.createElement("div")
-  wrapper.innerHTML = [
+  wrapper.innerHTML = replaceLegacySiteText([
     '<table class="djck" width="100%" border="0">',
     "  <tr>",
     '    <td class="djck1"><a href="http://shengshi8800.com/">',
@@ -29,7 +31,7 @@
     "    </a></td>",
     "  </tr>",
     "</table>",
-  ].join("")
+  ].join(""))
 
   var parent = currentScript.parentNode
   parent.insertBefore(style, currentScript)
@@ -38,3 +40,4 @@
   }
   parent.removeChild(currentScript)
 })()
+

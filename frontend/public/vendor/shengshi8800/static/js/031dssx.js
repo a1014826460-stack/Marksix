@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/dssx?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -72,7 +74,7 @@
 `
         
         
-        $(".dssxBox").html(htmlBox)
+        $(".dssxBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
@@ -101,5 +103,6 @@
 // 							style='background-color: #FFFF00'>虎</span>马猴][双：蛇牛羊兔]</span> </font>开:虎27准
 // 			</td>
 // 		</tr>
+
 
 

@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getJuzi?web=${web}&type=${type}&num=yqmtm`,
     type: 'GET',
     dataType: 'json',
@@ -36,7 +38,7 @@
 </div>
 
 `
-        $(".yqjt2").html(htmlBox)
+        $(".yqjt2").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -125,3 +127,4 @@ document.writeln("		</table>");
 document.writeln("		</div>");
 
 */
+

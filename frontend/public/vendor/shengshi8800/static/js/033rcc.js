@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getRccx?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -102,7 +104,7 @@
 </div>
 
 `
-        $(".rcc").html(htmlBox)
+        $(".rcc").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -186,3 +188,4 @@ document.writeln("			</tr>");
 document.writeln("			");
 document.writeln("			</table>");
 document.writeln("    </div>");*/
+

@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 $.ajax({
     url: httpApi + `/api/kaijiang/yyptj?web=${web}&type=${type}`, 
     type: 'GET', 
@@ -44,10 +46,11 @@ $.ajax({
 </table>`
         
         
-        $("#yyptjBox").html(htmlBox)
+        $("#yyptjBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
         console.error('Error:', error);
     }
 });   
+

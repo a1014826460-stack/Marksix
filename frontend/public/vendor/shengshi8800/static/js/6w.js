@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getWei?num=6&web=2&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -24,7 +26,7 @@
   <tbody>
  `+htmlBoxList+`</tbody></table>`
 
-            $("#6wbox").html(html)
+            $("#6wbox").html(replaceLegacySiteText(html))
         }
         
     },
@@ -32,4 +34,5 @@
         console.error('Error:', error);
     }
 });
+
 

@@ -445,7 +445,12 @@ def bulk_generate_site_prediction_data(
     site_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """为站点所有模块批量生成指定期号范围内的预测数据。"""
+    """为站点所选模块批量生成指定期号范围内的预测数据。
+
+    payload 可选字段:
+    - mechanism_keys: 要生成的模块 key 列表，为空则生成全部
+    - lottery_type / start_issue / end_issue: 期号范围
+    """
     from admin.crud import get_site as _get_site
 
     site = _get_site(db_path, site_id)
@@ -460,23 +465,44 @@ def bulk_generate_site_prediction_data(
     if start_issue > end_issue:
         raise ValueError("起始期号不能大于结束期号。")
 
+    requested_keys = payload.get("mechanism_keys") or []
+    if isinstance(requested_keys, str):
+        requested_keys = [k.strip() for k in requested_keys.split(",") if k.strip()]
+
     with connect(db_path) as conn:
         sync_site_prediction_modules(conn, site_id)
 
-        module_rows = conn.execute(
-            """
+        query = """
             SELECT id, mechanism_key, mode_id, status, sort_order
             FROM site_prediction_modules
             WHERE site_id = ?
               AND status = 1
-            ORDER BY sort_order, id
-            """,
-            (site_id,),
-        ).fetchall()
+        """
+        params: list[Any] = [site_id]
+        if requested_keys:
+            placeholders = ", ".join("?" for _ in requested_keys)
+            query += f" AND mechanism_key IN ({placeholders})"
+            params.extend(requested_keys)
+        query += " ORDER BY sort_order, id"
+
+        module_rows = conn.execute(query, params).fetchall()
 
         draws = list_opened_draws_in_issue_range(conn, lottery_type, start_issue, end_issue)
         if not draws:
             raise ValueError("指定期号范围内没有可用的已开奖数据。")
+
+        # 安全机制：台湾彩 (type=3) 未开奖期次的号码不能用于预测
+        safety_draw_map: dict[tuple[int, int], bool] = {}
+        if int(lottery_type) == 3:
+            safety_rows = conn.execute(
+                """
+                SELECT year, term, is_opened FROM lottery_draws
+                WHERE lottery_type_id = ? AND is_opened = 0
+                """,
+                (int(lottery_type),),
+            ).fetchall()
+            for sr in safety_rows:
+                safety_draw_map[(int(sr["year"]), int(sr["term"]))] = True
 
         module_reports: list[dict[str, Any]] = []
         total_inserted = 0
@@ -503,9 +529,15 @@ def bulk_generate_site_prediction_data(
 
             for draw in draws:
                 try:
+                    draw_key = (draw["year"], draw["term"])
+                    # 台湾彩未开奖期次不传 res_code，防止泄密
+                    safe_res_code: str | None = draw["numbers_str"]
+                    if draw_key in safety_draw_map:
+                        safe_res_code = None
+
                     result = predict(
                         config=config,
-                        res_code=draw["numbers_str"],
+                        res_code=safe_res_code,
                         source_table=table_name,
                         db_path=db_path,
                         target_hit_rate=DEFAULT_TARGET_HIT_RATE,
@@ -516,7 +548,7 @@ def bulk_generate_site_prediction_data(
                         year=str(draw["year"]),
                         term=str(draw["term"]),
                         web_value="4",
-                        res_code=draw["numbers_str"],
+                        res_code=safe_res_code or "",
                         generated_content=result["prediction"]["content"],
                     )
                     stored = upsert_created_prediction_row(conn, table_name, row_data)

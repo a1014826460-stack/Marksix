@@ -14,7 +14,7 @@
 "use client"
 
 import type { LotteryGame } from "@/lib/lotteryData"
-import { games } from "@/lib/lotteryData"
+import { games, lotteryResultIframes } from "@/lib/lotteryData"
 
 /** LotteryResult 组件的 Props */
 type LotteryResultProps = {
@@ -37,13 +37,6 @@ type LotteryResultProps = {
  *   3. waibox 广告横幅
  */
 export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) {
-  // iframe URL 配置（与旧站 kj.js 完全一致）
-  const IFRAME_URLS: Record<LotteryGame, { url: string; height: number }> = {
-    taiwan: { url: "https://admin.shengshi8800.com/xgkj3.html", height: 130 },
-    macau: { url: "https://admin.shengshi8800.com/amkj2.html", height: 130 },
-    hongkong: { url: "https://admin.shengshi8800.com/xgkj2.html", height: 130 },
-  }
-
   return (
     <div className="box pad" id="yxym">
       <div className="KJ-TabBox">
@@ -51,6 +44,7 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
           {games.map((game) => (
             <li
               className={activeGame === game.key ? "cur" : ""}
+              data-game={game.key}
               key={game.key}
               onClick={() => onGameChange(game.key)}
             >
@@ -59,12 +53,13 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
           ))}
         </ul>
         {games.map((game) => {
-          const iframeCfg = IFRAME_URLS[game.key]
+          const iframeCfg = lotteryResultIframes[game.key]
           const isActive = activeGame === game.key
           return (
             <div
               key={game.key}
               className={isActive ? "cur" : ""}
+              data-game-panel={game.key}
               style={{ display: isActive ? "" : "none" }}
             >
               {isActive && (

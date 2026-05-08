@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getPmxjcz?web=${web}&type=${type}&num=6`,
     type: 'GET',
     dataType: 'json',
@@ -95,7 +97,7 @@
 ${htmlBoxList}
             
         `;
-        $(".tp5").html(htmlBoxList)
+        $(".tp5").html(replaceLegacySiteText(htmlBoxList))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);
@@ -286,3 +288,4 @@ ${htmlBoxList}
  
   
  
+

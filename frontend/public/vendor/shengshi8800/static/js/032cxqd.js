@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getSjsx?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -107,7 +109,7 @@
 </div>
 
 `
-        $(".cxqd").html(htmlBox)
+        $(".cxqd").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -197,3 +199,4 @@ document.writeln("			</tr>");
 document.writeln("			");
 document.writeln("			</table>");
 document.writeln("    </div>");*/
+

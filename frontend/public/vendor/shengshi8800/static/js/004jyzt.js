@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getJyzt?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -57,7 +59,7 @@
 </div>
 
 `
-        $(".jyzt").html(htmlBox)
+        $(".jyzt").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -126,3 +128,4 @@ document.writeln("</table>");
 document.writeln("<table border='1' width='100%' class='duilianpt1' bgcolor='#ffffff' cellspacing='0' bordercolor='#FFFFFF' bordercolorlight='#FFFFFF' bordercolordark='#FFFFFF' cellpadding='2' id='table1802'>");
 document.writeln("");
 document.writeln("</table></div>");*/
+

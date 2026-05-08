@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getDjym?web=${web}&type=${type}`,
     type: 'GET',
     dataType: 'json',
@@ -72,7 +74,7 @@
 </div>
 
 `
-        $(".djym").html(htmlBox)
+        $(".djym").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -206,3 +208,4 @@ document.writeln("");
 document.writeln("</table></div>");
 
 document.writeln("");*/
+

@@ -105,12 +105,25 @@ export type LotteryPageData = {
 
 // ===================== 游戏切换标签配置 =====================
 
-/** 游戏切换标签配置，用于 LotteryResult 组件的游戏切换栏 */
-export const games: { key: LotteryGame; label: string }[] = [
+/**
+ * 游戏切换标签配置，用于首页“切换彩种”按钮。
+ * 按钮文案需要与旧站保持一致，避免前端重构时误改。
+ */
+export const games: ReadonlyArray<{ key: LotteryGame; label: string }> = [
   { key: "taiwan", label: "台湾彩" },
   { key: "macau", label: "澳门彩" },
   { key: "hongkong", label: "香港彩" },
 ]
+
+/**
+ * 开奖 iframe 配置。
+ * 与 games 分开维护，确保按钮文案、按钮样式绑定类名、切换业务逻辑彼此独立。
+ */
+export const lotteryResultIframes: Readonly<Record<LotteryGame, { url: string; height: number }>> = {
+  taiwan: { url: "https://admin.shengshi8800.com/xgkj3.html", height: 130 },
+  macau: { url: "https://admin.shengshi8800.com/amkj2.html", height: 130 },
+  hongkong: { url: "https://admin.shengshi8800.com/xgkj2.html", height: 130 },
+}
 
 // ===================== 静态 Mock 数据 =====================
 
@@ -357,4 +370,3 @@ export function moduleToRows(module: PublicModule): PlainRow[] {
     result: row.result_text,
   }))
 }
-

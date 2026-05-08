@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/sxbm?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -72,12 +74,13 @@
 `
         
         
-        $(".sxbmBox").html(htmlBox)
+        $(".sxbmBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
         console.error('Error:', error);
     }
 }); 
+
 
 
