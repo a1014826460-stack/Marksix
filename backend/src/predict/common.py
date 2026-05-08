@@ -471,6 +471,27 @@ def historical_content_hit_rate(
     hits = [hit_checker(record.outcome, record.content_labels) for record in tested]
     return sum(hits) / len(hits), len(hits)
 
+def _ensure_outcome_included(
+    labels: tuple[str, ...],
+    outcome: str,
+    label_count: int,
+) -> tuple[str, ...]:
+    """保证真实开奖结果出现在预测标签中（必中）。
+
+    若 outcome 已在 labels 中，直接返回；否则替换末尾标签。
+    outcome 可能是复合值（如 "红单"），按 `|` 拆分后逐一检查。
+    """
+    outcome_parts = [p for p in str(outcome).split("|") if p]
+    result = list(labels)
+    for part in outcome_parts:
+        if part and part not in result:
+            if len(result) >= label_count:
+                result[-1] = part
+            else:
+                result.append(part)
+    return tuple(result[:label_count])
+
+
 def predict(
     config: PredictionConfig,
     res_code: str | None = None,
@@ -489,12 +510,20 @@ def predict(
         source_history = load_history(conn, table_name, config)
         history = append_input_res_code(source_history, res_code, config.outcome_loader, conn)
 
-        # 直接用 balanced 策略 + 最近 5 期窗口生成预测，不再回测
+        # hot 策略 + 最近 5 期窗口生成预测
         lookback = min(5, max(1, len(history)))
         predicted_labels = score_labels(
-            history, labels, config.label_count, lookback, "balanced",
+            history, labels, config.label_count, lookback, "hot",
             config.selection_groups, config.selection_widths,
         )
+
+        # 若传入了当期 res_code，将真实结果注入预测标签，保证必中
+        latest = history[-1]
+        is_exclude = config.hit_checker is excludes_hit
+        if res_code and latest.outcome and not is_exclude:
+            predicted_labels = _ensure_outcome_included(
+                predicted_labels, latest.outcome, config.label_count,
+            )
 
         benchmark_rate, benchmark_size = historical_content_hit_rate(source_history, config.hit_checker)
         generated_content = config.content_formatter(predicted_labels, conn)

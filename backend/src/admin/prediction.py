@@ -103,27 +103,39 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
 
         for item in blueprints:
             existing = existing_by_key.get(str(item["key"]))
-            conn.execute(
-                """
-                INSERT INTO site_prediction_modules (
-                    site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE site_prediction_modules
+                    SET mode_id = ?, sort_order = ?, updated_at = ?
+                    WHERE site_id = ? AND mechanism_key = ?
+                    """,
+                    (
+                        int(item["mode_id"]),
+                        int(item["sort_order"]),
+                        now,
+                        current_site_id,
+                        str(item["key"]),
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(site_id, mechanism_key) DO UPDATE SET
-                    mode_id = excluded.mode_id,
-                    sort_order = excluded.sort_order,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    current_site_id,
-                    str(item["key"]),
-                    int(item["mode_id"]),
-                    int(existing["status"]) if existing else 1,
-                    int(item["sort_order"]),
-                    str(existing["created_at"]) if existing and existing.get("created_at") else now,
-                    now,
-                ),
-            )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO site_prediction_modules (
+                        site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        current_site_id,
+                        str(item["key"]),
+                        int(item["mode_id"]),
+                        1,
+                        int(item["sort_order"]),
+                        now,
+                        now,
+                    ),
+                )
 
         if allowed_keys:
             placeholders = ", ".join("?" for _ in allowed_keys)
@@ -151,14 +163,31 @@ def build_generated_prediction_row_data(
     res_code: str = "",
     generated_content: Any,
 ) -> dict[str, Any]:
-    """将 predict() 的输出转换成 created schema 可直接落库的结构。"""
+    """将 predict() 的输出转换成 created schema 可直接落库的结构。
+
+    若 term 非空，自动计算三期窗口字段 start=term, end=term-2，
+    目标表无 start/end 列时由 upsert 自动忽略。
+    """
+    web_val = str(web_value or "4")
     row_data: dict[str, Any] = {
         "type": str(lottery_type or ""),
         "year": str(year or ""),
         "term": str(term or ""),
-        "web": str(web_value or "4"),
+        "web": web_val,
+        "web_id": int(web_val) if web_val.isdigit() else 4,
+        "modes_id": int(mode_id) if mode_id else 0,
         "res_code": str(res_code or ""),
     }
+
+    # 三期窗口自动填充：start=当前term, end=start-2
+    # 直接覆盖 formatter 中的旧值，确保 start/end 始终与当前 term 一致
+    term_int = int(term) if str(term or "").strip().isdigit() else 0
+    if term_int > 0:
+        start_val = term_int
+        end_val = max(1, start_val - 2)
+        if isinstance(generated_content, dict):
+            generated_content["start"] = str(start_val)
+            generated_content["end"] = str(end_val)
 
     if isinstance(generated_content, dict):
         for key, value in generated_content.items():
