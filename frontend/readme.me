@@ -1,0 +1,637 @@
+# README 核对与新旧站预测模块格式差异
+
+## 1. 结论
+
+`frontend/README.md` 不是完全正确，主要有四类问题：
+
+1. 模块数量表述前后不一致。
+   - README 写的是“36 个模块 × 3 种彩种”和“旧站 42 个独立 JS / 新站 36 个模块”。
+   - 代码实际更接近：
+     - 旧站首页 `index.html` 一共引用 `51` 个 `static/js/*.js`。
+     - 去掉 8 个公共/基础脚本后，还剩 `43` 个数据区块脚本。
+     - 这 `43` 个里包含 `kj.js`（开奖区块）和 `tu1.js`（图库/图片区块），它们不是预测模块。
+     - 严格按“预测/资料模块”算，当前旧站首页活跃的是 `41` 个脚本。
+     - 新站 `frontend/lib/legacy-modules.ts` 里注册的是 `39` 个兼容模块定义，对应 `36` 个唯一 `modes_id`。
+
+2. “每个模块都有独立 React 渲染组件”不准确。
+   - 代码里真正挂在 `LEGACY_RENDERERS` 上的自定义渲染器是 `22` 个。
+   - 另外有 `12` 个模块只是走 `MODULE_FORMATS` 做括号/标签配置。
+   - 还有 `8` 个不在这两类里；其中 `legacy_pt2xiao` 和 `legacy_3zxt` 由 `PreResultBlocks` 处理，其余几个仍属于通用/默认渲染路径。
+
+3. README 把“脚本数量”“兼容模块定义数量”“唯一数据表数量”混写了。
+   - `43` 更像“旧站首页数据区块脚本数”。
+   - `41` 更像“真正预测/资料脚本数”。
+   - `39` 是“新站兼容定义数”。
+   - `36` 是“唯一 `modes_id` / 唯一底层表数”。
+
+4. “旧站 vs 新站”的对比结论过于绝对。
+   - “旧站 42、新站 36、每模块独立 React 组件、100% 精确复刻”这些说法，和当前代码状态不完全一致。
+
+## 2. 我核对过的关键代码位置
+
+- `frontend/README.md`
+  - 第 13 行：写成 `36 个模块 × 3 种彩种`
+  - 第 31 行：写成“详细 42 模块”
+  - 第 50、58、62、92、113、174、175 行：都沿用了 `36` 或 `42`
+- `frontend/public/vendor/shengshi8800/index.html`
+  - 实际首页脚本引用来源
+- `frontend/lib/legacy-modules.ts`
+  - 当前新站兼容模块定义，实际是 `39` 条
+- `frontend/app/api/kaijiang/[[...path]]/route.ts`
+  - 旧站兼容接口输出格式
+- `frontend/lib/site-page.ts`
+  - 新站统一 `PublicModule / PublicHistoryRow` 类型
+- `frontend/lib/lotteryData.ts`
+  - 新站前端最终消费的 `LotteryPageData / PlainRow`
+- `frontend/components/PredictionModules.tsx`
+  - 通用渲染器与 `MODULE_FORMATS`
+- `frontend/components/LegacyModuleRegistry.tsx`
+  - 自定义渲染器注册表
+- `frontend/components/PreResultBlocks.tsx`
+  - 三个核心模块的特殊渲染
+
+## 3. 旧站“43 个模块”到底是什么
+
+更准确地说：
+
+- `43` = 旧站首页去掉公共依赖脚本后，剩余的数据区块脚本数。
+- 这 `43` 个里包括：
+  - `41` 个预测/资料类脚本
+  - `1` 个开奖脚本：`kj.js`
+  - `1` 个图库脚本：`tu1.js`
+
+所以如果用户问“旧站 43 个预测模块”，这个说法不严谨。  
+更稳妥的说法应该是：
+
+- 旧站首页有 `43` 个数据区块脚本；
+- 其中真正预测/资料类脚本是 `41` 个；
+- 新站兼容层收敛成 `39` 个模块定义；
+- 底层唯一数据源是 `36` 个 `modes_id`。
+
+## 4. 旧站模块调用的数据格式
+
+旧站首页每个脚本最终都是请求类似：
+
+`/api/kaijiang/<endpoint>?web=<web>&type=<type>&num=<num>`
+
+兼容路由 `frontend/app/api/kaijiang/[[...path]]/route.ts` 会统一返回：
+
+```json
+{
+  "data": [
+    { "...": "..." }
+  ]
+}
+```
+
+也就是说，旧站脚本消费的是：
+
+- 顶层固定：`{ data: LegacyItem[] }`
+- 行结构不固定：按不同 endpoint/modes_id 变化
+
+### 4.1 旧站原始行结构的固定公共字段
+
+绝大多数模块最终都会带这 4 个公共字段：
+
+```ts
+{
+  term: string,
+  year: string,
+  res_code: string,
+  res_sx: string
+}
+```
+
+然后再叠加各模块自己的字段。
+
+### 4.2 旧站原始行结构分类
+
+#### A. 简单 `content` 型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  content: string
+}
+```
+
+适用模块很多，典型包括：
+
+- `002ptyx.js`
+- `003dxzt.js`
+- `004jyzt.js`
+- `006ptyw.js`
+- `007lxzt.js`
+- `012sbzt.js`
+- `013shzt.js`
+- `015maishazs.js`
+- `016teduan.js`
+- `018shu3x.js`
+- `020ssx.js`
+- `022jsbb.js`
+- `024jsyw.js`
+- `026sssx.js`
+- `027ptw.js`
+- `032cxqd.js`
+- `033rcc.js`
+- `1.js`
+- `5xiao.js`
+- `6w.js`
+- `9xiao.js`
+- `crc.js`
+- `cxqd.js`
+
+#### B. 三期范围型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  start: string,
+  end: string,
+  content: string
+}
+```
+
+适用模块：
+
+- `023sqzt.js`
+
+#### C. 标题/正文/附加信息型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  title: string,
+  content: string,
+  jiexi: string,
+  image_url: string,
+  x7m14: string
+}
+```
+
+适用模块：
+
+- `028sj.js`
+- `029sz.js`
+- `030ym.js`
+- `tp5.js`
+
+说明：
+
+- 并不是每个模块都会把这几个附加字段都用满。
+- 兼容路由为了兼容旧脚本，把这些字段一起放出来。
+
+#### D. 七肖七码配对型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  content: "[\"鼠|01\",\"牛|02\",...]"
+}
+```
+
+适用模块：
+
+- `001qxqm.js`
+
+说明：
+
+- `content` 是一个 JSON 字符串数组，不是普通文本。
+
+#### E. 黑白双字段型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  hei: string,
+  bai: string
+}
+```
+
+适用模块：
+
+- `035hblx.js`
+
+#### F. 琴棋书画型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  title: string,
+  content: string
+}
+```
+
+适用模块：
+
+- `021qqsh.js`
+- `011yqjt.js`
+- `017yuqian.js`
+
+说明：
+
+- `011yqjt.js` / `017yuqian.js` 都走 `getJuzi`，但 `num` 不同，呈现方式也不同。
+
+#### G. 单双分列型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  xiao_1: string,
+  xiao_2: string
+}
+```
+
+适用模块：
+
+- `031dssx.js`
+- `ds4x.js`
+
+#### H. 内容 + 头数型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  content: string,
+  tou: string
+}
+```
+
+适用模块：
+
+- `dx.js`
+
+#### I. 七肖/五行八码原生字段型
+
+格式：
+
+```ts
+{
+  term,
+  year,
+  res_code,
+  res_sx,
+  xiao: string,
+  code: string,
+  ping: string
+}
+```
+
+适用模块：
+
+- `wxbm.js`
+
+## 5. 旧站“所呈现的数据格式”
+
+旧站不是统一组件，而是每个脚本自己 `document.write(...)` 或拼表格 HTML。  
+因此“呈现的数据格式”不是单一 JSON，而是 HTML 模板格式。可以归纳为这些大类：
+
+### 5.1 标准单行预测表
+
+典型视觉：
+
+`期号: 标签 + 括号内容 + 开奖结果`
+
+例如：
+
+- `«内容»`
+- `««内容»»`
+- `〔〔内容〕〕`
+- `〈〈内容〉〉`
+- `《内容》`
+- `[内容]`
+- `【内容】`
+
+典型模块：
+
+- `002ptyx.js`
+- `003dxzt.js`
+- `004jyzt.js`
+- `007lxzt.js`
+- `009stzt.js`
+- `013shzt.js`
+- `016teduan.js`
+- `022jsbb.js`
+- `024jsyw.js`
+
+### 5.2 `ptyx11` 蓝框表
+
+典型模块：
+
+- `5xiao.js`
+- `9xiao.js`
+- `dx.js`
+- `crc.js`
+- `cxqd.js`
+
+呈现特点：
+
+- 蓝色表头
+- 每行更像“期号 | 预测 | 开奖”
+- 使用更强的颜色编码
+
+### 5.3 `bzlx` 三列表
+
+典型模块：
+
+- `6w.js`
+
+呈现特点：
+
+- 三列
+- 更像结构化数据表而不是一整句文本
+
+### 5.4 `sqbk` 四列表
+
+典型模块：
+
+- `ds4x.js`
+
+呈现特点：
+
+- 四列
+- 单肖/双肖/结果分列展示
+
+### 5.5 `qxtable` 多层表
+
+典型模块：
+
+- `001qxqm.js`
+- `008jxym.js`
+- `wxbm.js`
+
+呈现特点：
+
+- 一期内会展开多行
+- 同一期里拆成“一肖/二肖/四肖/七码”等多个子块
+
+### 5.6 文本/诗句/多行说明块
+
+典型模块：
+
+- `028sj.js`
+- `029sz.js`
+- `030ym.js`
+- `011yqjt.js`
+- `017yuqian.js`
+- `021qqsh.js`
+- `1.js`
+
+呈现特点：
+
+- 不是单行预测句
+- 常常一期开两行或多行
+- 有标题、解释、正文分层
+
+### 5.7 特殊过滤/条件渲染
+
+典型模块：
+
+- `020ssx.js`
+- `022jsbb.js`
+- `wxbm.js`
+
+特点：
+
+- 不是所有行都显示
+- 依据“是否命中”来决定显示哪些行或哪些子行
+
+### 5.8 复杂综合块
+
+典型模块：
+
+- `tp5.js`
+
+特点：
+
+- 含标题、释义、多个预测层级、主特号码
+- 是旧站里最复杂的一类呈现
+
+## 6. 新站调用的预测模块数据格式
+
+新站并不是直接让 React 去消费旧站 `{ data: [...] }` 结构。  
+它先把旧站兼容数据标准化，再交给组件。
+
+### 6.1 新站后端到前端的统一模块格式
+
+定义在 `frontend/lib/site-page.ts`：
+
+```ts
+type PublicModule = {
+  id: number
+  mechanism_key: string
+  title: string
+  default_modes_id: number
+  default_table: string
+  sort_order: number
+  status: boolean
+  history: PublicHistoryRow[]
+  cssClass?: string
+}
+
+type PublicHistoryRow = {
+  issue: string
+  year: string
+  term: string
+  prediction_text: string
+  result_text: string
+  is_opened: boolean
+  is_correct: boolean | null
+  source_web_id: number | null
+  raw: Record<string, unknown>
+}
+```
+
+也就是说，新站“预测模块调用的数据格式”已经统一成：
+
+- 模块级：`PublicModule`
+- 行级：`PublicHistoryRow`
+
+### 6.2 新站页面级最终消费格式
+
+定义在 `frontend/lib/lotteryData.ts`：
+
+```ts
+type PlainRow = {
+  issue: string
+  label: string
+  content: string
+  result: string
+}
+
+type LotteryPageData = {
+  game: "taiwan" | "macau" | "hongkong"
+  tabLabel: string
+  currentIssue: string
+  resultBalls: ResultBall[]
+  specialBall: ResultBall
+  flatKingRows: PlainRow[]
+  threeIssueRows: PlainRow[]
+  doubleWaveRows: PlainRow[]
+  rawModules: PublicModule[]
+  modulesByGame: Record<LotteryGame, PublicModule[]>
+}
+```
+
+所以新站内部实际有两层格式：
+
+1. 统一兼容层：`PublicModule / PublicHistoryRow`
+2. 页面展示层：
+   - 三个核心模块转成 `PlainRow[]`
+   - 其余模块直接保留 `PublicModule[]`
+
+## 7. 新站“所呈现的数据格式”
+
+新站最终不是 `document.write`，而是 React 渲染，分三路：
+
+### 7.1 三个核心模块
+
+由 `PreResultBlocks.tsx` 渲染：
+
+- `pt2xiao`
+- `3zxt`
+- `hllx`
+
+消费格式：
+
+```ts
+PlainRow[]
+```
+
+### 7.2 有自定义渲染器的模块
+
+由 `LegacyModuleRegistry.tsx` 注册的 React 组件渲染。  
+当前自定义渲染器有 `22` 个。
+
+消费格式：
+
+```ts
+PublicModule {
+  history: PublicHistoryRow[]
+}
+```
+
+### 7.3 通用/半通用模块
+
+由 `PredictionModules.tsx` 负责：
+
+- 先看 `LEGACY_RENDERERS`
+- 再看 `MODULE_FORMATS`
+- 最后走默认 `duilianpt1`
+
+消费格式同样是：
+
+```ts
+PublicModule {
+  history: PublicHistoryRow[]
+}
+```
+
+只是表现层从“旧站手写 HTML”变成了：
+
+- React 组件
+- `module.history.map(...)`
+- 通过 `prediction_text` / `result_text` / `is_correct` / `raw` 决定样式
+
+## 8. 旧站 vs 新站格式差异
+
+### 8.1 调用格式差异
+
+旧站：
+
+- 每个 JS 单独请求自己的 `/api/kaijiang/<endpoint>`
+- 返回 `{ data: [...] }`
+- 行字段随模块变化，比较松散
+
+新站：
+
+- 服务端先取 `/api/public/site-page`
+- 再批量取兼容模块
+- 统一转换成 `PublicModule / PublicHistoryRow`
+- 页面再按需转换成 `LotteryPageData / PlainRow`
+
+### 8.2 呈现格式差异
+
+旧站：
+
+- `document.write`
+- jQuery/AJAX
+- 每个脚本自己拼 HTML
+- 同一数据源可能被两个脚本用不同模板渲染
+
+新站：
+
+- React 组件
+- 类型化数据
+- 统一按 `mechanism_key` 分发
+- 仍保留多套视觉，但底层数据格式已经收敛
+
+### 8.3 数量差异
+
+- 旧站首页数据区块脚本：`43`
+- 旧站严格预测/资料脚本：`41`
+- 新站兼容模块定义：`39`
+- 新站唯一底层 `modes_id`：`36`
+
+## 9. 对 README 的更正建议
+
+如果要把 `frontend/README.md` 改准确，建议至少改成下面这个口径：
+
+1. 不要直接写“旧站 42 / 新站 36”。
+2. 改成：
+   - 旧站首页有 `43` 个数据区块脚本，其中预测/资料类脚本 `41` 个；
+   - 新站兼容层注册了 `39` 个模块定义，对应 `36` 个唯一 `modes_id`。
+3. 不要写“每个模块都已有独立 React 渲染组件”。
+4. 改成：
+   - 当前一部分模块走 `LegacyModuleRegistry` 自定义渲染器；
+   - 一部分走 `MODULE_FORMATS`；
+   - 少数仍走默认/核心渲染路径。
+
+## 10. 最终回答
+
+针对你原来的 4 个问题，结论可以直接概括为：
+
+1. `frontend/README.md` 不完全正确，尤其是模块数量和“每模块独立 React 组件”的说法不准确。
+2. 旧站脚本调用的是 `{ data: [...] }` 结构，但 `data[]` 里的行字段并不统一，会按模块分成 `content` 型、`start/end` 型、`title/content` 型、`hei/bai` 型、`xiao/code` 型等。
+3. 新站调用的不是旧站松散结构，而是统一后的 `PublicModule / PublicHistoryRow`；三个核心模块再转成 `PlainRow[]` 呈现。
+4. 本文件就是本次核对得到的差异记录。

@@ -223,7 +223,7 @@ def load_fixed_value_map(
         SELECT id, name, code
         FROM fixed_data
         WHERE sign = ?
-        ORDER BY CAST(id AS INTEGER), rowid
+        ORDER BY CAST(id AS INTEGER)
         """,
         (mapping_key,),
     ).fetchall()
@@ -575,7 +575,11 @@ def choose_strategy(
 
     candidates: list[StrategyResult] = []
     max_lookback = min(80, len(history) - 1)
-    for lookback in range(5, max_lookback + 1):
+    # 步长采样：近端窗口逐值测试，远端窗口以步长 5 采样，大幅减少回测次数
+    lookback_samples = list(range(5, 21)) + list(range(25, max_lookback + 1, 5))
+    if max_lookback not in lookback_samples:
+        lookback_samples.append(max_lookback)
+    for lookback in sorted(set(lookback_samples)):
         for strategy in ("hot", "cold", "hybrid", "anti_recent", "balanced"):
             result = backtest_strategy(
                 history,

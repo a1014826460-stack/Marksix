@@ -1,34 +1,27 @@
 /**
  * 通用预测模块渲染器 — PredictionModules.tsx
  * ---------------------------------------------------------------
- * 职责：渲染后端 /api/public/site-page 返回的所有预测模块。
+ * 职责：渲染所有预测模块，按 mechanism_key 分发到自定义渲染器，
+ *       或使用通用 duilianpt1 格式渲染。
  *
- * 每个模块按照旧站格式渲染：
- *   ┌──────────────────────────────────────┐
- *   │  .list-title  模块标题               │
- *   ├──────────────────────────────────────┤
- *   │  期号: 预测内容 → 开:结果            │
- *   │  期号: 预测内容 → 开:结果            │
- *   └──────────────────────────────────────┘
+ * 渲染优先级：
+ *   1. LEGACY_RENDERERS[mechanism_key] — 注册表中的自定义渲染器
+ *   2. MODULE_FORMATS[mechanism_key]   — 括号样式配置
+ *   3. 默认 duilianpt1 通用格式
  *
- * 使用与旧站完全相同的 CSS 类名：
- *   - .box.pad     — 模块外层容器
- *   - .list-title  — 模块标题栏
- *   - .duilianpt1  — 预测数据表格
- *   - .zl           — 预测内容高亮
- *
- * 数据来源：
- *   - 从 page.tsx 的 transformSitePageData() 获取 rawModules
- *   - rawModules 是后端 /api/public/site-page 返回的 modules[] 数组
- *
- * 扩展方式：
- *   如需对特定 mechanism_key 使用自定义渲染，只需在此文件中
- *   添加对应的 key → 组件映射即可，无需改动其他文件。
+ * 旧站渲染格式（匹配各 JS 文件的 HTML 模板）：
+ *   ┌────────────────────────────────────────────────────┐
+ *   │  .list-title 台湾六合彩论坛『模块标题』           │
+ *   ├────────────────────────────────────────────────────┤
+ *   │  269期: 预测内容 开:结果准                         │
+ *   │  268期: 预测内容 开:结果准                         │
+ *   └────────────────────────────────────────────────────┘
  */
 
 "use client"
 
 import type { PublicModule } from "@/lib/site-page"
+import { LEGACY_RENDERERS } from "./LegacyModuleRegistry"
 
 /** PredictionModules 组件的 Props */
 type PredictionModulesProps = {
@@ -38,67 +31,285 @@ type PredictionModulesProps = {
   excludeKeys?: string[]
 }
 
+// ===================== 模块格式配置 =====================
+
+type ModuleFormatConfig = {
+  /** 内容前的标签文字（如 "必中六肖"、"灭庄三行"） */
+  label?: string
+  /** 开奖结果前缀（旧站统一用 "开" 或 "开:"） */
+  resultPrefix?: string
+  /** 是否总是显示 "准" 后缀（旧站行为） */
+  alwaysZhun?: boolean
+  /** 内容前的左括号样式 */
+  leftBracket?: string
+  /** 内容后的右括号样式 */
+  rightBracket?: string
+  /** 表格 CSS 类名覆盖（如 "ptyx11", "bzlx", "sqbk"） */
+  tableClass?: string
+  /** 是否对命中内容做黄色高亮 */
+  highlight?: boolean
+  /** 模块标题覆盖 */
+  title?: string
+  /** 是否为 bracket 格式（九肖一码用【】括起所有内容） */
+  bracket?: boolean
+}
+
+const DEFAULT_FORMAT: ModuleFormatConfig = {
+  leftBracket: "",
+  rightBracket: "",
+  resultPrefix: "开:",
+  alwaysZhun: false,
+}
+
+// ★ 关键配置：所有使用通用 duilianpt1 渲染的模块在此定义括号和标签
+const MODULE_FORMATS: Record<string, ModuleFormatConfig> = {
+  // ==================== Category A: 简单 duilianpt1 + 括号 ====================
+
+  // 六肖中特 → 旧站 007lxzt.js
+  legacy_lxzt: {
+    label: "必中六肖",
+    leftBracket: "«",
+    rightBracket: "»",
+    resultPrefix: "开",
+    alwaysZhun: true,
+  },
+
+  // 三头中特 → 旧站 009stzt.js
+  legacy_3tou: {
+    label: "台湾三头",
+    leftBracket: "«",
+    rightBracket: "»",
+    resultPrefix: "开",
+    alwaysZhun: true,
+  },
+
+  // 心特（三行中特）→ 旧站 013shzt.js
+  legacy_xingte: {
+    label: "灭庄三行",
+    leftBracket: "«",
+    rightBracket: "»",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // 平特一肖 → 旧站 002ptyx.js
+  legacy_ptyx: {
+    label: "平特一肖",
+    leftBracket: "««",
+    rightBracket: "»»",
+    resultPrefix: "开",
+    alwaysZhun: true,
+  },
+
+  // 平特尾 → 旧站 006ptyw.js
+  legacy_ptyw: {
+    label: "平特一尾",
+    leftBracket: "《",
+    rightBracket: "》",
+    resultPrefix: "开",
+    alwaysZhun: true,
+  },
+
+  // 绝杀一尾 → 旧站 024jsyw.js
+  legacy_shawei: {
+    label: "绝杀一尾",
+    leftBracket: "→[",
+    rightBracket: "]",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ★ 新增：大小中特 → 旧站 003dxzt.js — 〔〔内容〕〕 括号
+  legacy_dxzt: {
+    label: "精准大小",
+    leftBracket: "〔〔",
+    rightBracket: "〕〕",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ★ 新增：家野中特 → 旧站 004jyzt.js — 〈〈内容〉〉 括号
+  legacy_jyzt: {
+    label: "火爆家野",
+    leftBracket: "〈〈",
+    rightBracket: "〉〉",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ★ 新增：双波中特 → 旧站 012sbzt.js（已在 PreResultBlocks 渲染，此处作后备）
+  legacy_hllx: {
+    label: "双波中特",
+    leftBracket: "«",
+    rightBracket: "»",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ==================== Category F: 特殊格式 ====================
+
+  // ★ 新增：特段 → 旧站 016teduan.js
+  legacy_teduan: {
+    label: "开特码段",
+    leftBracket: "【",
+    rightBracket: "】",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ★ 新增：单双四肖 → 旧站 031dssx.js — [单：4肖][双：4肖]
+  legacy_dssx: {
+    label: "",
+    leftBracket: "[",
+    rightBracket: "]",
+    resultPrefix: "开:",
+    alwaysZhun: true,
+  },
+
+  // ★ 新增：九肖一码（精选九肖暂用通用格式，后续用自定义渲染器替换）
+  legacy_9x1m: {
+    bracket: true,
+    resultPrefix: "开:",
+  },
+
+  // ==================== Category E: 文本模块（legacy-module-text） ====================
+
+  // 一句真言、欲钱买特码等通过 tableClass 在 legacy-modules.ts 中指定
+  // 这些模块的 cssClass 已在定义中设为 "duilianpt1 legacy-module-text"
+}
+
+// ===================== 渲染子组件 =====================
+
 /**
- * 渲染单个模块的表格行
- * 格式：期号: 预测内容  开:结果
- *
- * @param issue     - 期号（如 "124期"）
- * @param content   - 预测内容（如 "虎羊" 或 JSON 数组）
- * @param result    - 开奖结果文本（如 "蛇14"）
- * @param isCorrect - 预测正确性：true=准, false=不准, null=待开奖
+ * 获取命中高亮 HTML
+ * 对预测内容中匹配开奖生肖的字符添加黄色背景
  */
-function ModuleRow({ issue, content, result, isCorrect }: {
-  issue: string; content: string; result: string; isCorrect: boolean | null
+function getHighlightedContent(content: string, resSx: string, isCorrect: boolean | null): string {
+  if (!isCorrect || !resSx) return content
+  const sxList = resSx.split(",").filter(Boolean).map(s => s.trim())
+  const matching = new Set(sxList)
+  const ZODIAC_SET = new Set(["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"])
+
+  return content.split("").map(char => {
+    if (ZODIAC_SET.has(char) && matching.has(char)) {
+      return `<span class="highlight">${char}</span>`
+    }
+    return char
+  }).join("")
+}
+
+function ModuleRow({ issue, content, result, isCorrect, format, resSx }: {
+  issue: string; content: string; result: string; isCorrect: boolean | null; format?: ModuleFormatConfig; resSx?: string
 }) {
+  const fmt = format || DEFAULT_FORMAT
+
   // 尝试解析 JSON 数组内容（六尾中特、九肖一码等）
   let parsedItems: string[] | null = null
   try {
     const parsed = JSON.parse(content)
     if (Array.isArray(parsed)) parsedItems = parsed
-  } catch { /* 不是 JSON，保持普通文本 */ }
+  } catch { /* not JSON */ }
 
-  // 结果文字颜色：命中=红, 未命中=黑, 待开奖=灰
-  const resultColor = isCorrect === null ? "#999" : isCorrect ? "#FF0000" : "#000"
-  const resultSuffix = isCorrect === null ? "" : isCorrect ? "✓" : "✗"
+  const resultClass = isCorrect === null ? "result-pending" : isCorrect ? "result-hit" : "result-miss"
+  const resultText = result === "待开奖" ? "？00" : result
 
-  return (
-    <tr>
-      <td>
-        <span className="blue-text">{issue}:</span>
-        {parsedItems ? (
-          /* JSON 数组格式（六尾中特、九肖一码等）分行展示 */
+  let resultSuffix = ""
+  if (fmt.alwaysZhun) {
+    resultSuffix = isCorrect !== null ? "准" : ""
+  } else {
+    resultSuffix = isCorrect === null ? "" : isCorrect ? " 准" : " 错"
+  }
+
+  // bracket 模式（九肖一码）
+  if (fmt.bracket && parsedItems) {
+    const bracketContent = `【${parsedItems.join("")}】`
+    return (
+      <tr>
+        <td>
+          <span className="blue-text">{issue}:</span>
+          <span className="zl">{bracketContent}</span>
+          {" "}{fmt.resultPrefix || "开:"}<span className={resultClass}>{resultText}{resultSuffix}</span>
+        </td>
+      </tr>
+    )
+  }
+
+  // JSON 数组格式
+  if (parsedItems) {
+    return (
+      <tr>
+        <td>
+          <span className="blue-text">{issue}:</span>
           <div className="legacy-json-content">
             {parsedItems.map((item, i) => (
               <span key={i} className="legacy-json-item">{item}</span>
             ))}
           </div>
+          {" "}{fmt.resultPrefix || "开:"}<span className={resultClass}>{resultText}{resultSuffix}</span>
+        </td>
+      </tr>
+    )
+  }
+
+  // 普通文本格式
+  return (
+    <tr>
+      <td>
+        <span className="blue-text">{issue}:</span>
+        {fmt.label ? (
+          <>
+            <span className="black-text">{fmt.label}</span>
+            {fmt.leftBracket && <span className="zl">{fmt.leftBracket}</span>}
+            <span className="zl" dangerouslySetInnerHTML={{
+              __html: fmt.highlight
+                ? getHighlightedContent(content, resSx || "", isCorrect || false)
+                : content
+            }} />
+            {fmt.rightBracket && <span className="black-text">{fmt.rightBracket}</span>}
+          </>
         ) : (
-          /* 普通文本格式 */
-          <span className="zl">{content}</span>
+          <>
+            {fmt.leftBracket && <span className="zl">{fmt.leftBracket}</span>}
+            <span className="zl" dangerouslySetInnerHTML={{
+              __html: fmt.highlight
+                ? getHighlightedContent(content, resSx || "", isCorrect || false)
+                : content
+            }} />
+            {fmt.rightBracket && <span className="black-text">{fmt.rightBracket}</span>}
+          </>
         )}
-        {" "}开:<span style={{ color: resultColor }}>{result}{resultSuffix}</span>
+        {" "}{fmt.resultPrefix || "开:"}<span className={resultClass}>{resultText}{resultSuffix}</span>
       </td>
     </tr>
   )
 }
 
-/**
- * 渲染单个预测模块区块
- * 视觉上与旧站完全一致：box → list-title → duilianpt1 表格
- */
+// ===================== 主渲染器 =====================
+
 function ModuleSection({ module }: { module: PublicModule }) {
-  // 为空时返回 null，不渲染空区块
   if (!module.history || module.history.length === 0) return null
+
+  // 优先级 1: 自定义渲染器（注册表中查找）
+  const CustomRenderer = LEGACY_RENDERERS[module.mechanism_key]
+  if (CustomRenderer) {
+    return <CustomRenderer module={module} />
+  }
+
+  // 优先级 2: MODULE_FORMATS 配置
+  const format = MODULE_FORMATS[module.mechanism_key] || DEFAULT_FORMAT
+
+  // ★ 重要：如果模块的 tableClass 包含 ptyx11/bzlx/sqbk，应使用自定义渲染器
+  // 目前这些模块暂用通用格式，后续迁移到注册表
 
   return (
     <div className="box pad" id={`module-${module.mechanism_key}`}>
       <div className="list-title">
-        {module.title}
+        {format.title || module.title}
       </div>
       <table
         border={1}
         width="100%"
-        className={module.cssClass || "duilianpt1"}
+        className={module.cssClass || format.tableClass || "duilianpt1"}
         bgcolor="#ffffff"
         cellSpacing={0}
         cellPadding={2}
@@ -111,6 +322,8 @@ function ModuleSection({ module }: { module: PublicModule }) {
               content={row.prediction_text}
               result={row.result_text}
               isCorrect={row.is_correct}
+              resSx={String(row.raw?.res_sx || "")}
+              format={format}
             />
           ))}
         </tbody>
@@ -121,22 +334,8 @@ function ModuleSection({ module }: { module: PublicModule }) {
 
 /**
  * 通用预测模块渲染器 — 主组件
- * ---------------------------------------------------------------
- * 遍历 rawModules 数组，为每个模块渲染一个区块。
- * 如果模块的 mechanism_key 在 excludeKeys 中，则跳过
- * （避免与 PreResultBlocks 等专用组件产生重复渲染）。
- *
- * @param props.modules      - 后端返回的完整模块列表
- * @param props.excludeKeys  - 跳过的 mechanism_key 列表
- *
- * 用法示例：
- *   <PredictionModules
- *     modules={pageData.rawModules}
- *     excludeKeys={["pt2xiao", "3zxt", "hllx"]}
- *   />
  */
 export function PredictionModules({ modules, excludeKeys = [] }: PredictionModulesProps) {
-  // 过滤掉空模块和已由其他组件渲染的模块
   const visibleModules = modules.filter(
     (m) => m.history && m.history.length > 0 && !excludeKeys.includes(m.mechanism_key)
   )

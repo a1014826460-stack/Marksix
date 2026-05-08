@@ -87,7 +87,7 @@ def _merge_defaults(loaded: dict[str, Any]) -> dict[str, Any]:
         "site": {
             "manage_url_template": "https://admin.shengshi8800.com/ds67BvM/web/webManage?id={web_id}",
             "modes_data_url": "https://admin.shengshi8800.com/ds67BvM/web/getModesDataList",
-            "default_token": "",
+            "default_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJhdWQiOiIiLCJpYXQiOjE3NzgxNTQyMzEsIm5iZiI6MTc3ODE1NDIzNCwiZXhwIjoxNzc4MjQwNjMxLCJkYXRhIjp7ImlkIjoxLCJuYW1lIjoiYWRtaW4iLCJzaWduIjoiXHU4ZDg1XHU3ZWE3XHU3YmExXHU3NDA2XHU1NDU4IiwianVyIjpudWxsfX0.1IaOuliRxxiil00NGadmiRii1XTb9u-HsdXKJLH-I04",
             "default_site_name": "默认盛世站点",
             "default_domain": "admin.shengshi8800.com",
             "start_web_id": 1,

@@ -1,6 +1,6 @@
 ﻿
 $.ajax({
-    url: httpApi + `/api/kaijiang/yyptj?web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/yyptj?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {
@@ -51,4 +51,3 @@ $.ajax({
         console.error('Error:', error);
     }
 });   
-

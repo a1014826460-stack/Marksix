@@ -7,7 +7,7 @@ saving all results to the lottery_draws table.
 import json
 import sys
 import threading
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -100,7 +100,7 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
         raise RuntimeError(f"HK crawler returned status {status_code}")
 
     records = transform_standard_list(raw)
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
         for item in records:
@@ -145,7 +145,7 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
         raise RuntimeError(f"Macau crawler returned status {status_code}")
 
     records = transform_macau_api(raw)
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
         for item in records:
@@ -179,7 +179,7 @@ def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, 
     if taiwan_meta is None:
         raise ValueError("台湾彩 lottery type not found")
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
         for item in records:

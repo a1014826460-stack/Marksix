@@ -837,27 +837,37 @@ TEXT_HISTORY_COLUMN_PREFERENCE = ("content", "title", "jiexi")
 
 
 def _text_history_preferred_column(conn: sqlite3.Connection, modes_id: int) -> str | None:
-    """从历史映射表中挑选该玩法最适合展示的文本字段。
-
-    不同站点字段命名不统一：有的文本放在 content，有的放在 title，
-    少量玩法只有 jiexi。这里按业务展示优先级选择，同时确保该字段确实有历史映射。
-    """
+    """从精简后的 text_history_mappings 里选一个优先展示字段。"""
     if not table_exists(conn, TEXT_HISTORY_MAPPING_TABLE):
         return None
-    rows = conn.execute(
-        f"""
-        SELECT text_column, COUNT(*) AS total
-        FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-        WHERE modes_id = ?
-        GROUP BY text_column
-        """,
-        (modes_id,),
-    ).fetchall()
-    totals = {str(row["text_column"]): int(row["total"] or 0) for row in rows}
+    columns = set(_table_column_list(conn, TEXT_HISTORY_MAPPING_TABLE))
+    filters = []
+    params: list[Any] = []
+    if "mode_id" in columns and modes_id >= 0:
+        filters.append("mode_id = ?")
+        params.append(modes_id)
     for column in TEXT_HISTORY_COLUMN_PREFERENCE:
-        if totals.get(column):
+        if column not in columns:
+            continue
+        where_prefix = ""
+        if filters:
+            where_prefix = "WHERE " + " AND ".join(filters) + f" AND COALESCE({quote_identifier(column)}, '') != ''"
+        else:
+            where_prefix = f"WHERE COALESCE({quote_identifier(column)}, '') != ''"
+        row = conn.execute(
+            f"""
+            SELECT 1
+            FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
+            {where_prefix}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        if row:
             return column
-    return next(iter(totals), None)
+    if filters:
+        return _text_history_preferred_column(conn, -1)
+    return None
 
 
 def _random_text_history_mapping_row(
@@ -866,48 +876,118 @@ def _random_text_history_mapping_row(
     selected_zodiacs: tuple[str, ...] = (),
     text_column: str | None = None,
 ) -> sqlite3.Row | None:
-    """按玩法随机抽取一条“文本 -> 特码号码/生肖”的历史配对。
-
-    若滚动策略已经选出生肖，则优先在这些生肖内随机抽取，保证接口中的 labels
-    与返回的文本配对一致；没有命中候选时再退回该玩法的全量历史池。
-    """
+    """从精简后的 text_history_mappings 随机抽取一条文本记录。"""
+    del selected_zodiacs
     if not table_exists(conn, TEXT_HISTORY_MAPPING_TABLE):
         return None
 
+    columns = set(_table_column_list(conn, TEXT_HISTORY_MAPPING_TABLE))
     preferred_column = text_column or _text_history_preferred_column(conn, modes_id)
-    filters = ["modes_id = ?"]
-    params: list[Any] = [modes_id]
-    if preferred_column:
-        filters.append("text_column = ?")
-        params.append(preferred_column)
+    filters: list[str] = []
+    params: list[Any] = []
+    if "mode_id" in columns and modes_id >= 0:
+        filters.append("mode_id = ?")
+        params.append(modes_id)
 
-    selected_zodiacs = tuple(normalize_zodiac_label(label) for label in selected_zodiacs if label)
-    if selected_zodiacs:
-        placeholders = ", ".join("?" for _ in selected_zodiacs)
+    if preferred_column and preferred_column in columns:
+        where_parts = list(filters)
+        where_parts.append(f"COALESCE({quote_identifier(preferred_column)}, '') != ''")
         row = conn.execute(
             f"""
             SELECT *
             FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-            WHERE {" AND ".join(filters)}
-              AND special_zodiac IN ({placeholders})
+            WHERE {" AND ".join(where_parts)}
             ORDER BY RANDOM()
             LIMIT 1
             """,
-            (*params, *selected_zodiacs),
+            params,
         ).fetchone()
         if row:
             return row
 
-    return conn.execute(
+    available_columns = [column for column in TEXT_HISTORY_COLUMN_PREFERENCE if column in columns]
+    if not available_columns:
+        return None
+    text_where_clause = " OR ".join(
+        f"COALESCE({quote_identifier(column)}, '') != ''" for column in available_columns
+    )
+    where_parts = list(filters)
+    where_parts.append(f"({text_where_clause})")
+    row = conn.execute(
         f"""
         SELECT *
         FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-        WHERE {" AND ".join(filters)}
+        WHERE {" AND ".join(where_parts)}
         ORDER BY RANDOM()
         LIMIT 1
         """,
         params,
     ).fetchone()
+    if row:
+        return row
+
+    if filters:
+        return _random_text_history_mapping_row(conn, -1, (), text_column)
+    return None
+
+
+def _table_output_columns(
+    conn: sqlite3.Connection,
+    table_name: str,
+    allowed_columns: tuple[str, ...],
+) -> tuple[str, ...]:
+    """按表实际列过滤输出字段，避免生成不存在的业务列。"""
+    if not table_exists(conn, table_name):
+        return allowed_columns
+    columns = set(_table_column_list(conn, table_name))
+    return tuple(column for column in allowed_columns if column in columns)
+
+
+def _latest_window_metadata(
+    conn: sqlite3.Connection,
+    table_name: str,
+) -> dict[str, Any]:
+    """读取连期表最新一组窗口元信息，用于保持输出结构稳定。"""
+    if not table_exists(conn, table_name):
+        return {}
+
+    columns = set(_table_column_list(conn, table_name))
+    selected_columns = [
+        column for column in ("start", "end", "image_url")
+        if column in columns
+    ]
+    if not selected_columns:
+        return {}
+
+    order_parts: list[str] = []
+    if "year" in columns:
+        order_parts.append("CAST(year AS INTEGER) DESC")
+    if "term" in columns:
+        order_parts.append("CAST(term AS INTEGER) DESC")
+    if "source_record_id" in columns:
+        order_parts.append(
+            "CAST(COALESCE(NULLIF(CAST(source_record_id AS TEXT), ''), '0') AS INTEGER) DESC"
+        )
+    elif "id" in columns:
+        order_parts.append(
+            "CAST(COALESCE(NULLIF(CAST(id AS TEXT), ''), '0') AS INTEGER) DESC"
+        )
+    order_clause = f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
+
+    row = conn.execute(
+        f"""
+        SELECT {", ".join(quote_identifier(column) for column in selected_columns)}
+        FROM {quote_identifier(table_name)}
+        {order_clause}
+        LIMIT 1
+        """
+    ).fetchone()
+    if not row:
+        return {}
+    return {
+        column: row[column]
+        for column in selected_columns
+    }
 
 
 def format_text_history_mapping(title: str, modes_id: int, text_column: str | None = None):
@@ -928,21 +1008,15 @@ def format_text_history_mapping(title: str, modes_id: int, text_column: str | No
                 "_labels": list(labels),
             }
 
-        try:
-            payload = json.loads(str(row["payload_json"] or "{}"))
-        except json.JSONDecodeError:
-            payload = {}
-
         result: dict[str, Any] = {
-            key: value
-            for key, value in payload.items()
-            if key in {"title", "content", "jiexi"} and value not in (None, "")
+            key: str(row[key] or "")
+            for key in ("title", "content", "jiexi")
+            if key in row.keys() and row[key] not in (None, "")
         }
-        source_text_column = str(row["text_column"] or text_column or "content")
-        result.setdefault(source_text_column, str(row["text_content"] or ""))
-        result["code"] = str(row["special_code"] or "")
-        result["sx"] = str(row["special_zodiac"] or "")
-        result["_labels"] = [result["sx"], result["code"]]
+        if not result:
+            source_text_column = text_column or "content"
+            result[source_text_column] = title
+        result["_labels"] = list(labels)
         return result
 
     return formatter
@@ -1019,29 +1093,40 @@ def format_text_pool_jiexi(title: str, mapping_key: str):
         if source:
             table_name, text_column = source
             modes_id = int(table_name.rsplit("_", 1)[-1])
+            output_columns = _table_output_columns(conn, table_name, ("title", "content", "jiexi"))
             row = _random_text_history_mapping_row(conn, modes_id, labels, text_column)
             if row:
-                try:
-                    payload = json.loads(str(row["payload_json"] or "{}"))
-                except json.JSONDecodeError:
-                    payload = {}
-                result = {
-                    key: value
-                    for key, value in payload.items()
-                    if key in {"title", "content", "jiexi"} and value not in (None, "")
-                }
-                result.setdefault(text_column, str(row["text_content"] or ""))
-                result["code"] = str(row["special_code"] or "")
-                result["sx"] = str(row["special_zodiac"] or "")
-                result["_labels"] = [result["sx"], result["code"]]
+                result: dict[str, Any] = {}
+                if "title" in output_columns:
+                    result["title"] = str(row["title"] or title) if "title" in row.keys() else title
+                if "content" in output_columns:
+                    content_value = ""
+                    if "content" in row.keys():
+                        content_value = str(row["content"] or "")
+                    if not content_value and text_column in row.keys():
+                        content_value = str(row[text_column] or "")
+                    result["content"] = content_value or f"{title}：{','.join(labels)}"
+                if "jiexi" in output_columns:
+                    jiexi_value = str(row["jiexi"] or "") if "jiexi" in row.keys() else ""
+                    result["jiexi"] = jiexi_value or "".join(labels)
+                if not result:
+                    result[text_column] = title
+                result["_labels"] = list(labels)
                 return result
 
         row = random_text_pool_row(conn, mapping_key)
-        return {
-            "title": (row or {}).get("title") or title,
-            "content": (row or {}).get("content") or f"{title}：{','.join(labels)}",
-            "jiexi": "".join(labels),
-        }
+        table_name, text_column = source if source else ("", "content")
+        output_columns = _table_output_columns(conn, table_name, ("title", "content", "jiexi"))
+        result: dict[str, Any] = {}
+        if "title" in output_columns:
+            result["title"] = (row or {}).get("title") or title
+        if "content" in output_columns:
+            result["content"] = (row or {}).get("content") or f"{title}：{','.join(labels)}"
+        if "jiexi" in output_columns:
+            result["jiexi"] = (row or {}).get("jiexi") or "".join(labels)
+        if not result:
+            result[text_column] = title
+        return result
 
     return formatter
 
@@ -1050,16 +1135,11 @@ def format_humor_tail_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> 
     """独家幽默保留 title/content/code 三字段结构，code 为尾数候选。"""
     mapped = _random_text_history_mapping_row(_, 59, (), "content")
     if mapped:
-        try:
-            payload = json.loads(str(mapped["payload_json"] or "{}"))
-        except json.JSONDecodeError:
-            payload = {}
         return {
-            "title": str(payload.get("title") or "预测独家幽默"),
-            "content": str(payload.get("content") or mapped["text_content"] or ""),
-            "code": str(mapped["special_code"] or ""),
-            "sx": str(mapped["special_zodiac"] or ""),
-            "_labels": [str(mapped["special_zodiac"] or ""), str(mapped["special_code"] or "")],
+            "title": str(mapped["title"] or "预测独家幽默") if "title" in mapped.keys() else "预测独家幽默",
+            "content": str(mapped["content"] or "") if "content" in mapped.keys() else "",
+            "code": format_tail_groups(labels, _),
+            "_labels": list(labels),
         }
 
     row = random_text_pool_row(_, "独家幽默")
@@ -2244,17 +2324,19 @@ def _make_text_column_wave_config(
     )
 
 
-def format_window_content(base_formatter):
+def format_window_content(base_formatter, table_name: str):
     """给连期表恢复 `start/end/content` 输出结构。
     预测脚本无法预知真实下一段窗口的 end，这里只生成 content，start/end 留空给调用方
     或上游排期逻辑填充；历史回测仍按表内已有 start/end 展开的逐期开奖行计算。
     """
 
     def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
+        metadata = _latest_window_metadata(conn, table_name)
         return {
-            "start": "",
-            "end": "",
+            "start": str(metadata.get("start") or ""),
+            "end": str(metadata.get("end") or ""),
             "content": base_formatter(labels, conn),
+            "image_url": metadata.get("image_url"),
         }
 
     return formatter
@@ -2274,7 +2356,7 @@ def _make_window_config(
         outcome_loader=base_config.outcome_loader,
         content_loader=base_config.content_loader,
         content_parser=base_config.content_parser,
-        content_formatter=format_window_content(base_config.content_formatter),
+        content_formatter=format_window_content(base_config.content_formatter, base_config.default_table),
         hit_checker=base_config.hit_checker,
         explanation=(
             *base_config.explanation,

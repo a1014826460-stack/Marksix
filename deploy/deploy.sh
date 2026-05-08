@@ -63,19 +63,19 @@ migrate_data() {
     log_info "检查是否需要数据迁移..."
     cd "$PROJECT_DIR"
 
-    # 如果 SQLite 文件存在，提示迁移
-    if [ -f backend/data/lottery_modes.sqlite3 ]; then
-        log_info "检测到 SQLite 数据文件，可以在容器启动后手动执行迁移:"
-        echo ""
-        echo "  docker compose exec python-api python /app/src/utils/migrate_sqlite_to_postgres.py \\"
-        echo "    --sqlite /app/data/lottery_modes.sqlite3 \\"
-        echo "    --postgres postgresql://postgres:\${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
-        echo ""
-    fi
+    # 获取数据库密码
+    DB_PASS="${POSTGRES_PASSWORD:-change_me_in_production}"
+    PG_DSN="postgresql://postgres:${DB_PASS}@postgres:5432/liuhecai"
 
-    # 导入固定数据
-    if [ -f backend/data/fixed_data.json ] && [ -f backend/data/lottery_modes.sqlite3 ]; then
-        log_info "检测到 fixed_data.json，将在启动后自动导入"
+    if [ -f backend/data/lottery_modes.sqlite3 ]; then
+        log_info "检测到 SQLite 数据文件，开始迁移到 PostgreSQL..."
+        if docker compose ps | grep -q "python-api.*Up"; then
+            docker compose exec -T python-api python /app/src/utils/migrate_sqlite_to_postgres.py \
+                --sqlite /app/data/lottery_modes.sqlite3 \
+                --postgres "${PG_DSN}" 2>&1 || log_warn "SQLite→PG 迁移失败，请检查日志"
+        else
+            log_warn "Python API 容器未运行，跳过迁移"
+        fi
     fi
 }
 
@@ -121,10 +121,18 @@ import_fixed_data() {
     log_info "导入固定数据到数据库..."
     cd "$PROJECT_DIR"
 
+    DB_PASS="${POSTGRES_PASSWORD:-change_me_in_production}"
+    PG_DSN="postgresql://postgres:${DB_PASS}@postgres:5432/liuhecai"
+
     if docker compose ps | grep -q "python-api.*Up"; then
-        docker compose exec -T python-api python /app/src/utils/import_fixed_data.py \
-            --json /app/data/fixed_data.json 2>/dev/null || \
-            log_warn "fixed_data 导入失败（可能已存在），可忽略"
+        if [ -f backend/data/fixed_data.json ]; then
+            docker compose exec -T python-api python /app/src/utils/import_fixed_data.py \
+                --fixed-data-path /app/data/fixed_data.json \
+                --db-path "${PG_DSN}" 2>&1 || \
+                log_warn "fixed_data 导入失败（可能已存在），可忽略"
+        else
+            log_warn "backend/data/fixed_data.json 不存在，跳过固定数据导入"
+        fi
     fi
 }
 
@@ -150,7 +158,7 @@ show_deploy_info() {
     echo "  数据管理:"
     echo "    SQLite→PG 迁移: docker compose exec python-api python /app/src/utils/migrate_sqlite_to_postgres.py --help"
     echo "    生成文本映射:   docker compose exec python-api python /app/src/utils/build_text_history_mappings.py"
-    echo "    导入固定数据:   docker compose exec python-api python /app/src/utils/import_fixed_data.py --json /app/data/fixed_data.json"
+    echo "    导入固定数据:   docker compose exec python-api python /app/src/utils/import_fixed_data.py --fixed-data-path /app/data/fixed_data.json --db-path postgresql://postgres:\${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
     echo ""
 }
 
@@ -165,9 +173,9 @@ main() {
 
     check_prerequisites
     prepare_env
-    migrate_data
     build_images
     start_services
+    migrate_data
     import_fixed_data
     show_deploy_info
 }

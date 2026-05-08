@@ -33,6 +33,66 @@ export type PredictionRequest = {
   content?: string | null
   sourceTable?: string | null
   targetHitRate?: number | null
+  lotteryType?: number | string | null
+  year?: number | string | null
+  term?: number | string | null
+  web?: number | string | null
+}
+
+export type PredictionApiResponse = {
+  ok: true
+  protocol_version: string
+  generated_at: string
+  data: {
+    mechanism: {
+      key: string
+      title: string
+      default_modes_id: number | null
+      default_table: string
+      resolved_labels: string[]
+    }
+    source: {
+      db_path: string
+      table: string
+      source_modes_id: number | null
+      source_table_title: string
+      history_count: number | null
+    }
+    request: {
+      res_code: string | null
+      content: string | null
+      source_table: string | null
+      target_hit_rate: number | null
+      lottery_type: number | string | null
+      year: number | string | null
+      term: number | string | null
+      web: number | string | null
+    }
+    context: {
+      latest_term: number | string | null
+      latest_outcome: string | null
+      draw: {
+        lottery_type_id?: number | null
+        year?: string
+        term?: string
+        issue?: string
+        draw_found?: boolean
+        is_opened?: boolean | null
+        result_visibility: "visible" | "hidden" | "unknown"
+        reason: string
+      }
+    }
+    prediction: {
+      labels: string[]
+      content: unknown
+      content_json: string
+      display_text: string
+    }
+    backtest: Record<string, unknown>
+    explanation: string[]
+    warning: string
+  }
+  legacy: Record<string, unknown>
 }
 
 /**
@@ -63,6 +123,10 @@ export function parsePredictionSearchParams(searchParams: URLSearchParams) {
     content: normalizeText(searchParams.get("content")),
     sourceTable: normalizeText(searchParams.get("source_table")),
     targetHitRate: targetHitRate ? Number(targetHitRate) : null,
+    lotteryType: normalizeText(searchParams.get("lottery_type")),
+    year: normalizeText(searchParams.get("year")),
+    term: normalizeText(searchParams.get("term")),
+    web: normalizeText(searchParams.get("web")),
   }
 }
 
@@ -77,7 +141,10 @@ export function parsePredictionSearchParams(searchParams: URLSearchParams) {
  * @param authorization - 可选的 Authorization 请求头（管理后台传入 JWT token）
  * @returns 后端返回的预测结果（类型由后端决定）
  */
-export async function runPrediction(request: PredictionRequest, authorization?: string | null) {
+export async function runPrediction(
+  request: PredictionRequest,
+  authorization?: string | null,
+) {
   return backendFetchJson(`/predict/${request.mechanism}`, {
     method: "POST",
     headers: authorization ? { Authorization: authorization } : undefined,
@@ -86,6 +153,10 @@ export async function runPrediction(request: PredictionRequest, authorization?: 
       content: request.content ?? null,
       source_table: request.sourceTable ?? null,
       target_hit_rate: request.targetHitRate ?? null,
+      lottery_type: request.lotteryType ?? null,
+      year: request.year ?? null,
+      term: request.term ?? null,
+      web: request.web ?? null,
     },
-  })
+  }) as Promise<PredictionApiResponse>
 }

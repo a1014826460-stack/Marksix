@@ -49,8 +49,8 @@ type HomePageClientProps = {
 export function HomePageClient({ data }: HomePageClientProps) {
   /* ========== 状态定义 ========== */
 
-  // 当前选中的游戏标签（默认使用站点配置的游戏类型）
-  const [activeGame, setActiveGame] = useState<LotteryGame>(data.game)
+  // 当前选中的游戏标签（默认台湾彩）
+  const [activeGame, setActiveGame] = useState<LotteryGame>("taiwan")
 
   // 实时时钟（使用 Date 对象每秒更新）
   const [currentTime, setCurrentTime] = useState<string>("")
@@ -98,14 +98,13 @@ export function HomePageClient({ data }: HomePageClientProps) {
 
   /* ========== 排除已由专用组件渲染的模块 ========== */
   // PreResultBlocks 渲染 flatKingRows / threeIssueRows / doubleWaveRows，
-  // 这些数据来自 site-page API 的 pt2xiao / 3zxt / hllx 模块。
-  // 目前 site_prediction_modules 表未配置这 3 个模块，所以 site-page API
-  // 不返回它们。如果以后后端配置了，这里可以防止重复渲染。
-  //
-  // 注意：旧模块的 mechanism_key 以 legacy_ 开头（如 legacy_pt2xiao），
-  // 当前 site-page API 不返回 pt2xiao/3zxt/hllx，因此也不需要排除 legacy_ 版本。
-  // 如果 site-page API 开始返回这些模块，请同时排除 legacy_ 版本。
-  const preResultKeys: string[] = []
+  // 这些数据可能来自 site-page API 或 legacy 模块。排除其 mechanism_key
+  // 避免在 PredictionModules 中重复渲染。
+  const preResultKeys: string[] = [
+    "pt2xiao", "legacy_pt2xiao",
+    "3zxt", "legacy_3zxt",
+    "hllx", "legacy_hllx",
+  ]
 
   /* ========== 滚动监听：导航栏固定 ========== */
   const [navFixed, setNavFixed] = useState(false)
@@ -136,12 +135,12 @@ export function HomePageClient({ data }: HomePageClientProps) {
       {/* ===== 预测模块区域 ===== */}
 
       {/* 核心模块（由 PreResultBlocks 专用渲染）：
-          仅当对应的数组有数据时才渲染 */}
-      {data.flatKingRows.length > 0 ||
-      data.threeIssueRows.length > 0 ||
-      data.doubleWaveRows.length > 0 ? (
-        <PreResultBlocks data={data} />
-      ) : null}
+           根据当前 activeGame 动态提取对应模块数据 */}
+      <PreResultBlocks
+        data={data}
+        modulesByGame={data.modulesByGame}
+        activeGame={activeGame}
+      />
 
       {/* ===== 开奖结果（使用 iframe 嵌入旧站开奖页面） ===== */}
       <LotteryResult
