@@ -1338,8 +1338,8 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                       e.target.checked ? next.add(m.mechanism_key) : next.delete(m.mechanism_key)
                       setBulkSelectedKeys(next)
                     }} className="h-3.5 w-3.5" />
-                    <span className="font-medium">{m.mechanism_key}</span>
-                    <span className="text-muted-foreground">mode_id={m.mode_id}</span>
+                    <span className="font-medium">{m.display_title || m.mechanism_key}</span>
+                    <span className="text-muted-foreground">({m.mode_id})</span>
                   </label>
                 ))}
               </div>
@@ -1356,14 +1356,20 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">快捷期数范围（基于 lottery_draws 开奖数据）</label>
+                <label className="mb-1 block text-xs font-medium">快捷期数范围（基于 lottery_draws 最新开奖数据）</label>
                 <div className="flex gap-1.5">
                   {[10, 20, 50, 100].map((n) => (
-                    <button key={n} type="button" onClick={() => {
-                      const now = new Date()
-                      const y = now.getFullYear()
-                      setBulkStartIssue(`${y}001`)
-                      setBulkEndIssue(`${y}${String(n).padStart(3, '0')}`)
+                    <button key={n} type="button" onClick={async () => {
+                      try {
+                        const lt = bulkLotteryType || String(site?.lottery_type_id || 3)
+                        const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lt}`)
+                        if (info.term > 0) {
+                          const endTerm = info.term
+                          const startTerm = Math.max(1, endTerm - n + 1)
+                          setBulkStartIssue(`${info.year}${String(startTerm).padStart(3, '0')}`)
+                          setBulkEndIssue(`${info.year}${String(endTerm).padStart(3, '0')}`)
+                        }
+                      } catch { /* ignore */ }
                     }} className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted transition-colors">最近 {n} 期</button>
                   ))}
                 </div>
