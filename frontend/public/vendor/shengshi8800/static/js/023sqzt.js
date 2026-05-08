@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getSanqiXiao4new?web=${web}&type=${type}`,
     type: 'GET', 
     dataType: 'json', 
@@ -74,7 +76,7 @@
 `
         
         
-        $("#sqbzBox").html(htmlBox)
+        $("#sqbzBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
@@ -106,3 +108,4 @@
     //       <span class='zl'>[猴
     //         <span style='background-color: #FFFF00'>龙</span>马虎]</span></font>开:中1期</td>
     // </tr>
+

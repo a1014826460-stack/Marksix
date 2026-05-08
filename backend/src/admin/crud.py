@@ -92,27 +92,40 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
 
         for item in blueprints:
             existing = existing_by_key.get(str(item["key"]))
-            conn.execute(
-                """
-                INSERT INTO site_prediction_modules (
-                    site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+            if existing:
+                # 已有记录则 UPDATE，避免 INSERT ... ON CONFLICT 消耗序列值
+                conn.execute(
+                    """
+                    UPDATE site_prediction_modules
+                    SET mode_id = ?, sort_order = ?, updated_at = ?
+                    WHERE site_id = ? AND mechanism_key = ?
+                    """,
+                    (
+                        int(item["mode_id"]),
+                        int(item["sort_order"]),
+                        now,
+                        current_site_id,
+                        str(item["key"]),
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(site_id, mechanism_key) DO UPDATE SET
-                    mode_id = excluded.mode_id,
-                    sort_order = excluded.sort_order,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    current_site_id,
-                    str(item["key"]),
-                    int(item["mode_id"]),
-                    int(existing["status"]) if existing else 1,
-                    int(item["sort_order"]),
-                    str(existing["created_at"]) if existing and existing.get("created_at") else now,
-                    now,
-                ),
-            )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO site_prediction_modules (
+                        site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        current_site_id,
+                        str(item["key"]),
+                        int(item["mode_id"]),
+                        1,
+                        int(item["sort_order"]),
+                        now,
+                        now,
+                    ),
+                )
 
         if allowed_keys:
             placeholders = ", ".join("?" for _ in allowed_keys)

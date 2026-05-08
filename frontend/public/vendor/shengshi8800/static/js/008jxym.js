@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getXmx1?web=${web}&type=${type}&num=9`,
     type: 'GET', 
@@ -104,7 +106,7 @@ $.ajax({
 </div>
 
 `
-        $(".jxztBox").html(htmlBox)
+        $(".jxztBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
@@ -335,3 +337,4 @@ $.ajax({
       <td colspan='3'>台湾六合彩论坛 ,让赚钱的节奏停不下来</td></tr>
   </table>
 </div>*/
+

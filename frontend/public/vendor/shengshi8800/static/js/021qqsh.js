@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/qqsh?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -69,7 +71,7 @@
 `
         
         
-        $("#qqshBox").html(htmlBox)
+        $("#qqshBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {

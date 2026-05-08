@@ -16,7 +16,6 @@ if str(SRC_ROOT) not in sys.path:
 
 from db import connect as db_connect
 
-
 DEFAULT_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
 DEFAULT_TARGET_HIT_RATE = 0.65
 
@@ -30,11 +29,9 @@ ZODIAC_ALIASES = {
     "豬": "猪",
 }
 
-
 def normalize_zodiac_label(label: str) -> str:
     """把历史数据中偶发的繁体生肖归一到 fixed_data 使用的简体标签。"""
     return ZODIAC_ALIASES.get(str(label or "").strip(), str(label or "").strip())
-
 
 @dataclass(frozen=True)
 class HistoryRecord:
@@ -47,18 +44,6 @@ class HistoryRecord:
     outcome: str
     content: str
     content_labels: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class StrategyResult:
-    """某个窗口和策略在历史回测中的表现。"""
-
-    name: str
-    lookback: int
-    labels: tuple[str, ...]
-    hit_rate: float
-    sample_size: int
-
 
 @dataclass(frozen=True)
 class PredictionConfig:
@@ -86,7 +71,6 @@ class PredictionConfig:
     selection_groups: tuple[tuple[str, ...], ...] | None = None
     selection_widths: tuple[int, ...] | None = None
 
-
 def parse_res_code(res_code: str) -> list[str]:
     """解析逗号分隔的开奖结果，并统一补齐 01-09。"""
     codes: list[str] = []
@@ -105,11 +89,9 @@ def parse_res_code(res_code: str) -> list[str]:
         raise ValueError("res_code 不能为空。")
     return codes
 
-
 def special_code_from_res_code(res_code: str) -> str:
     """按现有数据口径，res_code 最后一个号码是特码。"""
     return parse_res_code(res_code)[-1]
-
 
 def special_zodiac_from_row(row: Any, _: Any) -> str:
     """从 res_sx 提取特码生肖。"""
@@ -117,7 +99,6 @@ def special_zodiac_from_row(row: Any, _: Any) -> str:
     if values:
         return normalize_zodiac_label(values[-1])
     return ""
-
 
 def special_zodiac_from_number_map(row: Any, conn: Any) -> str:
     """优先从 res_sx 取特码生肖；缺失时用号码 -> 生肖映射推导。"""
@@ -127,7 +108,6 @@ def special_zodiac_from_number_map(row: Any, conn: Any) -> str:
 
     special_code = special_code_from_res_code(row["res_code"] or "")
     return fixed_label_for_value(conn, "生肖", special_code)
-
 
 def get_table_title(conn: Any, table_name: str) -> tuple[int | None, str | None]:
     """通过拆表映射找回表对应的 modes_id 和中文标题。"""
@@ -143,29 +123,33 @@ def get_table_title(conn: Any, table_name: str) -> tuple[int | None, str | None]
         return None, None
     return int(row["modes_id"]), str(row["title"])
 
-
 def load_rows(conn: Any, table_name: str) -> list[Any]:
-    """读取有开奖结果的历史记录，按年份和期号升序用于回测。"""
+    """读取有开奖结果的历史记录，按年份和期号升序用于回测。
+
+    通过子查询先取最近 200 条再升序排列——保证回测按时间顺序推进，
+    同时避免全表扫描拖慢 predict()。
+    """
     return conn.execute(
         f"""
-        SELECT *
-        FROM {quote_identifier(table_name)}
-        WHERE res_code IS NOT NULL AND res_code != ''
+        SELECT * FROM (
+            SELECT *
+            FROM {quote_identifier(table_name)}
+            WHERE res_code IS NOT NULL AND res_code != ''
+            ORDER BY CAST(year AS INTEGER) DESC, CAST(term AS INTEGER) DESC
+            LIMIT 10
+        ) AS recent
         ORDER BY CAST(year AS INTEGER), CAST(term AS INTEGER)
         """
     ).fetchall()
-
 
 def row_get(row: Any, key: str, default: Any = "") -> Any:
     """安全读取行字段，兼容 sqlite3.Row / psycopg dict row。"""
     keys = row.keys() if hasattr(row, "keys") else ()
     return row[key] if key in keys else default
 
-
 def default_content_from_row(row: Any) -> str:
     """大多数玩法的历史内容都存放在 content 列。"""
     return str(row_get(row, "content", "") or "")
-
 
 def xiao_pair_content_from_row(row: Any) -> str:
     """单双四肖使用 xiao_1/xiao_2 两列存储预测生肖。"""
@@ -175,20 +159,16 @@ def xiao_pair_content_from_row(row: Any) -> str:
     ]
     return ",".join(value for value in values if value)
 
-
 def title_content_from_row(row: Any) -> str:
     """琴棋书画的命中标签存放在 title 列，content 是展开后的生肖列表。"""
     return str(row_get(row, "title", "") or "")
-
 
 def quote_identifier(identifier: str) -> str:
     """SQLite 标识符转义，避免表名参数造成 SQL 注入。"""
     return '"' + identifier.replace('"', '""') + '"'
 
-
 def table_exists(conn: Any, table_name: str) -> bool:
     return conn.table_exists(table_name)
-
 
 def normalize_fixed_label(label: str) -> str:
     """把 fixed_data 的部分分类名归一为预测玩法使用的标签名。"""
@@ -196,17 +176,14 @@ def normalize_fixed_label(label: str) -> str:
         return label.removesuffix("肖")
     return label
 
-
 def split_fixed_code_values(code: str) -> list[str]:
     return [value.strip() for value in str(code or "").split(",") if value.strip()]
-
 
 def normalize_fixed_value(value: str) -> str:
     value = str(value or "").strip()
     if re.fullmatch(r"\d+", value):
         return f"{int(value):02d}"
     return value
-
 
 def load_fixed_value_map(
     conn: Any,
@@ -245,7 +222,6 @@ def load_fixed_value_map(
         )
     return mapped
 
-
 def load_fixed_labels(
     conn: sqlite3.Connection,
     mapping_key: str,
@@ -255,14 +231,12 @@ def load_fixed_labels(
     labels = tuple(label for label in mapping.keys() if label)
     return labels or fallback_labels
 
-
 def fixed_label_for_value(conn: Any, mapping_key: str, value: str) -> str:
     mapping = load_fixed_value_map(conn, mapping_key)
     for label, values in mapping.items():
         if value in values:
             return label
     return ""
-
 
 def parse_json_or_plain_content(content: str) -> list[str]:
     """兼容两种 content 形态：JSON 数组或普通逗号字符串。"""
@@ -278,7 +252,6 @@ def parse_json_or_plain_content(content: str) -> list[str]:
         return [str(item) for item in parsed]
 
     return [value.strip() for value in content.split(",") if value.strip()]
-
 
 def parse_zodiac_content(content: str) -> tuple[str, ...]:
     """从 content 中提取生肖标签。
@@ -305,14 +278,12 @@ def parse_zodiac_content(content: str) -> tuple[str, ...]:
                     )
     return tuple(label for label in labels if label)
 
-
 def parse_pipe_label_content(content: str) -> tuple[str, ...]:
     """从 ["木|07,08", "火|01,02"] 这类 content 中提取左侧标签。"""
     labels: list[str] = []
     for item in parse_json_or_plain_content(content):
         labels.append(item.split("|", 1)[0].strip() if "|" in item else item.strip())
     return tuple(label for label in labels if label)
-
 
 def parse_number_content(content: str) -> tuple[str, ...]:
     """从普通字符串或 JSON 字符串中提取 01-49 号码。"""
@@ -321,16 +292,13 @@ def parse_number_content(content: str) -> tuple[str, ...]:
         labels.extend(re.findall(r"\d{2}", item))
     return tuple(labels)
 
-
 def contains_hit(outcome: str, labels: tuple[str, ...]) -> bool:
     """常规玩法命中：真实结果落入预测标签。"""
     return outcome in labels
 
-
 def excludes_hit(outcome: str, labels: tuple[str, ...]) -> bool:
     """绝杀玩法命中：真实结果没有落入预测标签。"""
     return outcome not in labels
-
 
 def build_element_number_map(conn: Any) -> dict[str, str]:
     """建立号码到五行的映射。
@@ -377,12 +345,10 @@ def build_element_number_map(conn: Any) -> dict[str, str]:
         raise ValueError("无法从数据库建立完整的 01-49 号码五行映射。")
     return mapping
 
-
 def special_element_from_row(row: Any, conn: Any) -> str:
     """根据 res_code 的特码号码推导特码五行。"""
     mapping = build_element_number_map(conn)
     return mapping.get(special_code_from_res_code(row["res_code"] or ""), "")
-
 
 def append_input_res_code(
     history: list[HistoryRecord],
@@ -425,7 +391,6 @@ def append_input_res_code(
         ),
     ]
 
-
 def load_history(
     conn: Any,
     table_name: str,
@@ -449,7 +414,6 @@ def load_history(
             )
         )
     return history
-
 
 def score_labels(
     history: list[HistoryRecord],
@@ -496,118 +460,6 @@ def score_labels(
         constrained.extend([label for label in ranked_labels if label in group][:width])
     return tuple(constrained)
 
-
-def backtest_strategy(
-    history: list[HistoryRecord],
-    labels: tuple[str, ...],
-    label_count: int,
-    lookback: int,
-    strategy: str,
-    hit_checker: Callable[[str, tuple[str, ...]], bool],
-    selection_groups: tuple[tuple[str, ...], ...] | None = None,
-    selection_widths: tuple[int, ...] | None = None,
-) -> StrategyResult | None:
-    """滚动回测某个策略。
-
-    每一期只能使用它之前的历史来预测，避免把未来数据泄漏进回测。
-    """
-    start = max(lookback, 10)
-    if len(history) <= start:
-        return None
-
-    hits: list[bool] = []
-    for index in range(start, len(history)):
-        predicted = score_labels(
-            history[:index],
-            labels,
-            label_count,
-            lookback,
-            strategy,
-            selection_groups,
-            selection_widths,
-        )
-        hits.append(hit_checker(history[index].outcome, predicted))
-
-    return StrategyResult(
-        name=strategy,
-        lookback=lookback,
-        labels=score_labels(
-            history,
-            labels,
-            label_count,
-            lookback,
-            strategy,
-            selection_groups,
-            selection_widths,
-        ),
-        hit_rate=sum(hits) / len(hits),
-        sample_size=len(hits),
-    )
-
-
-def choose_strategy(
-    history: list[HistoryRecord],
-    labels: tuple[str, ...],
-    label_count: int,
-    target_hit_rate: float,
-    hit_checker: Callable[[str, tuple[str, ...]], bool],
-    selection_groups: tuple[tuple[str, ...], ...] | None = None,
-    selection_widths: tuple[int, ...] | None = None,
-) -> StrategyResult:
-    """选择历史回测命中率最接近目标值的策略。"""
-    if len(history) <= 10:
-        lookback = max(1, len(history))
-        return StrategyResult(
-            name="insufficient_history",
-            lookback=lookback,
-            labels=score_labels(
-                history,
-                labels,
-                label_count,
-                lookback,
-                "balanced",
-                selection_groups,
-                selection_widths,
-            ),
-            hit_rate=0.0,
-            sample_size=0,
-        )
-
-    candidates: list[StrategyResult] = []
-    max_lookback = min(80, len(history) - 1)
-    # 步长采样：近端窗口逐值测试，远端窗口以步长 5 采样，大幅减少回测次数
-    lookback_samples = list(range(5, 21)) + list(range(25, max_lookback + 1, 5))
-    if max_lookback not in lookback_samples:
-        lookback_samples.append(max_lookback)
-    for lookback in sorted(set(lookback_samples)):
-        for strategy in ("hot", "cold", "hybrid", "anti_recent", "balanced"):
-            result = backtest_strategy(
-                history,
-                labels,
-                label_count,
-                lookback,
-                strategy,
-                hit_checker,
-                selection_groups,
-                selection_widths,
-            )
-            if result:
-                candidates.append(result)
-
-    if not candidates:
-        raise ValueError("历史开奖记录不足，无法进行滚动回测。")
-
-    return min(
-        candidates,
-        key=lambda item: (
-            abs(item.hit_rate - target_hit_rate),
-            abs(item.sample_size - 120),
-            item.lookback,
-            item.name,
-        ),
-    )
-
-
 def historical_content_hit_rate(
     history: Iterable[HistoryRecord],
     hit_checker: Callable[[str, tuple[str, ...]], bool],
@@ -618,54 +470,6 @@ def historical_content_hit_rate(
         return 0.0, 0
     hits = [hit_checker(record.outcome, record.content_labels) for record in tested]
     return sum(hits) / len(hits), len(hits)
-
-
-def all_combination_best_effort(
-    history: list[HistoryRecord],
-    labels: tuple[str, ...],
-    label_count: int,
-    target_hit_rate: float,
-    hit_checker: Callable[[str, tuple[str, ...]], bool],
-    selection_groups: tuple[tuple[str, ...], ...] | None = None,
-    selection_widths: tuple[int, ...] | None = None,
-) -> tuple[tuple[str, ...], float]:
-    """补充计算静态组合的最佳历史命中率，用于说明是否存在统计上限。
-
-    例如 12 个生肖选 3 个时，静态组合天然很难达到 65%。该信息不影响最终
-    策略选择，只用于 API 响应解释。
-    """
-    best_labels: tuple[str, ...] = ()
-    best_rate = -1.0
-    if selection_groups and selection_widths:
-        total_candidates = 1
-        grouped_combinations: list[list[tuple[str, ...]]] = []
-        for group, width in zip(selection_groups, selection_widths):
-            count = math.comb(len(group), width)
-            total_candidates *= count
-            if total_candidates > 10000:
-                return (), 0.0
-            grouped_combinations.append(list(itertools.combinations(group, width)))
-
-        for grouped in itertools.product(*grouped_combinations):
-            combination = tuple(label for part in grouped for label in part)
-            hits = [hit_checker(record.outcome, combination) for record in history]
-            rate = sum(hits) / len(hits) if hits else 0.0
-            if best_rate < 0 or abs(rate - target_hit_rate) < abs(best_rate - target_hit_rate):
-                best_labels = combination
-                best_rate = rate
-        return best_labels, best_rate
-
-    if math.comb(len(labels), label_count) > 10000:
-        return (), 0.0
-
-    for combination in itertools.combinations(labels, label_count):
-        hits = [hit_checker(record.outcome, combination) for record in history]
-        rate = sum(hits) / len(hits) if hits else 0.0
-        if best_rate < 0 or abs(rate - target_hit_rate) < abs(best_rate - target_hit_rate):
-            best_labels = tuple(combination)
-            best_rate = rate
-    return best_labels, best_rate
-
 
 def predict(
     config: PredictionConfig,
@@ -684,27 +488,17 @@ def predict(
         source_modes_id, source_title = get_table_title(conn, table_name)
         source_history = load_history(conn, table_name, config)
         history = append_input_res_code(source_history, res_code, config.outcome_loader, conn)
-        selected = choose_strategy(
-            history,
-            labels,
-            config.label_count,
-            target_hit_rate,
-            config.hit_checker,
-            config.selection_groups,
-            config.selection_widths,
+
+        # 直接用 balanced 策略 + 最近 5 期窗口生成预测，不再回测
+        lookback = min(5, max(1, len(history)))
+        predicted_labels = score_labels(
+            history, labels, config.label_count, lookback, "balanced",
+            config.selection_groups, config.selection_widths,
         )
+
         benchmark_rate, benchmark_size = historical_content_hit_rate(source_history, config.hit_checker)
-        static_labels, static_rate = all_combination_best_effort(
-            source_history,
-            labels,
-            config.label_count,
-            target_hit_rate,
-            config.hit_checker,
-            config.selection_groups,
-            config.selection_widths,
-        )
-        generated_content = config.content_formatter(selected.labels, conn)
-        prediction_labels = list(selected.labels)
+        generated_content = config.content_formatter(predicted_labels, conn)
+        prediction_labels = list(predicted_labels)
         if isinstance(generated_content, dict) and "_labels" in generated_content:
             # 文本历史映射类玩法会在格式化阶段随机抽取一条历史配对；
             # 这里把该配对的号码/生肖同步为最终预测标签，同时避免内部字段进入 content_json。
@@ -743,27 +537,16 @@ def predict(
         },
         "backtest": {
             "target_hit_rate": target_hit_rate,
-            "selected_hit_rate": round(selected.hit_rate, 6),
-            "selected_sample_size": selected.sample_size,
-            "selected_deviation": round(abs(selected.hit_rate - target_hit_rate), 6),
-            "strategy": selected.name,
-            "lookback": selected.lookback,
             "historical_content_hit_rate": round(benchmark_rate, 6),
             "historical_content_sample_size": benchmark_size,
-            "best_static_labels": list(static_labels),
-            "best_static_hit_rate": round(static_rate, 6),
         },
         "explanation": list(config.explanation),
         "warning": (
-            "历史开奖记录不足 10 条，已返回可运行预测，但没有足够样本计算有效滚动回测命中率。"
-            if selected.sample_size == 0
-            else
-            "命中率来自历史滚动回测，只能用于控制历史样本表现，不能保证未来开奖。"
-            if abs(selected.hit_rate - target_hit_rate) <= 0.05
-            else "该玩法在当前历史样本下无法贴近 65%，已返回最接近目标的策略。"
+            "历史开奖记录不足 10 条，已返回可运行预测。"
+            if len(source_history) < 10
+            else "预测基于最近开奖结果生成，仅供娱乐参考，不保证未来开奖。"
         ),
     }
-
 
 def build_common_parser(description: str) -> argparse.ArgumentParser:
     """构造各玩法脚本通用命令行参数。"""
@@ -775,7 +558,6 @@ def build_common_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--target-hit-rate", type=float, default=DEFAULT_TARGET_HIT_RATE, help="目标历史回测命中率。")
     parser.add_argument("--json", action="store_true", help="输出 JSON。")
     return parser
-
 
 def print_json_result(result: dict[str, Any]) -> None:
     """统一 JSON 输出，配合前端 API 解析。"""

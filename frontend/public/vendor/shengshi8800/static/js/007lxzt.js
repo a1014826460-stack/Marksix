@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/lxzt?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -59,7 +61,7 @@
 `
         
         
-        $(".lxztBox").html(htmlBox)
+        $(".lxztBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {

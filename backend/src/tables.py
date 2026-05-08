@@ -52,6 +52,8 @@ from db import (  # noqa: E402
 )
 from mechanisms import list_prediction_configs  # noqa: E402
 
+_tables_initialized = False
+
 
 def default_db_target() -> str:
     """Prefer an explicit database URL, then the configured PostgreSQL DSN, then SQLite."""
@@ -195,9 +197,15 @@ def _ensure_imports():
 
 
 def ensure_admin_tables(db_path: str | Path) -> None:
+    global _tables_initialized
     _hash_password, _blueprints, _sync_modules = _ensure_imports()
-    now = utc_now()
 
+    # 仅在首次调用时执行完整初始化；后续调用只确保连接可用
+    if _tables_initialized:
+        return
+    _tables_initialized = True
+
+    now = utc_now()
     with connect(db_path) as conn:
         pk_sql = auto_increment_primary_key("id", conn.engine)
         conn.execute(

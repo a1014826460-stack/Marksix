@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaBanbo?web=${web}&type=${type}&num=1`,
     type: 'GET',
     dataType: 'json',
@@ -64,7 +66,7 @@
 </div>
 
 `
-        $(".jsbb").html(htmlBox)
+        $(".jsbb").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -134,3 +136,4 @@ document.writeln("");
 document.writeln("			");
 document.writeln("			</table>");
 document.writeln("    </div>");*/
+

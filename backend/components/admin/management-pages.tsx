@@ -864,6 +864,7 @@ function ModuleDataPanel({
   const [payload, setPayload] = useState<{ rows: AnyRecord[]; total: number; columns: string[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(30)
   const [search, setSearch] = useState("")
   const [msg, setMsg] = useState("")
   const [editing, setEditing] = useState<AnyRecord | null>(null)
@@ -873,7 +874,8 @@ function ModuleDataPanel({
   const [regenYear, setRegenYear] = useState("")
   const [regenTerm, setRegenTerm] = useState("")
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<AnyRecord | null>(null)
-  const pageSize = 30
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
 
   // 用 ref 保存最新筛选值，避免 async 闭包捕获旧值
   const typeFilterRef = useRef(typeFilter)
@@ -911,7 +913,7 @@ function ModuleDataPanel({
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchPayload(1) }, [typeFilter, webFilter, sourceFilter, reloadToken])
+  useEffect(() => { setSelectedRows(new Set()); fetchPayload(1) }, [typeFilter, webFilter, sourceFilter, reloadToken, pageSize])
   const totalPages = payload ? Math.ceil(payload.total / pageSize) : 0
 
   function startEdit(row: AnyRecord) { setEditing(row); setEditValues({ ...row }) }
@@ -931,6 +933,36 @@ function ModuleDataPanel({
       await adminApi(`/admin/sites/${siteId}/mode-payload/${tableName}/${row.id}?source=${resolveRowSource(row)}`, { method: "DELETE" })
       setMsg("已删除"); fetchPayload(page)
     } catch (e) { setMsg(e instanceof Error ? e.message : "删除失败") }
+  }
+  async function doBulkDelete() {
+    if (selectedRows.size === 0) return
+    setConfirmBulkDelete(false)
+    let deleted = 0; let failed = 0
+    for (const rowKey of selectedRows) {
+      const [src, id] = rowKey.split("::", 2)
+      try {
+        await adminApi(`/admin/sites/${siteId}/mode-payload/${tableName}/${id}?source=${src}`, { method: "DELETE" })
+        deleted++
+      } catch { failed++ }
+    }
+    setSelectedRows(new Set())
+    setMsg(`批量删除完成: 成功 ${deleted}${failed > 0 ? `, 失败 ${failed}` : ""}`)
+    fetchPayload(page)
+  }
+  function toggleRowSelection(rowKey: string) {
+    setSelectedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(rowKey)) next.delete(rowKey); else next.add(rowKey)
+      return next
+    })
+  }
+  function toggleAllRows() {
+    if (!payload) return
+    if (selectedRows.size === payload.rows.length) {
+      setSelectedRows(new Set())
+    } else {
+      setSelectedRows(new Set(payload.rows.map((r) => `${resolveRowSource(r)}::${r.id ?? ""}`)))
+    }
   }
   async function doRegenerate() {
     const numStr = regenNumbers.trim()
@@ -1011,6 +1043,9 @@ function ModuleDataPanel({
             <table className="w-full text-xs" style={{ minWidth: 800 }}>
               <thead className="sticky top-0 bg-muted/80">
                 <tr>
+                  <th className="whitespace-nowrap border-b border-r px-2 py-1.5 text-center font-medium" style={{ width: 36 }}>
+                    <input type="checkbox" onChange={toggleAllRows} checked={payload.rows.length > 0 && selectedRows.size === payload.rows.length} className="h-3.5 w-3.5" />
+                  </th>
                   {payload.columns.map((col) => (
                     <th key={col} className="whitespace-nowrap border-b border-r px-2 py-1.5 text-left font-medium" style={{ resize: "horizontal", overflow: "auto", minWidth: 80, maxWidth: 400 }}>{col}</th>
                   ))}
@@ -1018,8 +1053,13 @@ function ModuleDataPanel({
                 </tr>
               </thead>
               <tbody>
-                {payload.rows.map((row, idx) => (
-                  <tr key={`${row.data_source ?? sourceFilter}_${row.id ?? `row_${idx}`}`} className="border-b hover:bg-muted/20">
+                {payload.rows.map((row, idx) => {
+                  const rowKey = `${resolveRowSource(row)}::${row.id ?? `row_${idx}`}`
+                  return (
+                  <tr key={`${row.data_source ?? sourceFilter}_${row.id ?? `row_${idx}`}`} className={`border-b hover:bg-muted/20 ${selectedRows.has(rowKey) ? "bg-primary/10" : ""}`}>
+                    <td className="border-r px-2 py-1 text-center">
+                      <input type="checkbox" checked={selectedRows.has(rowKey)} onChange={() => toggleRowSelection(rowKey)} className="h-3.5 w-3.5" />
+                    </td>
                     {payload.columns.map((col) => (
                       <td key={col} className="max-w-[300px] truncate border-r px-2 py-1" title={String(row[col] ?? "")}>{row[col] != null ? String(row[col]) : ""}</td>
                     ))}
@@ -1030,15 +1070,29 @@ function ModuleDataPanel({
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between border-t px-4 py-2">
-            <span className="text-xs text-muted-foreground">共 {payload.total} 条，第 {page}/{totalPages} 页</span>
-            <div className="flex gap-1">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => fetchPayload(page - 1)} className="h-7 text-xs">上一页</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => fetchPayload(page + 1)} className="h-7 text-xs">下一页</Button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">共 {payload.total} 条，第 {page}/{totalPages} 页</span>
+              {selectedRows.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={() => setConfirmBulkDelete(true)} className="h-7 text-xs">
+                  删除选中 ({selectedRows.size})
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">每页</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="h-7 rounded border bg-background px-1 text-xs">
+                {[20, 30, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span className="text-xs text-muted-foreground">条</span>
+              <div className="flex gap-1 ml-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => fetchPayload(page - 1)} className="h-7 text-xs">上一页</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => fetchPayload(page + 1)} className="h-7 text-xs">下一页</Button>
+              </div>
             </div>
           </div>
         </>
@@ -1104,6 +1158,21 @@ function ModuleDataPanel({
           </div>
         </div>
       )}
+      {/* 批量删除确认弹窗 */}
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmBulkDelete(false)}>
+          <div className="w-[400px] rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-2 text-base font-semibold">确认批量删除</h3>
+            <p className="text-sm text-muted-foreground">
+              确定要删除选中的 <span className="font-medium text-foreground">{selectedRows.size}</span> 条记录吗？此操作不可撤销。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmBulkDelete(false)}>取消</Button>
+              <Button size="sm" variant="destructive" onClick={doBulkDelete}>确认删除</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
@@ -1130,6 +1199,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
   const [bulkStartIssue, setBulkStartIssue] = useState("")
   const [bulkEndIssue, setBulkEndIssue] = useState("")
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
+  const [bulkSelectedKeys, setBulkSelectedKeys] = useState<Set<string>>(new Set())
   const configuredKeys = useMemo(() => new Set(modules.map((item) => item.mechanism_key)), [modules])
 
   async function load() {
@@ -1172,22 +1242,44 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
       setMessage("请先填写完整的起始期号和结束期号")
       return
     }
+    const selectedList = Array.from(bulkSelectedKeys)
+    if (selectedList.length === 0) {
+      setMessage("请至少选择一个模块")
+      return
+    }
     setBulkSubmitting(true)
+    setBulkGenerateOpen(false)
+    setMessage(`批量生成已提交后台执行（${selectedList.length} 个模块），正在处理中…`)
     try {
-      const result = await adminApi<BulkGenerateResult>(`/admin/sites/${siteId}/prediction-modules/generate-all`, {
+      const { job_id } = await adminApi<{ ok: boolean; job_id: string }>(`/admin/sites/${siteId}/prediction-modules/generate-all`, {
         method: "POST",
         body: jsonBody({
           lottery_type: bulkLotteryType || String(site?.lottery_type_id || 3),
           start_issue: bulkStartIssue.trim(),
           end_issue: bulkEndIssue.trim(),
+          mechanism_keys: selectedList,
         }),
       })
-      setBulkGenerateOpen(false)
-      setSourceFilter("all")
-      setReloadToken((value) => value + 1)
-      setMessage(`已生成 ${result.total_modules} 个模块，期数 ${result.draw_count}，新增 ${result.inserted}，覆盖 ${result.updated}，失败 ${result.errors}`)
+      // 轮询任务状态，最多等待 10 分钟
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 3000))
+        try {
+          const job = await adminApi<{ status: string; result?: BulkGenerateResult; error?: string }>(`/admin/jobs/${job_id}`)
+          if (job.status === "done" && job.result) {
+            setSourceFilter("all")
+            setReloadToken((value) => value + 1)
+            setMessage(`已生成 ${job.result.total_modules} 个模块，期数 ${job.result.draw_count}，新增 ${job.result.inserted}，覆盖 ${job.result.updated}，失败 ${job.result.errors}`)
+            return
+          }
+          if (job.status === "error") {
+            setMessage(`自动生成失败: ${job.error || "未知错误"}`)
+            return
+          }
+        } catch { /* 继续轮询 */ }
+      }
+      setMessage("批量生成超时，请稍后刷新页面查看结果")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "自动生成失败")
+      setMessage(error instanceof Error ? error.message : "自动生成提交失败")
     } finally {
       setBulkSubmitting(false)
     }
@@ -1225,9 +1317,35 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
 
       {bulkGenerateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !bulkSubmitting && setBulkGenerateOpen(false)}>
-          <div className="w-[520px] rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-1 text-base font-semibold">自动生成全部资料</h3>
-            <p className="mb-4 text-xs text-muted-foreground">会按当前站点启用模块批量生成 created schema 数据，统计结果会带上 mode_id。</p>
+          <div className="w-[560px] max-h-[85vh] overflow-y-auto rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-base font-semibold">自动生成资料</h3>
+            <p className="mb-4 text-xs text-muted-foreground">选择模块和期数范围，在后台异步生成。{bulkSelectedKeys.size > 0 && <span className="font-medium text-foreground">已选 {bulkSelectedKeys.size} 个模块</span>}</p>
+
+            {/* 模块选择 */}
+            <div className="mb-3">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-medium">选择模块</label>
+                <div className="flex gap-2">
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => setBulkSelectedKeys(new Set(modules.map(m => m.mechanism_key)))}>全选</button>
+                  <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setBulkSelectedKeys(new Set())}>取消全选</button>
+                </div>
+              </div>
+              <div className="max-h-[200px] overflow-y-auto rounded-md border p-2 space-y-0.5">
+                {modules.map((m) => (
+                  <label key={m.id} className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-muted text-xs">
+                    <input type="checkbox" checked={bulkSelectedKeys.has(m.mechanism_key)} onChange={(e) => {
+                      const next = new Set(bulkSelectedKeys)
+                      e.target.checked ? next.add(m.mechanism_key) : next.delete(m.mechanism_key)
+                      setBulkSelectedKeys(next)
+                    }} className="h-3.5 w-3.5" />
+                    <span className="font-medium">{m.mechanism_key}</span>
+                    <span className="text-muted-foreground">mode_id={m.mode_id}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 彩种 + 期号 */}
             <div className="space-y-3">
               <div>
                 <label className="mb-1 block text-xs font-medium">彩种</label>
@@ -1236,6 +1354,19 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                   <option value="2">澳门</option>
                   <option value="3">台湾</option>
                 </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">快捷期数范围（基于 lottery_draws 开奖数据）</label>
+                <div className="flex gap-1.5">
+                  {[10, 20, 50, 100].map((n) => (
+                    <button key={n} type="button" onClick={() => {
+                      const now = new Date()
+                      const y = now.getFullYear()
+                      setBulkStartIssue(`${y}001`)
+                      setBulkEndIssue(`${y}${String(n).padStart(3, '0')}`)
+                    }} className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted transition-colors">最近 {n} 期</button>
+                  ))}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1248,6 +1379,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                 </div>
               </div>
             </div>
+
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" size="sm" disabled={bulkSubmitting} onClick={() => setBulkGenerateOpen(false)}>取消</Button>
               <Button size="sm" disabled={bulkSubmitting} onClick={doBulkGenerate}>{bulkSubmitting ? "生成中..." : "开始生成"}</Button>

@@ -6,6 +6,16 @@ import type { LotteryGame } from "@/lib/lotteryData"
 import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
 
 const VALID_GAMES: LotteryGame[] = ["taiwan", "macau", "hongkong"]
+const GAME_TYPE_PARAM_MAP: Record<LotteryGame, string> = {
+  taiwan: "3",
+  macau: "2",
+  hongkong: "1",
+}
+const PARAM_TYPE_GAME_MAP: Record<string, LotteryGame> = {
+  "3": "taiwan",
+  "2": "macau",
+  "1": "hongkong",
+}
 const SECTION_ROWS = [
   [
     { id: "7x1m", label: "一肖一码" },
@@ -27,6 +37,20 @@ function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
 }
 
+function resolveGameFromRouteParams(searchParams: URLSearchParams): LotteryGame {
+  const rawType = searchParams.get("t")
+  if (rawType && PARAM_TYPE_GAME_MAP[rawType]) {
+    return PARAM_TYPE_GAME_MAP[rawType]
+  }
+
+  const rawGame = searchParams.get("game")
+  if (isValidGame(rawGame)) {
+    return rawGame
+  }
+
+  return "taiwan"
+}
+
 function getForumTitle(game: LotteryGame) {
   if (game === "macau") return "澳门六合彩论坛"
   if (game === "hongkong") return "香港六合彩论坛"
@@ -38,8 +62,10 @@ function LegacyShellContent() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const navRef = useRef<HTMLDivElement | null>(null)
-  const rawGame = searchParams.get("game")
-  const initialGame: LotteryGame = isValidGame(rawGame) ? rawGame : "taiwan"
+  const initialGame = useMemo(
+    () => resolveGameFromRouteParams(new URLSearchParams(searchParams.toString())),
+    [searchParams]
+  )
   const [activeGame, setActiveGame] = useState<LotteryGame>(initialGame)
   const [anchorMap, setAnchorMap] = useState<Record<string, number>>({})
 
@@ -53,7 +79,8 @@ function LegacyShellContent() {
     setActiveGame(game)
 
     const nextParams = new URLSearchParams(searchParams.toString())
-    nextParams.set("game", game)
+    nextParams.set("t", GAME_TYPE_PARAM_MAP[game])
+    nextParams.delete("game")
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false })
   }
 

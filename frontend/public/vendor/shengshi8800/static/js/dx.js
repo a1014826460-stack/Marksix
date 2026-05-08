@@ -1,4 +1,6 @@
-﻿document.writeln("<div class=\"list-title\">台湾大小中特</div><table class=\"ptyx11\" width=\"100%\" border=\"1\">");
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+document.writeln("<div class=\"list-title\">台湾大小中特</div><table class=\"ptyx11\" width=\"100%\" border=\"1\">");
 // document.writeln("  <tr>");
 // document.writeln("    <th>台湾大小中特</th>");
 // document.writeln("  </tr>");
@@ -56,7 +58,7 @@ $.ajax({
                         </tr>`
             })
             
-            $("#dxzt").html(html)
+            $("#dxzt").html(replaceLegacySiteText(html))
         }
         
     },
@@ -69,3 +71,4 @@ $.ajax({
  
   
 document.writeln("</table>");
+

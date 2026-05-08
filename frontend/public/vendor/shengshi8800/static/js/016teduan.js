@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getCodeDuan?web=${web}&type=${type}&num=12`,
     type: 'GET',
     dataType: 'json',
@@ -37,7 +39,7 @@
 </div>
 
 `
-        $(".tmds").html(htmlBox)
+        $(".tmds").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -100,3 +102,4 @@ document.writeln("			</tr>");
 
 document.writeln("		</table></div>");
 document.writeln("		");*/
+

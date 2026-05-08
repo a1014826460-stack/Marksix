@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
  url: httpApi + `/api/kaijiang/getHbnx?web=${web}&type=${type}&num=3`,
  type: 'GET',
  dataType: 'json',
@@ -81,7 +83,7 @@
 `
 
 
-  $("#hb3t").html(htmlBox)
+  $("#hb3t").html(replaceLegacySiteText(htmlBox))
 
  },
  error: function(xhr, status, error) {
@@ -168,3 +170,4 @@ document.writeln("    </div>");
 document.writeln("		<div class=\'box news-box\'>");
 document.writeln("		<div class=\'haoju\'><font color=\'#FFFF00\'>台湾六合彩论坛能帮您排忧解难!</font> </div>");
 document.writeln("	</div>");*/
+

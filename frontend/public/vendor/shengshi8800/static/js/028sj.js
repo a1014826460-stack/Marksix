@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getYjzy?web=${web}&type=${type}`,
     type: 'GET',
@@ -61,7 +63,7 @@ $.ajax({
 `
 
 
-        $("#zhenyan").html(htmlBox)
+        $("#zhenyan").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -211,3 +213,4 @@ document.writeln("");
 document.writeln("</table></div>");
 
 document.writeln("");*/
+

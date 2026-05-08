@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/danshuang?web=${web}&type=${type}`,
     type: 'GET',
     dataType: 'json',
@@ -59,7 +61,7 @@
 </div>
 
 `
-        $("#msks").html(htmlBox)
+        $("#msks").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -121,3 +123,4 @@ document.writeln("			</tr>");
 
 
 document.writeln("		</table></div>");*/
+

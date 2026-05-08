@@ -1,5 +1,9 @@
 # 六合彩前端站点 — 预测号码模块说明
 
+> 入口说明（2026-05-08 起）：
+> 请使用 `http://127.0.0.1:3000/legacy-shell?t=3` 作为前端主入口。
+> `http://127.0.0.1:3000/` 现仅做重定向兼容，原挂载在 `/` 的 React 首页已封存并暂停使用，请不要再把 `/` 当作开发或验收入口。
+
 ## 概述
 
 本前端站点（Next.js，端口 3000）展示六合彩论坛的公开页面，核心功能是**渲染预测号码模块**——展示各种预测算法的历史结果和最新预测。
@@ -109,9 +113,11 @@ modulesByGame = {
 
 | 文件 | 职责 |
 |------|------|
-| [app/page.tsx](app/page.tsx) | **服务端组件**：获取 site-page API + 旧模块数据 → 合并 → 转换 → 传给客户端组件 |
+| [app/page.tsx](app/page.tsx) | **根路由重定向入口**：统一跳转到 `/legacy-shell?t=3` |
+| [app/_archived/root-home-page.tsx](app/_archived/root-home-page.tsx) | **封存的旧首页实现**：原 `/` React 首页，已暂停使用，仅保留参考 |
 | [lib/legacy-modules.ts](lib/legacy-modules.ts) | **旧模块注册表**：定义 36 个 endpoints → modes_id 映射，提供并行获取函数 |
 | [app/HomePageClient.tsx](app/HomePageClient.tsx) | **客户端组件**：状态管理（时钟、游戏切换）+ 子组件编排 |
+| [app/legacy-shell/page.tsx](app/legacy-shell/page.tsx) | **当前公开入口**：旧站隔离壳页面，使用 `t=3/2/1` 表示台湾/澳门/香港 |
 | [app/layout.tsx](app/layout.tsx) | 根布局：导入全局 CSS + 旧站 CSS |
 
 ### 样式
@@ -176,7 +182,7 @@ rawModules      ← modules[]（完整副本）
 | 渲染方式 | 各 JS 独立 document.write/jQuery | 各 React 组件分别渲染 |
 | CSS | 内联 + 外部 CSS | 复用旧站 CSS 文件 + 补充样式 |
 | 彩种切换 | 每切换需重新 AJAX | 预加载三种彩种，瞬间切换 |
-| 访问路径 | `/vendor/shengshi8800/index.html` | `/`（首页） |
+| 访问路径 | `/vendor/shengshi8800/index.html` | `/legacy-shell?t=3`（当前入口） |
 | 维护性 | 每个模块改 CSS/JS | 组件化，每模块独立文件 |
 
 旧站文件仍保留在 `public/vendor/shengshi8800/` 目录下，可随时通过直接访问该路径查看。
@@ -193,6 +199,20 @@ python backend/src/app.py --host 127.0.0.1 --port 8000 --db-path "postgresql://p
 # 2. 启动前端站点
 cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3000
+```
+
+启动后请访问：
+
+```text
+http://127.0.0.1:3000/legacy-shell?t=3
+```
+
+参数映射：
+
+```text
+t=3 -> 台湾彩
+t=2 -> 澳门彩
+t=1 -> 香港六合彩
 ```
 
 环境变量（`frontend/.env.local`）：

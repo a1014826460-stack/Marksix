@@ -370,6 +370,50 @@ def parse_wave_chars(content: str) -> tuple[str, ...]:
     return tuple(labels)
 
 
+def _find_fixed_data_sign_for_labels(
+    conn: sqlite3.Connection, labels: tuple[str, ...]
+) -> str | None:
+    """在 fixed_data 中查找与给定标签集合匹配的 sign。
+
+    匹配条件：某个 sign 下至少有 2 个 name 出现在 labels 中（或 labels 为空时返回 None）。
+    """
+    if not labels or not table_exists(conn, "fixed_data"):
+        return None
+
+    label_set = set(labels)
+    rows = conn.execute(
+        """
+        SELECT sign, name FROM fixed_data
+        WHERE name IS NOT NULL AND name != ''
+        ORDER BY sign, CAST(id AS INTEGER)
+        """
+    ).fetchall()
+
+    # 按 sign 分组统计匹配的 name 数量
+    sign_hits: dict[str, int] = {}
+    sign_all_names: dict[str, set[str]] = {}
+    for row in rows:
+        sign = str(row["sign"] or "")
+        name = str(row["name"] or "").strip()
+        if not sign or not name:
+            continue
+        sign_all_names.setdefault(sign, set()).add(name)
+        if name in label_set:
+            sign_hits[sign] = sign_hits.get(sign, 0) + 1
+
+    # 优先返回匹配数最多的 sign；至少需要匹配 2 个标签
+    best = max(sign_hits.items(), key=lambda item: (item[1], item[0])) if sign_hits else None
+    if best and best[1] >= 2:
+        return best[0]
+
+    # 退而求其次：sign 下所有 name 都出现在 labels 中
+    for sign, names in sign_all_names.items():
+        if names and names.issubset(label_set) and len(names) >= 2:
+            return sign
+
+    return None
+
+
 def build_pipe_value_map(
     conn: sqlite3.Connection,
     table_name: str,
@@ -377,13 +421,24 @@ def build_pipe_value_map(
 ) -> dict[str, tuple[str, ...]]:
     """从 `标签|值列表` 的历史 content 中建立标签映射。
 
-    适用于肉菜草肖、红蓝绿肖、头、尾、单双、波色等结构化 content。
+    优先使用 public.fixed_data 中的固定映射，仅在 fixed_data 无匹配时
+    才回退到历史表数据。
     """
-    fixed_mapping_key = TABLE_FIXED_MAPPING_KEYS.get(table_name, table_name)
-    fixed_mapping = load_fixed_value_map(conn, fixed_mapping_key, labels)
-    if fixed_mapping and any(fixed_mapping.values()):
-        return fixed_mapping
+    # 1) 通过 TABLE_FIXED_MAPPING_KEYS 精确查找
+    fixed_mapping_key = TABLE_FIXED_MAPPING_KEYS.get(table_name)
+    if fixed_mapping_key:
+        fixed_mapping = load_fixed_value_map(conn, fixed_mapping_key, labels)
+        if fixed_mapping and any(fixed_mapping.values()):
+            return fixed_mapping
 
+    # 2) 通过标签模糊匹配 fixed_data 中的 sign
+    guessed_sign = _find_fixed_data_sign_for_labels(conn, labels)
+    if guessed_sign:
+        fixed_mapping = load_fixed_value_map(conn, guessed_sign, labels)
+        if fixed_mapping and any(fixed_mapping.values()):
+            return fixed_mapping
+
+    # 3) 回退：从历史表 content 中提取映射（结果可能不稳定）
     result: dict[str, set[str]] = {label: set() for label in labels}
     rows = conn.execute(
         f"""

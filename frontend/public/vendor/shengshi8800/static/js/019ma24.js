@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getCode?web=${web}&type=${type}&num=24`,
     type: 'GET',
@@ -53,7 +55,7 @@ $.ajax({
 </div>
 
 `
-        $(".jd24").html(htmlBox)
+        $(".jd24").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -99,3 +101,4 @@ document.writeln("			");
 document.writeln("		</table></td>");
 document.writeln("			</tr>");
 document.writeln("		</table></div>");*/
+

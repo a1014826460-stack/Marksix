@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/sbzt?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -61,10 +63,11 @@
 `
         
         
-        $("#sbztBox").html(htmlBox)
+        $("#sbztBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
         console.error('Error:', error);
     }
 }); 
+

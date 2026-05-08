@@ -1,4 +1,6 @@
-﻿// document.writeln("<table class=\"ptyx\" width=\"100%\" border=\"1\">");
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+// document.writeln("<table class=\"ptyx\" width=\"100%\" border=\"1\">");
 // document.writeln("  <tr>");
 // document.writeln("    <th>台湾肉菜草肖</th>");
 // document.writeln("  </tr>");
@@ -138,7 +140,7 @@ $.ajax({
             })
             let html = `<div class="list-title">台湾肉菜草肖</div><table class="ptyx11" width="100%" border="1">
   <tbody>`+crcHtml+`</tbody></table>`
-            $("#crcbox").html(html)
+            $("#crcbox").html(replaceLegacySiteText(html))
            
         }
     },
@@ -146,6 +148,7 @@ $.ajax({
         console.error('Error:', error);
     }
 }); 
+
 
 
 

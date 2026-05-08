@@ -1,4 +1,6 @@
-﻿
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getSzxj?web=${web}&type=${type}`,
@@ -65,7 +67,7 @@ $.ajax({
 `
 
 
-        $("#szxj").html(htmlBox)
+        $("#szxj").html(replaceLegacySiteText(htmlBox))
 
     },
     error: function(xhr, status, error) {
@@ -241,3 +243,4 @@ document.writeln("");
 document.writeln("</table></div>");
 
 document.writeln("");*/
+

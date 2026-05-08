@@ -206,7 +206,7 @@ def list_mode_payload_rows(
     """新版 mode_payload 列表：支持 public / created / all 三种数据源。"""
     table_name = validate_mode_payload_table(table_name)
     page = max(1, int(page))
-    page_size = min(max(1, int(page_size)), 200)
+    page_size = min(max(1, int(page_size)), 100)
     normalized_source = normalize_mode_payload_source(source)
 
     with connect(db_path) as conn:

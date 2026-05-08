@@ -74,10 +74,14 @@
         }
 
         function replaceLegacyBranding(input, branding) {
+          const regionName = branding.shortForum.replace(/\u8bba\u575b/g, "");
           return String(input == null ? "" : input)
             .replace(/\u53f0\u6e7e\u516d\u5408\u5f69\u8bba\u575b/g, branding.forumTitle)
             .replace(/\u53f0\u6e7e\u8d44\u6599\u7f51/g, branding.dataSite)
-            .replace(/\u53f0\u6e7e\u8bba\u575b/g, branding.shortForum);
+            .replace(/\u53f0\u6e7e\u8bba\u575b/g, branding.shortForum)
+            .replace(/\u53f0\u6e7e\u516d\u5408\u5f69/g, regionName + "\u516d\u5408\u5f69")
+            .replace(/\u53f0\u6e7e\u5f69/g, regionName + "\u5f69")
+            .replace(/\u53f0\u6e7e/g, regionName);
         }
 
         function buildBridgeScript() {
@@ -151,15 +155,26 @@
             "  }",
             "  function replaceBrandingText(value){",
             "    var branding = getBranding();",
+            "    var regionName = branding.shortForum.replace(/\\u8bba\\u575b/g, '');",
             "    var text = String(value == null ? '' : value);",
             "    return text",
             "      .replace(/\\u53f0\\u6e7e\\u516d\\u5408\\u5f69\\u8bba\\u575b/g, branding.forumTitle)",
             "      .replace(/\\u53f0\\u6e7e\\u8d44\\u6599\\u7f51/g, branding.dataSite)",
-            "      .replace(/\\u53f0\\u6e7e\\u8bba\\u575b/g, branding.shortForum);",
+            "      .replace(/\\u53f0\\u6e7e\\u8bba\\u575b/g, branding.shortForum)",
+            "      .replace(/\\u53f0\\u6e7e\\u516d\\u5408\\u5f69/g, regionName + '\\u516d\\u5408\\u5f69')",
+            "      .replace(/\\u53f0\\u6e7e\\u5f69/g, regionName + '\\u5f69')",
+            "      .replace(/\\u53f0\\u6e7e/g, regionName);",
+            "  }",
+            "  function isTaiwanLotteryTabNode(node){",
+            "    var element = node && node.parentElement ? node.parentElement : node;",
+            "    var tab = element && element.closest ? element.closest('.KJ-TabBox > ul > li') : null;",
+            "    var dataOpt = tab ? tab.getAttribute('data-opt') || '' : '';",
+            "    return dataOpt.indexOf('lottery_type=3') !== -1;",
             "  }",
             "  function applyBrandingToNode(root){",
             "    if(!root) return;",
             "    if(root.nodeType === Node.TEXT_NODE){",
+            "      if(isTaiwanLotteryTabNode(root)) return;",
             "      var replaced = replaceBrandingText(root.nodeValue || '');",
             "      if(replaced !== root.nodeValue) root.nodeValue = replaced;",
             "      return;",
@@ -168,6 +183,7 @@
             "    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);",
             "    var textNode;",
             "    while((textNode = walker.nextNode())){",
+            "      if(isTaiwanLotteryTabNode(textNode)) continue;",
             "      var nextValue = replaceBrandingText(textNode.nodeValue || '');",
             "      if(nextValue !== textNode.nodeValue) textNode.nodeValue = nextValue;",
             "    }",
@@ -175,6 +191,7 @@
             "      var nodes = root.querySelectorAll('[title],[alt],[aria-label]');",
             "      for(var i = 0; i < nodes.length; i++){",
             "        var element = nodes[i];",
+            "        if(isTaiwanLotteryTabNode(element)) continue;",
             "        ['title','alt','aria-label'].forEach(function(attr){",
             "          var current = element.getAttribute(attr);",
             "          if(!current) return;",
@@ -353,12 +370,23 @@
             "  var forumTitle = " + JSON.stringify(branding.forumTitle) + ";",
             "  var dataSite = " + JSON.stringify(branding.dataSite) + ";",
             "  var shortForum = " + JSON.stringify(branding.shortForum) + ";",
+            "  var regionName = shortForum.replace(/\\u8bba\\u575b/g, '');",
+            "  function preserveTaiwanLotteryTab(input){",
+            "    return String(input == null ? '' : input).replace(/(<li[^>]*lottery_type=3[^>]*>)([\\s\\S]*?)(<\\/li>)/g, function(match, open, content, close){",
+            "      var leading = (content.match(/^\\s*/) || [''])[0];",
+            "      var trailing = (content.match(/\\s*$/) || [''])[0];",
+            "      return open + leading + '\\u53f0\\u6e7e\\u5f69' + trailing + close;",
+            "    });",
+            "  }",
             "  function replaceSiteText(input){",
             "    var text = String(input == null ? '' : input);",
-            "    return text",
+            "    return preserveTaiwanLotteryTab(text",
             "      .replace(/\u53f0\u6e7e\u516d\u5408\u5f69\u8bba\u575b/g, forumTitle)",
             "      .replace(/\u53f0\u6e7e\u8d44\u6599\u7f51/g, dataSite)",
-            "      .replace(/\u53f0\u6e7e\u8bba\u575b/g, shortForum);",
+            "      .replace(/\u53f0\u6e7e\u8bba\u575b/g, shortForum)",
+            "      .replace(/\u53f0\u6e7e\u516d\u5408\u5f69/g, regionName + '\u516d\u5408\u5f69')",
+            "      .replace(/\u53f0\u6e7e\u5f69/g, regionName + '\u5f69')",
+            "      .replace(/\u53f0\u6e7e/g, regionName));",
             "  }",
             "  window.__legacyReplaceSiteText = replaceSiteText;",
             "  var rawWrite = document.write.bind(document);",

@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
  url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=3`,
  type: 'GET',
  dataType: 'json',
@@ -47,7 +49,7 @@
 </div>
 
 `
-  $(".js3x").html(htmlBox)
+  $(".js3x").html(replaceLegacySiteText(htmlBox))
 
  },
  error: function(xhr, status, error) {
@@ -116,3 +118,4 @@ document.writeln("			</tr>");
 
 document.writeln("		</table></div>");
 document.writeln("		");*/
+

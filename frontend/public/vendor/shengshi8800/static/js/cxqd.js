@@ -1,4 +1,6 @@
-﻿$.ajax({
+﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+$.ajax({
     url: httpApi + `/api/kaijiang/getSjsx?num=3&web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -66,7 +68,7 @@
 </table>`
         
         
-        $("#sjsxBox").html(htmlBox)
+        $("#sjsxBox").html(replaceLegacySiteText(htmlBox))
         
     },
     error: function(xhr, status, error) {
@@ -97,3 +99,4 @@
     //       <font color="#FF0000">【冬
     //         <span style='background-color: #FFFF00'>夏</span>春】</font>开羊22准</td></tr>
    
+
