@@ -250,6 +250,8 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health
 - 同一期若 `created` 与 `public` 同时存在，优先保留 `created`
 - 开奖字段统一以后端查到的 `public.lottery_draws` 为准
 - 若 `lottery_draws.is_opened = 0`，则返回的该行 `res_code/res_sx/res_color` 统一置空
+- `mode_id=50` 的文本映射必须只读取同 `mode_id=50` 的 `text_history_mappings`
+- 其他 `is_text=1` 的文本类玩法也必须按同 `mode_id` 取映射，不得跨玩法回退
 
 ## 预测接口
 
@@ -728,6 +730,8 @@ Notes:
 - It does not generate new prediction data.
 - Public module order follows `site_prediction_modules.sort_order`.
 - Public module visibility follows `site_prediction_modules.status`.
+- Text-type modules resolve `text_history_mappings` by the same `mode_id` as the module.
+- `mode_id=50` returns the legacy-compatible `{"data":[...]}` payload shape in the frontend proxy.
 
 ### Admin-only prediction execution
 

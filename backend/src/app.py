@@ -64,7 +64,7 @@ from data_fetch import (  # noqa: E402
     fetch_web_id_list,
     save_mode_all_data,
 )
-from mechanisms import get_prediction_config, list_prediction_configs  # noqa: E402
+from mechanisms import ensure_prediction_configs_loaded, get_prediction_config, list_prediction_configs  # noqa: E402
 from normalize_sqlite import normalize_payload_tables  # noqa: E402
 from build_text_history_mappings import build_text_history_mappings  # noqa: E402
 from utils.created_prediction_store import (  # noqa: E402
@@ -77,6 +77,7 @@ from utils.created_prediction_store import (  # noqa: E402
     upsert_created_prediction_row,
 )
 from db import auto_increment_primary_key, connect as db_connect, detect_database_engine, quote_identifier  # noqa: E402
+connect = db_connect  # 简写，兼容现有函数体内 connect(...) 调用
 from auth import (  # noqa: E402
     auth_user_from_token,
     ensure_generation_permission,
@@ -146,6 +147,7 @@ from legacy.api import (  # noqa: E402
     load_legacy_mode_rows,
 )
 from public.api import (  # noqa: E402
+    get_draw_history,
     get_public_latest_draw,
     get_public_site_page_data,
 )
@@ -406,6 +408,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 lottery_type = int(query.get("lottery_type", ["1"])[0] or 1)
                 self.send_json(
                     get_public_latest_draw(self.db_path, lottery_type)
+                )
+                return
+
+            if method == "GET" and path == "/api/public/draw-history":
+                lottery_type = int(query.get("lottery_type", ["3"])[0] or 3)
+                year = int(query.get("year", ["0"])[0] or 0) or None
+                sort = query.get("sort", ["l"])[0] or "l"
+                self.send_json(
+                    get_draw_history(self.db_path, lottery_type, year, sort)
                 )
                 return
 
@@ -895,6 +906,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 def run_server(host: str, port: int, db_path: str | Path) -> None:
+    ensure_prediction_configs_loaded(db_path)
     ensure_admin_tables(db_path)
     server = ThreadingHTTPServer((host, port), ApiHandler)
     server.db_path = db_path  # type: ignore[attr-defined]

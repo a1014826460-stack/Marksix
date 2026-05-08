@@ -6,11 +6,16 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Globe2,
   Hash,
   LayoutDashboard,
   LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Ticket,
   Trophy,
   Users,
@@ -36,10 +41,15 @@ type AdminShellProps = {
   actions?: ReactNode
 }
 
+const SIDEBAR_EXPANDED = 256
+const SIDEBAR_COLLAPSED = 56
+
 export function AdminShell({ title, description, children, actions }: AdminShellProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = useState<{ display_name: string; username: string } | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
     const token = getAdminToken()
@@ -66,18 +76,36 @@ export function AdminShell({ title, description, children, actions }: AdminShell
     }
   }
 
+  const sidebarW = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED
+
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="fixed left-0 top-0 hidden h-screen w-64 border-r border-border bg-card p-4 lg:block">
-        <Link href="/" className="mb-6 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Database className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-base font-semibold">彩票软件后台</div>
-            <div className="text-[11px] text-muted-foreground">Lottery CMS</div>
-          </div>
-        </Link>
+      {/* 移动端遮罩 */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* 侧边栏 */}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-50 h-screen border-r border-border bg-card p-3 transition-all duration-200",
+          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+        )}
+        style={{ width: sidebarW }}
+      >
+        <div className={cn("flex items-center gap-2 mb-5", collapsed && "justify-center")}>
+          <Link href="/" className="flex items-center gap-2 shrink-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Database className="h-4 w-4" />
+            </div>
+            {!collapsed && (
+              <div className="overflow-hidden">
+                <div className="text-sm font-semibold whitespace-nowrap">彩票软件后台</div>
+                <div className="text-[10px] text-muted-foreground">Lottery CMS</div>
+              </div>
+            )}
+          </Link>
+        </div>
 
         <nav className="space-y-1">
           {menuItems.map((item) => {
@@ -86,22 +114,45 @@ export function AdminShell({ title, description, children, actions }: AdminShell
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMobileOpen(false)}
+                title={collapsed ? item.label : undefined}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                  collapsed && "justify-center px-2",
                   active
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
-                <item.icon className="h-4 w-4" />
-                {item.label}
+                <item.icon className="h-4 w-4 shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             )
           })}
         </nav>
+
+        {/* 折叠按钮 */}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          className="absolute -right-3 top-10 hidden h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground lg:flex"
+        >
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
       </aside>
 
-      <main className="min-w-0 flex-1 p-4 lg:ml-64 lg:p-6">
+      {/* 主区域 */}
+      <main
+        className="min-w-0 flex-1 p-4 lg:p-6 transition-all duration-200"
+        style={{ marginLeft: sidebarW }}
+      >
+        {/* 移动端汉堡菜单 */}
+        <button
+          className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"
+          onClick={() => setMobileOpen(true)}
+        >
+          <Menu className="h-4 w-4" /> 菜单
+        </button>
+
         <header className="mb-5 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">{title}</h1>

@@ -76,6 +76,32 @@ def get_site_prediction_module_blueprint_by_key(mechanism_key: str) -> dict[str,
     raise ValueError(f"机制 {mechanism_key} 不在站点模块同步清单中")
 
 
+def resolve_prediction_table_for_mode(
+    conn: Any,
+    mode_id: int,
+    fallback_table: str = "",
+) -> str:
+    """Resolve the payload table from mode_payload_tables for the selected mode_id."""
+    resolved_mode_id = int(mode_id or 0)
+    if resolved_mode_id > 0 and conn.table_exists("mode_payload_tables"):
+        row = conn.execute(
+            """
+            SELECT table_name
+            FROM mode_payload_tables
+            WHERE modes_id = ?
+            LIMIT 1
+            """,
+            (resolved_mode_id,),
+        ).fetchone()
+        if row and str(row["table_name"] or "").strip():
+            return str(row["table_name"]).strip()
+    if fallback_table:
+        return str(fallback_table)
+    if resolved_mode_id > 0:
+        return f"mode_payload_{resolved_mode_id}"
+    return ""
+
+
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
     """将 site_prediction_modules 与前端站点模块清单保持同步。"""
     blueprints = get_site_prediction_module_blueprints()
@@ -179,12 +205,13 @@ def build_generated_prediction_row_data(
         "res_code": str(res_code or ""),
     }
 
-    # 三期窗口自动填充：start=当前term, end=start-2
-    # 直接覆盖 formatter 中的旧值，确保 start/end 始终与当前 term 一致
+    # 三期窗口自动填充：每 3 期为一组，组内共享 start/end
+    # 例如 term=127 → end=127, start=125；term=126 → end=127, start=125
     term_int = int(term) if str(term or "").strip().isdigit() else 0
     if term_int > 0:
-        start_val = term_int
-        end_val = max(1, start_val - 2)
+        r = term_int % 3
+        end_val = term_int + ((4 - r) % 3)
+        start_val = max(1, end_val - 2)
         if isinstance(generated_content, dict):
             generated_content["start"] = str(start_val)
             generated_content["end"] = str(end_val)
@@ -193,7 +220,11 @@ def build_generated_prediction_row_data(
         for key, value in generated_content.items():
             if key == "_labels":
                 continue
-            row_data[key] = value
+            # 列表/字典类 value 需要 JSON 序列化，否则数据库存储为 Python repr 格式
+            if isinstance(value, (list, dict, tuple, set)):
+                row_data[key] = json.dumps(value, ensure_ascii=False)
+            else:
+                row_data[key] = value
     elif isinstance(generated_content, list):
         row_data["content"] = json.dumps(generated_content, ensure_ascii=False)
     else:
@@ -542,7 +573,7 @@ def bulk_generate_site_prediction_data(
             mechanism_key = str(module_row["mechanism_key"] or "")
             mode_id = int(module_row["mode_id"] or 0)
             config = get_prediction_config(mechanism_key)
-            table_name = config.default_table or f"mode_payload_{mode_id}"
+            table_name = resolve_prediction_table_for_mode(conn, mode_id, config.default_table)
 
             module_report: dict[str, Any] = {
                 "module_id": int(module_row["id"]),

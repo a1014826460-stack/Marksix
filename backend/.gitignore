@@ -6,6 +6,8 @@
 # next.js
 /.next/
 /out/
+*/Zz_admin.shengshi8800.com
+*/Zz_shengshi8800.com
 
 # production
 /build
@@ -31,7 +33,7 @@ next-env.d.ts
 *.sqlite3
 *.db
 *.sqlite
-*.json
+# 日志
 *.log
 
 # 爬虫采集数据
