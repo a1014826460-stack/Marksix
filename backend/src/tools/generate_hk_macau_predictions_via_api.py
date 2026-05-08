@@ -26,19 +26,18 @@ SRC_ROOT = BACKEND_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from db import connect, resolve_database_target  # noqa: E402
+from db import connect, resolve_database_target, detect_database_engine  # noqa: E402
 from utils.generate_predictions import (  # noqa: E402
-    get_valid_draws,
-    insert_row,
-    load_fixed_map,
     number_to_color,
     number_to_zodiac,
 )
 from utils.created_prediction_store import (  # noqa: E402
     CREATED_SCHEMA_NAME,
+    ensure_created_prediction_table,
     quote_identifier,
     quote_qualified_identifier,
     table_column_names,
+    upsert_created_prediction_row,
 )
 
 
@@ -170,7 +169,7 @@ def build_lightweight_row(
 ) -> dict[str, Any]:
     """按前端实际展示格式构造一行轻量预测数据。
 
-    这里的目标是“结构对、前端能显示”，不是复刻旧算法。
+    这里的目标是"结构对、前端能显示"，不是复刻旧算法。
     因此绝大多数模块直接使用真实特码生肖/号码来拼装展示内容。
     """
     base = wrap_base_row(mode_id, lottery_type, draw)
@@ -305,17 +304,17 @@ def build_lightweight_row(
         base["content"] = f"欲钱买{sx}的生肖"
         return base
 
-    # 特码段数
+    # 特码段数：前端 016teduan.js 期待逗号分隔的码段数字列表，不是分类标签
     if mode_id == 65:
         num = int(code)
         if num <= 12:
-            base["content"] = "1段"
+            base["content"] = ",".join(f"{i:02d}" for i in range(1, 13))
         elif num <= 24:
-            base["content"] = "2段"
+            base["content"] = ",".join(f"{i:02d}" for i in range(13, 25))
         elif num <= 36:
-            base["content"] = "3段"
+            base["content"] = ",".join(f"{i:02d}" for i in range(25, 37))
         else:
-            base["content"] = "4段"
+            base["content"] = ",".join(f"{i:02d}" for i in range(37, 50))
         return base
 
     # 三色生肖
@@ -382,25 +381,138 @@ def build_lightweight_row(
     return base
 
 
+# ── 跨数据库兼容工具函数 ──────────────────────────────
+# 以下函数替代 generate_predictions.py 中的 PostgreSQL 专用版本，
+# 使用 ? 占位符，由 db.py 的 _rewrite_sql 自动转换为对应后端的占位符。
+
+def _load_fixed_map(conn, sign_name):
+    """Cross-database load_fixed_map using ? placeholders."""
+    cur = conn.execute(
+        "SELECT name, code FROM fixed_data WHERE sign = ? ORDER BY id", (sign_name,))
+    result = {}
+    for r in cur.fetchall():
+        codes = [c.strip() for c in (r["code"] or "").split(",") if c.strip()]
+        result[r["name"]] = codes
+    return result
+
+
+def _get_valid_draws(conn, lottery_type_id, limit=20):
+    """跨数据库版 get_valid_draws：使用 ? 占位符，移除 PostgreSQL ~ 正则。"""
+    cur = conn.execute(
+        """SELECT year, term, numbers FROM lottery_draws
+           WHERE lottery_type_id = ? AND is_opened = 1
+           ORDER BY year DESC, term DESC LIMIT ?""",
+        (lottery_type_id, limit))
+    draws = []
+    for r in cur.fetchall():
+        nums = [n.strip() for n in r["numbers"].split(",") if n.strip()]
+        try:
+            ints = [int(n) for n in nums]
+            if any(n < 1 or n > 49 for n in ints):
+                continue
+            processed = [str(n).zfill(2) for n in ints]
+            draws.append({
+                "year": int(r["year"]),
+                "term": int(r["term"]),
+                "numbers": processed,
+                "numbers_str": ",".join(processed),
+            })
+        except ValueError:
+            continue
+    return draws
+
+
+def _insert_row(conn, table_name, row_data):
+    """跨数据库版 insert_row。
+
+    PostgreSQL → created schema (upsert)
+    SQLite → public table (insert or replace)
+    """
+    engine = getattr(conn, "engine", "") or "sqlite"
+    if engine == "postgres":
+        # ensure_created_prediction_table 创建表（如不存在）
+        # upsert_created_prediction_row 内部处理列过滤和 upsert
+        ensure_created_prediction_table(conn, table_name)
+        upsert_created_prediction_row(conn, table_name, row_data)
+        return
+
+    # ── SQLite 路径：直接写入 public 表 ──
+    cols = set(conn.table_columns(table_name))
+
+    content = row_data.get("content", "")
+    content_col = "content"
+    for candidate in ["content", "xiao", "title", "hei", "xiao_1"]:
+        if candidate in cols:
+            content_col = candidate
+            break
+
+    data = {}
+    for c in ["res_code", "res_sx", "year", "term", "type", "web"]:
+        if c in cols and c in row_data:
+            data[c] = row_data[c]
+
+    if content_col in cols:
+        if content_col != "content" and content_col in row_data and row_data[content_col]:
+            data[content_col] = row_data[content_col]
+        else:
+            data[content_col] = content
+
+    for key, value in row_data.items():
+        if key in cols and key not in data and value not in (None, ""):
+            data[key] = value
+
+    for c, v in [("web_id", "4"), ("modes_id", str(row_data.get("table_modes_id", ""))),
+                  ("status", 1), ("res_color", row_data.get("res_color", "")),
+                  ("start", ""), ("end", "")]:
+        if c in cols:
+            data.setdefault(c, v)
+
+    if "hei" in cols and "bai" in cols:
+        data.setdefault("hei", row_data.get("hei", content))
+        data.setdefault("bai", row_data.get("bai", content))
+    if "xiao_1" in cols and "xiao_2" in cols:
+        data.setdefault("xiao_1", row_data.get("xiao_1", content))
+        data.setdefault("xiao_2", row_data.get("xiao_2", content))
+
+    if not data:
+        return
+
+    # SQLite: INSERT OR REPLACE
+    columns = list(data.keys())
+    placeholders = ", ".join(["?"] * len(columns))
+    col_names = ", ".join(quote_identifier(c) for c in columns)
+    conn.execute(
+        f"INSERT OR REPLACE INTO {quote_identifier(table_name)} ({col_names}) VALUES ({placeholders})",
+        list(data.values()),
+    )
+    conn.commit()
+
+
 def load_frontend_modules() -> list[dict[str, Any]]:
     """直接返回前端真实使用的模块清单。
 
-    这里不再依赖 site_prediction_modules，避免“站点配置表只有 35 个模块，
-    但前端页面实际还会额外读取 legacy 模块”时出现漏生成。
+    这里不再依赖 site_prediction_modules，避免"站点配置表只有 35 个模块，
+    但前端页面实际还会额外读取 legacy 模块"时出现漏生成。
     """
     return [dict(item) for item in FRONTEND_MODULES]
 
 
-def created_row_count(conn: Any, table_name: str, lottery_type: int) -> int:
-    columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
-    table_ref = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
-    where_parts = ['CAST("type" AS TEXT) = %s']
+def _created_row_count(conn: Any, table_name: str, lottery_type: int) -> int:
+    engine = getattr(conn, "engine", "") or "sqlite"
+    if engine == "postgres":
+        columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+        table_ref = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
+    else:
+        columns = set(conn.table_columns(table_name))
+        table_ref = quote_identifier(table_name)
+
+    where_parts = ['CAST("type" AS TEXT) = ?']
     params: list[Any] = [str(lottery_type)]
     if "web" in columns:
-        where_parts.append('CAST("web" AS TEXT) = %s')
+        where_parts.append('CAST("web" AS TEXT) = ?')
         params.append("4")
     elif "web_id" in columns:
-        where_parts.append('CAST("web_id" AS TEXT) = %s')
+        where_parts.append('CAST("web_id" AS TEXT) = ?')
         params.append("4")
     row = conn.execute(
         f"SELECT COUNT(*) AS total FROM {table_ref} WHERE {' AND '.join(where_parts)}",
@@ -409,17 +521,26 @@ def created_row_count(conn: Any, table_name: str, lottery_type: int) -> int:
     return int(row["total"] or 0)
 
 
-def trim_created_rows(conn: Any, table_name: str, lottery_type: int, keep_rows: int) -> int:
-    """只保留最近 keep_rows 条，避免一个模块越积越多。"""
-    columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
-    table_ref = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
-    where_parts = ['CAST("type" AS TEXT) = %s']
+def _trim_created_rows(conn: Any, table_name: str, lottery_type: int, keep_rows: int) -> int:
+    """只保留最近 keep_rows 条，避免一个模块越积越多。
+
+    跨数据库兼容版：使用 ? 占位符。
+    """
+    engine = getattr(conn, "engine", "") or "sqlite"
+    if engine == "postgres":
+        columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+        table_ref = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
+    else:
+        columns = set(conn.table_columns(table_name))
+        table_ref = quote_identifier(table_name)
+
+    where_parts = ['CAST("type" AS TEXT) = ?']
     params: list[Any] = [str(lottery_type)]
     if "web" in columns:
-        where_parts.append('CAST("web" AS TEXT) = %s')
+        where_parts.append('CAST("web" AS TEXT) = ?')
         params.append("4")
     elif "web_id" in columns:
-        where_parts.append('CAST("web_id" AS TEXT) = %s')
+        where_parts.append('CAST("web_id" AS TEXT) = ?')
         params.append("4")
     rows = conn.execute(
         f"""
@@ -436,7 +557,7 @@ def trim_created_rows(conn: Any, table_name: str, lottery_type: int, keep_rows: 
     deleted = 0
     for stale_id in stale_ids:
         conn.execute(
-            f"DELETE FROM {table_ref} WHERE id = %s",
+            f"DELETE FROM {table_ref} WHERE id = ?",
             (stale_id,),
         )
         deleted += 1
@@ -455,7 +576,7 @@ def generate_for_type(
     """为单个彩种生成前端页需要的全部模块数据。"""
     # 香港彩最近几期可能混有无效开奖号（例如 "00"），这里放大抓取窗口，
     # 再从有效结果里截最近 10 条，避免前端需要 10 条时被脏数据挤掉。
-    draws = get_valid_draws(conn, lottery_type, limit=max(rows_per_module * 8, 50))
+    draws = _get_valid_draws(conn, lottery_type, limit=max(rows_per_module * 8, 50))
     selected_draws = list(reversed(draws[:rows_per_module]))
     if len(selected_draws) < rows_per_module:
         raise ValueError(f"type={lottery_type} 可用历史开奖不足 {rows_per_module} 条")
@@ -476,15 +597,15 @@ def generate_for_type(
                 zodiac_map=zodiac_map,
                 color_map=color_map,
             )
-            insert_row(conn, table_name, row_data)
+            _insert_row(conn, table_name, row_data)
             upserts += 1
-        trimmed = trim_created_rows(conn, table_name, lottery_type, rows_per_module)
+        trimmed = _trim_created_rows(conn, table_name, lottery_type, rows_per_module)
         module_reports.append({
             "mode_id": mode_id,
             "mechanism_key": str(module["mechanism_key"]),
             "table_name": table_name,
             "rows_written": upserts,
-            "rows_kept": created_row_count(conn, table_name, lottery_type),
+            "rows_kept": _created_row_count(conn, table_name, lottery_type),
             "rows_trimmed": trimmed,
             "latest_issue": issue_text(selected_draws[-1]),
         })
@@ -536,8 +657,8 @@ def main() -> int:
         raise ValueError("至少需要一个受支持的 type（1 或 2）")
 
     with connect(args.db_target) as conn:
-        zodiac_map = load_fixed_map(conn, "生肖")
-        color_map = load_fixed_map(conn, "波色")
+        zodiac_map = _load_fixed_map(conn, "生肖")
+        color_map = _load_fixed_map(conn, "波色")
         modules = load_frontend_modules()
 
         summary = {

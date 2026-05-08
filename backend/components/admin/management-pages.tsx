@@ -462,21 +462,71 @@ export function LotteryTypesPageClient() {
   )
 }
 
+function DrawNumbersInput({ name, defaultValue }: { name: string; defaultValue: string }) {
+  const [selected, setSelected] = useState<number[]>(() =>
+    defaultValue ? defaultValue.split(",").map(Number).filter((n) => n >= 1 && n <= 49) : []
+  )
+  const allNumbers = Array.from({ length: 49 }, (_, i) => i + 1)
+
+  function toggle(n: number) {
+    setSelected((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : prev.length < 7 ? [...prev, n].sort((a, b) => a - b) : prev)
+  }
+
+  const valueStr = selected.map((n) => String(n).padStart(2, "0")).join(",")
+  return (
+    <div>
+      <input type="hidden" name={name} value={valueStr} />
+      <div className="flex flex-wrap gap-1 mb-2 min-h-[28px]">
+        {selected.map((n) => (
+          <span key={n} className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+            {String(n).padStart(2, "0")}
+            <button type="button" onClick={() => toggle(n)} className="ml-0.5 text-primary/60 hover:text-destructive">×</button>
+          </span>
+        ))}
+        {selected.length === 0 && <span className="text-xs text-muted-foreground">点击下方号码添加（最多7个）</span>}
+      </div>
+      <div className="flex flex-wrap gap-0.5 max-h-[140px] overflow-y-auto">
+        {allNumbers.map((n) => {
+          const isSelected = selected.includes(n)
+          return (
+            <button
+              key={n} type="button"
+              onClick={() => toggle(n)}
+              disabled={!isSelected && selected.length >= 7}
+              className={`h-7 w-7 rounded text-xs font-medium transition-colors ${
+                isSelected
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70 disabled:opacity-30"
+              }`}
+            >{String(n).padStart(2, "0")}</button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+
 export function DrawsPageClient() {
   const [rows, setRows] = useState<Draw[]>([])
   const [lotteries, setLotteries] = useState<LotteryType[]>([])
   const [editing, setEditing] = useState<Draw | null>(null)
   const [formOpen, setFormOpen] = useState(false)
+  const [drawTypeFilter, setDrawTypeFilter] = useState("")
 
   async function load() {
     const [drawData, lotteryData] = await Promise.all([
-      adminApi<{ draws: Draw[] }>("/admin/draws"),
+      adminApi<{ draws: Draw[] }>("/admin/draws?limit=500"),
       adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
     ])
     setRows(drawData.draws)
     setLotteries(lotteryData.lottery_types)
   }
   useEffect(() => { load() }, [])
+
+  const filteredRows = drawTypeFilter
+    ? rows.filter((r) => String(r.lottery_type_id) === drawTypeFilter)
+    : rows
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -507,29 +557,52 @@ export function DrawsPageClient() {
   }
 
   return (
-    <AdminShell title="开奖管理" description="为台湾彩种添加开奖号码，为预测提供数据依据。">
+    <AdminShell title="开奖管理" description="管理各彩种开奖号码，为预测提供数据依据。">
       <div className="space-y-4">
-        <Button
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">彩种筛选:</span>
+          <select value={drawTypeFilter} onChange={(e) => setDrawTypeFilter(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-sm">
+            <option value="">全部彩种</option>
+            {lotteries.map((lt) => <option key={lt.id} value={lt.id}>{lt.name}</option>)}
+          </select>
+          <div className="flex-1" />
+          <Button
           onClick={() => { setFormOpen((prev) => !prev); setEditing(null) }}
           className="group relative overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95"
         >
           <Plus className={`mr-1 h-4 w-4 transition-transform duration-300 ${formOpen ? "rotate-45" : "group-hover:rotate-90"}`} />
           新增开奖记录
         </Button>
+        </div>
 
         <div className={`overflow-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
           <Card key={editing?.id || "new"} className="p-4">
             <h2 className="mb-3 text-base font-semibold">{editing ? "修改开奖记录" : "新增开奖记录"}</h2>
             <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
               <Field label="彩种" className="col-span-2">
-                <select name="lottery_type_id" defaultValue={editing?.lottery_type_id || 3} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                <select name="lottery_type_id" defaultValue={editing?.lottery_type_id || ""} onChange={async (e) => {
+                  const ltId = Number(e.target.value)
+                  if (!ltId || editing) return
+                  try {
+                    const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${ltId}`)
+                    if (info.term > 0) {
+                      const form = e.target.form!
+                      ;(form.elements.namedItem("year") as HTMLInputElement).value = String(info.year)
+                      ;(form.elements.namedItem("term") as HTMLInputElement).value = String(info.term + 1)
+                      ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(info.term + 2)
+                    }
+                  } catch { /* ignore */ }
+                }} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                  <option value="">请选择彩种</option>
                   {lotteries.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
               </Field>
               <Field label="年份"><Input name="year" type="number" defaultValue={editing?.year || new Date().getFullYear()} /></Field>
-              <Field label="期数"><Input name="term" type="number" defaultValue={editing?.term || 1} /></Field>
-              <Field label="开奖号码" className="col-span-2"><Input name="numbers" defaultValue={editing?.numbers || ""} placeholder="02,25,11,33,06,41,01" /></Field>
-              <Field label="开奖时间" className="col-span-2"><Input name="draw_time" defaultValue={editing?.draw_time || ""} /></Field>
+              <Field label="期数"><Input name="term" type="number" defaultValue={editing?.term || ""} placeholder="自动获取" /></Field>
+              <Field label="开奖号码 (点击添加/删除)" className="col-span-2">
+                <DrawNumbersInput name="numbers" defaultValue={editing?.numbers || ""} />
+              </Field>
+              <Field label="开奖时间" className="col-span-2"><Input name="draw_time" type="date" defaultValue={editing?.draw_time?.slice(0, 10) || ""} /></Field>
               <Field label="状态">
                 <select name="status" defaultValue={editing?.status === false ? "0" : "1"} className="h-9 rounded-md border bg-background px-3 text-sm">
                   <option value="1">启用</option>
@@ -542,7 +615,7 @@ export function DrawsPageClient() {
                   <option value="0">未开奖</option>
                 </select>
               </Field>
-              <Field label="下一期数" className="col-span-2"><Input name="next_term" type="number" defaultValue={editing?.next_term || 2} /></Field>
+              <Field label="下一期数" className="col-span-2"><Input name="next_term" type="number" defaultValue={editing?.next_term || ""} placeholder="自动获取" /></Field>
               <div className="col-span-2 flex gap-2">
                 <Button type="submit" size="sm"><Save className="mr-1 h-4 w-4" />保存</Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => { setFormOpen(false); setEditing(null) }}>取消</Button>
@@ -555,7 +628,7 @@ export function DrawsPageClient() {
           <Table>
             <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>彩种</TableHead><TableHead>年份</TableHead><TableHead>期数</TableHead><TableHead>开奖号码</TableHead><TableHead>开奖时间</TableHead><TableHead>状态</TableHead><TableHead>是否开奖</TableHead><TableHead>下一期数</TableHead><TableHead>操作</TableHead></TableRow></TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.id}</TableCell><TableCell>{row.lottery_name}</TableCell><TableCell>{row.year}</TableCell><TableCell>{row.term}</TableCell><TableCell>{row.numbers}</TableCell><TableCell>{row.draw_time}</TableCell><TableCell><StatusBadge value={row.status} /></TableCell><TableCell>{row.is_opened ? "是" : "否"}</TableCell><TableCell>{row.next_term}</TableCell>
                   <TableCell className="space-x-2"><Button variant="outline" size="sm" onClick={() => { setEditing(row); setFormOpen(true) }}>修改</Button><Button variant="outline" size="sm" onClick={() => remove(row.id)}>删除</Button></TableCell>
@@ -1217,11 +1290,12 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
   }
   useEffect(() => { load() }, [siteId])
 
-  async function addModule() {
-    if (!selectedKey) return
+  async function addModule(key?: string) {
+    const targetKey = key || selectedKey
+    if (!targetKey) return
     try {
-      await adminApi(`/admin/sites/${siteId}/prediction-modules`, { method: "POST", body: jsonBody({ mechanism_key: selectedKey, status: true, sort_order: modules.length * 10 }) })
-      setAddOpen(false); await load()
+      await adminApi(`/admin/sites/${siteId}/prediction-modules`, { method: "POST", body: jsonBody({ mechanism_key: targetKey, status: true, sort_order: modules.length * 10 }) })
+      setSearchTerm(""); setSelectedKey(""); setAddOpen(false); await load()
     } catch (error) { setMessage(error instanceof Error ? error.message : "添加失败") }
   }
 
@@ -1399,22 +1473,41 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
       )}
 
       {/* 添加模块面板 */}
-      <div className={`overflow-hidden transition-all duration-300 ${addOpen ? "mb-3 max-h-[520px] opacity-100" : "max-h-0 opacity-0"}`}>
-        <Card className="p-4">
-          <Input placeholder="搜索机制名称 / key / modes_id..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="mb-2 h-8 text-sm" />
-          <div className="flex gap-2">
-            <select value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)} className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm" size={12}>
-              {available.filter((item) => {
+      <div className={`overflow-hidden transition-all duration-300 ${addOpen ? "mb-3 max-h-[620px] opacity-100" : "max-h-0 opacity-0"}`}>
+        <Card className="p-3">
+          <Input placeholder="搜索 title / key / modes_id（共 335 个可选模块）…" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setSelectedKey("") }} className="mb-2 h-8 text-sm" />
+          <div className="max-h-[400px] overflow-y-auto rounded-md border">
+            {(() => {
+              const filtered = available.filter((item) => {
                 if (!searchTerm.trim()) return true
                 const q = searchTerm.toLowerCase()
                 return item.title.toLowerCase().includes(q) || item.key.toLowerCase().includes(q) || String(item.default_modes_id).includes(q)
-              }).map((item) => (
-                <option key={item.key} value={item.key} disabled={configuredKeys.has(item.key)}>
-                  {item.title} [{item.key}] modes_id={item.default_modes_id}{configuredKeys.has(item.key) ? " ✓" : ""}
-                </option>
-              ))}
-            </select>
-            <Button onClick={addModule} disabled={!selectedKey} className="transition-all hover:scale-105 active:scale-95">确认添加</Button>
+              })
+              if (filtered.length === 0) {
+                return <div className="p-4 text-center text-xs text-muted-foreground">无匹配模块</div>
+              }
+              return filtered.map((item) => {
+                const configured = configuredKeys.has(item.key)
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    disabled={configured}
+                    onClick={() => addModule(item.key)}
+                    className={`w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors ${
+                      configured
+                        ? "bg-muted/30 text-muted-foreground cursor-not-allowed"
+                        : "hover:bg-primary/10 hover:text-primary cursor-pointer"
+                    }`}
+                  >
+                    <span className="font-medium">{item.title}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">[{item.key}]</span>
+                    <span className="ml-1 text-xs text-muted-foreground">modes_id={item.default_modes_id}</span>
+                    {configured && <span className="ml-2 text-xs text-green-600 font-medium">已添加</span>}
+                  </button>
+                )
+              })
+            })()}
           </div>
         </Card>
       </div>

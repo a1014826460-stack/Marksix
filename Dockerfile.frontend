@@ -18,8 +18,12 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 # 复制源代码
 COPY . .
 
-# 构建 Next.js standalone 输出
-RUN npm run build || pnpm build
+# 构建 Next.js standalone 输出（根据锁文件选择包管理器）
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm build; \
+    else \
+      npm run build; \
+    fi
 
 # ---- 运行阶段 ----
 FROM node:20-alpine AS runner

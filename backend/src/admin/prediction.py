@@ -163,16 +163,6 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
                     ),
                 )
 
-        if allowed_keys:
-            placeholders = ", ".join("?" for _ in allowed_keys)
-            conn.execute(
-                f"""
-                DELETE FROM site_prediction_modules
-                WHERE site_id = ?
-                  AND mechanism_key NOT IN ({placeholders})
-                """,
-                (current_site_id, *allowed_keys),
-            )
 
 
 # ─────────────────────────────────────────────────────────
@@ -188,6 +178,7 @@ def build_generated_prediction_row_data(
     web_value: str = "4",
     res_code: str = "",
     generated_content: Any,
+    db_path: str | Path = "",
 ) -> dict[str, Any]:
     """将 predict() 的输出转换成 created schema 可直接落库的结构。
 
@@ -204,6 +195,20 @@ def build_generated_prediction_row_data(
         "modes_id": int(mode_id) if mode_id else 0,
         "res_code": str(res_code or ""),
     }
+
+    # 若提供了 res_code，同步计算 res_sx 和 res_color
+    if res_code and db_path:
+        codes = [c.strip() for c in str(res_code).split(",") if c.strip()]
+        if len(codes) == 7:
+            special = codes[-1]
+            from helpers import load_fixed_data_maps
+            with connect(db_path) as _tmp_conn:
+                zmap, cmap = load_fixed_data_maps(_tmp_conn)
+            row_data["res_sx"] = zmap.get(special, "")
+            color = cmap.get(special, "")
+            if color:
+                from utils.created_prediction_store import normalize_color_label
+                row_data["res_color"] = normalize_color_label(color)
 
     # 三期窗口自动填充：每 3 期为一组，组内共享 start/end
     # 例如 term=127 → end=127, start=125；term=126 → end=127, start=125
@@ -531,6 +536,7 @@ def bulk_generate_site_prediction_data(
 
     with connect(db_path) as conn:
         sync_site_prediction_modules(conn, site_id)
+        zodiac_map, color_map = load_fixed_data_maps(conn)
 
         query = """
             SELECT id, mechanism_key, mode_id, status, sort_order
@@ -594,6 +600,66 @@ def bulk_generate_site_prediction_data(
                     safe_res_code: str | None = draw["numbers_str"]
                     if draw_key in safety_draw_map:
                         safe_res_code = None
+
+                    # ── mode_id=65 特码段数：根据特码生成连续12个号码段 ──
+                    if mode_id == 65:
+                        numbers = [n.strip() for n in draw["numbers_str"].split(",") if n.strip()]
+                        try:
+                            special_code = int(numbers[-1]) if numbers else 0
+                        except (ValueError, IndexError):
+                            special_code = 0
+
+                        if special_code <= 12:
+                            content = ",".join(f"{i:02d}" for i in range(1, 13))
+                        elif special_code <= 24:
+                            content = ",".join(f"{i:02d}" for i in range(13, 25))
+                        elif special_code <= 36:
+                            content = ",".join(f"{i:02d}" for i in range(25, 37))
+                        else:
+                            content = ",".join(f"{i:02d}" for i in range(37, 50))
+
+                        res_sx_parts = []
+                        res_color_parts = []
+                        for num_str in numbers:
+                            try:
+                                num_val = int(num_str)
+                                num_zf = f"{num_val:02d}"
+                            except ValueError:
+                                continue
+                            sx = ""
+                            for z, codes in zodiac_map.items():
+                                if num_zf in codes:
+                                    sx = z
+                                    break
+                            res_sx_parts.append(sx)
+                            col = ""
+                            for c, codes in color_map.items():
+                                if num_zf in codes:
+                                    col = c
+                                    break
+                            res_color_parts.append(col)
+
+                        row_data = build_generated_prediction_row_data(
+                            mode_id=mode_id,
+                            lottery_type=str(lottery_type),
+                            year=str(draw["year"]),
+                            term=str(draw["term"]),
+                            web_value="4",
+                            res_code=safe_res_code or "",
+                            generated_content=content,
+                        )
+                        # 补充 res_sx / res_color 以通过 require_result_consistency 过滤
+                        row_data["res_sx"] = ",".join(res_sx_parts)
+                        row_data["res_color"] = ",".join(res_color_parts)
+
+                        stored = upsert_created_prediction_row(conn, table_name, row_data)
+                        if stored.get("action") == "inserted":
+                            module_report["inserted"] += 1
+                            total_inserted += 1
+                        else:
+                            module_report["updated"] += 1
+                            total_updated += 1
+                        continue
 
                     result = predict(
                         config=config,
@@ -680,6 +746,80 @@ def regenerate_payload_data(
         raise ValueError("期数不能为0。")
 
     config = get_prediction_config(mechanism_key)
+    mode_id = int(config.default_modes_id or 0)
+
+    # ── mode_id=65 特码段数：根据特码生成连续12个号码段 ──
+    if mode_id == 65:
+        codes_list = [c.strip() for c in res_code.split(",") if c.strip()]
+        try:
+            special_code = int(codes_list[-1]) if codes_list else 0
+        except (ValueError, IndexError):
+            special_code = 0
+
+        if special_code <= 12:
+            content = ",".join(f"{i:02d}" for i in range(1, 13))
+        elif special_code <= 24:
+            content = ",".join(f"{i:02d}" for i in range(13, 25))
+        elif special_code <= 36:
+            content = ",".join(f"{i:02d}" for i in range(25, 37))
+        else:
+            content = ",".join(f"{i:02d}" for i in range(37, 50))
+
+        with connect(db_path) as conn:
+            if not conn.table_exists(table_name):
+                raise ValueError(f"表 {table_name} 不存在。")
+            zodiac_map, color_map = load_fixed_data_maps(conn)
+            columns = set(conn.table_columns(table_name))
+
+            res_sx_parts = []
+            res_color_parts = []
+            for num_str in codes_list:
+                try:
+                    num_val = int(num_str)
+                    num_zf = f"{num_val:02d}"
+                except ValueError:
+                    continue
+                sx = ""
+                for z, codes in zodiac_map.items():
+                    if num_zf in codes:
+                        sx = z
+                        break
+                res_sx_parts.append(sx)
+                col = ""
+                for c, codes in color_map.items():
+                    if num_zf in codes:
+                        col = c
+                        break
+                res_color_parts.append(col)
+
+            insert_data: dict[str, Any] = {
+                "type": str(lottery_type),
+                "year": str(year) if year else "",
+                "term": str(term) if term else "",
+                "web": "4",
+                "web_id": 4,
+                "modes_id": 65,
+                "res_code": res_code,
+                "res_sx": ",".join(res_sx_parts),
+                "res_color": ",".join(res_color_parts),
+                "content": content,
+                "status": 1,
+            }
+
+            filtered_data = {k: v for k, v in insert_data.items() if k in columns}
+            if not filtered_data:
+                raise ValueError("生成的预测数据无法匹配目标表任何列。")
+
+            stored = upsert_created_prediction_row(conn, table_name, filtered_data)
+            return {
+                "inserted_id": stored.get("id"),
+                "action": stored.get("action"),
+                "created_at": stored.get("created_at"),
+                "prediction_labels": [],
+                "content": content,
+                "table": stored.get("table"),
+                "qualified_table": stored.get("qualified_table"),
+            }
 
     result = predict(
         config=config,

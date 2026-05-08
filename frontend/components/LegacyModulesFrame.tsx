@@ -29,7 +29,7 @@ export function LegacyModulesFrame({
   shellHeaderHidden = false,
 }: LegacyModulesFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  const [frameHeight, setFrameHeight] = useState(1600)
+  const [frameHeight, setFrameHeight] = useState(960)
   const [displayGame, setDisplayGame] = useState<LotteryGame>(activeGame)
 
   function pushDebug(message: string) {
@@ -112,7 +112,7 @@ export function LegacyModulesFrame({
         if (!Number.isFinite(payload.height) || payload.height <= 0) return
 
         pushDebug(`apply height -> ${Math.ceil(payload.height)}`)
-        setFrameHeight(Math.max(720, Math.ceil(payload.height) + 12))
+        setFrameHeight(Math.max(420, Math.ceil(payload.height) + 2))
       }
     }
 
