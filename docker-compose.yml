@@ -38,6 +38,7 @@ services:
         condition: service_healthy
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/liuhecai"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/liuhecai"
       LOTTERY_API_HOST: "0.0.0.0"
       LOTTERY_API_PORT: "8000"
     ports:

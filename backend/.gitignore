@@ -31,6 +31,8 @@ next-env.d.ts
 *.sqlite3
 *.db
 *.sqlite
+*.json
+*.log
 
 # 爬虫采集数据
 data/lottery_data/

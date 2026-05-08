@@ -439,6 +439,293 @@ a {
   .KJ-IFRAME { height: 130px; }
 }
 
+/* ============================================================
+   旧站表格样式补全（来自 style.css 和 JS 注入的样式）
+   以下类名在旧站独立 JS 文件中被使用，需在新站中提供定义。
+   ============================================================ */
+
+/* ---- duilianpt1（旧站标准预测表格，18pt 红字，匹配 style.css） ---- */
+.duilianpt1 {
+  table-layout: auto;
+  color: #FF0000;
+  border-radius: 5px;
+  overflow: hidden;
+  text-align: center;
+  background: #fff;
+}
+.duilianpt1 tr { height: 30px; }
+.duilianpt1 td {
+  font-weight: bold;
+  border: 1px solid #C0C0C0;
+  font-size: 18pt;
+}
+.duilianpt1 th {
+  font-weight: bold;
+  border: 1px solid #C0C0C0;
+  font-size: 17pt;
+}
+.duilianpt1 .zl { font-size: 22pt; }
+@media screen and (max-width: 610px) {
+  .duilianpt1 td { font-size: 15pt; }
+  .duilianpt1 .zl { font-size: 19pt; }
+  .duilianpt1 th { font-size: 14pt; }
+}
+@media screen and (max-width: 505px) {
+  .duilianpt1 td { font-size: 14pt; }
+  .duilianpt1 .zl { font-size: 18pt; }
+  .duilianpt1 th { font-size: 13pt; }
+}
+
+/* ---- duilianpt（与 duilianpt1 类似，但字体略小） ---- */
+.duilianpt {
+  table-layout: auto;
+  color: #FF0000;
+  border-radius: 5px;
+  overflow: hidden;
+  text-align: center;
+  background: #fff;
+}
+.duilianpt tr { height: 30px; }
+.duilianpt td {
+  font-weight: bold;
+  border: 1px solid #C0C0C0;
+  font-size: 18pt;
+}
+.duilianpt th {
+  font-weight: bold;
+  border: 1px solid #C0C0C0;
+  font-size: 18pt;
+}
+.duilianpt .zl { font-size: 20pt; }
+@media screen and (max-width: 610px) {
+  .duilianpt td { font-size: 15pt; }
+  .duilianpt .zl { font-size: 17pt; }
+  .duilianpt th { font-size: 14pt; }
+}
+@media screen and (max-width: 505px) {
+  .duilianpt td { font-size: 14pt; }
+  .duilianpt .zl { font-size: 16pt; }
+  .duilianpt th { font-size: 13pt; }
+}
+
+/* ---- qxtable（九肖一码等模块使用） ---- */
+.qxtable {
+  color: #000;
+  background: #fff;
+  font-weight: bold;
+  word-wrap: break-word;
+  word-break: break-all;
+  text-align: center;
+}
+.qxtable tr { height: 30px; }
+.qxtable th, .qxtable td { border: 1px solid #fff; }
+.qxtable th {
+  font-size: 18px;
+  background: #fff89c;
+  text-align: center;
+  color: red;
+}
+.qxtable td {
+  text-overflow: ellipsis;
+  font-size: 26px;
+}
+.qxtable .xz { font-size: 34px; }
+.qxtable .xz1 { font-size: 20px; }
+.qxtable .xz2 { font-size: 30px; }
+.qxtable .xz3 { font-size: 38px; }
+.qxtable .jx { font-size: 22px; }
+.qxtable.yxym {
+  table-layout: auto;
+  word-wrap: break-word;
+  word-break: break-all;
+}
+.qxtable.yxym td { font-size: 18pt; }
+.qxtable.yxym tr td:nth-child(1) {
+  background: #d4eae9;
+  width: 26%;
+}
+.qxtable.yxym tr td:nth-child(3) {
+  background: #d4eae9;
+  width: 18%;
+}
+.qxtable.yxym tr td:nth-child(2) {
+  background: #f7f7f7;
+  width: 56%;
+  font-size: 28px;
+}
+@media screen and (max-width: 610px) {
+  .qxtable td { font-size: 20px; }
+  .qxtable .xz { font-size: 26px; }
+  .qxtable .xz1 { font-size: 18px; }
+  .qxtable .xz2 { font-size: 24px; }
+  .qxtable .xz3 { font-size: 30px; }
+  .qxtable.yxym td { font-size: 12pt; }
+}
+
+/* ---- bzlx（六尾中特等模块使用） ---- */
+.bzlx { text-align: center; font-size: 18px; font-weight: bold; background: #fff; }
+.bzlx th { color: #fff; border: solid 1px #4292EF; background: #84BAF7; }
+.bzlx td { border: solid 1px #4292EF; }
+.bzlx td.td1 { width: 20% !important; }
+.bzlx td.td2 { color: #00f; font-size: 20px; }
+.bzlx td.td3 { color: #f00; }
+
+/* ---- sqbk（部分模块使用） ---- */
+.sqbk { text-align: center; font-weight: bold; background: #fff; }
+.sqbk th { color: #fff; font-size: 18px; border: solid 1px #4292EF; background: #84BAF7; }
+.sqbk td { line-height: 1.3; font-size: 16px; border: solid 1px #4292EF; }
+.sqbk td.td1 { width: 30%; }
+.sqbk td.td2 { color: #00f; font-size: 26px; }
+.sqbk td.td3 { width: 30%; }
+
+/* ==================== 旧 JS 隔离壳页面 ==================== */
+.legacy-shell-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  color: #1f2a37;
+}
+
+.legacy-shell-panel {
+  margin-bottom: 20px;
+  padding: 20px 22px;
+  border: 1px solid #d5e6db;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 250, 232, 0.98), rgba(227, 243, 235, 0.96)),
+    #ffffff;
+  box-shadow: 0 16px 34px rgba(16, 64, 42, 0.08);
+}
+
+.legacy-shell-eyebrow {
+  margin: 0 0 8px;
+  color: #0b6b43;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.legacy-shell-panel__title {
+  margin: 0;
+  color: #123524;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15;
+}
+
+.legacy-shell-panel__desc,
+.legacy-shell-panel__meta,
+.legacy-shell-subtitle {
+  margin: 10px 0 0;
+  color: #355745;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.legacy-shell-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.legacy-shell-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid #cfe0d4;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #f7fbf8);
+  color: #234534;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.legacy-shell-tab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(20, 71, 47, 0.08);
+}
+
+.legacy-shell-tab.active {
+  border-color: #0c7a4d;
+  background: linear-gradient(180deg, #f4fff8, #dff5e7);
+  box-shadow: 0 14px 26px rgba(14, 98, 61, 0.15);
+}
+
+.legacy-shell-tab__label {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.legacy-shell-tab__desc {
+  color: #466756;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.legacy-shell-card {
+  padding: 18px;
+  border: 1px solid #dce8df;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(249, 241, 211, 0.7), transparent 32%),
+    linear-gradient(180deg, #ffffff, #f8fbf9);
+  box-shadow: 0 18px 42px rgba(15, 56, 37, 0.08);
+}
+
+.legacy-shell-card__header {
+  margin-bottom: 16px;
+}
+
+.legacy-shell-title {
+  margin: 0;
+  color: #173626;
+  font-size: 24px;
+}
+
+.legacy-shell-frame {
+  width: 100%;
+  min-height: 720px;
+  border: 1px solid #d7e2d8;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .legacy-shell-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-shell-page {
+    padding: 18px 12px 32px;
+  }
+
+  .legacy-shell-card,
+  .legacy-shell-panel {
+    padding: 16px;
+  }
+}
+
+/* ---- ptyx11（部分模块使用） ---- */
+.ptyx11 { font-size: 16px; font-weight: bold; background: #fff; }
+.ptyx11 th { font-size: 18px; color: #00f; border: solid 1px #4292EF; background: #84BAF7; }
+.ptyx11 td { height: 32px; padding: 0 5px; color: #333; border: solid 1px #4292EF; }
+
+/* ---- 开/不开 结果状态颜色类 ----
+   开（命中）→ red-text
+   不开（未命中）→ blue-text
+   待开奖 → grey-text
+   与旧站 red-text / blue-text / black-text 类名统一 */
+.result-hit { color: #FF0000; }
+.result-miss { color: #0000FF; }
+.result-pending { color: #999; }
+
 /* ---- JSON 数组内容展示（六尾中特、九肖一码等） ---- */
 .legacy-json-content {
   display: inline-flex;
@@ -499,3 +786,48 @@ a {
   word-break: break-word;
   line-height: 1.5;
 }
+
+/* ---- 预测命中黄色高亮（旧站通用 #FFFF00 背景） ---- */
+.highlight {
+  background-color: #FFFF00;
+}
+
+/* ---- ptyx11 表格 - 五肖中特、九肖中特等模块 ---- */
+.ptyx11 {
+  font-size: 16px;
+  font-weight: bold;
+  background: #fff;
+}
+.ptyx11 th {
+  font-size: 18px;
+  color: #00f;
+  border: solid 1px #4292EF;
+  background: #84BAF7;
+}
+.ptyx11 td {
+  height: 32px;
+  padding: 0 5px;
+  color: #333;
+  border: solid 1px #4292EF;
+}
+
+/* ---- sqbk 表格 - 单双各四肖等模块 ---- */
+.sqbk {
+  text-align: center;
+  font-weight: bold;
+  background: #fff;
+}
+.sqbk th {
+  color: #fff;
+  font-size: 18px;
+  border: solid 1px #4292EF;
+  background: #84BAF7;
+}
+.sqbk td {
+  line-height: 1.3;
+  font-size: 16px;
+  border: solid 1px #4292EF;
+}
+.sqbk td.td1 { width: 30%; }
+.sqbk td.td2 { color: #00f; font-size: 26px; }
+.sqbk td.td3 { width: 30%; }

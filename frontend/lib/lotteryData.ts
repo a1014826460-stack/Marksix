@@ -254,13 +254,17 @@ function resolveGameType(lotteryTypeId: number, lotteryName?: string): LotteryGa
 
 /**
  * 从模块列表中提取指定 mechanism_key 的数据行，转换为 PlainRow 格式
+ * 同时支持检索 legacy_ 前缀的键（如 "pt2xiao" → 匹配 "legacy_pt2xiao"）
  *
  * @param modules  - 后端返回的模块列表
  * @param key      - 要匹配的 mechanism_key（如 "pt2xiao"、"3zxt"）
  * @returns 转换后的 PlainRow 数组（找不到匹配模块时返回空数组）
  */
 function extractModuleRows(modules: PublicModule[], key: string): PlainRow[] {
-  const mod = modules.find(m => m.mechanism_key === key)
+  // 先尝试精确匹配
+  let mod = modules.find(m => m.mechanism_key === key)
+  // 再尝试 legacy_ 前缀匹配
+  if (!mod) mod = modules.find(m => m.mechanism_key === `legacy_${key}`)
   if (!mod) return []
   return mod.history.map((row: PublicHistoryRow) => ({
     issue: row.issue,
@@ -290,6 +294,26 @@ export function transformSitePageData(
     hongkong: [],
   }
 
+  // 合并三种彩种的所有 legacy 模块，用于搜索三个核心模块
+  const allGameModules = modulesByGame
+    ? [...new Set([
+        ...modulesByGame.taiwan,
+        ...modulesByGame.macau,
+        ...modulesByGame.hongkong,
+      ])]
+    : []
+
+  // 从所有可用数据中提取三个核心模块的行
+  function extractFromAll(key: string): PlainRow[] {
+    // 优先从 apiData.modules（site-page 配置模块）中搜索
+    const fromSite = extractModuleRows(apiData.modules, key)
+    if (fromSite.length > 0) return fromSite
+    // 再搜索 legacy 模块（可能以 legacy_ 前缀存储）
+    const fromLegacy = extractModuleRows(allGameModules, key)
+    if (fromLegacy.length > 0) return fromLegacy
+    return []
+  }
+
   return {
     /* ---- 游戏信息 ---- */
     game: resolveGameType(apiData.site.lottery_type_id, apiData.site.lottery_name),
@@ -300,11 +324,10 @@ export function transformSitePageData(
     resultBalls: apiData.draw.result_balls,
     specialBall: apiData.draw.special_ball ?? { value: "", color: "red", zodiac: "" },
 
-    /* ---- 三个核心预测模块（根据 mechanism_key 匹配） ---- */
-    // 注意：这些字段仅在数据库中存在对应 mechanism_key 的模块时才有数据
-    flatKingRows: extractModuleRows(apiData.modules, "pt2xiao"),     // 两肖平特王（平特2肖）
-    threeIssueRows: extractModuleRows(apiData.modules, "3zxt"),      // 三期中特（3肖中特）
-    doubleWaveRows: extractModuleRows(apiData.modules, "hllx"),      // 双波中特（红蓝绿肖）
+    /* ---- 三个核心预测模块（搜索 site-page + legacy 模块） ---- */
+    flatKingRows: extractFromAll("pt2xiao"),           // 两肖平特王
+    threeIssueRows: extractFromAll("3zxt"),              // 三期中特
+    doubleWaveRows: extractFromAll("hllx"),              // 双波中特
 
     /* ---- 扩展数据 ---- */
     historyRows: [],        // 开奖历史（目前 API 未单独提供）

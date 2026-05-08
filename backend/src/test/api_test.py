@@ -30,13 +30,14 @@ def fetch_and_save_lottery_data(page=1, page_size=500, sign="2", output_dir="lot
         "x-requested-with": "XMLHttpRequest"
     }
     cookies = {
-        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJhdWQiOiIiLCJpYXQiOjE3NzgwNDM1MjQsIm5iZiI6MTc3ODA0MzUyNywiZXhwIjoxNzc4MTI5OTI0LCJkYXRhIjp7ImlkIjoxLCJuYW1lIjoiYWRtaW4iLCJzaWduIjoiXHU4ZDg1XHU3ZWE3XHU3YmExXHU3NDA2XHU1NDU4IiwianVyIjpudWxsfX0.7_k7LIAIcpGPoUqbPLa0EY_-gY8Et6YlTNiO-LdHC2k"
+        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJhdWQiOiIiLCJpYXQiOjE3NzgxNTQyMzEsIm5iZiI6MTc3ODE1NDIzNCwiZXhwIjoxNzc4MjQwNjMxLCJkYXRhIjp7ImlkIjoxLCJuYW1lIjoiYWRtaW4iLCJzaWduIjoiXHU4ZDg1XHU3ZWE3XHU3YmExXHU3NDA2XHU1NDU4IiwianVyIjpudWxsfX0.1IaOuliRxxiil00NGadmiRii1XTb9u-HsdXKJLH-I04"
     }
-    url = "https://admin.shengshi8800.com/ds67BvM/kaijiang/index"
+    url = "https://admin.shengshi8800.com/ds67BvM/code/index"
     params = {
         "page": str(page),
         "pageNum": str(page_size),
-        "sign": sign
+        "sign": sign,
+        "type": "2"
     }
 
     try:
@@ -84,4 +85,4 @@ def fetch_and_save_lottery_data(page=1, page_size=500, sign="2", output_dir="lot
 
 if __name__ == "__main__":
     # 示例：抓取第2页，每页500条
-    fetch_and_save_lottery_data(page=1, page_size=500, sign="3")
+    fetch_and_save_lottery_data(page=1, page_size=500, sign="")

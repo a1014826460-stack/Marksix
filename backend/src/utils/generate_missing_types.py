@@ -93,11 +93,15 @@ def generate_missing_types(db_path: str = DEFAULT_DB_PATH) -> dict[str, int]:
                     vals = []
                     for c in col_names:
                         if c == "type":
-                            vals.append(target_type)
+                            vals.append(str(target_type))  # 用 TEXT 兼容 int/text 列
                         elif c == "source_record_id":
-                            # 生成唯一的 source_record_id，避免主键冲突
-                            original = str(row_dict.get(c, ""))
-                            vals.append(f"{original}_gen_{target_type}")
+                            # 使用负值避免与原始 ID 冲突，且保持全数字以支持 CAST(... AS INTEGER)
+                            original_id = str(row_dict.get(c, "0"))
+                            try:
+                                numeric_id = abs(int(float(original_id)))
+                                vals.append(str(-numeric_id * 10 - target_type))
+                            except (ValueError, TypeError):
+                                vals.append(str(-hash(original_id) % 10_000_000))
                         elif c in ("res_code", "res_sx", "res_color"):
                             # 清空开奖结果，因为没有对应 type 的真实开奖数据
                             vals.append("")

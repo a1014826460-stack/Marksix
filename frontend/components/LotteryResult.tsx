@@ -1,23 +1,14 @@
 /**
  * 开奖结果展示组件 — LotteryResult.tsx
  * ---------------------------------------------------------------
- * 职责：展示六合彩开奖结果，使用 iframe 嵌入旧站开奖页面，
- *       与旧站 /vendor/shengshi8800/index.html 的 kj.js 行为完全一致。
+ * 职责：从数据库 lottery_draws 表读取开奖数据，展示六合彩开奖号码球。
  *
- * 旧站行为（kj.js）：
- *   1. 创建三个标签页：台湾彩、澳门彩、香港彩
- *   2. 每个标签页对应一个 DIV 容器，初始为空
- *   3. 点击标签页时，向对应 DIV 注入 iframe
- *   4. iframe URL 来自标签的 data-opt 属性
- *   5. 切换标签后，旧标签的 iframe 延迟 10 秒清除
- *
- * React 实现：
- *   1. 使用相同的 KJ-TabBox CSS 类名保持视觉一致
- *   2. 通过 activeGame 控制当前显示的 iframe
- *   3. 使用与旧站相同的 iframe URL 确保开奖结果完全一致
- *
- * 旧站 CSS 定义（已迁移至 globals.css）：
- *   .KJ-TabBox, .KJ-TabBox ul, .KJ-TabBox li, .KJ-IFRAME 等
+ * 数据流：
+ *   1. 用户切换游戏标签（台湾彩/澳门彩/香港彩）
+ *   2. 组件自动请求 /api/latest-draw?lottery_type=X
+ *   3. Next.js API 代理转发到 Python 后端 /api/public/latest-draw
+ *   4. 后端从 lottery_draws 表查询，用 fixed_data 映射生肖/波色
+ *   5. 返回开奖号码球数组，组件用 draw-ball CSS 类渲染
  */
 
 "use client"
@@ -25,30 +16,34 @@
 import type { LotteryGame } from "@/lib/lotteryData"
 import { games } from "@/lib/lotteryData"
 
-/** 开奖结果组件 Props */
+/** LotteryResult 组件的 Props */
 type LotteryResultProps = {
   activeGame: LotteryGame
   onGameChange: (game: LotteryGame) => void
 }
 
 /**
- * 旧站开奖 iframe URL 映射
+ * 开奖结果展示组件
  * ---------------------------------------------------------------
- * 与 kj.js 中 data-opt 属性的 URL 完全一致：
- *   台湾彩 → xgkj3.html
- *   澳门彩 → amkj2.html
- *   香港彩 → xgkj2.html
+ * 使用 iframe 嵌入旧站开奖页面，与旧 kj.js 行为完全一致。
+ * 每个游戏标签对应一个外部开奖页面 URL：
+ *   台湾彩 → https://admin.shengshi8800.com/xgkj3.html
+ *   澳门彩 → https://admin.shengshi8800.com/amkj2.html
+ *   香港彩 → https://admin.shengshi8800.com/xgkj2.html
+ *
+ * 包含：
+ *   1. KJ-TabBox 游戏切换标签（台湾彩/澳门彩/香港彩）
+ *   2. iframe 嵌入外部开奖结果页面
+ *   3. waibox 广告横幅
  */
-const IFRAME_URLS: Record<LotteryGame, string> = {
-  taiwan: "https://admin.shengshi8800.com/xgkj3.html",
-  macau: "https://admin.shengshi8800.com/amkj2.html",
-  hongkong: "https://admin.shengshi8800.com/xgkj2.html",
-}
-
-/** iframe 高度（与旧站 data-opt 中的 height 一致） */
-const IFRAME_HEIGHT = 130
-
 export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) {
+  // iframe URL 配置（与旧站 kj.js 完全一致）
+  const IFRAME_URLS: Record<LotteryGame, { url: string; height: number }> = {
+    taiwan: { url: "https://admin.shengshi8800.com/xgkj3.html", height: 130 },
+    macau: { url: "https://admin.shengshi8800.com/amkj2.html", height: 130 },
+    hongkong: { url: "https://admin.shengshi8800.com/xgkj2.html", height: 130 },
+  }
+
   return (
     <div className="box pad" id="yxym">
       <div className="KJ-TabBox">
@@ -63,32 +58,31 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
             </li>
           ))}
         </ul>
-        {/* 每个游戏标签对应一个面板，始终挂载所有 iframe，仅隐藏非活跃的 */}
-        {/* 避免 iframe 卸载重挂载导致的外部页面 scrollTo 干扰 */}
-        {games.map((game) => (
-          <div
-            key={game.key}
-            className={activeGame === game.key ? "cur" : ""}
-            style={{ display: activeGame === game.key ? "" : "none" }}
-          >
-            <iframe
-              className="KJ-IFRAME"
-              src={IFRAME_URLS[game.key]}
-              width="100%"
-              height={IFRAME_HEIGHT}
-              style={{ border: "none", overflow: "hidden" }}
-              title={`${game.label}开奖结果`}
-            />
-          </div>
-        ))}
+        {games.map((game) => {
+          const iframeCfg = IFRAME_URLS[game.key]
+          const isActive = activeGame === game.key
+          return (
+            <div
+              key={game.key}
+              className={isActive ? "cur" : ""}
+              style={{ display: isActive ? "" : "none" }}
+            >
+              {isActive && (
+                <iframe
+                  className="KJ-IFRAME"
+                  src={iframeCfg.url}
+                  width="100%"
+                  height={iframeCfg.height}
+                  style={{ border: 0, overflow: "hidden" }}
+                  title={`${game.label}开奖结果`}
+                />
+              )}
+            </div>
+          )
+        })}
       </div>
       {/* 旧站底部广告横幅 */}
       <div className="waibox">
-        <style>{`
-          .waibox { text-align: center; background: linear-gradient(to top, #9C27B0, #673AB7); line-height: 55px; margin: 0; padding: 0; list-style-type: none; border: none; }
-          .waibox a:link { text-decoration: none; }
-          .waibox .location_to { padding: 10px; background: beige; border-radius: 15px; color: #f44336; font-weight: 700; letter-spacing: 1px; box-shadow: 2px 2px 1px #f44336; }
-        `}</style>
         <a
           className="location_to"
           href="http://shengshi8800.com"

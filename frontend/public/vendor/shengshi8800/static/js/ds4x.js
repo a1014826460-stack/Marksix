@@ -1,5 +1,5 @@
 ﻿$.ajax({
-    url: httpApi + `/api/kaijiang/getDsnx?num=4&web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/getDsnx?num=4&web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {
@@ -47,7 +47,6 @@ ${d.term}期<br> </td>
         console.error('Error:', error);
     }
 }); 
-
 
 
 

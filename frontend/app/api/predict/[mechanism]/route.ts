@@ -49,6 +49,10 @@ export async function POST(request: Request, context: RouteContext) {
         content: body?.content ?? null,
         sourceTable: body?.source_table ?? body?.sourceTable ?? null,
         targetHitRate: body?.target_hit_rate ?? body?.targetHitRate ?? null,
+        lotteryType: body?.lottery_type ?? body?.lotteryType ?? null,
+        year: body?.year ?? null,
+        term: body?.term ?? null,
+        web: body?.web ?? null,
       }, authorization),
     )
   } catch (error) {

@@ -2,7 +2,13 @@
 
 ## 设计选择
 
-当前项目的数据抓取、归一化、固定映射、文本历史映射和预测逻辑都围绕本地 SQLite 展开，业务边界比较明确。因此管理系统采用项目内自研 Python 实现，而不是直接套用现有 GitHub CMS 项目。
+当前项目的数据抓取、归一化、固定映射、文本历史映射和预测逻辑已经同时支持 SQLite 与 PostgreSQL，但当前生产链路以 PostgreSQL 为主，尤其依赖：
+
+- `public.lottery_draws`：开奖事实表
+- `public.mode_payload_*`：抓取归一化后的原始玩法历史
+- `created.mode_payload_*`：本地生成的预测结果表
+
+因此管理系统继续采用项目内自研 Python 实现，而不是直接套用现有 GitHub CMS 项目。
 
 原因：
 
@@ -35,13 +41,14 @@ npm run dev -- --hostname 127.0.0.1 --port 3002
 http://127.0.0.1:3002/login
 ```
 
-默认数据库：
+默认数据库目标优先级：
 
-```text
-backend/data/lottery_modes.sqlite3
-```
+1. `LOTTERY_DB_PATH`
+2. `DATABASE_URL`
+3. 配置文件中的 PostgreSQL DSN
+4. `backend/data/lottery_modes.sqlite3`
 
-可通过 `--db-path` 指定其他 SQLite 文件。
+因此本地开发既可以继续使用 SQLite，也可以直接指向 PostgreSQL。
 
 ## 通用响应
 
@@ -55,6 +62,18 @@ backend/data/lottery_modes.sqlite3
   "error": "错误说明"
 }
 ```
+
+## 前后端边界
+
+本文件只描述 **Python 后端原生接口**。
+
+- 浏览器通常不会直接调用这些接口
+- 公开站点一般经由 `frontend/app/api/*` 的 Next.js 代理层访问
+- 后端只负责“数据事实、预测结果、兼容输出”
+- 前端只负责“代理、转发、页面展示、旧站 JS 兼容适配”
+
+维护时请避免把前端展示拼装逻辑写回后端，也避免让前端去猜测开奖状态。
+开奖是否可公开、预测是否命中，统一以后端为准。
 
 ## 健康检查
 
@@ -77,6 +96,161 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health
 - `summary.text_history_mappings`：文本历史映射数量
 - `summary.prediction_mechanisms`：当前可用预测机制数
 
+## 公开前台接口
+
+这些接口供前端公开页或 Next.js 代理层调用，不需要管理员鉴权。
+
+### GET `/api/public/site-page`
+
+返回某个站点首页所需的完整数据。
+
+查询参数：
+
+- `site_id`：可选，站点 ID
+- `domain`：可选，按域名匹配站点
+- `history_limit`：可选，每个模块返回的历史行数，默认 `8`
+
+返回结构：
+
+```json
+{
+  "site": {
+    "id": 4,
+    "name": "盛世台湾六合彩",
+    "lottery_type_id": 3,
+    "start_web_id": 4,
+    "end_web_id": 4
+  },
+  "draw": {
+    "current_issue": "2026125",
+    "result_balls": [],
+    "special_ball": null
+  },
+  "modules": [
+    {
+      "id": 123,
+      "mechanism_key": "pt2xiao",
+      "default_modes_id": 43,
+      "default_table": "mode_payload_43",
+      "history_schema": "created",
+      "history_sources": ["created", "public"],
+      "history": []
+    }
+  ]
+}
+```
+
+后端规则：
+
+- 模块历史优先读取 `created.mode_payload_{mode_id}`
+- 若 `created` 数据不足 `history_limit`，再回退补充 `public.mode_payload_{mode_id}`
+- 站点模块会按站点 `lottery_type_id`、`start_web_id`、`end_web_id` 过滤
+- 开奖结果统一以 `public.lottery_draws` 为准，不再从 `mode_payload_*` 反推
+- 若某期在 `lottery_draws` 中 `is_opened = 0`，则该期历史返回“待开奖”，不对外暴露 `res_code/res_sx/res_color`
+
+### GET `/api/public/latest-draw`
+
+返回指定彩种最近一期 **已开奖** 数据。
+
+查询参数：
+
+- `lottery_type`：彩种 ID，默认 `1`
+
+返回示例：
+
+```json
+{
+  "current_issue": "2026125",
+  "result_balls": [
+    { "value": "04", "zodiac": "兔", "color": "blue" }
+  ],
+  "special_ball": {
+    "value": "40",
+    "zodiac": "兔",
+    "color": "red"
+  }
+}
+```
+
+后端规则：
+
+- 只读取 `public.lottery_draws` 中 `is_opened = 1` 的最新记录
+- `numbers` 会结合 `public.fixed_data` 补齐生肖与波色
+- 若存在未开奖记录（例如台湾彩 `type=3`），不会因为其 `numbers` 已抓到就提前返回
+
+## 旧站兼容接口
+
+这些接口为旧站 JS / 新站兼容层服务，输出以“兼容旧结构”为目标，不是新的领域模型。
+
+### GET `/api/legacy/current-term`
+
+返回当前已开奖期号与下一预测期号。
+
+查询参数：
+
+- `lottery_type_id`：彩种 ID，默认 `1`
+
+后端规则：
+
+- 只读取 `public.lottery_draws` 中 `is_opened = 1` 的最新期号
+- `issue = year + term`
+- `next_term` 优先取 `lottery_draws.next_term`，缺失时回退为 `term + 1`
+
+### GET `/api/legacy/post-list`
+
+返回旧站图片列表。
+
+查询参数：
+
+- `pc`
+- `web`
+- `type`
+- `limit`
+
+数据来源：
+
+- `legacy_image_assets`
+
+### GET `/api/legacy/module-rows`
+
+返回指定旧模块的历史记录原始行。
+
+查询参数：
+
+- `modes_id`：必填，玩法 ID
+- `web`：可选，站点来源
+- `type`：可选，彩种类型
+- `limit`：可选，默认 `10`
+
+返回结构：
+
+```json
+{
+  "modes_id": 50,
+  "title": "一句真言",
+  "table_name": "mode_payload_50",
+  "rows": [
+    {
+      "year": "2026",
+      "term": "125",
+      "title": "预测一句真言",
+      "content": "中树",
+      "res_code": "04,27,38,11,45,08,40",
+      "res_sx": "兔,龙,蛇,猴,狗,猪,兔",
+      "draw_is_opened": true
+    }
+  ]
+}
+```
+
+后端规则：
+
+- 优先返回 `created.mode_payload_{mode_id}` 的记录
+- 若 `created` 不足，再回退 `public.mode_payload_{mode_id}`
+- 同一期若 `created` 与 `public` 同时存在，优先保留 `created`
+- 开奖字段统一以后端查到的 `public.lottery_draws` 为准
+- 若 `lottery_draws.is_opened = 0`，则返回的该行 `res_code/res_sx/res_color` 统一置空
+
 ## 预测接口
 
 ### GET `/api/predict/mechanisms`
@@ -90,6 +264,11 @@ Invoke-RestMethod http://127.0.0.1:8000/api/predict/mechanisms
 ### POST `/api/predict/{mechanism}`
 
 执行指定预测机制。
+
+权限说明：
+
+- 需要管理员登录态
+- 请求头需携带 `Authorization: Bearer <token>`
 
 请求体：
 
@@ -108,6 +287,73 @@ Invoke-RestMethod http://127.0.0.1:8000/api/predict/mechanisms
 - `content`：可选，保留给调用方审计。
 - `source_table`：可选，覆盖机制默认 SQLite 来源表。
 - `target_hit_rate`：可选，目标历史回测命中率。
+
+冻结后的稳定响应结构：
+
+```json
+{
+  "ok": true,
+  "protocol_version": "2026-05-08",
+  "generated_at": "2026-05-08T12:00:00+00:00",
+  "data": {
+    "mechanism": {
+      "key": "pt2xiao",
+      "title": "平特2肖",
+      "default_modes_id": 43,
+      "default_table": "mode_payload_43",
+      "resolved_labels": ["鼠", "牛"]
+    },
+    "source": {
+      "db_path": "postgresql://...",
+      "table": "mode_payload_43",
+      "source_modes_id": 43,
+      "source_table_title": "平特2肖",
+      "history_count": 983
+    },
+    "request": {
+      "res_code": null,
+      "content": null,
+      "source_table": "mode_payload_43",
+      "target_hit_rate": 0.65,
+      "lottery_type": 3,
+      "year": "2026",
+      "term": "127",
+      "web": "4"
+    },
+    "context": {
+      "latest_term": 127,
+      "latest_outcome": "羊",
+      "draw": {
+        "issue": "2026127",
+        "draw_found": true,
+        "is_opened": false,
+        "result_visibility": "hidden",
+        "reason": "draw_unopened"
+      }
+    },
+    "prediction": {
+      "labels": ["马", "牛"],
+      "content": "马,牛",
+      "content_json": "\"马,牛\"",
+      "display_text": "马,牛"
+    },
+    "backtest": {
+      "target_hit_rate": 0.65,
+      "selected_hit_rate": 0.679342
+    },
+    "explanation": [],
+    "warning": "..."
+  },
+  "legacy": {}
+}
+```
+
+说明：
+
+- 新调用方只应依赖 `ok + protocol_version + data`
+- `legacy` 仅作为过渡兼容字段保留，后续不建议继续依赖
+- 当请求同时传入 `lottery_type + year + term` 时，后端会查询 `public.lottery_draws`
+- 若该期 `is_opened = 0`，则后端会忽略传入的 `res_code`，避免把未开奖真实号码喂给预测算法
 
 示例：
 

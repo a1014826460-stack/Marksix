@@ -20,7 +20,7 @@ document.writeln("<table id='dxzt'  border=1 width=100% bgcolor=#ffffff style='f
 // document.writeln("  </tr>");
 
 $.ajax({
-    url: httpApi + `/api/kaijiang/getDxztt1?num=1&web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/getDxztt1?num=1&web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {

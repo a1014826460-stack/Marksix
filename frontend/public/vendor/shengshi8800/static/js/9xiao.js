@@ -1,5 +1,5 @@
 ﻿$.ajax({
-    url: httpApi + `/api/kaijiang/jxzt?web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/jxzt?web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {

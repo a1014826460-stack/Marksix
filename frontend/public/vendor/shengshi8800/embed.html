@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no"
+    />
+    <title>旧站隔离嵌入页</title>
+    <style>
+      body {
+        margin: 0;
+        background: #ffffff;
+        font-family: "Microsoft YaHei", sans-serif;
+      }
+
+      .legacy-embed-loading,
+      .legacy-embed-error {
+        box-sizing: border-box;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px 16px;
+        color: #333333;
+        line-height: 1.6;
+      }
+
+      .legacy-embed-error {
+        color: #a40000;
+      }
+    </style>
+    <script>
+      (function () {
+        /**
+         * 这里不直接把旧 JS 注入 React，而是让旧站在独立文档里完整运行。
+         * 这样可以保留：
+         * 1. 旧站原生 document.write / jQuery 逻辑
+         * 2. 旧站原有的黄色高亮规则
+         * 3. 旧站对特码命中、生肖命中的原始判断细节
+         */
+        const params = new URLSearchParams(window.location.search);
+        const legacyType = Number(params.get("type") || "3");
+        const legacyWeb = Number(params.get("web") || "4");
+
+        window.__LEGACY_EMBED_CONFIG__ = {
+          type: Number.isFinite(legacyType) ? legacyType : 3,
+          web: Number.isFinite(legacyWeb) ? legacyWeb : 4,
+        };
+
+        function buildBridgeScript() {
+          return [
+            "<script>",
+            "(function(){",
+            "  function getHeight(){",
+            "    var body = document.body;",
+            "    var html = document.documentElement;",
+            "    return Math.max(",
+            "      body ? body.scrollHeight : 0,",
+            "      body ? body.offsetHeight : 0,",
+            "      html ? html.scrollHeight : 0,",
+            "      html ? html.offsetHeight : 0,",
+            "      html ? html.clientHeight : 0",
+            "    );",
+            "  }",
+            "  function postHeight(){",
+            "    if(window.parent && window.parent !== window){",
+            "      window.parent.postMessage({",
+            '        kind: "legacy-embed-height",',
+            "        height: getHeight(),",
+            "        type: window.__LEGACY_EMBED_CONFIG__ ? window.__LEGACY_EMBED_CONFIG__.type : 3,",
+            "        href: window.location.href",
+            '      }, "*");',
+            "    }",
+            "  }",
+            "  window.addEventListener('load', function(){",
+            "    postHeight();",
+            "    setTimeout(postHeight, 150);",
+            "    setTimeout(postHeight, 500);",
+            "    setTimeout(postHeight, 1200);",
+            "  });",
+            "  window.addEventListener('resize', postHeight);",
+            "  if(window.ResizeObserver){",
+            "    var resizeObserver = new ResizeObserver(postHeight);",
+            "    resizeObserver.observe(document.documentElement);",
+            "  }",
+            "  if(window.MutationObserver && document.body){",
+            "    var mutationObserver = new MutationObserver(function(){",
+            "      window.requestAnimationFrame(postHeight);",
+            "    });",
+            "    mutationObserver.observe(document.body, {",
+            "      childList: true,",
+            "      subtree: true,",
+            "      attributes: true,",
+            "      characterData: true",
+            "    });",
+            "  }",
+            "})();",
+            "<\/script>",
+          ].join("");
+        }
+
+        function patchLegacyHtml(html) {
+          let patched = html;
+
+          // 旧首页把彩种写死在 HTML 里，这里改成读取 iframe query 参数。
+          patched = patched.replace(
+            /var\s+type\s*=\s*3/,
+            "var type = window.__LEGACY_EMBED_CONFIG__?.type || 3"
+          );
+          patched = patched.replace(
+            /var\s+web\s*=\s*4/,
+            "var web = window.__LEGACY_EMBED_CONFIG__?.web || 4"
+          );
+
+          // 在旧页末尾追加高度同步脚本，避免父页面 iframe 高度不够。
+          patched = patched.replace(/<\/body>/i, buildBridgeScript() + "</body>");
+
+          return patched;
+        }
+
+        async function loadLegacyPage() {
+          try {
+            const response = await fetch("./index.html", { cache: "no-store" });
+            if (!response.ok) {
+              throw new Error("无法读取旧站 index.html");
+            }
+
+            const source = await response.text();
+            const patched = patchLegacyHtml(source);
+
+            document.open();
+            document.write(patched);
+            document.close();
+          } catch (error) {
+            const detail =
+              error instanceof Error ? error.message : String(error);
+            document.body.innerHTML =
+              '<div class="legacy-embed-error">旧站嵌入页加载失败：' +
+              detail +
+              "</div>";
+          }
+        }
+
+        window.addEventListener("DOMContentLoaded", loadLegacyPage);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="legacy-embed-loading">正在加载旧站模块，请稍候...</div>
+  </body>
+</html>
