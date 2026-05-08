@@ -409,26 +409,27 @@ def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: 
         raise ValueError("彩种名称不能为空")
     draw_time = str(payload.get("draw_time") or "").strip()
     collect_url = str(payload.get("collect_url") or "").strip()
+    next_time = str(payload.get("next_time") or "").strip()
     status = 1 if parse_bool(payload.get("status"), True) else 0
     with connect(db_path) as conn:
         if lottery_id is None:
             row = conn.execute(
                 """
-                INSERT INTO lottery_types (name, draw_time, collect_url, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO lottery_types (name, draw_time, collect_url, next_time, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING *
                 """,
-                (name, draw_time, collect_url, status, now, now),
+                (name, draw_time, collect_url, next_time, status, now, now),
             ).fetchone()
         else:
             row = conn.execute(
                 """
                 UPDATE lottery_types
-                SET name = ?, draw_time = ?, collect_url = ?, status = ?, updated_at = ?
+                SET name = ?, draw_time = ?, collect_url = ?, next_time = ?, status = ?, updated_at = ?
                 WHERE id = ?
                 RETURNING *
                 """,
-                (name, draw_time, collect_url, status, now, lottery_id),
+                (name, draw_time, collect_url, next_time, status, now, lottery_id),
             ).fetchone()
             if not row:
                 raise KeyError(f"lottery_id={lottery_id} 不存在")
@@ -483,6 +484,13 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
     }
     if not fields["numbers"]:
         raise ValueError("开奖号码不能为空")
+    # 验证恰好 7 个号码，每个 01-49
+    num_list = [n.strip() for n in fields["numbers"].split(",") if n.strip()]
+    if len(num_list) != 7:
+        raise ValueError(f"开奖号码必须恰好 7 个，当前 {len(num_list)} 个")
+    for n in num_list:
+        if not n.isdigit() or int(n) < 1 or int(n) > 49:
+            raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
     with connect(db_path) as conn:
         if draw_id is None:
             row = conn.execute(

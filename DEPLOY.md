@@ -207,12 +207,53 @@ docker compose exec python-api python /app/src/utils/migrate_sqlite_to_postgres.
 ### 数据库备份
 
 ```bash
-# 备份 PostgreSQL 数据库
+# 备份 PostgreSQL 数据库（纯 SQL 格式）
 docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%d).sql
 
-# 恢复数据库
+# 或使用自定义格式（体积更小，支持并行恢复）
+docker compose exec postgres pg_dump -U postgres liuhecai -F c -f /tmp/backup.dump
+docker compose cp postgres:/tmp/backup.dump ./backup_$(date +%Y%m%d).dump
+
+# 恢复数据库（纯 SQL）
 docker compose exec -T postgres psql -U postgres liuhecai < backup_20250101.sql
+
+# 恢复数据库（自定义格式，--clean 会先删除已有表）
+docker compose cp ./backup_20250101.dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
 ```
+
+### 本地数据迁移到服务器
+
+将本地开发环境的 PostgreSQL 数据导出并上传到生产服务器：
+
+**1. 本地导出**
+
+```bash
+# 如果本地使用 Docker PostgreSQL
+docker compose exec -T postgres pg_dump -U postgres liuhecai -F c > liuhecai_backup.dump
+
+# 如果本地使用原生 PostgreSQL
+pg_dump -h localhost -U postgres -d liuhecai -F c -f liuhecai_backup.dump
+```
+
+**2. 上传到服务器**
+
+```bash
+scp liuhecai_backup.dump root@你的服务器IP:/opt/Liuhecai/
+```
+
+**3. 服务器上导入**
+
+```bash
+ssh root@你的服务器IP
+cd /opt/Liuhecai
+
+# 复制 dump 文件到容器并恢复（--clean 会先删除已有表，适合首次导入）
+docker compose cp liuhecai_backup.dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
+```
+
+> **注意**：本地与服务器 PostgreSQL 大版本应保持一致（均为 16），否则可能出现兼容性问题。导入前建议先备份服务器现有数据。
 
 ### 数据库重置
 

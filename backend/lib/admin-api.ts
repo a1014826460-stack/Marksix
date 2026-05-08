@@ -29,7 +29,7 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
     headers.set("authorization", `Bearer ${token}`)
   }
 
-  const response = await fetch(`/api/python${path}`, {
+  const response = await fetch(`/admin/api/python${path}`, {
     ...options,
     headers,
     cache: "no-store",
