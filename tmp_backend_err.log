@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "D:\pythonProject\outsource\Liuhecai\backend\src\app.py", line 85, in <module>
-    from admin.crud import (  # noqa: E402
-ImportError: cannot import name 'add_site_prediction_module' from 'admin.crud' (D:\pythonProject\outsource\Liuhecai\backend\src\admin\crud.py)

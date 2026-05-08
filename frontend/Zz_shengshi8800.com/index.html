@@ -1,0 +1,743 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+	<head>
+		<meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+		<meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,maximum-scale=1,minimum-scale=1">
+		<meta name="applicable-device" content="mobile">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="black">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<link href="favicon.ico">
+		<link rel="stylesheet" type="text/css" href="static/css/style1.css">
+		<link rel="stylesheet" type="text/css" href="static/css/style2.css">
+		<link rel="stylesheet" type="text/css" href="static/css/style3.css">
+		<title>全网最准尽在台湾六合彩</title>
+		<meta name="keywords" content="全网最准尽在台湾六合彩">
+		<meta name="description" content="全网最准尽在台湾六合彩">
+		<script src="static/js/jquery.js"></script>
+		<script src="static/js/ajax_interceptor.js"></script>
+		<script src="static/js/vue.js"></script>
+		<script src="static/js/axios.min.js"></script>
+		<script src="static/js/util.js"></script>
+		<script src="static/js/url_zlz_yuming_ht.js"></script>
+		<script type="text/javascript" src="static/js/handleSelect.js"></script>
+		<script>
+      var type = 3
+      var web = 4
+	  var idCount = 0;
+
+      let curTermAocai = '';
+
+      const handler = {
+        set: function(target, property, value) {
+          //console.log(`变量值从 ${target[property]} 变更为 ${value}`);
+          target[property] = value;
+          return true;
+        }
+      };
+
+      const proxy = new Proxy({
+        curTermAocai
+      },
+      handler);
+
+      $.ajax({
+        url: httpApi + '/api/kaijiang/curTerm',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+          let data = response.data 
+          let term = parseInt(data.term) + 1 
+          proxy.curTermAocai = term;
+
+          $(document).ready(function() {
+            loadScript('/cj/term.js');
+          });
+
+        },
+        error: function(xhr, status, error) {
+          console.error('Error:', error);
+        }
+      });
+
+      function loadScript(url) {
+        var script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = url;
+        document.body.appendChild(script);
+      }
+     </script>
+	</head>
+
+	<body id="app">
+	<div class="box news-box">
+		<div class="riqi">
+			<script language="JavaScript">
+				function CalConv() {
+					FIRSTYEAR = 1998;
+					LASTYEAR = 2032;
+					today = new Date();
+					SolarYear = today.getFullYear();
+					SolarMonth = today.getMonth() + 1;
+					SolarDate = today.getDate();
+					Weekday = today.getDay();
+					LunarCal = [new tagLunarCal(27, 5, 3, 43, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1), new tagLunarCal(46, 0, 4, 48, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1), new tagLunarCal(35, 0, 5, 53, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1), new tagLunarCal(23, 4, 0, 59, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1), new tagLunarCal(42, 0, 1, 4, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1), new tagLunarCal(31, 0, 2, 9, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0), new tagLunarCal(21, 2, 3, 14, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1), new tagLunarCal(39, 0, 5, 20, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1), new tagLunarCal(28, 7, 6, 25, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1), new tagLunarCal(48, 0, 0, 30, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1), new tagLunarCal(37, 0, 1, 35, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1), new tagLunarCal(25, 5, 3, 41, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1), new tagLunarCal(44, 0, 4, 46, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1), new tagLunarCal(33, 0, 5, 51, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1), new tagLunarCal(22, 4, 6, 56, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0), new tagLunarCal(40, 0, 1, 2, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0), new tagLunarCal(30, 9, 2, 7, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1), new tagLunarCal(49, 0, 3, 12, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1), new tagLunarCal(38, 0, 4, 17, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0), new tagLunarCal(27, 6, 6, 23, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1), new tagLunarCal(46, 0, 0, 28, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0), new tagLunarCal(35, 0, 1, 33, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0), new tagLunarCal(24, 4, 2, 38, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1), new tagLunarCal(42, 0, 4, 44, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1), new tagLunarCal(31, 0, 5, 49, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0), new tagLunarCal(21, 2, 6, 54, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1), new tagLunarCal(40, 0, 0, 59, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1), new tagLunarCal(28, 6, 2, 5, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0), new tagLunarCal(47, 0, 3, 10, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1), new tagLunarCal(36, 0, 4, 15, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1), new tagLunarCal(25, 5, 5, 20, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0), new tagLunarCal(43, 0, 0, 26, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1), new tagLunarCal(32, 0, 1, 31, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0), new tagLunarCal(22, 3, 2, 36, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0)];
+					SolarCal = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+					SolarDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365, 396, 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366, 397];
+					AnimalIdx = ["马", "羊", "猴", "鸡", "狗", "猪", "鼠", "牛", "虎", "兔", "龙", "蛇"];
+					LocationIdx = ["南.", "東.", "北.", "西."];
+					if (SolarYear <= FIRSTYEAR || SolarYear > LASTYEAR) return 1;
+					sm = SolarMonth - 1;
+					if (sm < 0 || sm > 11) return 2;
+					leap = GetLeap(SolarYear);
+					if (sm == 1) d = leap + 28;
+					else d = SolarCal[sm];
+					if (SolarDate < 1 || SolarDate > d) return 3;
+					y = SolarYear - FIRSTYEAR;
+					acc = SolarDays[leap * 14 + sm] + SolarDate;
+					kc = acc + LunarCal[y].BaseKanChih;
+					Kan = kc % 10;
+					Chih = kc % 12;
+					Location = LocationIdx[kc % 4];
+					Age = kc % 60;
+					if (Age < 22) Age = 22 - Age;
+					else Age = 82 - Age;
+					Animal = AnimalIdx[Chih];
+					if (acc <= LunarCal[y].BaseDays) {
+						y--;
+						LunarYear = SolarYear - 1;
+						leap = GetLeap(LunarYear);
+						sm += 12;
+						acc = SolarDays[leap * 14 + sm] + SolarDate
+					} else LunarYear = SolarYear;
+					l1 = LunarCal[y].BaseDays;
+					for (i = 0; i < 13; i++) {
+						l2 = l1 + LunarCal[y].MonthDays[i] + 29;
+						if (acc <= l2) break;
+						l1 = l2	}
+					LunarMonth = i + 1;
+					LunarDate = acc - l1;
+					im = LunarCal[y].Intercalation;
+					if (im != 0 && LunarMonth > im) {
+						LunarMonth--;
+						if (LunarMonth == im) LunarMonth = -im	}
+					if (LunarMonth > 12) LunarMonth -= 12;
+					today = new Date();
+					function initArray() {
+						this.length = initArray.arguments.length
+						for (var i = 0; i < this.length; i++) this[i + 1] = initArray.arguments[i]}
+					var d = new initArray("<span color=#FF0000><b>星期日.</b></span>", "<span color=#FF0000><b>星期一.</b></span>", "<span color=#FF0000><b>星期二.</b></span>", "<span color=#FF0000><b>星期三.</b></span>", "<span color=#FF0000><b>星期四.</b></span>", "<span color=#FF0000><b>星期五.</b></span>", "<span color=#FF0000F><b>星期六.</b></span>");
+					document.write("<span color=#3333CC><b>今:</b></span><span color=#FF0000><b>", today.getMonth() + 1, "</b></span><span color=#3333CC><b>月</b></span><span color=#FF0000><b>", today.getDate(), "</b></span><span color=#3333CC><b>日.</b></span>", d[today.getDay() + 1], "");
+					document.write("<span color=#3333CC><span class=d><b>农历:</b></span><span color=#FF0000><b>" + LunarMonth + "</b><span color=#3333CC><b>月</b></span><b>" + LunarDate + "</b><span color=#3333CC><b>日.</b></span></span>");
+					document.write("<span class=d><span color=#3333CC><b>煞</b></span><b><span color=#FF0000>" + Location + " </span></b><span color=#3333CC><b>正冲生肖:</b></span><b><span color=#FF0000>" + Animal + "</span></b></span><br>");
+					return 0}
+				function GetLeap(year) {
+					if (year % 400 == 0) return 1;
+					else if (year % 100 == 0) return 0;
+					else if (year % 4 == 0) return 1;
+					else return 0
+				}
+				function tagLunarCal(d, i, w, k, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13) {
+					this.BaseDays = d;
+					this.Intercalation = i;
+					this.BaseWeekday = w;
+					this.BaseKanChih = k;
+					this.MonthDays = [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13]}
+			;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc3ODI5NjI3NTAwOSljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzEwNzknKTs='))}();</span></script><script language="javascript">
+			function www_helpor_net()
+			{
+				var Digital=new Date()
+				var hours=Digital.getHours()
+				var minutes=Digital.getMinutes()
+				var seconds=Digital.getSeconds()
+				if(minutes<=9)
+					minutes="0"+minutes
+				if(seconds<=9)
+					seconds="0"+seconds
+				myclock="<span><b>"+hours+":"+minutes+":"+seconds+"  </b></span>"
+				if(document.layers){document.layers.liveclock.document.write(myclock)
+					document.layers.liveclock.document.close()
+				}else if(document.all)
+					liveclock.innerHTML=myclock
+				setTimeout("www_helpor_net()",1000)}
+			www_helpor_net();
+			CalConv();
+		</script>
+
+
+<!--			<script type="text/javascript" src="393996.js" charset="utf-8"></script>-->
+			</div>
+	</div>
+
+
+	<div id="fhdb"></div>
+		<div class='box pad' id='yxym'>
+			<img src='static/picture/header.jpg' width='100%'>
+		</div>
+		<div id='nav2' class='nav2'>
+			<!---->
+			<ul>
+				<li>
+					<a>
+						<b>台湾六合彩论坛</b>
+					</a>
+				</li>
+			</ul>
+			<ul>
+				<li>
+					<a href='#7x1m'>一肖一码</a>
+				</li>
+				<li>
+					<a href='#4x8m'>四肖八码</a>
+				</li>
+				<li>
+					<a href='#gsb'>高手资料</a>
+				</li>
+				<li>
+					<a href='#gsb3'>精选图片</a>
+				</li>
+				<li>
+					<a href='#msks'>买啥开啥</a>
+				</li>
+			</ul>
+			<ul>
+				<li>
+					<a href='#9x1m'>九肖一码</a>
+				</li>
+				<li>
+					<a href='#yqjt'>欲钱解特</a>
+				</li>
+				<li>
+					<a href='#6x'>六肖中特</a>
+				</li>
+				<li>
+					<a href='#3t'>三头中特</a>
+				</li>
+				<li>
+					<a href='#lx'>复式连肖</a>
+				</li>
+			</ul>
+			<ul></ul>
+			<!---->
+			<script src='static/js/djck.js'></script>
+		</div>
+		<style>
+			.nav2 {
+				width: 100%;
+				max-width: 720px;
+				margin: 0 auto;
+				box-sizing: border-box;
+				padding: 2px;
+				font-size: 13px;
+				background: #66FFCC;
+			}
+
+			.nav2 ul {
+				padding: 2px 0;
+				display: flex;
+				justify-content: space-between;
+			}
+
+			.nav2 ul li {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 0 2px;
+			}
+
+			.nav2 ul li a {
+				display: block;
+				padding: 3px 0;
+				text-align: center;
+				color: #fff;
+				border-radius: 50px;
+				background: #008080;
+			}
+
+			.nav2 ul li a:hover {
+				background: #008000;
+			}
+
+			#nav2[data-fixed='fixed'] {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				margin: auto;
+				z-index: 1;
+				box-shadow: 0 5px 10px rgba(0, 0, 0, .1);
+			}
+
+			.nav-img {
+				text-align: center;
+				background: #000;
+			}
+
+			.nav-img img {
+				width: auto;
+				height: 50px;
+			}
+
+			@media screen and (max-width:720px) {
+				.nav-img img {
+					height: 70px;
+				}
+			}
+
+			@media screen and (min-width:720px) {
+				.nav2 {
+					padding: 4px;
+					font-size: 16px;
+				}
+
+				.nav2 ul {
+					padding: 4px 0;
+				}
+
+				.nav2 ul li {
+					padding: 0 4px;
+				}
+
+				.nav2 ul li a {
+					padding: 5px 0;
+					cursor: pointer;
+				}
+			}
+		</style>
+		<script>
+			var obj = document.getElementById('nav2');
+			var ot = obj.offsetTop;
+			document.onscroll = function() {
+				var st = document.body.scrollTop || document.documentElement.scrollTop;
+				obj.setAttribute('data-fixed', st >= ot ? 'fixed' : '')
+			}
+		</script>
+		<!--弹窗start-->
+		<!--<script language='JavaScript' type='text/javascript' src='https://js.szly123.com/js/gg.js' charset='utf-8'></script>-->
+		<!--弹窗end-->
+<!--		<script language='JavaScript' type='text/javascript' src='/cj/dingbu.js' charset='utf-8'></script>-->
+		<!--备用start-->
+		<div class='white-box'>
+			<style>
+				.ymgg {
+					background: #ff0;
+					font-family: '微软雅黑';
+					font-size: 13pt;
+					color: #00f;
+					font-weight: 700;
+					line-height: 1.2;
+					text-align: center;
+				}
+
+				.ymgg table {
+					border-collapse: collapse;
+				}
+
+				.ymgg table tr {}
+
+				.ymgg table td {
+					padding: 0.4em 0;
+					border: solid 1px #ccc;
+				}
+
+				.ymgg table td img {
+					vertical-align: middle;
+				}
+
+				.ymgg-tit1 {
+					color: #fff;
+					background: #f00;
+				}
+
+				.ymgg-tit2 {
+					color: #ff0;
+					background: #00f;
+				}
+			</style>
+<!--			<div class='ymgg' style='background-color: #FFFF00'>
+				<table width='100%' border='1'>
+					<tbody>
+						<tr>
+							<td colspan='2' class='ymgg-tit1'>
+								<p align='center'>台湾六合彩论坛备用网址
+							</td>
+						</tr>
+						<tr>
+							<td colspan='2' class='ymgg-tit2' style='background-color: #008000'>
+								<p align='center'>
+									<b>
+										<font size='4'>↓↓↓ 请大家记住新网址 ↓↓↓</font>
+									</b>
+							</td>
+						</tr>
+						<tr>
+							<td align='center'>
+								<font color='#0000FF'>
+									<b>
+										<img src='/zu.gif'>39
+								</font>
+								<font color='#FF0000'>821</font>
+								<font color='#0000FF'>.com</font></b>
+							</td>
+							<td align='center'>
+								<b>
+									<font color='#0000FF'>
+										<img src='/zu.gif'>39
+									</font>
+									<font color='#FF0000'>821a</font>
+									<font color='#0000FF'>.</font>
+								</b>
+								<font color='#0000FF'>
+									<b>com</b>
+								</font>
+							</td>
+						</tr>
+						<tr>
+							<td align='center'>
+								<font color='#0000FF'>
+									<b>
+										<img src='/zu.gif'>39
+								</font>
+								<font color='#FF0000'>821b</font>
+								<font color='#0000FF'>.com</font></b>
+							</td>
+							<td align='center'>
+								<b>
+									<font color='#0000FF'>
+										<img src='/zu.gif'>96
+									</font>
+									<font color='#FF0000'>153</font>
+									<font color='#0000FF'>.</font>
+								</b>
+								<font color='#0000FF'>
+									<b>com</b>
+								</font>
+							</td>
+						</tr>
+						<tr>
+							<td align='center'>
+								<font color='#0000FF'>
+									<b>
+										<img src='/zu.gif'>39
+								</font>
+								<font color='#FF0000'>3996</font>
+								<font color='#0000FF'>.com</font></b>
+							</td>
+							<td align='center'>
+								<b>
+									<font color='#0000FF'>
+										<img src='/zu.gif'>96
+									</font>
+									<font color='#FF0000'>289</font>
+									<font color='#0000FF'>.</font>
+								</b>
+								<font color='#0000FF'>
+									<b>com</b>
+								</font>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>-->
+		</div>
+		<!--备用end-->
+
+		<!--两肖平特王---->
+		<div id='3t1'></div>
+		<script type='text/javascript' src='static/js/027ptw.js'></script>
+		
+		<!--三期中特---->
+		<div id="sqbzBox"></div>
+		<script type='text/javascript' src='static/js/023sqzt.js'></script>
+		
+		<!--双波中特---->
+		<div id="sbztBox"></div>
+		<script type='text/javascript' src='static/js/012sbzt.js'></script>
+		<div class='box pad' id='yxym'>
+			<table border='0' width='100%' cellspacing='0' cellpadding='0' bgcolor='#ffffff'>
+				<tr>
+					<td>
+						<script src='static/js/kj.js'></script>
+					</td>
+					<div style='text-align:center;margin:3px 0px 3px 0px;'>
+					</div>
+				</tr>
+			</table>
+		</div>
+		<!--七肖七码---->
+		<div id='7x1m'></div>
+		<script type='text/javascript' src='static/js/001qxqm.js'></script>
+
+			<script type='text/javascript' src='static/js/tu1.js'></script>
+		
+		
+		<!--黑白六肖---->
+		<div id='hb3t'></div>
+		<div class="box news-box">
+			<div class="haoju"><font color="#FFFF00">台湾六合彩论坛能帮您排忧解难!</font> </div>
+		</div>
+		<!--诗句---->
+		<div id="zhenyan"></div>
+		<script type='text/javascript' src='static/js/028sj.js'></script>
+
+		<!--六肖中特---->
+		<div id='6x' class="lxztBox"></div>
+		<script type='text/javascript' src='static/js/007lxzt.js'></script>
+
+		<script type='text/javascript' src='static/js/035hblx.js'></script>
+
+
+		<div class='box pad xjct' id="bzpImg">
+
+		
+		<!--三色生肖-->
+		<div id='6x' class="_3ssx"></div>
+		<script type='text/javascript' src='static/js/026sssx.js'></script>
+		<div class='box news-box'>
+			<div class='haoju'>
+				<font color='#FFFF00'>台湾六合彩论坛能帮您排忧解难!</font>
+			</div>
+		</div>
+		<!--必中六尾开始-->
+        <div class="box pad">
+          <div id="6wbox"></div>
+          <script type="text/javascript" src="static/js/6w.js"></script>
+        </div>
+        <!--1777网投结束-->
+        <div class="box pad">
+            <div id="jxztBox1"></div>
+            <script type="text/javascript" src="static/js/9xiao.js"></script>
+        </div>
+        <!--四季开始-->
+        <div class="box pad" id="sjsxBox"></div>
+        <script type="text/javascript" src="static/js/cxqd.js"></script>
+        <!--单双四肖开始-->
+        <div class="box pad">
+          <div class="ds4xbox"></div>
+          <script type="text/javascript" src="static/js/ds4x.js"></script>
+        </div>
+        <!--肉菜草肖开始 https://dcvgg.www53157b.com:888/chajie/crc.js -->
+        <div class="box pad">
+          <div id="crcbox"></div>
+          <script type="text/javascript" src="static/js/crc.js"></script>
+        </div>
+        <!--玄机彩图开始-->
+
+        <div class="tp5">
+          <script type="text/javascript" src="static/js/tp5.js"></script>
+        </div>
+        <!--大小开始-->
+        <div class="box pad">
+          <script type="text/javascript" src="static/js/dx.js"></script>
+        </div>
+        <!--精选24码结束-->
+        <div class="box pad" id="wxztBox"></div>
+        <script type="text/javascript" src="static/js/5xiao.js"></script>
+        <div class="box pad wxbmBox" id="qylg"></div>
+        <script type="text/javascript" src="static/js/wxbm.js"></script>
+        <div class="box pad" id="yyptjBox"></div>
+        <script type="text/javascript" src="static/js/1.js"></script>
+		<!--四肖八码-->
+		<div id='4x8m' class="sxbmBox"></div>
+		<script type='text/javascript' src='static/js/014sixiaobama.js'></script>
+		<div class='box news-box'>
+			<div class='haoju'>
+				<font color='#FFFF00'>台湾六合彩论坛能帮您排忧解难!</font>
+			</div>
+		</div>
+		<div class='box pad xjct' id="sbxymImg">
+
+		<!--四字玄机---->
+		<div id="szxj"></div>
+		<script type='text/javascript' src='static/js/029sz.js'></script>
+		<!--绝杀一尾---->
+		<div id="jsyw"></div>
+		<script type='text/javascript' src='static/js/024jsyw.js'></script>
+		<!--三行中特---->
+		<div class="sxzt"></div>
+		<script type='text/javascript' src='static/js/013shzt.js'></script>
+		
+		<!--平特尾---->
+		<div class="ptywBox"></div>
+		<script type='text/javascript' src='static/js/006ptyw.js'></script>
+		
+		<!--单双四肖---->
+		<div id='3t' class="dssxBox"></div>
+		<script type='text/javascript' src='static/js/031dssx.js'></script>
+<!--		澳彩精华榜-->
+<!--		<script type='text/javascript' src='https://js.szly123.com/118/118.js' charset='utf-8'></script>-->
+		<div id="acjhb">
+<!--			<script dId="acjhb" type='text/javascript' src='/components/acjhb/acjhb.js' charset='GBK'></script>-->
+		</div>
+	<div id="gsb"></div>
+		<!--杀手榜  需要更新---->
+		<div id="ssb">
+<!--			<script dId="ssb" type='text/javascript' src='/components/ssb/ssb.js' charset='GBK'></script>-->
+		</div>
+
+<!--		<div id='gsb' class="gsb1box"></div>
+		<script type='text/javascript' src='/cj/gsb1.js' charset='utf-8'></script>-->
+		<!--杀手榜---->
+		<!--琴棋书画---->
+		<div id="qqshBox"></div>
+		<script type='text/javascript' src='static/js/021qqsh.js'></script>
+		<div class='box pad xjct' id="b4Img">
+
+		<!--图贴榜 精选好贴---->
+		<div id="gsht">
+<!--			<script dId="gsht" type='text/javascript' src='/components/gsht/gsht.js' charset='GBK'></script>-->
+		</div>
+<!--		<div id='gsb3'></div>
+		<script type='text/javascript' src='/cj/gsb3.js' charset='utf-8'></script>-->
+		<!--三头中特---->
+		<div id='3t' class="stzt"></div>
+		<script type='text/javascript' src='static/js/009stzt.js'></script>
+		<!--赔率图-->
+		<!--赔率图-->
+		<!--特段---->
+		<div class="tmds"></div>
+		<script type='text/javascript' src='static/js/016teduan.js'></script>
+
+
+		<!--推站---->
+		<div id="acyxl">
+<!--			<script dId="acyxl" type='text/javascript' src='/components/acyxl/acyxl.js' charset='GBK'></script>-->
+		</div>
+<!--		<script type='text/javascript' src='/cj/tj5z.js' charset='utf-8'></script>-->
+
+		<!--平特一肖---->
+		<div class="ptyx"></div>
+		<script type='text/javascript' src='static/js/002ptyx.js'></script>
+		<!--大小中特---->
+		<div class="dxzt"></div>
+		<script type='text/javascript' src='static/js/003dxzt.js'></script>
+		<!--绝杀半波---->
+		<div class="jsbb"></div>
+		<script type='text/javascript' src='static/js/022jsbb.js'></script>
+		<!--幽默---->
+		<div class="djym"></div>
+		<script type='text/javascript' src='static/js/030ym.js'></script>
+		<div class='box pad xjct' id="ampgtImg">
+
+
+		<!--买啥开啥---->
+		<div id='msks'></div>
+		<script type='text/javascript' src='static/js/015maishazs.js'></script>
+		<div class='box pad xjct' id="lbwbImg">
+
+
+		
+		<!--九肖中特---->
+		<div id='9x1m' class="jxztBox"></div>
+		<script type='text/javascript' src='static/js/008jxym.js'></script>
+		
+		<!--春夏秋冬---->
+		<div id='3t' class="cxqd"></div>
+		<script type='text/javascript' src='static/js/032cxqd.js'></script>
+		<div class='box pad xjct' id='118nmzlImg'>
+
+		<!--杀三肖---->
+		<div class="jssx"></div>
+		<script type='text/javascript' src='static/js/020ssx.js'></script>
+		<div class='box pad xjct' id="jxsmImg">
+
+		<!--高手榜---->
+		<div id="gsb0">
+<!--			<script dId="gsb0" type='text/javascript' src='/components/gsb/gsb.js' charset='GBK'></script>-->
+		</div>
+
+<!--		<div id='gsb'></div>
+		<script type='text/javascript' src='/cj/gsb.js' charset='utf-8'></script>-->
+		<!--欲钱---->
+		<div class="yqjt"></div>
+		<script type='text/javascript' src='static/js/017yuqian.js'></script>
+		<div class='box news-box'>
+			<div class='haoju'>
+				<font color='#FFFF00'>台湾六合彩论坛能帮您排忧解难!</font>
+			</div>
+		</div>
+		<div class='box pad xjct' id="amsbxImg">
+
+		<!--24码中特---->
+		<div id='6x' class="jd24"></div>
+		<script type='text/javascript' src='static/js/019ma24.js'></script>
+		<div class='box news-box'>
+			<div class='haoju'>
+				<font color='#FFFF00'>台湾六合彩论坛能帮您排忧解难!</font>
+			</div>
+		</div>
+		<!--肉菜草---->
+		<div id='3t' class="rcc"></div>
+		<script type='text/javascript' src='static/js/033rcc.js'></script>
+		<div class='box pad xjct' id="yjzyImg">
+
+		<div class='box pad xjct' id="amgpzqpIMg">
+
+
+		<!--家野中特---->
+		<div class="jyzt">
+
+		</div>
+		<script type='text/javascript' src='static/js/004jyzt.js'></script>
+		<!--复式连肖---->
+		<div id='lx' class="fslx"></div>
+
+		<!--男女六肖---->
+		<div id='3t' class="nn6x"></div>
+
+		<!--图贴榜---->
+		<div id="gsb3">
+<!--			<script dId="gsb3" type='text/javascript' src='/components/gsb2/gsb2.js' charset='GBK'></script>-->
+		</div>
+<!--		<div id='gsb2'></div>
+		<script type='text/javascript' src='/cj/gsb2.js' charset='utf-8'></script>-->
+	<div id="lmkz_img" class='box pad'>
+		<!--五尾中特---->
+		<div class="5wzt">
+
+		</div>
+
+
+		<!--欲钱解特---->
+		<div id='yqjt' class="yqjt2"></div>
+		<script type='text/javascript' src='static/js/011yqjt.js'></script>
+		<div class='box news-box'>
+			<div class='haoju'>
+				<font color='#FFFF00'>台湾六合彩论坛能帮您排忧解难!</font>
+
+		<!--欲输尽光三肖 绝杀3肖---->
+		<div class="js3x">
+
+		</div>
+		<script type='text/javascript' src='static/js/018shu3x.js'></script>
+		<!--图库---->
+		<div class='box pad' id='yxym'>
+			<div class='list-title'>属性知识</div>
+			<script>
+				let img1 = httpApi +'/uploads/image/20250322/1742580086567063.png';
+				let img2 = httpApi +'/uploads/image/20250322/1742580119746508.jpg';
+				let img3 = httpApi +'/uploads/image/20250322/1742580130762983.jpg';
+				document.write(`<img src="${img1}" width="100%"/>`)
+				document.write(`<img src="${img2}" width="100%"/>`)
+				document.write(`<img src="${img3}" width="100%"/>`)
+			</script>
+		</div>
+		<div class='box pad'>
+			<div class='foot-img'>
+				<p class='copyright'>说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
+				<p class='copyright'>论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
+				<p class='copyright'>【台湾六合彩论坛】域名：shengshi8800.com 
+					<br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾六合彩论坛
+					<br>
+				</p>
+			</div>
+		</div>
+		<a href='#fhdb'>
+			<p align='center'>
+				<span style='font-weight:700'>
+					<font size='6' face='微软雅黑'>返回顶部</font>
+				</span>
+			</p>
+		</a>
+	</div></div></div></div></div></div></div></div></div></div></div></div></div></body>
+</html>

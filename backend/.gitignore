@@ -40,9 +40,6 @@ data/lottery_data/
 # API 缓存数据
 data/api_data/
 
-# 下载的图片
-data/Images/
-
 # Python 缓存
 __pycache__/
 *.pyc

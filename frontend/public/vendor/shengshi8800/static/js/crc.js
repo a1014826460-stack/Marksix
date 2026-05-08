@@ -95,6 +95,10 @@ $.ajax({
             let crcHtml = ""
             let attrHtml = ""
             
+            if (!(attach instanceof Array)) {
+                attach = []
+            }
+
             attach.forEach(el=>{
                 attrHtml += `${el.name}:${el.code.split(",").join("-")}<br>`
             })
@@ -103,7 +107,15 @@ $.ajax({
 
                 let sx = el.res_sx.split(',')
                 let sx_ = sx[sx.length -1]
-                let rc = JSON.parse(el.content)
+                let rc = []
+                try {
+                    rc = JSON.parse(el.content || "[]")
+                } catch (error) {
+                    rc = []
+                }
+                if (!(rc instanceof Array)) {
+                    rc = []
+                }
                 let rc_hrml = ''
                 let n = ''
                 for(let i in rc){
@@ -134,7 +146,6 @@ $.ajax({
         console.error('Error:', error);
     }
 }); 
-
 
 
 

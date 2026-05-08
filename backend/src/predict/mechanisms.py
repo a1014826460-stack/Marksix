@@ -1,4 +1,5 @@
 import json
+import random
 import re
 import sqlite3
 from collections import Counter
@@ -1132,13 +1133,23 @@ def format_text_pool_jiexi(title: str, mapping_key: str):
 
 
 def format_humor_tail_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, Any]:
-    """独家幽默保留 title/content/code 三字段结构，code 为尾数候选。"""
+    """独家幽默保留 title/content/code 三字段结构。
+
+    title/content 从 text_history_mappings (mode_id=59) 随机抽取；
+    code 为随机 6 个尾数分组。
+    """
     mapped = _random_text_history_mapping_row(_, 59, (), "content")
+
+    # 随机选取 6 个尾数生成 code
+    all_tails = list(TAIL_NUMBER_MAP.keys())
+    selected_tails = random.sample(all_tails, 6)
+    humor_code = [f"{tail}|{','.join(TAIL_NUMBER_MAP[tail])}" for tail in selected_tails]
+
     if mapped:
         return {
             "title": str(mapped["title"] or "预测独家幽默") if "title" in mapped.keys() else "预测独家幽默",
             "content": str(mapped["content"] or "") if "content" in mapped.keys() else "",
-            "code": format_tail_groups(labels, _),
+            "code": humor_code,
             "_labels": list(labels),
         }
 
@@ -1146,8 +1157,16 @@ def format_humor_tail_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> 
     return {
         "title": (row or {}).get("title") or "预测独家幽默",
         "content": (row or {}).get("content") or f"独家幽默：本期参考 {','.join(labels)}。",
-        "code": format_tail_groups(labels, _),
+        "code": humor_code,
     }
+
+
+def format_juzi_title(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
+    """欲钱解特：从 text_history_mappings (mode_id=62) 随机抽取 title。"""
+    mapped = _random_text_history_mapping_row(conn, 62, (), "title")
+    if mapped and "title" in mapped.keys():
+        return {"title": str(mapped["title"] or ""), "_labels": list(labels)}
+    return {"title": "欲钱解特诗", "_labels": list(labels)}
 
 
 def format_black_white(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
@@ -1610,6 +1629,23 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "独家幽默属于文本历史映射玩法，不做固定语义推理。",
             "系统从 text_history_mappings 随机抽取历史幽默文本及其当期对应的特码号码/生肖。",
+        ),
+    ),
+    "yqjs": PredictionConfig(
+        key="yqjs",
+        title="欲钱解特",
+        default_table="mode_payload_62",
+        default_modes_id=62,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=1,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=title_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_juzi_title,
+        hit_checker=contains_hit,
+        explanation=(
+            "欲钱解特属于文本历史映射玩法，不做固定语义推理。",
+            "系统从 text_history_mappings 随机抽取历史 title 文本。",
         ),
     ),
     "9xiao12ma": PredictionConfig(

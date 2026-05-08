@@ -161,18 +161,21 @@ legacy-embed.html
 3. 设置自适应高度
 4. 控制显示哪个旧页面
 
-### 6.3 新站首页保留外壳
+### 6.3 新站首页（当前实际实现）
 
-由 [frontend/app/page.tsx](/abs/path placeholder) 继续输出新站框架；
-实际模块区域先替换为 iframe。
+当前实际采用**双路径并存**策略：
 
-更具体地说：
+**主页面（`app/page.tsx`）** — React 渲染路径：
+- 通过 `legacy-modules.ts` 直接从 Python 后端获取数据
+- 使用 `LegacyModuleRegistry` + `PredictionModules` 进行 React 渲染
+- 已覆盖 39 个旧站模块定义，其中 22 个有定制渲染器
 
-1. Header 继续保留
-2. NavTabs 继续保留
-3. Game Tabs 继续保留
-4. `PredictionModules` 可暂时下线或 behind feature flag
-5. 用 `LegacyModulesFrame` 取代旧模块区
+**测试验证页（`app/legacy-shell/page.tsx`）** — iframe 隔离路径：
+- 通过 `LegacyModulesFrame` + `embed.html` 加载完整旧站
+- 旧 JS 通过 `/api/kaijiang/*` 代理层获取数据
+- 用于与 React 路径进行视觉对比验收
+
+两套路径共享同一 Python 后端数据源，但经过不同的适配层输出。React 路径是线上主路径，iframe 路径作为回退验证方案保留。
 
 ## 7. 彩种切换怎么做
 
@@ -355,6 +358,21 @@ window.web = Number(params.get("web") || 4)
    - 条件显示逻辑
 
 ## 11. 建议的实施阶段
+
+### 阶段 0：当前状态 — 双路径并存（已完成）
+
+**状态**: React 渲染已成为主路径，iframe 隔离作为验证路径保留。
+
+已完成：
+1. `embed.html` 完成旧站隔离加载
+2. `LegacyModulesFrame.tsx` 完成 iframe 包装与高度同步
+3. `legacy-shell/page.tsx` 作为独立验证页可用
+4. 39 个模块定义 + 22 个定制渲染器覆盖主流模块
+5. `/api/kaijiang/*` 兼容层覆盖全部旧 JS 端点
+
+待解决：
+- 部分模块 React 渲染与 iframe 输出仍需视觉对比验证
+- `web=2` 与 `web=4` 的数据差异需要持续监控
 
 ### 阶段 1：先跑通完整旧内容
 

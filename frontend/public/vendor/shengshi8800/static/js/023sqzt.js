@@ -19,7 +19,15 @@
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = [];
+                try {
+                    content = JSON.parse(d.content || "[]");
+                } catch (error) {
+                    content = [];
+                }
+                if (!(content instanceof Array)) {
+                    content = [];
+                }
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])

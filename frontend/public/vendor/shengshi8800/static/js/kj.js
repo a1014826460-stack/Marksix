@@ -1,4 +1,4 @@
-﻿document.write(`
+document.write(`
 <style>
 .KJ-TabBox { height: 166px; overflow: hidden; color:#333; background: #fff; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif;}
 .KJ-TabBox ul,.KJ-TabBox li{margin:0;list-style:none;padding:0;border:0;font-size: 18px;}
@@ -17,18 +17,16 @@
 }
 </style>
 <div class="KJ-TabBox">
-
     <ul>
-    <li data-opt="{'color':'#ffffff','url':'https://admin.shengshi8800.com/xgkj3.html','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':130}">
     台湾彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'https://admin.shengshi8800.com/amkj2.html','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':130}">
     澳门彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'https://admin.shengshi8800.com/xgkj2.html','height':130}">
+    <li data-opt="{'color':'#ffffff','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':130}">
     香港彩
     </li>
-
     </ul>
     <div></div>
     <div></div>
@@ -41,10 +39,8 @@
 .waibox a:link {text-decoration: none;}
 .waibox .location_to {padding: 10px;background: beige;border-radius: 15px;color: #f44336;font-weight: 700;letter-spacing: 1px;box-shadow: 2px 2px 1px #f44336;}
 </style>
-<a class="location_to" href="http://shengshi8800.com" target="_blank"><img src="https://d31q194n7fpdes.cloudfront.net/mygai/tp/images/hands.gif" style="vertical-align: middle;width:45px;">点击进入台湾彩报码直播开奖</a>
+<a class="location_to" href="/vendor/shengshi8800/index.html" target="_blank">点击进入台湾彩报码直播开奖</a>
 </div>
-
-
 `);
 
 var KJTB ={
@@ -52,6 +48,7 @@ var KJTB ={
 	init(str){
 		var that = this;
 		var dom = this.$(str);
+		if(!dom) return;
 		dom.addEventListener("click",function(e){
 			var el = e.target;
 			if(el.tagName != "LI"||el.className=="cur")return;
@@ -63,18 +60,18 @@ var KJTB ={
 			}
 			el.className="cur";
 			nodes = dom.querySelectorAll("div");
-			for(var item of nodes){
-				if(item.getAttribute("class")=="cur") that.leave(item);
-				item.removeAttribute("style");
-				item.removeAttribute("class");
-			}					
+			for(var divItem of nodes){
+				if(divItem.getAttribute("class")=="cur") that.leave(divItem);
+				divItem.removeAttribute("style");
+				divItem.removeAttribute("class");
+			}
 			var node = that.getEl(dom,ind,"DIV");
 			node.className="cur";
 			that.cur(dom,el,node);
 		});
 		var node = that.getEl(dom.querySelector("UL"),0,"LI");
-		node.click();
-		[[document,"DOMContentLoaded"],[window,"resize"]].forEach((item,index,self)=>{
+		if (node) node.click();
+		[[document,"DOMContentLoaded"],[window,"resize"]].forEach((item)=>{
 			var removeEl=(id)=>{
 				try{
 					var ifr = document.getElementById(id);
@@ -82,11 +79,11 @@ var KJTB ={
 				}catch(e){}
 			};
 			var insert = (id,str)=>{
-				var dom = document.createElement("style");
-				dom.id = id;
-				dom.innerHTML = str;
-				document.head.appendChild(dom);			
-			}
+				var styleDom = document.createElement("style");
+				styleDom.id = id;
+				styleDom.innerHTML = str;
+				document.head.appendChild(styleDom);
+			};
 			item[0].addEventListener(item[1],function(){
 				removeEl("kj-iframe-css");
 				var w = window.screen.availWidth;
@@ -103,31 +100,29 @@ var KJTB ={
 		});
 	},
 	cur(dom,el,node){
-		var that = this;
-		var data = el.getAttribute('data-opt');
+		var data = el.getAttribute("data-opt");
 		data = JSON.parse(data.replace(/'/g,"\""));
-		el.style.color = data["color"];
-		el.style.borderColor = data["color"];
-		node.style.borderColor = data["color"];
+		el.style.color = data.color;
+		el.style.borderColor = data.color;
+		node.style.borderColor = data.color;
 
 		var tid = node.getAttribute("_tid");
 		if(tid){
-			clearTimeout(parseInt(tid));
+			clearTimeout(parseInt(tid, 10));
 			node.removeAttribute("_tid");
 			return;
 		}
 		node.innerHTML = `
-			<iframe class="KJ-IFRAME" src="${data["url"]}" width="100%" height="${data["height"]}" frameborder="0" scrolling="no"></iframe>
+			<iframe class="KJ-IFRAME" src="${data.url}" width="100%" height="${data.height}" frameborder="0" scrolling="no"></iframe>
 		`;
 	},
 	leave(item){
-		var that = this;
 		function remove(el){
-			this.id = setTimeout(()=>{								
-						if(!el.getAttribute("_tid")) return;
-						el.removeAttribute("_tid");
-						el.innerHTML="";
-					},1000*10);
+			this.id = setTimeout(()=>{
+				if(!el.getAttribute("_tid")) return;
+				el.removeAttribute("_tid");
+				el.innerHTML="";
+			},1000*10);
 			el.setAttribute("_tid",this.id);
 		}
 		new remove(item);

@@ -12,8 +12,9 @@ _PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
 if str(_PREDICT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PREDICT_ROOT))
 
-from db import connect as db_connect
+from db import connect as db_connect, quote_identifier
 from helpers import (
+    apply_lottery_draw_overlay,
     build_mode_payload_filters, build_mode_payload_order_clause, load_fixed_data_maps,
     merge_preferred_mode_payload_rows, load_mode_payload_rows_from_source,
     normalize_issue_part, parse_issue_int, split_csv,

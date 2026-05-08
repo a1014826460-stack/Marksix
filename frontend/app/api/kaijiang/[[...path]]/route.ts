@@ -16,6 +16,17 @@ type BackendLegacyRowsPayload = {
   rows: LegacyRow[]
 }
 
+const LEGACY_WEB_FALLBACK_BY_TYPE: Record<number, Partial<Record<number, number>>> = {
+  2: { 3: 2 },
+  3: { 3: 2 },
+  44: { 3: 2 },
+  48: { 3: 2 },
+  57: { 3: 2 },
+  108: { 3: 2 },
+  244: { 3: 2 },
+  331: { 3: 2 },
+}
+
 function asString(value: unknown) {
   return value === null || value === undefined ? "" : String(value)
 }
@@ -128,15 +139,29 @@ function findTextMappingPayload(row: LegacyRow, modesId: number, zodiacCandidate
 async function fetchLegacyRows(url: URL, modesId: number, limit = 10) {
   const web = url.searchParams.get("web")
   const type = url.searchParams.get("type")
+  const requestedWeb = Number(web || "0") || undefined
+  const typeNumber = Number(type || "0")
 
-  return backendFetchJson<BackendLegacyRowsPayload>("/legacy/module-rows", {
-    query: {
-      modes_id: modesId,
-      limit,
-      web: web || undefined,
-      type: type || undefined,
-    },
-  })
+  async function fetchWithWeb(webValue: number | undefined) {
+    return backendFetchJson<BackendLegacyRowsPayload>("/legacy/module-rows", {
+      query: {
+        modes_id: modesId,
+        limit,
+        web: webValue,
+        type: type || undefined,
+      },
+    })
+  }
+
+  const primary = await fetchWithWeb(requestedWeb)
+  const fallbackWeb = LEGACY_WEB_FALLBACK_BY_TYPE[modesId]?.[typeNumber]
+
+  if (primary.rows.length > 0 || !fallbackWeb || fallbackWeb === requestedWeb) {
+    return primary
+  }
+
+  const fallback = await fetchWithWeb(fallbackWeb)
+  return fallback.rows.length > 0 ? fallback : primary
 }
 
 async function fetchLegacyCurrentTerm() {

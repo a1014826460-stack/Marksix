@@ -5,6 +5,12 @@ import type { LotteryGame } from "@/lib/lotteryData"
 
 type LegacyModulesFrameProps = {
   activeGame: LotteryGame
+  onGameChange?: (game: LotteryGame) => void
+  onAnchorMapChange?: (anchors: Record<string, number>) => void
+  debug?: boolean
+  onDebug?: (message: string) => void
+  pageSwitchEnabled?: boolean
+  shellHeaderHidden?: boolean
 }
 
 const GAME_TYPE_MAP: Record<LotteryGame, number> = {
@@ -13,24 +19,44 @@ const GAME_TYPE_MAP: Record<LotteryGame, number> = {
   hongkong: 1,
 }
 
-const GAME_LABEL_MAP: Record<LotteryGame, string> = {
-  taiwan: "台湾彩",
-  macau: "澳门彩",
-  hongkong: "香港彩",
-}
-
-export function LegacyModulesFrame({ activeGame }: LegacyModulesFrameProps) {
+export function LegacyModulesFrame({
+  activeGame,
+  onGameChange,
+  onAnchorMapChange,
+  debug = false,
+  onDebug,
+  pageSwitchEnabled = false,
+  shellHeaderHidden = false,
+}: LegacyModulesFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [frameHeight, setFrameHeight] = useState(1600)
+  const [displayGame, setDisplayGame] = useState<LotteryGame>(activeGame)
+
+  function pushDebug(message: string) {
+    if (!debug) return
+    onDebug?.(message)
+  }
+
+  useEffect(() => {
+    setDisplayGame(activeGame)
+    pushDebug(`prop activeGame -> ${activeGame}`)
+  }, [activeGame])
 
   const iframeSrc = useMemo(() => {
-    const type = GAME_TYPE_MAP[activeGame]
+    const type = GAME_TYPE_MAP[displayGame]
     const params = new URLSearchParams({
       type: String(type),
       web: "4",
+      debug: debug ? "1" : "0",
+      page_switch: pageSwitchEnabled ? "1" : "0",
+      shell_header: shellHeaderHidden ? "1" : "0",
     })
     return `/vendor/shengshi8800/embed.html?${params.toString()}`
-  }, [activeGame])
+  }, [debug, displayGame, pageSwitchEnabled, shellHeaderHidden])
+
+  useEffect(() => {
+    pushDebug(`iframe src -> ${iframeSrc}`)
+  }, [iframeSrc])
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -38,46 +64,87 @@ export function LegacyModulesFrame({ activeGame }: LegacyModulesFrameProps) {
       if (event.source !== iframeRef.current.contentWindow) return
 
       const payload = event.data as
-        | { kind?: string; height?: number }
+        | {
+            kind?: string
+            height?: number
+            game?: LotteryGame
+            message?: string
+            type?: number
+            anchors?: Record<string, number>
+          }
         | undefined
 
-      if (payload?.kind !== "legacy-embed-height") return
-      if (typeof payload.height !== "number") return
-      if (!Number.isFinite(payload.height) || payload.height <= 0) return
+      if (debug) {
+        pushDebug(`parent received -> ${JSON.stringify(payload ?? {})}`)
+      }
 
-      // 额外补一点底部空间，避免旧站最后一行被裁切。
-      setFrameHeight(Math.max(720, Math.ceil(payload.height) + 12))
+      if (payload?.kind === "legacy-debug-log") {
+        if (payload.message) {
+          pushDebug(`child debug -> ${payload.message}`)
+        }
+        return
+      }
+
+      if (payload?.kind === "legacy-embed-game-change") {
+        if (payload.game && payload.game !== displayGame) {
+          pushDebug(
+            `apply game-change -> ${payload.game} (type=${GAME_TYPE_MAP[payload.game]})`
+          )
+          setDisplayGame(payload.game)
+          onGameChange?.(payload.game)
+        } else {
+          pushDebug(
+            `ignore game-change -> ${String(payload.game || "")} (current=${displayGame})`
+          )
+        }
+        return
+      }
+
+      if (payload?.kind === "legacy-anchor-map") {
+        if (payload.anchors && typeof payload.anchors === "object") {
+          onAnchorMapChange?.(payload.anchors as Record<string, number>)
+        }
+        return
+      }
+
+      if (payload?.kind === "legacy-embed-height") {
+        if (typeof payload.height !== "number") return
+        if (!Number.isFinite(payload.height) || payload.height <= 0) return
+
+        pushDebug(`apply height -> ${Math.ceil(payload.height)}`)
+        setFrameHeight(Math.max(720, Math.ceil(payload.height) + 12))
+      }
     }
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [])
+  }, [debug, displayGame, onAnchorMapChange, onGameChange])
 
   useEffect(() => {
-    // 彩种切换后，先给一个保守高度，等旧页重新回传真实高度。
-    setFrameHeight(1600)
-  }, [activeGame])
+    pushDebug(
+      `preserve height for displayGame -> ${displayGame} (type=${GAME_TYPE_MAP[displayGame]})`
+    )
+  }, [displayGame])
 
   return (
-    <section className="legacy-shell-card">
-      <div className="legacy-shell-card__header">
-        <div>
-          <h1 className="legacy-shell-title">旧 JS 隔离嵌入验证页</h1>
-          <p className="legacy-shell-subtitle">
-            当前显示彩种：{GAME_LABEL_MAP[activeGame]}。这一阶段不改旧站高亮逻辑，
-            继续保留旧脚本里“特码命中”和“生肖命中”的原生判断。
-          </p>
-        </div>
-      </div>
-
-      <iframe
-        key={iframeSrc}
-        ref={iframeRef}
-        className="legacy-shell-frame"
-        src={iframeSrc}
-        title={`旧站隔离嵌入 - ${GAME_LABEL_MAP[activeGame]}`}
-        style={{ height: `${frameHeight}px` }}
-      />
-    </section>
+    <iframe
+      key={iframeSrc}
+      ref={iframeRef}
+      className="legacy-shell-frame"
+      src={iframeSrc}
+      scrolling="no"
+      onLoad={() => {
+        pushDebug(
+          `iframe onLoad -> game=${displayGame}, type=${GAME_TYPE_MAP[displayGame]}`
+        )
+      }}
+      title="旧站预测模块"
+      style={{
+        width: "100%",
+        height: `${frameHeight}px`,
+        border: 0,
+        overflow: "hidden",
+      }}
+    />
   )
 }

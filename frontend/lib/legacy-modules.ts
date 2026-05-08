@@ -77,6 +77,17 @@ type BackendLegacyPayload = {
   rows: LegacyRawRow[]
 }
 
+const LEGACY_WEB_PREFERENCE_BY_TYPE: Record<number, Partial<Record<number, number>>> = {
+  2: { 3: 2 },
+  3: { 3: 2 },
+  44: { 3: 2 },
+  48: { 3: 2 },
+  57: { 3: 2 },
+  108: { 3: 2 },
+  244: { 3: 2 },
+  331: { 3: 2 },
+}
+
 // ===================== 模块注册表 =====================
 
 /**
@@ -210,7 +221,15 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getCodeDuan", modesId: 65,  title: "特段",       key: "legacy_teduan",  limit: 10 },
 
   // ---- 欲钱买特码 ----
-  { endpoint: "getJuzi",     modesId: 68,  title: "欲钱买特码", key: "legacy_yqmtm",   limit: 10, params: { num: "yqmtm" }, tableClass: "duilianpt1 legacy-module-text" },
+  { endpoint: "getJuzi",     modesId: 68,  title: "欲钱解特", key: "legacy_yqmtm",   limit: 10, params: { num: "yqmtm" }, tableClass: "duilianpt1 legacy-module-text",
+    contentColumn: "title",
+    contentTransform: (content) => content
+      .split(",")
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .map((item) => `【欲钱买${item}的生肖】`)
+      .join("\n"),
+  },
 
   // ---- 杀三肖 ----
   { endpoint: "getShaXiao",  modesId: 42,  title: "杀三肖",     key: "legacy_shaxiao", limit: 10 },
@@ -247,7 +266,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getRccx",     modesId: 3,   title: "肉菜草肖",   key: "legacy_rccx",    limit: 10, params: { num: "2" } },
 
   // ---- 一句平特佳 ----
-  { endpoint: "yyptj",       modesId: 244, title: "一句平特佳", key: "legacy_yyptj",   limit: 10, tableClass: "duilianpt1 legacy-module-text",
+  { endpoint: "yyptj",       modesId: 244, title: "一语破天机", key: "legacy_yyptj",   limit: 10, tableClass: "duilianpt1 legacy-module-text",
     contentTransform: (content) => {
       try {
         const parsed = JSON.parse(content)
@@ -292,7 +311,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   },
 
   // ---- 句子（普通） ----
-  { endpoint: "getJuzi",     modesId: 62,  title: "句子",       key: "legacy_juzi",    limit: 10, tableClass: "duilianpt1 legacy-module-text" },
+  { endpoint: "getJuzi",     modesId: 62,  title: "欲钱解特诗", key: "legacy_juzi",    limit: 10, tableClass: "duilianpt1 legacy-module-text", contentColumn: "title" },
 
   // ---- 七肖七码（新版 qxbm） ----
   { endpoint: "qxbm",        modesId: 44, title: "七肖七码",   key: "legacy_qxbm",    limit: 10, contentColumn: "content",
@@ -481,6 +500,10 @@ function rowToHistoryRow(
 // 自增计数器，为每个旧模块生成唯一负整数 ID（避免与 site-page API 的正数 ID 冲突）
 let _legacyIdCounter = 0
 
+function getPreferredLegacyWeb(def: LegacyModuleDef, type: number): number {
+  return LEGACY_WEB_PREFERENCE_BY_TYPE[def.modesId]?.[type] ?? def.web ?? 4
+}
+
 /**
  * 为特定模块定义获取数据
  * ---------------------------------------------------------------
@@ -494,17 +517,35 @@ async function fetchLegacyModule(def: LegacyModuleDef, type: number = 3): Promis
   const maxRetries = 2
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const payload = await backendFetchJson<BackendLegacyPayload>("/legacy/module-rows", {
+      const primaryWeb = getPreferredLegacyWeb(def, type)
+      const primaryPayload = await backendFetchJson<BackendLegacyPayload>("/legacy/module-rows", {
         query: {
           modes_id: def.modesId,
           limit: def.limit,
-          web: def.web ?? 4,
+          web: primaryWeb,
           type,
           ...def.params,
         },
       })
 
-      const rows = payload.rows || []
+      let payload = primaryPayload
+      let rows = payload.rows || []
+      if (rows.length === 0 && primaryWeb !== 4 && def.web === undefined) {
+        const fallbackPayload = await backendFetchJson<BackendLegacyPayload>("/legacy/module-rows", {
+          query: {
+            modes_id: def.modesId,
+            limit: def.limit,
+            web: 4,
+            type,
+            ...def.params,
+          },
+        })
+        if ((fallbackPayload.rows || []).length > 0) {
+          payload = fallbackPayload
+          rows = fallbackPayload.rows || []
+        }
+      }
+
       if (rows.length === 0) {
         console.warn(`[legacy-modules] 模块 "${def.title}" (modes_id=${def.modesId}, type=${type}) 无数据`)
         return null

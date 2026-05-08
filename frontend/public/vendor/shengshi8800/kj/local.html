@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"
+  >
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <link rel="icon" href="data:;base64,=">
+  <title>开奖结果</title>
+  <style type="text/css">
+    * { margin: 0; padding: 0; }
+    body { background: #fff; }
+
+    .new-KJ-TabBox-box { font-size: 16px; height: 130px; box-sizing: border-box; color:#333; padding: 8px; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif; }
+    .new-KJ-TabBox-box a { text-decoration: none; }
+    .new-KJ-TabBox-box .kj-font-red { color: #f00 !important; }
+    .new-KJ-TabBox-box-tit { display: flex; align-items: center; height: 17px; line-height: 17px; font-size: 17px; }
+    .new-KJ-TabBox-box-tit-l {}
+    .new-KJ-TabBox-box-tit-m { flex: 1; text-align: center; font-weight: bold; }
+    .new-KJ-TabBox-box-tit-r {}
+    .new-KJ-TabBox-box-con { display: flex; margin: 8px 0; }
+    .new-KJ-TabBox-box-con .kj-ball { flex: 1; display: flex; align-items: center; justify-content: center; height: 61px; text-align: center; border-radius: 4px; margin-right: 6px; box-sizing: border-box; flex-direction: column; }
+    .new-KJ-TabBox-box-con .kj-ball:last-child { margin-right: 0; }
+    .new-KJ-TabBox-box-con .kj-ball:nth-last-child(3) { margin-right: 6px; }
+    .new-KJ-TabBox-box-con .kj-ball h2 { margin: 0; padding: 0; color: #fff; line-height: 24px; font-size: 28px; font-weight: 900; font-family: Tahoma, Geneva, sans-serif; }
+    .new-KJ-TabBox-box-con .kj-ball .whsx { display: inline-block; height: 19px; line-height: 19px; margin-top: 6px; padding: 0 6px; border-radius: 2px; color: #333; font-size: 14px; background: #fff; }
+    .new-KJ-TabBox-box-con .kj-add { display: flex; align-items: center; margin-right: 8px; font-size: 32px; font-weight: bold; }
+    .new-KJ-TabBox-box-foot { display: flex; align-items: center; font-size: 16px; }
+    .new-KJ-TabBox-box-foot-l { flex: 1; }
+    .new-KJ-TabBox-box-foot-r {}
+    .new-KJ-TabBox-box-foot-r-sx { display: inline-block; width: 40px; height: 20px; line-height: 20px; text-align: center; color: #fff; border-radius: 4px; background: #FF9900; }
+    .ball-red { background: #e71607; }
+    .ball-blue { background: #2389e9; }
+    .ball-green { background: #1fb61d; }
+    .ball-empty { background: #999999; }
+    .error-text { color: #b00020; }
+
+    @media screen and (max-width: 650px) {
+      .new-KJ-TabBox-box { font-size: 14px; }
+      .new-KJ-TabBox-box-tit { font-size: 16px; }
+      .new-KJ-TabBox-box-con .kj-ball { margin-right: 4px; }
+      .new-KJ-TabBox-box-con .kj-ball:nth-last-child(3) { margin-right: 4px; }
+      .new-KJ-TabBox-box-con .kj-ball h2 { font-size: 24px; }
+      .new-KJ-TabBox-box-con .kj-ball .whsx { margin-top: 4px; padding: 0 2px; font-size: 12px; }
+      .new-KJ-TabBox-box-con .kj-add { margin-right: 4px; font-size: 24px; }
+      .new-KJ-TabBox-box-foot { font-size: 15px; }
+    }
+
+    @media screen and (max-width:450px) {
+      .new-KJ-TabBox-box-tit-m .kj-lotto-tit2 span:first-child { display: none; }
+    }
+  </style>
+</head>
+<body onselectstart="javascript:return(false);" oncontextmenu="javascript:return(false);">
+  <textarea readonly id="shareInfo" name="shareInfo" style="position:absolute;top:-9999px;"></textarea>
+
+  <div class="new-KJ-TabBox-box">
+    <div class="new-KJ-TabBox-box-tit">
+      <div class="new-KJ-TabBox-box-tit-l">
+        <span id="lotteryLabel">台湾彩</span> 第<font class="kj-font-red"><span id="q">--</span></font>期
+      </div>
+      <div class="new-KJ-TabBox-box-tit-m"><div class="kj-lotto-tit2"><span></span></div></div>
+      <div class="new-KJ-TabBox-box-tit-r">
+        <a id="historyLink" target="_blank" href="/vendor/shengshi8800/index.html" class="kj-font-red">查看历史记录</a>
+      </div>
+    </div>
+    <div class="new-KJ-TabBox-box-con">
+      <div id="w1" class="kj-ball box ball-empty"><h2><div id="m1">--</div></h2><div id="m1x" class="whsx">--</div></div>
+      <div id="w2" class="kj-ball box ball-empty"><h2><div id="m2">--</div></h2><div id="m2x" class="whsx">--</div></div>
+      <div id="w3" class="kj-ball box ball-empty"><h2><div id="m3">--</div></h2><div id="m3x" class="whsx">--</div></div>
+      <div id="w4" class="kj-ball box ball-empty"><h2><div id="m4">--</div></h2><div id="m4x" class="whsx">--</div></div>
+      <div id="w5" class="kj-ball box ball-empty"><h2><div id="m5">--</div></h2><div id="m5x" class="whsx">--</div></div>
+      <div id="w6" class="kj-ball box ball-empty"><h2><div id="m6">--</div></h2><div id="m6x" class="whsx">--</div></div>
+      <div class="kj-add">+</div>
+      <div id="w7" class="kj-ball box ball-empty"><h2><div id="s1">--</div></h2><div id="s1x" class="whsx">--</div></div>
+    </div>
+    <div class="new-KJ-TabBox-box-foot">
+      <div id="statusText" class="new-KJ-TabBox-box-foot-l">
+        当前期号：<font class="kj-font-red"><span id="currentIssue">--</span></font>
+      </div>
+      <div class="new-KJ-TabBox-box-foot-r">
+        <a id="refreshButton" class="new-KJ-TabBox-box-foot-r-sx" style="cursor:pointer;">刷新</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var lotteryType = Number(params.get("lottery_type") || "3");
+      var label = params.get("label") || "";
+      var labelMap = { 1: "香港彩", 2: "澳门彩", 3: "台湾彩" };
+      var ballPrefixIds = ["m1", "m2", "m3", "m4", "m5", "m6", "s1"];
+      var zodiacPrefixIds = ["m1x", "m2x", "m3x", "m4x", "m5x", "m6x", "s1x"];
+      var ballWrapIds = ["w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function pad2(value) {
+        var text = String(value || "");
+        return text.length >= 2 ? text : "0" + text;
+      }
+
+      function setBall(index, ball) {
+        var valueNode = $(ballPrefixIds[index]);
+        var zodiacNode = $(zodiacPrefixIds[index]);
+        var wrapNode = $(ballWrapIds[index]);
+        if (!valueNode || !zodiacNode || !wrapNode) return;
+
+        var color = ball && typeof ball.color === "string" ? ball.color : "";
+        wrapNode.className = "kj-ball box " + (color ? "ball-" + color : "ball-empty");
+        valueNode.textContent = ball && ball.value ? pad2(ball.value) : "--";
+        zodiacNode.textContent = ball && ball.zodiac ? String(ball.zodiac) : "--";
+      }
+
+      function fillEmpty() {
+        for (var i = 0; i < 7; i++) {
+          setBall(i, null);
+        }
+      }
+
+      function render(payload) {
+        var issue = payload && payload.current_issue ? String(payload.current_issue) : "";
+        var year = issue.length > 4 ? issue.slice(0, 4) : "";
+        var term = issue.length > 4 ? issue.slice(4) : issue;
+        var balls = [];
+
+        if (payload && Array.isArray(payload.result_balls)) {
+          balls = payload.result_balls.slice(0, 6);
+        }
+        if (payload && payload.special_ball) {
+          balls.push(payload.special_ball);
+        }
+
+        while (balls.length < 7) {
+          balls.push(null);
+        }
+
+        $("lotteryLabel").textContent = label || labelMap[lotteryType] || labelMap[3];
+        $("q").textContent = term || "--";
+        $("currentIssue").textContent = issue || "--";
+
+        var statusText = $("statusText");
+        if (statusText) {
+          var suffix = year ? "（" + year + "年）" : "";
+          statusText.innerHTML = '当前期号：<font class="kj-font-red"><span id="currentIssue">' +
+            (issue || "--") +
+            "</span></font>" +
+            suffix;
+        }
+
+        for (var i = 0; i < 7; i++) {
+          setBall(i, balls[i]);
+        }
+      }
+
+      function showError(message) {
+        fillEmpty();
+        $("q").textContent = "--";
+        var statusText = $("statusText");
+        if (statusText) {
+          statusText.innerHTML = '<span class="error-text">开奖结果加载失败：' + String(message || "未知错误") + "</span>";
+        }
+      }
+
+      async function load() {
+        try {
+          var response = await fetch("/api/latest-draw?lottery_type=" + encodeURIComponent(String(lotteryType)), {
+            cache: "no-store"
+          });
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          var payload = await response.json();
+          render(payload || {});
+        } catch (error) {
+          showError(error && error.message ? error.message : String(error));
+        }
+      }
+
+      $("refreshButton").addEventListener("click", function () {
+        load();
+      });
+
+      fillEmpty();
+      load();
+    })();
+  </script>
+</body>
+</html>

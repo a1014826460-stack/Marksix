@@ -26,7 +26,6 @@
                 let c1 = [];
                 for (let i = 0; i < bo.length; i++) {
                     let nums = getNumsByColor(bo[i].split('')[0]);
-                    console.log(d.term,nums,code,bo[i])
                     if (nums && code && nums.indexOf(code) !== -1) {
                         c1.push(`<span style="background-color: #FFFF00">${bo[i]}</span>`);
                     }else {
@@ -69,4 +68,3 @@
         console.error('Error:', error);
     }
 }); 
-
