@@ -13,8 +13,6 @@
         // }
     },
     success: function(data, textStatus, jqXHR) {
-        // 修改返回的数据
-        console.log(data)
         return null; // 注意：这里直接返回数据不会影响原始数据，只是改变了回调中的数据值
     },
 /*    statusCode: {
@@ -48,6 +46,7 @@ $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
 
 
 function replaceOldChat(str){
+    if (typeof str !== "string") return str;
     return str.replaceAll('龍','龙').replaceAll('馬','马')
         .replaceAll('雞','鸡')
         .replaceAll('鷄','鸡')

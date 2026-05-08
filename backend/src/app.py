@@ -672,12 +672,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             table_name = str(parts[6])
             # handle_site_detail 内部没有 query 变量，从 self.path 重新解析
             mp_query = parse_qs(urlparse(self.path).query)
+            query_source = mp_query.get("source", ["public"])[0]
 
             # GET /sites/{id}/mode-payload/{table}?type=&page=&page_size=&search=
             if len(parts) == 7 and method == "GET":
                 query_type = mp_query.get("type", [""])[0]
                 query_web = mp_query.get("web", [""])[0]
-                query_source = mp_query.get("source", ["public"])[0]
                 query_page = mp_query.get("page", ["1"])[0]
                 query_size = mp_query.get("page_size", ["50"])[0]
                 query_search = mp_query.get("search", [""])[0]
@@ -722,7 +722,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         table_name,
                         parts[7],
                         self.read_json(),
-                        source=query_source or "public",
+                        source=query_source,
                     )
                 )
                 return
@@ -733,7 +733,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.db_path,
                     table_name,
                     parts[7],
-                    source=query_source or "public",
+                    source=query_source,
                 )
                 self.send_json({"ok": True})
                 return

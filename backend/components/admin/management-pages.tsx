@@ -103,10 +103,17 @@ type SitePredictionModule = {
   mode_id?: number
   title?: string
   tables_title?: string
+  display_title?: string
+  resolved_mode_id?: number
   default_modes_id?: number
   default_table?: string
   status: boolean
   sort_order: number
+}
+
+function getSitePredictionModuleName(module: SitePredictionModule | null | undefined) {
+  if (!module) return ""
+  return module.tables_title || module.display_title || module.title || module.mechanism_key
 }
 
 type BulkGenerateResult = {
@@ -852,7 +859,7 @@ function ModuleDataPanel({
   onSourceFilterChange: (v: string) => void
   onClose: () => void
 }) {
-  const resolvedModeId = module.mode_id ?? module.default_modes_id
+  const resolvedModeId = module.resolved_mode_id ?? module.mode_id ?? module.default_modes_id
   const tableName = module.default_table || `mode_payload_${resolvedModeId}`
   const [payload, setPayload] = useState<{ rows: AnyRecord[]; total: number; columns: string[] } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -958,7 +965,7 @@ function ModuleDataPanel({
     <Card className="overflow-hidden border-t-2 border-t-primary/50 shadow-lg">
       <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2.5">
         <div className="flex items-center gap-3 text-sm">
-          <span className="font-semibold">{module.tables_title || module.title}</span>
+          <span className="font-semibold">{getSitePredictionModuleName(module)}</span>
           <span className="text-muted-foreground">|</span>
           <span className="text-xs text-muted-foreground">[{module.mechanism_key}]</span>
           <span className="text-xs text-muted-foreground">mode_id={resolvedModeId}</span>
@@ -1067,7 +1074,7 @@ function ModuleDataPanel({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setRegenOpen(false)}>
           <div className="w-[500px] rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-1 text-base font-semibold">重新生成资料</h3>
-            <p className="mb-4 text-xs text-muted-foreground">模块: {module.tables_title || module.title} ({tableName})</p>
+            <p className="mb-4 text-xs text-muted-foreground">模块: {getSitePredictionModuleName(module)} ({tableName})</p>
             <div className="space-y-3">
               <div><label className="mb-1 block text-xs font-medium">开奖号码（逗号分隔）</label><Input placeholder="01,05,12,23,34,45,49" value={regenNumbers} onChange={(e) => setRegenNumbers(e.target.value)} className="h-9 text-sm" /></div>
               <div className="grid grid-cols-2 gap-3">
@@ -1278,7 +1285,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
           <div className="mb-3 flex flex-wrap gap-1.5 overflow-x-auto rounded-lg border bg-muted/20 p-2" style={{ scrollbarWidth: "thin" }}>
             {modules.map((mod) => {
               const isSelected = mod.id === selectedModId
-              const name = mod.tables_title || mod.title || mod.mechanism_key
+              const name = getSitePredictionModuleName(mod)
               return (
                 <button
                   key={mod.id}
@@ -1331,7 +1338,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                 <div className="w-[400px] rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
                   <h3 className="mb-2 text-base font-semibold">确认移除</h3>
                   <p className="mb-1 text-sm text-muted-foreground">
-                    确定要移除预测模块 <span className="font-medium text-foreground">「{mod?.tables_title || mod?.title || "?"}」</span> 吗？
+                    确定要移除预测模块 <span className="font-medium text-foreground">「{getSitePredictionModuleName(mod) || "?"}」</span> 吗？
                   </p>
                   <p className="text-xs text-muted-foreground">该操作仅从站点配置中移除，不会删除数据库数据。</p>
                   <div className="mt-4 flex justify-end gap-2">

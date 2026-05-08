@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         {/* ============ 旧站 CSS（保持与旧站 UI 完全一致） ============ */}
         {/* style1.css 包含 .box, .pad, .duilianpt1, .list-title, .zl, .riqi, .copyright 等核心样式 */}

@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from auth import hash_password, public_user
+from predict.common import DEFAULT_TARGET_HIT_RATE, predict
 from db import connect as db_connect
 from helpers import parse_bool
-from predict.mechanisms import list_prediction_configs
+from predict.mechanisms import get_prediction_config, list_prediction_configs
 from tables import ensure_admin_tables
 from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
 
@@ -608,7 +609,20 @@ def delete_number(db_path: str | Path, number_id: int) -> None:
 
 def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str, Any]:
     ensure_admin_tables(db_path)
+    site = get_site(db_path, site_id)
     with connect(db_path) as conn:
+        # 读取 mode_payload_tables 的 modes_id → title 映射
+        mode_titles: dict[int, str] = {}
+        if conn.table_exists("mode_payload_tables"):
+            title_rows = conn.execute(
+                "SELECT modes_id, title FROM mode_payload_tables"
+            ).fetchall()
+            for tr in title_rows:
+                try:
+                    mode_titles[int(tr["modes_id"])] = str(tr["title"] or "")
+                except (TypeError, ValueError):
+                    continue
+
         rows = conn.execute(
             """
             SELECT id, site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
@@ -618,9 +632,49 @@ def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str,
             """,
             (site_id,),
         ).fetchall()
+        modules = [dict(row) for row in rows]
+        for m in modules:
+            mechanism_key = str(m.get("mechanism_key") or "").strip()
+            try:
+                config = get_prediction_config(mechanism_key)
+            except ValueError:
+                config = None
+            if config is not None:
+                m["default_modes_id"] = int(config.default_modes_id or 0)
+                m["default_table"] = str(config.default_table or "")
+            try:
+                resolved_mode_id = int(m.get("mode_id") or 0)
+            except (TypeError, ValueError):
+                resolved_mode_id = 0
+            if resolved_mode_id <= 0 and config is not None:
+                resolved_mode_id = int(config.default_modes_id or 0)
+            fallback_title = str(config.title or "") if config is not None else ""
+            resolved_title = mode_titles.get(resolved_mode_id, fallback_title)
+            if resolved_title:
+                m["display_title"] = resolved_title
+                m["tables_title"] = resolved_title
+                m["title"] = resolved_title
+            if resolved_mode_id > 0:
+                m["resolved_mode_id"] = resolved_mode_id
+        configured_keys = {str(m["mechanism_key"]) for m in modules}
+
+        # 构建可用机制列表（title 优先使用 mode_payload_tables 的）
+        available_mechanisms: list[dict[str, Any]] = []
+        for item in list_prediction_configs():
+            key = str(item["key"])
+            mid = item["default_modes_id"]
+            available_mechanisms.append({
+                "key": key,
+                "title": mode_titles.get(mid, item["title"]),
+                "default_modes_id": mid,
+                "default_table": item["default_table"],
+                "configured": key in configured_keys,
+            })
+
         return {
-            "site_id": site_id,
-            "modules": [dict(row) for row in rows],
+            "site": site,
+            "modules": modules,
+            "available_mechanisms": available_mechanisms,
         }
 
 
@@ -632,7 +686,10 @@ def add_site_prediction_module(
     mechanism_key = str(payload.get("mechanism_key") or "").strip()
     if not mechanism_key:
         raise ValueError("mechanism_key 不能为空")
+    config = get_prediction_config(mechanism_key)
     mode_id = int(payload.get("mode_id") or 0)
+    if mode_id <= 0:
+        mode_id = int(config.default_modes_id or 0)
     status = 1 if parse_bool(payload.get("status"), True) else 0
     sort_order = int(payload.get("sort_order") or 0)
 
@@ -665,7 +722,10 @@ def update_site_prediction_module(
             raise KeyError(f"module_id={module_id} 在 site_id={site_id} 下不存在")
 
         mechanism_key = str(payload.get("mechanism_key") or existing["mechanism_key"]).strip()
+        config = get_prediction_config(mechanism_key)
         mode_id = int(payload.get("mode_id") or existing.get("mode_id") or 0)
+        if mode_id <= 0:
+            mode_id = int(config.default_modes_id or 0)
         status = 1 if parse_bool(payload.get("status"), bool(existing.get("status"))) else 0
         sort_order = int(payload.get("sort_order") or existing.get("sort_order") or 0)
 

@@ -30,6 +30,7 @@ import { NavTabs } from "@/components/NavTabs"
 import { PreResultBlocks } from "@/components/PreResultBlocks"
 import { PredictionModules } from "@/components/PredictionModules"
 import { LotteryResult } from "@/components/LotteryResult"
+import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
 import { Footer } from "@/components/Footer"
 
 /** HomePageClient 的 Props */
@@ -109,6 +110,12 @@ export function HomePageClient({ data }: HomePageClientProps) {
   /* ========== 滚动监听：导航栏固定 ========== */
   const [navFixed, setNavFixed] = useState(false)
 
+  const activeModules = data.modulesByGame[activeGame] || data.rawModules
+
+  function handleGameChange(game: LotteryGame) {
+    setActiveGame(game)
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       const navEl = document.getElementById("nav2")
@@ -132,7 +139,16 @@ export function HomePageClient({ data }: HomePageClientProps) {
       {/* ===== 导航栏 ===== */}
       <NavTabs fixed={navFixed} rows={navRows} />
 
+      {/* ===== 开奖结果 + 彩种联动入口 ===== */}
+      <LotteryResult
+        activeGame={activeGame}
+        onGameChange={handleGameChange}
+      />
+
       {/* ===== 预测模块区域 ===== */}
+      {/* 当前页只保留“开奖结果”里的台湾彩 / 澳门彩 / 香港彩按钮作为彩种切换入口。
+          下方 React 预测区与旧站 JS iframe 隔离层继续共用同一个 activeGame，
+          这样点击开奖结果按钮后，两边会同步切换，但 iframe 内部展示结构保持不变。 */}
 
       {/* 核心模块（由 PreResultBlocks 专用渲染）：
            根据当前 activeGame 动态提取对应模块数据 */}
@@ -142,16 +158,16 @@ export function HomePageClient({ data }: HomePageClientProps) {
         activeGame={activeGame}
       />
 
-      {/* ===== 开奖结果（使用 iframe 嵌入旧站开奖页面） ===== */}
-      <LotteryResult
+      {/* ===== 旧站 JS 隔离层（iframe 嵌入完整旧站模块区） ===== */}
+      <LegacyModulesFrame
         activeGame={activeGame}
-        onGameChange={setActiveGame}
+        onGameChange={handleGameChange}
       />
 
       {/* 通用模块渲染器：渲染所有其他预测模块 */}
       {/* 根据当前选中的游戏类型，渲染对应彩种的预测数据 */}
       <PredictionModules
-        modules={data.modulesByGame[activeGame] || data.rawModules}
+        modules={activeModules}
         excludeKeys={preResultKeys}
       />
 

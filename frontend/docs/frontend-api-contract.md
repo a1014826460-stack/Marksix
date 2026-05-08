@@ -373,7 +373,7 @@ type JuziRow = LegacyBaseRow & {
 | `getPingte` | `43` / `56` | `num=2` -> `43`，否则 `56` | `ContentRow` | 平特接口 |
 | `getSanqiXiao4new` | `197` | 无 | `RangeContentRow` | 三期类范围数据 |
 | `sbzt` | `38` | 无 | `ContentRow` | 双波中特 |
-| `getXiaoma` | `246` | 常传 `7` | `ContentRow` | `content` 为 JSON 字符串数组：`["牛|06", ...]` |
+| `getXiaoma` | `44` | 常传 `7` | `ContentRow` | `content` 为 JSON 字符串数组：`["牛|06", ...]` |
 | `getHbnx` | `45` | 无 | `HeiBaiRow` | 黑白无双 |
 | `getYjzy` | `50` | 无 | `TitleContentJiexiRow` | 一句真言 |
 | `lxzt` | `46` | 无 | `ContentRow` |六肖中特 |
@@ -404,7 +404,7 @@ type JuziRow = LegacyBaseRow & {
 | `wxzt` | `48` | 无 | `ContentRow` | 五肖中特 |
 | `getWei` | `2` | 常传 `6` | `ContentRow` | 六尾中特 |
 | `jxzt` | `49` | 无 | `ContentRow` | 九肖中特 |
-| `qxbm` | `246` | 无 | `QxBmRow` | 七肖七码 / 五行八码兼容格式 |
+| `qxbm` | `44` | 无 | `QxBmRow` | 七肖七码 / 五行八码兼容格式 |
 | `getPmxjcz` | `331` | 无 | `TitleContentJiexiRow` | 跑马玄机测字 |
 
 ### 特别说明 1：`getXiaoma`

@@ -337,7 +337,25 @@ def merge_preferred_mode_payload_rows(
         if len(merged) >= limit:
             break
 
+    # 合并后可能因回填打破降序，重新按 year/term 降序排列
+    merged.sort(
+        key=lambda row: (
+            _safe_issue_int(row.get("year")),
+            _safe_issue_int(row.get("term")),
+        ),
+        reverse=True,
+    )
+
     return merged
+
+
+def _safe_issue_int(value: Any) -> int:
+    """将 year/term 安全转为整数用于排序，无效值返回 0。"""
+    try:
+        s = str(value).strip() if value is not None else ""
+        return int(s) if s else 0
+    except (ValueError, TypeError):
+        return 0
 
 
 def load_mode_payload_rows_from_source(
