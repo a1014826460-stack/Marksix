@@ -1163,7 +1163,7 @@ function ModuleDataPanel({
         <div className="ml-auto flex items-center gap-2">
           <Input placeholder="搜索..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") fetchPayload(1) }} className="h-7 w-36 text-xs" />
           <Button variant="outline" size="sm" onClick={() => fetchPayload(1)} className="h-7 text-xs">搜索</Button>
-          <Button variant="outline" size="sm" onClick={() => setRegenOpen(true)} className="h-7 text-xs">
+          <Button variant="outline" size="sm" onClick={() => setRegenOpen(true)} className="h-7 text-xs" style={{ display: 'none' }}>
             <RefreshCw className="mr-1 h-3 w-3" />重新生成资料
           </Button>
         </div>
@@ -1395,6 +1395,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
           start_issue: bulkStartIssue.trim(),
           end_issue: bulkEndIssue.trim(),
           mechanism_keys: selectedList,
+          future_periods: 1, // 自动生成下一期预测资料（T+1），该期尚未开奖，预测内容基于历史数据
         }),
       })
       // 轮询任务状态，最多等待 10 分钟
@@ -1501,7 +1502,8 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                         const lt = bulkLotteryType || String(site?.lottery_type_id || 3)
                         const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lt}`)
                         if (info.term > 0) {
-                          const endTerm = info.term
+                          // 截止期号 = 当前已开奖最新期号 + 1，确保生成下一期预测资料
+                          const endTerm = info.term + 1
                           const startTerm = Math.max(1, endTerm - n + 1)
                           setBulkStartIssue(`${info.year}${String(startTerm).padStart(3, '0')}`)
                           setBulkEndIssue(`${info.year}${String(endTerm).padStart(3, '0')}`)
