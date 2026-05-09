@@ -509,9 +509,10 @@ def predict(
         确保同一种子产生相同预测结果，不同种子（如不同期号）产生不同结果。
         用于未来期预测的差异性保证。
     """
+    _seed_int: int | None = None
     if random_seed is not None:
-        seed_int = int(hashlib.sha256(random_seed.encode()).hexdigest(), 16) % (2**32)
-        random.seed(seed_int)
+        _seed_int = int(hashlib.sha256(random_seed.encode()).hexdigest(), 16) % (2**32)
+        random.seed(_seed_int)
 
     table_name = source_table or config.default_table
     resolved_target = str(db_path)
@@ -528,6 +529,11 @@ def predict(
             history, labels, config.label_count, lookback, "hot",
             config.selection_groups, config.selection_widths,
         )
+
+        # 未来期差异保证：不同种子产生不同标签序列（循环位移）
+        if _seed_int is not None and len(predicted_labels) > 1:
+            shift = (_seed_int % (len(predicted_labels) - 1)) + 1
+            predicted_labels = predicted_labels[shift:] + predicted_labels[:shift]
 
         # 绝杀类单选模块随机化：避免每次都生成相同结果
         is_exclude = config.hit_checker is excludes_hit
