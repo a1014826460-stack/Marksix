@@ -944,10 +944,8 @@ def run_server(host: str, port: int, db_path: str | Path) -> None:
     print(f"CMS admin page: http://{host}:{port}/admin")
     print(f"Database engine: {detect_database_engine(db_path)}")
     print(f"Database target: {db_path}")
-    # Start background crawler scheduler
-    _cfg_crawler = app_config.section("crawler")
-    _crawl_interval = int(_cfg_crawler.get("interval_seconds", 3600))
-    _scheduler = CrawlerScheduler(db_path, _crawl_interval)
+    # Start background task scheduler (auto-open draws + auto-prediction timers)
+    _scheduler = CrawlerScheduler(db_path)
     _scheduler.start()
     try:
         server.serve_forever()
