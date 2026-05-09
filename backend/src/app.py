@@ -246,11 +246,9 @@ def _crawl_and_generate(db_path: str, lottery_type_id: int) -> dict[str, Any]:
 
         for site in sites:
             site_id = int(site["id"])
-            site_lt_id = int(site.get("lottery_type_id") or 0)
 
-            # 只处理匹配当前彩种的站点（lottery_type_id=0 表示通用站点，也需要处理）
-            if site_lt_id not in (0, lottery_type_id):
-                continue
+            # 对每个启用站点，用爬取到的彩种数据生成其所有模块的预测
+            # 不再限制站点必须匹配爬取的彩种——站点可以拥有多个彩种的模块
 
             # 获取该站点下所有启用模块
             modules = conn.execute(

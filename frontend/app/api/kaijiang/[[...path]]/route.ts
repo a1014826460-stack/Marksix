@@ -17,14 +17,14 @@ type BackendLegacyRowsPayload = {
 }
 
 const LEGACY_WEB_FALLBACK_BY_TYPE: Record<number, Partial<Record<number, number>>> = {
-  2: { 3: 2 },
-  3: { 3: 2 },
-  44: { 3: 2 },
-  48: { 3: 2 },
-  57: { 3: 2 },
-  108: { 3: 2 },
-  244: { 3: 2 },
-  331: { 3: 2 },
+  2: { 1: 2, 2: 2, 3: 2 },
+  3: { 1: 2, 2: 2, 3: 2 },
+  44: { 1: 2, 2: 2, 3: 2 },
+  48: { 1: 2, 2: 2, 3: 2 },
+  57: { 1: 2, 2: 2, 3: 2 },
+  108: { 1: 2, 2: 2, 3: 2 },
+  244: { 1: 2, 2: 2, 3: 2 },
+  331: { 1: 2, 2: 2, 3: 2 },
 }
 
 function asString(value: unknown) {
