@@ -1,5 +1,6 @@
 import argparse
 import itertools
+import hashlib
 import json
 import math
 import random
@@ -500,8 +501,18 @@ def predict(
     source_table: str | None = None,
     db_path: str | Path = DEFAULT_DB_PATH,
     target_hit_rate: float = DEFAULT_TARGET_HIT_RATE,
+    random_seed: str | None = None,
 ) -> dict[str, Any]:
-    """统一预测入口，供脚本和前端 API 复用。"""
+    """统一预测入口，供脚本和前端 API 复用。
+
+    :param random_seed: 可选随机种子字符串。传入时用于固定随机数生成器状态，
+        确保同一种子产生相同预测结果，不同种子（如不同期号）产生不同结果。
+        用于未来期预测的差异性保证。
+    """
+    if random_seed is not None:
+        seed_int = int(hashlib.sha256(random_seed.encode()).hexdigest(), 16) % (2**32)
+        random.seed(seed_int)
+
     table_name = source_table or config.default_table
     resolved_target = str(db_path)
 
