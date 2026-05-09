@@ -54,22 +54,40 @@ def _upsert_draw(
     now: str,
     next_time: str = "",
 ) -> None:
-    conn.execute(
-        """
-        INSERT INTO lottery_draws
+    # 只有 next_time 非空时才写入/更新，防止历史数据覆盖有效的下次开奖时间
+    if next_time:
+        conn.execute(
+            """
+            INSERT INTO lottery_draws
+                (lottery_type_id, year, term, numbers, draw_time,
+                 status, is_opened, next_term, next_time, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
+                numbers = excluded.numbers,
+                draw_time = excluded.draw_time,
+                is_opened = excluded.is_opened,
+                next_time = excluded.next_time,
+                updated_at = excluded.updated_at
+            """,
             (lottery_type_id, year, term, numbers, draw_time,
-             status, is_opened, next_term, next_time, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
-        ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
-            numbers = excluded.numbers,
-            draw_time = excluded.draw_time,
-            is_opened = excluded.is_opened,
-            next_time = excluded.next_time,
-            updated_at = excluded.updated_at
-        """,
-        (lottery_type_id, year, term, numbers, draw_time,
-         is_opened, term + 1, next_time, now, now),
-    )
+             is_opened, term + 1, next_time, now, now),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO lottery_draws
+                (lottery_type_id, year, term, numbers, draw_time,
+                 status, is_opened, next_term, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
+                numbers = excluded.numbers,
+                draw_time = excluded.draw_time,
+                is_opened = excluded.is_opened,
+                updated_at = excluded.updated_at
+            """,
+            (lottery_type_id, year, term, numbers, draw_time,
+             is_opened, term + 1, now, now),
+        )
     # 同步更新 lottery_types.next_time，保持彩种管理页面数据一致
     if next_time:
         conn.execute(
