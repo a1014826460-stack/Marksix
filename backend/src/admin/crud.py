@@ -11,152 +11,18 @@ bodies, and docstrings exactly as they appear in app.py.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from auth import hash_password, public_user
 from predict.common import DEFAULT_TARGET_HIT_RATE, predict
-from db import connect as db_connect
+from db import connect, utc_now
 from helpers import parse_bool
 from predict.mechanisms import get_prediction_config, list_prediction_configs
 from tables import ensure_admin_tables
 from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
-
-# 前端需要的站点预测模块 mode_id 清单，按展示顺序排列
-REQUIRED_SITE_PREDICTION_MODE_IDS = (
-    3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
-    44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
-    57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
-    67, 68, 69, 151, 197,
-)
-
-
-# ─────────────────────────────────────────────────────────────────
-#  本地工具函数 / Local utility helpers
-# ─────────────────────────────────────────────────────────────────
-
-def utc_now() -> str:
-    """获取当前 UTC 时间，返回 ISO 8601 格式字符串。
-
-    :return: 当前 UTC 时间的 ISO 8601 字符串，形如 ``"2025-01-01T12:00:00.123456+00:00"``
-    """
-    return datetime.now(timezone.utc).isoformat()
-
-
-def connect(db_path: str | Path) -> Any:
-    """打开并返回数据库连接对象。
-
-    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
-    :return: 数据库连接对象（具体类型由 ``db.connect`` 实现决定）
-    """
-    return db_connect(db_path)
-
-
-# ─────────────────────────────────────────────────────────────────
-#  同步辅助函数（save_site 依赖，原位于 admin.prediction）
-#  Sync helpers (dependency of save_site — originally in admin.prediction)
-# ─────────────────────────────────────────────────────────────────
-
-def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
-    """获取站点预测模块的标准配置清单，按前端要求的 mode_id 顺序输出。
-
-    遍历所有预测配置，根据 ``REQUIRED_SITE_PREDICTION_MODE_IDS`` 筛选并排序，
-    生成每个模块的蓝图字典，包含 mode_id、sort_order 等字段。
-
-    :return: 预测模块蓝图列表，每个元素为包含 mode_id、sort_order 等字段的字典
-    :raises ValueError: 当 REQUIRED_SITE_PREDICTION_MODE_IDS 中的某个 mode_id
-                         在预测配置中不存在时抛出
-    """
-    configs_by_mode_id: dict[int, dict[str, Any]] = {}
-    for item in list_prediction_configs():
-        try:
-            configs_by_mode_id[int(item["default_modes_id"])] = item
-        except (TypeError, ValueError):
-            continue
-
-    missing = [mode_id for mode_id in REQUIRED_SITE_PREDICTION_MODE_IDS if mode_id not in configs_by_mode_id]
-    if missing:
-        raise ValueError(f"以下 mode_id 缺少预测配置，无法同步站点模块: {missing}")
-
-    blueprints: list[dict[str, Any]] = []
-    for index, mode_id in enumerate(REQUIRED_SITE_PREDICTION_MODE_IDS):
-        item = dict(configs_by_mode_id[mode_id])
-        item["mode_id"] = int(mode_id)
-        item["sort_order"] = index * 10
-        blueprints.append(item)
-    return blueprints
-
-
-def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """将 site_prediction_modules 表与前端站点模块清单保持同步。
-
-    对指定站点（或全部站点）的预测模块记录进行增量更新：
-    已存在的记录仅更新 mode_id 和 sort_order；不存在的记录则插入新行。
-
-    :param conn: 数据库连接对象
-    :param site_id: 可选，指定要同步的站点 ID；为 None 时同步所有托管站点
-    """
-    blueprints = get_site_prediction_module_blueprints()
-    allowed_keys = tuple(str(item["key"]) for item in blueprints)
-    now = utc_now()
-
-    site_query = "SELECT id FROM managed_sites"
-    site_params: tuple[Any, ...] = ()
-    if site_id is not None:
-        site_query += " WHERE id = ?"
-        site_params = (int(site_id),)
-    site_rows = conn.execute(site_query, site_params).fetchall()
-
-    for site_row in site_rows:
-        current_site_id = int(site_row["id"])
-        existing_rows = conn.execute(
-            """
-            SELECT mechanism_key, status, created_at
-            FROM site_prediction_modules
-            WHERE site_id = ?
-            """,
-            (current_site_id,),
-        ).fetchall()
-        existing_by_key = {str(row["mechanism_key"]): dict(row) for row in existing_rows}
-
-        for item in blueprints:
-            existing = existing_by_key.get(str(item["key"]))
-            if existing:
-                # 已有记录则 UPDATE，避免 INSERT ... ON CONFLICT 消耗序列值
-                conn.execute(
-                    """
-                    UPDATE site_prediction_modules
-                    SET mode_id = ?, sort_order = ?, updated_at = ?
-                    WHERE site_id = ? AND mechanism_key = ?
-                    """,
-                    (
-                        int(item["mode_id"]),
-                        int(item["sort_order"]),
-                        now,
-                        current_site_id,
-                        str(item["key"]),
-                    ),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO site_prediction_modules (
-                        site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        current_site_id,
-                        str(item["key"]),
-                        int(item["mode_id"]),
-                        1,
-                        int(item["sort_order"]),
-                        now,
-                        now,
-                    ),
-                )
-
+from admin.prediction import sync_site_prediction_modules
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -619,6 +485,32 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         "is_opened": 1 if parse_bool(payload.get("is_opened"), False) else 0,
         "next_term": int(payload.get("next_term") or (int(payload.get("term") or 1) + 1)),
     }
+    # 台湾彩自动推算开奖时间
+    if fields["lottery_type_id"] == 3 and not fields["draw_time"]:
+        with connect(db_path) as conn:
+            prev = conn.execute(
+                """SELECT draw_time FROM lottery_draws
+                   WHERE lottery_type_id = 3 ORDER BY year DESC, term DESC LIMIT 1"""
+            ).fetchone()
+            if prev and prev.get("draw_time"):
+                try:
+                    prev_dt = datetime.strptime(str(prev["draw_time"]).strip(), "%Y-%m-%d %H:%M:%S")
+                    next_dt = prev_dt.replace(day=prev_dt.day + 1, hour=22, minute=30, second=0, microsecond=0)
+                    fields["draw_time"] = next_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, OverflowError):
+                    pass
+            if not fields["draw_time"]:
+                fields["draw_time"] = datetime.now().replace(hour=22, minute=30, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 开奖时间已过：自动标记为已开奖
+    if fields["draw_time"] and not fields["is_opened"]:
+        try:
+            draw_dt = datetime.strptime(fields["draw_time"].strip(), "%Y-%m-%d %H:%M:%S")
+            if draw_dt <= datetime.now():
+                fields["is_opened"] = 1
+        except ValueError:
+            pass  # 只包含日期的格式，不做自动判断
+
     if not fields["numbers"]:
         raise ValueError("开奖号码不能为空")
     # 验证恰好 7 个号码，每个 01-49
