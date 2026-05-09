@@ -646,13 +646,17 @@ class ApiHandler(BaseHTTPRequestHandler):
                 lt_id = int(qs.get("lottery_type_id", ["1"])[0])
                 with connect(self.db_path) as conn:
                     row = conn.execute(
-                        "SELECT year, term FROM lottery_draws WHERE lottery_type_id = ? AND is_opened = 1 ORDER BY year DESC, term DESC LIMIT 1",
+                        "SELECT year, term, draw_time FROM lottery_draws WHERE lottery_type_id = ? AND is_opened = 1 ORDER BY year DESC, term DESC LIMIT 1",
                         (lt_id,),
                     ).fetchone()
                     if row:
-                        self.send_json({"year": int(row["year"]), "term": int(row["term"])})
+                        self.send_json({
+                            "year": int(row["year"]),
+                            "term": int(row["term"]),
+                            "draw_time": str(row["draw_time"] or ""),
+                        })
                     else:
-                        self.send_json({"year": 0, "term": 0})
+                        self.send_json({"year": 0, "term": 0, "draw_time": ""})
                 return
             if path.startswith("/api/admin/sites/"):
                 self.handle_site_detail(method, path)

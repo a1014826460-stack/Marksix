@@ -635,22 +635,41 @@ export function DrawsPageClient() {
             <h2 className="mb-3 text-base font-semibold">{editing ? "修改开奖记录" : "新增开奖记录"}</h2>
             <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
               <Field label="彩种" className="col-span-2">
-                <select name="lottery_type_id" defaultValue={editing?.lottery_type_id || ""} onChange={async (e) => {
-                  const ltId = Number(e.target.value)
-                  if (!ltId || editing) return
-                  try {
-                    const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${ltId}`)
-                    if (info.term > 0) {
+                <select name="lottery_type_id"
+                  defaultValue={editing ? String(editing.lottery_type_id) : "3"}
+                  disabled={!editing}
+                  onChange={async (e) => {
+                    const ltId = Number(e.target.value)
+                    if (!ltId || editing) return
+                    try {
+                      const info = await adminApi<{ year: number; term: number; draw_time: string }>(`/admin/lottery-draws/latest-term?lottery_type_id=${ltId}`)
                       const form = e.target.form!
-                      ;(form.elements.namedItem("year") as HTMLInputElement).value = String(info.year)
-                      ;(form.elements.namedItem("term") as HTMLInputElement).value = String(info.term + 1)
-                      ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(info.term + 2)
-                    }
-                  } catch { /* ignore */ }
-                }} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      if (info.term > 0) {
+                        ;(form.elements.namedItem("year") as HTMLInputElement).value = String(info.year)
+                        ;(form.elements.namedItem("term") as HTMLInputElement).value = String(info.term + 1)
+                        ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(info.term + 2)
+                      }
+                      // 台湾彩自动推算开奖时间：上一期 +1 天，每日 22:30:00
+                      if (ltId === 3) {
+                        let baseDate: Date
+                        if (info.draw_time) {
+                          baseDate = new Date(info.draw_time.replace(" ", "T"))
+                        } else {
+                          baseDate = new Date()
+                        }
+                        baseDate.setDate(baseDate.getDate() + 1)
+                        baseDate.setHours(22, 30, 0, 0)
+                        const yyyy = baseDate.getFullYear()
+                        const mm = String(baseDate.getMonth() + 1).padStart(2, "0")
+                        const dd = String(baseDate.getDate()).padStart(2, "0")
+                        ;(form.elements.namedItem("draw_time") as HTMLInputElement).value = `${yyyy}-${mm}-${dd}T22:30`
+                      }
+                    } catch { /* ignore */ }
+                  }} className="h-9 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-60">
                   <option value="">请选择彩种</option>
                   {lotteries.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
+                {!editing && <span className="mt-1 text-xs text-muted-foreground">新增记录默认台湾彩，开奖时间自动推算</span>}
               </Field>
               <Field label="年份"><Input name="year" type="number" defaultValue={editing?.year || new Date().getFullYear()} /></Field>
               <Field label="期数"><Input name="term" type="number" defaultValue={editing?.term || ""} placeholder="自动获取" /></Field>

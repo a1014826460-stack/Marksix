@@ -329,12 +329,17 @@ class CrawlerScheduler:
         # Run once immediately on startup
         self._run()
         self._schedule_next()
+        # 启动定时器：每 60 秒检查是否有到达开奖时间的记录
+        self._schedule_auto_open()
 
     def stop(self) -> None:
         self._running = False
         if self._timer:
             self._timer.cancel()
             self._timer = None
+        if hasattr(self, "_auto_open_timer") and self._auto_open_timer:
+            self._auto_open_timer.cancel()
+            self._auto_open_timer = None
 
     def _schedule_next(self) -> None:
         if not self._running:
@@ -342,6 +347,31 @@ class CrawlerScheduler:
         self._timer = threading.Timer(self.interval, self._run)
         self._timer.daemon = True
         self._timer.start()
+
+    def _auto_open_draws(self) -> None:
+        """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。"""
+        try:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            with db_connect(self.db_path) as conn:
+                cur = conn.execute(
+                    """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
+                       WHERE is_opened = 0 AND draw_time IS NOT NULL AND draw_time != ''
+                       AND draw_time <= ?""",
+                    (now, now),
+                )
+                if cur.rowcount > 0:
+                    print(f"[AutoOpen] Set is_opened=1 for {cur.rowcount} draw(s)")
+        except Exception as e:
+            print(f"[AutoOpen] Error: {e}")
+
+    def _schedule_auto_open(self) -> None:
+        """每 60 秒检查一次是否有到达开奖时间的记录。"""
+        if not self._running:
+            return
+        self._auto_open_draws()
+        self._auto_open_timer = threading.Timer(60, self._schedule_auto_open)
+        self._auto_open_timer.daemon = True
+        self._auto_open_timer.start()
 
     def _run_once(self) -> None:
         """执行一轮爬取：香港彩 → 澳门彩，爬取后自动生成预测数据。"""
