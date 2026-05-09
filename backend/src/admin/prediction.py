@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,10 +26,10 @@ for _p in (_PREDICT_ROOT, _UTILS_ROOT):
         sys.path.insert(0, str(_p))
 
 from common import DEFAULT_TARGET_HIT_RATE, predict  # noqa: E402
-from db import connect as db_connect, quote_identifier
+from db import connect, quote_identifier, utc_now
 from helpers import (
     apply_lottery_draw_overlay, load_fixed_data_maps, normalize_issue_part,
-    parse_issue_int, split_csv,
+    parse_issue_int, REQUIRED_SITE_PREDICTION_MODE_IDS, split_csv,
 )
 from mechanisms import get_prediction_config, list_prediction_configs  # noqa: E402
 from utils.created_prediction_store import (  # noqa: E402
@@ -38,31 +37,6 @@ from utils.created_prediction_store import (  # noqa: E402
     quote_qualified_identifier as quote_schema_table,
     schema_table_exists, table_column_names, upsert_created_prediction_row,
 )
-
-# 前端需要的站点预测模块 mode_id 清单，按展示顺序排列
-REQUIRED_SITE_PREDICTION_MODE_IDS = (
-    3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
-    44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
-    57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
-    67, 68, 69, 151, 197,
-)
-
-
-def utc_now() -> str:
-    """获取当前 UTC 时间，返回 ISO 8601 格式字符串。
-
-    :return: 当前 UTC 时间的 ISO 8601 字符串
-    """
-    return datetime.now(timezone.utc).isoformat()
-
-
-def connect(db_path: str | Path) -> Any:
-    """打开并返回数据库连接对象。
-
-    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
-    :return: 数据库连接对象
-    """
-    return db_connect(db_path)
 
 
 def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
@@ -686,6 +660,25 @@ def _compute_res_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> 
     return ",".join(res_sx_parts), ",".join(res_color_parts)
 
 
+def _compute_next_issue(year: int, term: int, offset: int) -> tuple[int, int]:
+    """从当前 (year, term) 计算未来第 offset 期的期号。
+
+    一期 = term + 1。term 上限按 365 期/年处理：超过后年份 +1，term 减去 365。
+
+    :param year: 当前年份
+    :param term: 当前期号
+    :param offset: 偏移量（1 = T+1, 2 = T+2）
+    :return: (next_year, next_term)
+    """
+    MAX_TERMS_PER_YEAR = 365
+    new_term = term + offset
+    new_year = year
+    while new_term > MAX_TERMS_PER_YEAR:
+        new_term -= MAX_TERMS_PER_YEAR
+        new_year += 1
+    return new_year, new_term
+
+
 def bulk_generate_site_prediction_data(
     db_path: str | Path,
     site_id: int,
@@ -753,6 +746,21 @@ def bulk_generate_site_prediction_data(
         draws = list_opened_draws_in_issue_range(conn, lottery_type, start_issue, end_issue)
         if not draws:
             raise ValueError("指定期号范围内没有可用的已开奖数据。")
+
+        # ── 未来期预测数据构造（res_code 为空，基于历史数据预测）──
+        future_periods = int(payload.get("future_periods") or 0)
+        future_draws: list[dict[str, Any]] = []
+        if future_periods > 0:
+            # 取最新一期已开奖记录作为基准
+            latest = draws[-1]
+            for offset in range(1, future_periods + 1):
+                fy, ft = _compute_next_issue(latest["year"], latest["term"], offset)
+                future_draws.append({
+                    "year": fy,
+                    "term": ft,
+                    "numbers_str": "",  # 无开奖号码
+                    "_future": True,    # 标记为未来期
+                })
 
         # 安全机制：台湾彩 (type=3) 未开奖期次的号码不能用于预测
         safety_draw_map: dict[tuple[int, int], bool] = {}
@@ -871,6 +879,51 @@ def bulk_generate_site_prediction_data(
                     if not module_report["error_message"]:
                         module_report["error_message"] = str(exc)
 
+            # ── 未来期生成（T+1, T+2 ...）──
+            for fdraw in future_draws:
+                try:
+                    # mode_id=65 特码段数依赖真实开奖号码，未来期跳过
+                    if mode_id == 65:
+                        continue
+
+                    fy_year = str(fdraw["year"])
+                    fy_term = str(fdraw["term"])
+                    fy_seed = f"{fdraw['year']}{fdraw['term']:03d}"
+
+                    result = predict(
+                        config=config,
+                        res_code=None,
+                        source_table=table_name,
+                        db_path=db_path,
+                        target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                        random_seed=fy_seed,
+                    )
+                    row_data = build_generated_prediction_row_data(
+                        mode_id=mode_id,
+                        lottery_type=str(lottery_type),
+                        year=fy_year,
+                        term=fy_term,
+                        web_value="4",
+                        res_code="",
+                        generated_content=result["prediction"]["content"],
+                    )
+                    # 未来期无开奖数据，res_sx/res_color 强制为空
+                    row_data["res_sx"] = ""
+                    row_data["res_color"] = ""
+                    stored = upsert_created_prediction_row(conn, table_name, row_data)
+                    if stored.get("action") == "inserted":
+                        module_report["inserted"] += 1
+                        total_inserted += 1
+                    else:
+                        module_report["updated"] += 1
+                        total_updated += 1
+                except Exception as exc:
+                    conn.rollback()
+                    module_report["errors"] += 1
+                    total_errors += 1
+                    if not module_report["error_message"]:
+                        module_report["error_message"] = str(exc)
+
             module_reports.append(module_report)
 
         return {
@@ -880,6 +933,7 @@ def bulk_generate_site_prediction_data(
             "start_issue": f"{start_issue[0]}{start_issue[1]}",
             "end_issue": f"{end_issue[0]}{end_issue[1]}",
             "web_id": 4,
+            "future_periods": future_periods,
             "total_modules": len(module_reports),
             "draw_count": len(draws),
             "inserted": total_inserted,
