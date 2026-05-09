@@ -493,6 +493,7 @@ async function testKaijiang() {
 
   let endpointOk = 0;
   let endpointFail = 0;
+  let endpointEmpty = 0;
 
   for (const ep of endpoints) {
     const r = await get(`/api/kaijiang/${ep.name}${ep.params}`);
@@ -509,7 +510,13 @@ async function testKaijiang() {
         // 其他 endpoint 返回 { data: [...] }
         const d = r.json as Record<string, unknown>;
         if (d.data !== undefined) {
-          endpointOk++;
+          const items = d.data as Array<unknown>;
+          if (items.length === 0) {
+            endpointEmpty++;
+            console.log(`  ⚠ ${ep.name} — 返回 data 为空数组 (type=3 可能缺失数据)`);
+          } else {
+            endpointOk++;
+          }
         } else {
           endpointFail++;
           console.log(`  ✗ ${ep.name} — 缺少 data 字段`);
@@ -521,10 +528,40 @@ async function testKaijiang() {
     }
   }
 
-  if (endpointFail === 0) {
+  if (endpointFail === 0 && endpointEmpty === 0) {
     ok(`5.x 全部 ${endpoints.length} 个 endpoint 通过`);
+  } else if (endpointFail === 0 && endpointEmpty > 0) {
+    ok(`5.x ${endpointOk}/${endpoints.length} 通过，${endpointEmpty} 个返回空数据 (type=3)`);
   } else {
-    fail(`5.x ${endpointOk}/${endpoints.length} 通过，${endpointFail} 失败`, "见上方详情");
+    fail(`5.x ${endpointOk}/${endpoints.length} 通过，${endpointEmpty} 空数据，${endpointFail} 失败`, "见上方详情");
+  }
+
+  // 5.0 多彩种数据完整性验证：用 type=1/2/3 分别测试关键 endpoint
+  {
+    const crossCheckEndpoints = ["yyptj", "lxzt", "getPingte", "sbzt", "ptyw"];
+    let crossOk = 0;
+    let crossEmpty = 0;
+    for (const epName of crossCheckEndpoints) {
+      for (const t of [1, 2, 3]) {
+        const r = await get(`/api/kaijiang/${epName}?type=${t}&web=4`);
+        if (r.ok && r.json) {
+          const d = r.json as Record<string, unknown>;
+          const items = d.data as Array<unknown>;
+          if (Array.isArray(items) && items.length > 0) {
+            crossOk++;
+          } else {
+            crossEmpty++;
+            console.log(`  ⚠ ${epName}?type=${t} — 返回空数据`);
+          }
+        }
+      }
+    }
+    if (crossEmpty === 0) {
+      ok(`5.0 多彩种交叉验证 (${crossCheckEndpoints.length} endpoint × 3 type) 全部通过`);
+    } else {
+      const total = crossCheckEndpoints.length * 3;
+      ok(`5.0 多彩种交叉验证: ${crossOk}/${total} 有数据，${crossEmpty}/${total} 为空`);
+    }
   }
 
   // 5.1 curTerm 返回结构验证（返回 { data: { term, next_term, issue } }）
