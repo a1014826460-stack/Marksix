@@ -13,7 +13,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 from HK_history_crawler import fetch_hongkong_history_data, transform_standard_list
-from Macau_history_crawler import fetch_macau_history_data, transform_macau_api
+from Macau_history_crawler import fetch_macau_history_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
@@ -155,7 +155,7 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
     if status_code != 200:
         raise RuntimeError(f"Macau crawler returned status {status_code}")
 
-    records = transform_macau_api(raw)
+    records = transform_standard_list(raw)
     if not records:
         return {"source": "macau", "fetched": 0, "saved": 0, "message": "API 返回空数据或格式异常，将在下一周期自动重试"}
     now = datetime.now(timezone.utc).isoformat()
@@ -330,8 +330,7 @@ class CrawlerScheduler:
             return
         self._running = True
         print(f"[CrawlerScheduler] Started, interval={self.interval}s")
-        # Run once immediately on startup
-        self._run()
+        # 首次爬取将在 interval_seconds 后自动执行，避免每次重启都触发
         self._schedule_next()
         # 启动定时器：每 60 秒检查是否有到达开奖时间的记录
         self._schedule_auto_open()
