@@ -160,6 +160,7 @@ from crawler_service import (  # noqa: E402
     CrawlerScheduler,
     crawl_and_generate_for_type,
     import_taiwan_json,
+    run_crawl_only,
     run_hk_crawler,
     run_macau_crawler,
 )
@@ -494,6 +495,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             if method == "POST" and path == "/api/admin/lottery-types":
                 self.send_json({"lottery_type": save_lottery_type(self.db_path, self.read_json())}, HTTPStatus.CREATED)
+                return
+            # 仅爬取开奖数据（不生成预测），爬取成功后自动安排 6h 延迟预测任务
+            if method == "POST" and re.match(r"^/api/admin/lottery-types/\d+/crawl-only$", path):
+                lt_id = int(path.split("/")[4])
+                ensure_generation_permission(auth_user_from_token(self.db_path, self.bearer_token()))
+                try:
+                    result = run_crawl_only(self.db_path, lt_id)
+                    self.send_json(result)
+                except Exception as e:
+                    self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
                 return
             # 爬取指定彩种开奖数据 + 自动生成预测
             if method == "POST" and re.match(r"^/api/admin/lottery-types/\d+/crawl-and-generate$", path):

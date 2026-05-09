@@ -363,3 +363,250 @@ class CrawlerScheduler:
         print("[CrawlerScheduler] Running scheduled crawl...")
         self._run_once()
         self._schedule_next()
+
+
+# ─────────────────────────────────────────────────────────
+# 独立爬取（不生成预测）+ 6 小时延迟自动预测任务
+# ─────────────────────────────────────────────────────────
+
+# 全局字典：跟踪已调度的自动预测定时器，按 (db_path, lottery_type_id) 索引
+_auto_prediction_timers: dict[tuple[str, int], threading.Timer] = {}
+_auto_timers_lock = threading.Lock()
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+ERROR_LOG_PATH = BACKEND_ROOT / "data" / "error.log"
+
+
+def _log_auto_task_error(message: str) -> None:
+    """将自动预测任务错误追加写入 error.log。"""
+    ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).isoformat()
+    with open(ERROR_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(f"[{ts}] AUTO_PREDICT_FAIL {message}\n")
+
+
+def _update_auto_task_status(
+    db_path: str | Path, lottery_type_id: int, status: str, message: str
+) -> None:
+    """更新 lottery_types.last_auto_task_status 字段。"""
+    ts = datetime.now(timezone.utc).isoformat()
+    value = f"{status}|{message}|{ts}"
+    try:
+        with db_connect(db_path) as conn:
+            conn.execute(
+                "UPDATE lottery_types SET last_auto_task_status = ?, updated_at = ? WHERE id = ?",
+                (value, ts, lottery_type_id),
+            )
+    except Exception as e:
+        print(f"[AutoPred] Failed to update status for lt={lottery_type_id}: {e}")
+
+
+def _backfill_draw_to_predictions(
+    db_path: str | Path, lottery_type_id: int, year: int, term: int, numbers_str: str
+) -> int:
+    """将开奖结果的生肖和波色回填到 created schema 的预测记录中。
+
+    遍历所有 mode_payload 表，找到同 year+term+type 的 created 记录，
+    用 fixed_data 映射计算 res_sx / res_color 并 UPDATE。
+
+    :return: 回填影响的记录总数
+    """
+    from helpers import load_fixed_data_maps
+    from admin.prediction import _compute_res_fields
+    from utils.created_prediction_store import (
+        CREATED_SCHEMA_NAME, quote_qualified_identifier, schema_table_exists,
+    )
+
+    total_updated = 0
+    try:
+        with db_connect(db_path) as conn:
+            zodiac_map, color_map = load_fixed_data_maps(conn)
+            res_sx, res_color = _compute_res_fields(numbers_str, zodiac_map, color_map)
+
+            # 获取所有 mode_payload 表名
+            tables = conn.list_tables("mode_payload_")
+            for table_name in tables:
+                if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
+                    continue
+                qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
+                try:
+                    cur = conn.execute(
+                        f"UPDATE {qualified} SET res_sx = ?, res_color = ? "
+                        "WHERE type = ? AND year = ? AND term = ? AND (res_sx IS NULL OR res_sx = '')",
+                        (res_sx, res_color, str(lottery_type_id), str(year), str(term)),
+                    )
+                    total_updated += cur.rowcount
+                except Exception:
+                    continue  # 表可能缺少列，跳过
+            conn.commit()
+    except Exception as e:
+        print(f"[AutoPred] Backfill error: {e}")
+    return total_updated
+
+
+def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
+    """6 小时延迟后自动执行：回填开奖 + 生成下一期预测。"""
+    print(f"[AutoPred] Starting for lt={lottery_type_id}...")
+    try:
+        # 1. 读取最新开奖结果
+        with db_connect(db_path) as conn:
+            row = conn.execute(
+                """SELECT year, term, numbers FROM lottery_draws
+                   WHERE lottery_type_id = ? AND is_opened = 1
+                   ORDER BY year DESC, term DESC LIMIT 1""",
+                (lottery_type_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("no opened draw found")
+            year = int(row["year"])
+            term = int(row["term"])
+            numbers_str = str(row["numbers"] or "")
+
+        # 2. 回填开奖结果到预测记录
+        backfilled = _backfill_draw_to_predictions(db_path, lottery_type_id, year, term, numbers_str)
+        print(f"[AutoPred] Backfilled {backfilled} prediction records for lt={lottery_type_id} year={year} term={term}")
+
+        # 3. 生成未来下一期预测
+        from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
+        issue_str = f"{year}{term:03d}"
+        result = _bulk_gen(
+            db_path, 0,  # site_id=0 means all enabled sites
+            {
+                "lottery_type": lottery_type_id,
+                "start_issue": issue_str,
+                "end_issue": issue_str,
+                "future_periods": 1,
+            },
+        )
+        inserted = result.get("inserted", 0)
+        errors = result.get("errors", 0)
+
+        _update_auto_task_status(db_path, lottery_type_id, "ok",
+                                 f"backfilled={backfilled} inserted={inserted} errors={errors}")
+        print(f"[AutoPred] Done lt={lottery_type_id}: backfilled={backfilled} inserted={inserted} errors={errors}")
+
+    except Exception as e:
+        err_msg = f"{type(e).__name__}: {e}"
+        _log_auto_task_error(f"lt_id={lottery_type_id} {err_msg}")
+        _update_auto_task_status(db_path, lottery_type_id, "error", err_msg)
+        print(f"[AutoPred] FAILED lt={lottery_type_id}: {err_msg}")
+    finally:
+        # 清理已完成的定时器
+        with _auto_timers_lock:
+            _auto_prediction_timers.pop((str(db_path), lottery_type_id), None)
+
+
+def _schedule_auto_prediction(
+    db_path: str | Path, lottery_type_id: int, draw_time_str: str
+) -> float:
+    """安排一次 6 小时后的自动预测任务。
+
+    :param draw_time_str: 开奖时间字符串，格式 \"2026-05-10 21:32:59\"
+    :return: 延迟秒数
+    """
+    from datetime import timedelta
+
+    # 解析开奖时间
+    try:
+        draw_dt = datetime.strptime(draw_time_str.strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        # 回退：30 分钟后
+        draw_dt = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+    target_dt = draw_dt + timedelta(hours=6)
+    now_dt = datetime.now(timezone.utc)
+    delay = max(60.0, (target_dt - now_dt).total_seconds())
+
+    key = (str(db_path), lottery_type_id)
+    with _auto_timers_lock:
+        old = _auto_prediction_timers.pop(key, None)
+        if old:
+            old.cancel()
+        timer = threading.Timer(delay, _run_auto_prediction, args=(db_path, lottery_type_id))
+        timer.daemon = True
+        timer.start()
+        _auto_prediction_timers[key] = timer
+
+    target_iso = target_dt.isoformat()
+    print(f"[AutoPred] Scheduled for lt={lottery_type_id} at {target_iso} (delay={delay:.0f}s)")
+    return delay
+
+
+def run_crawl_only(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
+    """仅执行爬取并存储到 lottery_draws，不生成预测资料。
+
+    使用 result_crawler.fetch_current_term_data 获取当前期开奖数据，
+    写入 lottery_draws 后安排 6 小时后的自动预测任务。
+
+    :param db_path: 数据库连接字符串
+    :param lottery_type_id: 彩种 ID（1=香港, 2=澳门, 3=台湾）
+    :return: 包含 draw 信息和 auto_task 调度信息的字典
+    """
+    meta_map = _get_lottery_meta(db_path)
+    lt_name_map = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
+    lt_name = lt_name_map.get(lottery_type_id, str(lottery_type_id))
+    lt_meta = meta_map.get(lt_name)
+    if lt_meta is None:
+        raise ValueError(f"彩种 {lt_name} 不存在")
+
+    # 台湾彩无在线爬虫
+    if lottery_type_id == 3:
+        return {
+            "ok": True,
+            "draw": None,
+            "message": "台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON",
+        }
+
+    # 调用 result_crawler 获取当前期数据
+    from result_crawler import fetch_current_term_data, transform_standard_list
+
+    crawler_type = 1 if lottery_type_id == 1 else 2
+    raw, status_code = fetch_current_term_data(type=crawler_type)
+
+    if status_code != 200:
+        raise RuntimeError(f"爬虫返回 HTTP {status_code}")
+
+    # result_crawler 返回单个 JSON 对象（非数组），包装为列表
+    import json as _json
+    parsed = _json.loads(raw) if isinstance(raw, str) else raw
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    records = transform_standard_list(parsed)
+    if not records:
+        raise ValueError("爬虫未返回任何开奖记录")
+
+    now = datetime.now(timezone.utc).isoformat()
+    saved = 0
+    draw_info: dict[str, Any] = {}
+    with db_connect(db_path) as conn:
+        for item in records:
+            try:
+                open_time = item["open_time"]
+                year = int(open_time[:4])
+                issue = item["issue"]
+                try:
+                    term_num = int(issue)
+                except ValueError:
+                    # issue 可能是 "2026128" 格式
+                    term_num = int(str(issue)[4:]) if len(str(issue)) > 4 else int(issue)
+                _upsert_draw(conn, lt_meta["id"], year, term_num,
+                             item["result"], open_time, 1, now,
+                             next_time=str(item.get("next_time") or ""))
+                saved += 1
+                if saved == 1:
+                    draw_info = {"year": year, "term": term_num, "issue": issue, "open_time": open_time}
+            except (ValueError, KeyError) as e:
+                print(f"  [CrawlOnly] SKIP: {item.get('issue', '?')} - {e}")
+
+    # 爬取成功后安排 6 小时后自动预测
+    auto_delay = 0.0
+    if saved > 0 and draw_info.get("open_time"):
+        auto_delay = _schedule_auto_prediction(db_path, lottery_type_id, draw_info["open_time"])
+
+    return {
+        "ok": True,
+        "draw": draw_info,
+        "saved": saved,
+        "fetched": len(records),
+        "auto_task_scheduled_seconds": round(auto_delay, 0) if auto_delay > 0 else None,
+    }

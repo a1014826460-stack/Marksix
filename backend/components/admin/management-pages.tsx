@@ -423,34 +423,28 @@ export function LotteryTypesPageClient() {
     await load()
   }
 
-  /** 触发爬取 + 自动生成预测，轮询后台任务状态 */
+  /** 仅爬取开奖数据（不生成预测），爬取成功后自动安排 6h 延迟预测任务 */
   async function crawlAndGenerate(ltId: number, ltName: string) {
     setCrawlingId(ltId)
-    setCrawlMsg(`正在爬取 ${ltName} 开奖数据并生成预测…`)
+    setCrawlMsg(`正在爬取 ${ltName} 开奖数据…`)
     try {
-      const { job_id } = await adminApi<{ ok: boolean; job_id: string }>(`/admin/lottery-types/${ltId}/crawl-and-generate`, { method: "POST" })
-      for (let i = 0; i < 90; i++) {
-        await new Promise((r) => setTimeout(r, 2000))
-        try {
-          const job = await adminApi<{ status: string; result?: Record<string, unknown>; error?: string }>(`/admin/jobs/${job_id}`)
-          if (job.status === "done") {
-            const res = job.result as Record<string, unknown> | undefined
-            const crawl = res?.crawl as Record<string, unknown> | undefined
-            const gen = (res?.generation as Array<Record<string, unknown>>) || []
-            const totalIns = gen.reduce((s: number, g) => s + Number(g.inserted || 0), 0)
-            const totalUpd = gen.reduce((s: number, g) => s + Number(g.updated || 0), 0)
-            const totalErr = gen.reduce((s: number, g) => s + Number(g.errors || 0), 0)
-            setCrawlMsg(`${ltName} 爬取完成 ✓ | 爬取: ${JSON.stringify(crawl?.source || "")} ${crawl?.saved || crawl?.fetched || 0}条 | 预测: 新增${totalIns} 覆盖${totalUpd} 失败${totalErr}`)
-            setTimeout(() => setCrawlMsg(""), 8000)
-            setCrawlingId(0)
-            return
-          }
-          if (job.status === "error") { setCrawlMsg(`${ltName} 失败: ${job.error || ""}`); setCrawlingId(0); return }
-          // 更新进度提示
-          setCrawlMsg(`正在处理 ${ltName}…（已等待 ${(i + 1) * 2} 秒）`)
-        } catch { /* 继续轮询 */ }
+      const res = await adminApi<{
+        ok: boolean; saved: number; fetched: number;
+        draw?: { year: number; term: number; issue: string } | null;
+        message?: string;
+        auto_task_scheduled_seconds?: number | null;
+      }>(`/admin/lottery-types/${ltId}/crawl-only`, { method: "POST" })
+      if (res.message) {
+        setCrawlMsg(`${ltName}: ${res.message}`)
+      } else if (res.draw) {
+        const autoInfo = res.auto_task_scheduled_seconds
+          ? ` | 自动预测已预约 ${Math.round(res.auto_task_scheduled_seconds / 60)} 分钟后执行`
+          : ""
+        setCrawlMsg(`${ltName} 爬取完成 ✓ | 期号: ${res.draw.issue} | 存储: ${res.saved}/${res.fetched} 条${autoInfo}`)
+      } else {
+        setCrawlMsg(`${ltName} 爬取完成（未获取到新数据）`)
       }
-      setCrawlMsg(`${ltName} 超时（3分钟），请稍后查看开奖记录`)
+      setTimeout(() => setCrawlMsg(""), 12000)
       setCrawlingId(0)
     } catch (e) { setCrawlMsg(`${ltName} 请求失败: ${e instanceof Error ? e.message : "?"}`); setCrawlingId(0) }
   }
