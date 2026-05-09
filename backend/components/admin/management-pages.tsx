@@ -49,8 +49,11 @@ type LotteryType = {
 function formatNextTime(ts: string | undefined) {
   if (!ts) return ""
   try {
-    const n = Number(ts)
-    if (n > 0) return new Date(n).toLocaleString("zh-CN")
+    let n = Number(ts)
+    if (n <= 0) return ""
+    // ≤10 位为 Unix 秒，需 ×1000 转为毫秒供 Date 使用
+    if (n <= 9999999999) n = n * 1000
+    return new Date(n).toLocaleString("zh-CN")
   } catch { /* ignore */ }
   return ts
 }

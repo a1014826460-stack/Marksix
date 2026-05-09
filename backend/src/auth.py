@@ -9,18 +9,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from db import connect as db_connect
+from db import connect, utc_now
 from tables import ensure_admin_tables
-
-connect = db_connect
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def hash_password(password: str, salt: str | None = None) -> str:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -253,6 +254,11 @@ class ConnectionAdapter:
         sql_text += " ORDER BY name"
         rows = self.execute(sql_text, params).fetchall()
         return [str(row[0]) for row in rows]
+
+
+def utc_now() -> str:
+    """返回当前 UTC 时间的 ISO 8601 字符串。"""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def connect(target: str | Path | None = None) -> ConnectionAdapter:

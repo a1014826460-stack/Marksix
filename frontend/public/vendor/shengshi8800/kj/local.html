@@ -178,10 +178,16 @@
         return beijingTimeFormatter.format(date || new Date());
       }
 
-      /* ── 倒计时 ── */
+      /* ── 倒计时（next_time 支持秒/毫秒，server_time 可选）── */
       var countdownDeadline = 0;
+      var serverOffsetSec = 0;
       var countdownTimerId = null;
       var countdownExpired = false;
+
+      /** 规范化时间戳：>10 位视为毫秒 → 转为秒 */
+      function normalizeToSeconds(raw) {
+        return raw > 9999999999 ? Math.floor(raw / 1000) : raw;
+      }
 
       function formatCountdown(remainingMs) {
         if (remainingMs <= 0) return "00:00:00";
@@ -198,13 +204,14 @@
         var badge = $("countdownBadge");
         if (!badge) return;
         if (countdownDeadline > 0) {
-          var remaining = countdownDeadline - Date.now();
+          var serverNow = Math.floor(Date.now() / 1000) + serverOffsetSec;
+          var remainingSec = countdownDeadline - serverNow;
+          var remaining = remainingSec * 1000;
           if (remaining <= 0) {
             badge.textContent = "下次开奖 00:00:00";
             badge.style.borderColor = "#e53e3e";
             if (!countdownExpired) {
               countdownExpired = true;
-              // 倒计时归零：自动刷新开奖数据
               load({ manual: false });
             }
           } else {
@@ -222,13 +229,21 @@
           var resp = await fetch("/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType)), { cache: "no-store" });
           var data = await resp.json();
           if (data && data.next_time) {
-            countdownDeadline = Number(data.next_time);
+            countdownDeadline = normalizeToSeconds(Number(data.next_time));
+            if (data.server_time) {
+              var clientSec = Math.floor(Date.now() / 1000);
+              serverOffsetSec = Number(data.server_time) - clientSec;
+            } else {
+              serverOffsetSec = 0;
+            }
             countdownExpired = false;
           } else {
             countdownDeadline = 0;
+            serverOffsetSec = 0;
           }
         } catch (e) {
           countdownDeadline = 0;
+          serverOffsetSec = 0;
         }
         updateCountdownDisplay();
       }

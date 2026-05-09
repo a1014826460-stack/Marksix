@@ -100,7 +100,7 @@ def transform_standard_list(data: Union[str, List[Dict[str, Any]]]) -> List[Dict
 
 if __name__ == "__main__":
     history_data, status_code = fetch_macau_history_data()
-    history_data_transformed = transform_macau_api(history_data)
+    history_data_transformed = transform_standard_list(history_data)
     print(history_data)
     print(status_code)
     print(history_data_transformed)

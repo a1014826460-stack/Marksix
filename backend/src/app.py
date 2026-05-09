@@ -18,6 +18,7 @@ import re
 import secrets
 import sys
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -412,12 +413,26 @@ class ApiHandler(BaseHTTPRequestHandler):
 
             if method == "GET" and path == "/api/public/next-draw-deadline":
                 lottery_type = int(query.get("lottery_type", ["3"])[0] or 3)
+                next_time: str | None = None
                 with connect(self.db_path) as conn:
                     row = conn.execute(
                         "SELECT next_time FROM lottery_draws WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != '' ORDER BY year DESC, term DESC LIMIT 1",
                         (lottery_type,),
                     ).fetchone()
-                    self.send_json({"next_time": str(row["next_time"]) if row else None})
+                    if row:
+                        next_time = str(row["next_time"])
+                    else:
+                        # 兜底：从 lottery_types 读取
+                        lt_row = conn.execute(
+                            "SELECT next_time FROM lottery_types WHERE id = ?",
+                            (lottery_type,),
+                        ).fetchone()
+                        if lt_row and lt_row["next_time"]:
+                            next_time = str(lt_row["next_time"])
+                    self.send_json({
+                        "next_time": next_time,
+                        "server_time": str(int(time.time())),
+                    })
                 return
 
             if method == "GET" and path == "/api/public/draw-history":
