@@ -530,13 +530,13 @@ def predict(
             config.selection_groups, config.selection_widths,
         )
 
-        # 未来期差异保证：用种子替换一个预测标签，确保不同期号产生不同结果
+        # 未来期差异保证：用种子替换标签，确保不同期号产生不同结果
         if _seed_int is not None and len(predicted_labels) > 0:
             random.seed(_seed_int)
             alt_pool = [lb for lb in labels if lb not in predicted_labels]
-            if alt_pool and len(predicted_labels) < len(labels):
-                # 随机替换一个标签为备选池中的选项
-                replace_idx = _seed_int % len(predicted_labels)
+            if alt_pool:
+                # 使用种子高位选择替换位置，避免低位 mod 碰撞
+                replace_idx = (_seed_int >> 8) % len(predicted_labels)
                 replacement = random.choice(alt_pool)
                 plist = list(predicted_labels)
                 plist[replace_idx] = replacement
