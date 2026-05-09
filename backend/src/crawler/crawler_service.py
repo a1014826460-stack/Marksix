@@ -108,6 +108,8 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
         raise RuntimeError(f"HK crawler returned status {status_code}")
 
     records = transform_standard_list(raw)
+    if not records:
+        return {"source": "hk", "fetched": 0, "saved": 0, "message": "API 返回空数据，将在下一周期自动重试"}
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -154,6 +156,8 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
         raise RuntimeError(f"Macau crawler returned status {status_code}")
 
     records = transform_macau_api(raw)
+    if not records:
+        return {"source": "macau", "fetched": 0, "saved": 0, "message": "API 返回空数据或格式异常，将在下一周期自动重试"}
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
