@@ -583,7 +583,7 @@ def run_crawl_only(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
     parsed = _json.loads(raw) if isinstance(raw, str) else raw
     if isinstance(parsed, dict):
         parsed = [parsed]
-    records = transform_standard_list(parsed)
+    records = transform_standard_list(parsed, crawler_type=crawler_type)
     if not records:
         raise ValueError("爬虫未返回任何开奖记录")
 
