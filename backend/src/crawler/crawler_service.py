@@ -334,40 +334,32 @@ def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> di
 
 
 class CrawlerScheduler:
-    """Runs HK and Macau crawlers on a background thread periodically."""
+    """后台定时任务调度器。
 
-    def __init__(self, db_path: str | Path, interval_seconds: int = 3600):
+    职责：
+    - 每 60 秒检查到达开奖时间的记录并自动标记 is_opened=1
+    - 管理 run_crawl_only 触发的 6 小时延迟自动预测定时器
+
+    注意：历史开奖数据爬取不再由调度器自动执行，
+    应由管理员通过后台"更新开奖"按钮手动触发。
+    """
+
+    def __init__(self, db_path: str | Path):
         self.db_path = db_path
-        self.interval = interval_seconds
-        self._timer: threading.Timer | None = None
         self._running = False
-        self._lock = threading.Lock()
 
     def start(self) -> None:
         if self._running:
             return
         self._running = True
-        print(f"[CrawlerScheduler] Started, interval={self.interval}s")
-        # 首次爬取将在 interval_seconds 后自动执行，避免每次重启都触发
-        self._schedule_next()
-        # 启动定时器：每 60 秒检查是否有到达开奖时间的记录
+        print("[CrawlerScheduler] Started (auto-open check every 60s)")
         self._schedule_auto_open()
 
     def stop(self) -> None:
         self._running = False
-        if self._timer:
-            self._timer.cancel()
-            self._timer = None
         if hasattr(self, "_auto_open_timer") and self._auto_open_timer:
             self._auto_open_timer.cancel()
             self._auto_open_timer = None
-
-    def _schedule_next(self) -> None:
-        if not self._running:
-            return
-        self._timer = threading.Timer(self.interval, self._run)
-        self._timer.daemon = True
-        self._timer.start()
 
     def _auto_open_draws(self) -> None:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。"""
@@ -393,27 +385,6 @@ class CrawlerScheduler:
         self._auto_open_timer = threading.Timer(60, self._schedule_auto_open)
         self._auto_open_timer.daemon = True
         self._auto_open_timer.start()
-
-    def _run_once(self) -> None:
-        """执行一轮爬取：香港彩 → 澳门彩，爬取后自动生成预测数据。"""
-        crawled_type_ids: list[int] = []
-
-        with self._lock:
-            for lt_id, label in [(1, "HK"), (2, "Macau")]:
-                try:
-                    result = crawl_and_generate_for_type(self.db_path, lt_id)
-                    print(f"  [{label}] crawl={result.get('crawl',{})} generation_count={len(result.get('generation',[]))}")
-                    crawled_type_ids.append(lt_id)
-                except Exception as e:
-                    print(f"  [{label}] error: {e}")
-
-    def _run(self) -> None:
-        """定时执行爬取（由内部定时器调用）。"""
-        if not self._running:
-            return
-        print("[CrawlerScheduler] Running scheduled crawl...")
-        self._run_once()
-        self._schedule_next()
 
 
 # ─────────────────────────────────────────────────────────
