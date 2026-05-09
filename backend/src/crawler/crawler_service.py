@@ -373,8 +373,8 @@ class CrawlerScheduler:
 _auto_prediction_timers: dict[tuple[str, int], threading.Timer] = {}
 _auto_timers_lock = threading.Lock()
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-ERROR_LOG_PATH = BACKEND_ROOT / "data" / "error.log"
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+ERROR_LOG_PATH = _BACKEND_ROOT / "data" / "error.log"
 
 
 def _log_auto_task_error(message: str) -> None:
@@ -466,24 +466,36 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
         backfilled = _backfill_draw_to_predictions(db_path, lottery_type_id, year, term, numbers_str)
         print(f"[AutoPred] Backfilled {backfilled} prediction records for lt={lottery_type_id} year={year} term={term}")
 
-        # 3. 生成未来下一期预测
+        # 3. 生成未来下一期预测（遍历所有启用站点）
         from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
         issue_str = f"{year}{term:03d}"
-        result = _bulk_gen(
-            db_path, 0,  # site_id=0 means all enabled sites
-            {
-                "lottery_type": lottery_type_id,
-                "start_issue": issue_str,
-                "end_issue": issue_str,
-                "future_periods": 1,
-            },
-        )
-        inserted = result.get("inserted", 0)
-        errors = result.get("errors", 0)
+        total_inserted = 0
+        total_pred_errors = 0
+        with db_connect(db_path) as conn:
+            sites = conn.execute(
+                "SELECT id FROM managed_sites WHERE enabled = 1"
+            ).fetchall()
+            for site in sites:
+                site_id = int(site["id"])
+                try:
+                    gen = _bulk_gen(
+                        db_path, site_id,
+                        {
+                            "lottery_type": lottery_type_id,
+                            "start_issue": issue_str,
+                            "end_issue": issue_str,
+                            "future_periods": 1,
+                        },
+                    )
+                    total_inserted += gen.get("inserted", 0)
+                    total_pred_errors += gen.get("errors", 0)
+                except Exception as e:
+                    total_pred_errors += 1
+                    print(f"[AutoPred] site={site_id} error: {e}")
 
         _update_auto_task_status(db_path, lottery_type_id, "ok",
-                                 f"backfilled={backfilled} inserted={inserted} errors={errors}")
-        print(f"[AutoPred] Done lt={lottery_type_id}: backfilled={backfilled} inserted={inserted} errors={errors}")
+                                 f"backfilled={backfilled} inserted={total_inserted} errors={total_pred_errors}")
+        print(f"[AutoPred] Done lt={lottery_type_id}: backfilled={backfilled} inserted={total_inserted} errors={total_pred_errors}")
 
     except Exception as e:
         err_msg = f"{type(e).__name__}: {e}"
