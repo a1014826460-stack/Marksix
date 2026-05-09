@@ -202,6 +202,118 @@ def _get_background_job(job_id: str) -> dict[str, Any] | None:
     with _background_jobs_lock:
         return dict(_background_jobs.get(job_id) or {}) or None
 
+
+def _crawl_and_generate(db_path: str, lottery_type_id: int) -> dict[str, Any]:
+    """爬取指定彩种的开奖数据，然后自动生成所有启用站点的预测资料。
+
+    流程：
+    1. 根据 lottery_type_id 确定彩种名称（香港/澳门/台湾）
+    2. 调用对应爬虫采集最新开奖数据，写入 lottery_draws 表
+    3. 遍历所有启用站点，对每个站点的全部启用预测模块
+       用最新一期开奖数据生成预测，写入 created schema
+
+    :param db_path: 数据库连接字符串
+    :param lottery_type_id: 彩种 ID（1=香港, 2=澳门, 3=台湾）
+    :return: 包含爬取结果和生成统计的字典
+    """
+    # ── 1. 确定彩种名称 ──
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, name FROM lottery_types WHERE id = ?", (lottery_type_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError(f"lottery_type_id={lottery_type_id} 不存在")
+        lottery_name = str(row["name"])
+
+    # ── 2. 执行爬虫 ──
+    crawl_result: dict[str, Any] = {"status": "skipped", "message": ""}
+    if lottery_name in ("香港彩", "六合彩"):
+        crawl_result = run_hk_crawler(db_path)
+    elif lottery_name == "澳门彩":
+        crawl_result = run_macau_crawler(db_path)
+    else:
+        crawl_result["message"] = f"台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON"
+
+    # ── 3. 自动生成预测资料 ──
+    from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
+
+    generation_results: list[dict[str, Any]] = []
+    with connect(db_path) as conn:
+        # 遍历所有启用站点
+        sites = conn.execute(
+            "SELECT id, name, lottery_type_id FROM managed_sites WHERE enabled = 1"
+        ).fetchall()
+
+        for site in sites:
+            site_id = int(site["id"])
+            site_lt_id = int(site.get("lottery_type_id") or 0)
+
+            # 只处理匹配当前彩种的站点（lottery_type_id=0 表示通用站点，也需要处理）
+            if site_lt_id not in (0, lottery_type_id):
+                continue
+
+            # 获取该站点下所有启用模块
+            modules = conn.execute(
+                """
+                SELECT id, mechanism_key, mode_id
+                FROM site_prediction_modules
+                WHERE site_id = ? AND status = 1
+                ORDER BY sort_order, id
+                """,
+                (site_id,),
+            ).fetchall()
+
+            if not modules:
+                continue
+
+            # 获取该彩种最新一期开奖数据，用于确定生成范围
+            latest_draw = conn.execute(
+                """
+                SELECT year, term FROM lottery_draws
+                WHERE lottery_type_id = ? AND is_opened = 1
+                ORDER BY year DESC, term DESC LIMIT 1
+                """,
+                (lottery_type_id,),
+            ).fetchone()
+
+            if not latest_draw:
+                continue
+
+            latest_term = int(latest_draw["term"])
+            latest_year = int(latest_draw["year"])
+
+            # 生成最近一期预测
+            try:
+                gen_result = _bulk_gen(
+                    db_path,
+                    site_id,
+                    {
+                        "lottery_type": lottery_type_id,
+                        "start_issue": f"{latest_year}{max(1, latest_term - 0):03d}",
+                        "end_issue": f"{latest_year}{latest_term:03d}",
+                        "mechanism_keys": [str(m["mechanism_key"]) for m in modules],
+                    },
+                )
+                generation_results.append({
+                    "site_id": site_id,
+                    "site_name": str(site["name"]),
+                    "inserted": gen_result.get("inserted", 0),
+                    "updated": gen_result.get("updated", 0),
+                    "errors": gen_result.get("errors", 0),
+                })
+            except Exception as exc:
+                generation_results.append({
+                    "site_id": site_id,
+                    "site_name": str(site["name"]),
+                    "error": str(exc),
+                })
+
+    return {
+        "lottery_name": lottery_name,
+        "crawl": crawl_result,
+        "generation": generation_results,
+    }
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -486,6 +598,13 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             if method == "POST" and path == "/api/admin/lottery-types":
                 self.send_json({"lottery_type": save_lottery_type(self.db_path, self.read_json())}, HTTPStatus.CREATED)
+                return
+            # 爬取指定彩种开奖数据 + 自动生成预测
+            if method == "POST" and re.match(r"^/api/admin/lottery-types/\d+/crawl-and-generate$", path):
+                lt_id = int(path.split("/")[4])
+                ensure_generation_permission(auth_user_from_token(self.db_path, self.bearer_token()))
+                job_id = _start_background_job(_crawl_and_generate, self.db_path, lt_id)
+                self.send_json({"ok": True, "job_id": job_id, "message": f"彩种 {lt_id} 爬取+生成已放入后台执行"})
                 return
             if path.startswith("/api/admin/lottery-types/"):
                 lottery_id = int(path.split("/")[-1])
