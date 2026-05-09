@@ -46,9 +46,10 @@ for path in (PREDICT_ROOT, UTILS_ROOT, CRAWLER_ROOT):
 
 from db import (  # noqa: E402
     auto_increment_primary_key,
-    connect as db_connect,
+    connect,
     detect_database_engine,
     quote_identifier,
+    utc_now,
 )
 from mechanisms import list_prediction_configs  # noqa: E402
 
@@ -63,14 +64,6 @@ def default_db_target() -> str:
         or DEFAULT_POSTGRES_DSN
         or str(DEFAULT_SQLITE_DB_PATH)
     )
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def connect(db_path: str | Path) -> Any:
-    return db_connect(db_path)
 
 
 def ensure_column(conn: Any, table_name: str, column_name: str, definition: str) -> None:
@@ -186,19 +179,11 @@ def sync_legacy_image_assets(conn: Any) -> None:
         )
 
 
-def _ensure_imports():
-    """延迟导入避免循环依赖。"""
-    from auth import hash_password as _hash_password
-    from admin.prediction import (
-        get_site_prediction_module_blueprints as _blueprints,
-        sync_site_prediction_modules as _sync_modules,
-    )
-    return _hash_password, _blueprints, _sync_modules
-
-
 def ensure_admin_tables(db_path: str | Path) -> None:
+    from auth import hash_password as _hash_password
+    from admin.prediction import sync_site_prediction_modules as _sync_modules
+
     global _tables_initialized
-    _hash_password, _blueprints, _sync_modules = _ensure_imports()
 
     # 仅在首次调用时执行完整初始化；后续调用只确保连接可用
     if _tables_initialized:
@@ -308,6 +293,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
             )
             """
         )
+        ensure_column(conn, "lottery_draws", "next_time", "TEXT")
         conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS site_prediction_modules (

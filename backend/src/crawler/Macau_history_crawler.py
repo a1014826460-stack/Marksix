@@ -102,7 +102,8 @@ def transform_macau_api(data: Union[str, Dict[str, Any]]) -> List[Dict[str, Any]
         output.append({
             "issue": str(issue),
             "open_time": str(open_time),
-            "result": str(result)
+            "result": str(result),
+            "next_time": str(item.get("next_time") or ""),
         })
     
     return output
