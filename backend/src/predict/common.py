@@ -530,12 +530,17 @@ def predict(
             config.selection_groups, config.selection_widths,
         )
 
-        # 未来期差异保证：种子相关的标签顺序重排，影响 score_labels 平局决胜
-        if _seed_int is not None:
+        # 未来期差异保证：用种子替换一个预测标签，确保不同期号产生不同结果
+        if _seed_int is not None and len(predicted_labels) > 0:
             random.seed(_seed_int)
-            shuffled = list(labels)
-            random.shuffle(shuffled)
-            labels = tuple(shuffled)
+            alt_pool = [lb for lb in labels if lb not in predicted_labels]
+            if alt_pool and len(predicted_labels) < len(labels):
+                # 随机替换一个标签为备选池中的选项
+                replace_idx = _seed_int % len(predicted_labels)
+                replacement = random.choice(alt_pool)
+                plist = list(predicted_labels)
+                plist[replace_idx] = replacement
+                predicted_labels = tuple(plist)
 
         # 绝杀类单选模块随机化：避免每次都生成相同结果
         is_exclude = config.hit_checker is excludes_hit
