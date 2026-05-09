@@ -11,7 +11,7 @@ bodies, and docstrings exactly as they appear in app.py.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -359,13 +359,31 @@ def delete_user(db_path: str | Path, user_id: int) -> None:
 def list_lottery_types(db_path: str | Path) -> list[dict[str, Any]]:
     """获取所有彩种列表，按启用状态降序、ID 升序排列。
 
-    :param db_path: SQLite 数据库文件路径
-    :return: 彩种字典列表，其中 ``status`` 字段已转换为布尔值
+    当 lottery_types.next_time 为空时，从 lottery_draws 中取该彩种最新的
+    next_time 作为兜底值，确保管理页面始终能展示下次开奖时间。
     """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         rows = conn.execute("SELECT * FROM lottery_types ORDER BY status DESC, id").fetchall()
-        return [dict(row) | {"status": bool(row["status"])} for row in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            d: dict[str, Any] = dict(row) | {"status": bool(row["status"])}
+            if not d.get("next_time"):
+                ld_row = conn.execute(
+                    """SELECT next_time FROM lottery_draws
+                       WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != ''
+                       ORDER BY year DESC, term DESC LIMIT 1""",
+                    (d["id"],),
+                ).fetchone()
+                if ld_row:
+                    d["next_time"] = ld_row["next_time"]
+                    # 回填 lottery_types，保持数据一致
+                    conn.execute(
+                        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+                        (ld_row["next_time"], utc_now(), d["id"]),
+                    )
+            result.append(d)
+        return result
 
 
 def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: int | None = None) -> dict[str, Any]:
@@ -500,13 +518,15 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 except (ValueError, OverflowError):
                     pass
             if not fields["draw_time"]:
-                fields["draw_time"] = datetime.now().replace(hour=22, minute=30, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+                beijing_now = (datetime.now(timezone.utc) + timedelta(hours=8)).replace(tzinfo=None)
+                fields["draw_time"] = beijing_now.replace(hour=22, minute=30, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 开奖时间已过：自动标记为已开奖
+    # 开奖时间已过：自动标记为已开奖（draw_time 为北京时间，须与北京时间比较）
     if fields["draw_time"] and not fields["is_opened"]:
         try:
             draw_dt = datetime.strptime(fields["draw_time"].strip(), "%Y-%m-%d %H:%M:%S")
-            if draw_dt <= datetime.now():
+            beijing_now = (datetime.now(timezone.utc) + timedelta(hours=8)).replace(tzinfo=None)
+            if draw_dt <= beijing_now:
                 fields["is_opened"] = 1
         except ValueError:
             pass  # 只包含日期的格式，不做自动判断

@@ -7,7 +7,7 @@ saving all results to the lottery_draws table.
 import json
 import sys
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -338,15 +338,22 @@ class CrawlerScheduler:
 
     职责：
     - 每 60 秒检查到达开奖时间的记录并自动标记 is_opened=1
+    - 每日北京时间 22:30:00 精准执行台湾彩开奖 + next_time 更新
     - 管理 run_crawl_only 触发的 6 小时延迟自动预测定时器
 
     注意：历史开奖数据爬取不再由调度器自动执行，
     应由管理员通过后台"更新开奖"按钮手动触发。
     """
 
+    # 台湾彩开奖重试间隔（秒）：第1次重试60s，第2次300s，第3次900s
+    _TAIWAN_RETRY_DELAYS = [60, 300, 900]
+    _TAIWAN_MAX_RETRIES = 3
+
     def __init__(self, db_path: str | Path):
         self.db_path = db_path
         self._running = False
+        self._taiwan_timer: threading.Timer | None = None
+        self._taiwan_retry_count = 0
 
     def start(self) -> None:
         if self._running:
@@ -354,26 +361,45 @@ class CrawlerScheduler:
         self._running = True
         print("[CrawlerScheduler] Started (auto-open check every 60s)")
         self._schedule_auto_open()
+        self._schedule_taiwan_precise_open()
 
     def stop(self) -> None:
         self._running = False
         if hasattr(self, "_auto_open_timer") and self._auto_open_timer:
             self._auto_open_timer.cancel()
             self._auto_open_timer = None
+        if self._taiwan_timer:
+            self._taiwan_timer.cancel()
+            self._taiwan_timer = None
 
     def _auto_open_draws(self) -> None:
-        """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。"""
+        """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
+        同时为 type=3 记录补充 next_time（作为精准调度器的兜底）。
+
+        注意：draw_time 字段存储的是北京时间字符串，比较时也必须使用北京时间。"""
         try:
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            now_utc_dt = datetime.now(timezone.utc)
+            now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
+            now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             with db_connect(self.db_path) as conn:
                 cur = conn.execute(
                     """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
                        WHERE is_opened = 0 AND draw_time IS NOT NULL AND draw_time != ''
                        AND draw_time <= ?""",
-                    (now, now),
+                    (now_utc, now_beijing),
                 )
                 if cur.rowcount > 0:
                     print(f"[AutoOpen] Set is_opened=1 for {cur.rowcount} draw(s)")
+                    # 兜底：为刚打开的 type=3 记录更新 next_time
+                    rows = conn.execute(
+                        """SELECT id, year, term, draw_time FROM lottery_draws
+                           WHERE lottery_type_id = 3 AND updated_at = ?""",
+                        (now_utc,),
+                    ).fetchall()
+                    for row in rows:
+                        self._calc_and_update_next_time(conn, row, now_utc)
+                    if rows:
+                        conn.commit()
         except Exception as e:
             print(f"[AutoOpen] Error: {e}")
 
@@ -385,6 +411,111 @@ class CrawlerScheduler:
         self._auto_open_timer = threading.Timer(60, self._schedule_auto_open)
         self._auto_open_timer.daemon = True
         self._auto_open_timer.start()
+
+    # ── 台湾彩每日 22:30 精准开奖调度 ─────────────────────────────
+
+    @staticmethod
+    def _seconds_until_beijing(hour: int, minute: int) -> float:
+        """计算距离下一个北京时间指定时刻的秒数。"""
+        now_utc = datetime.now(timezone.utc)
+        beijing_now = now_utc + timedelta(hours=8)
+        target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if beijing_now >= target_beijing:
+            target_beijing += timedelta(days=1)
+        target_utc = target_beijing - timedelta(hours=8)
+        return max(0, (target_utc - now_utc).total_seconds())
+
+    def _schedule_taiwan_precise_open(self) -> None:
+        """调度下一次北京时间 22:30 的台湾彩精准开奖任务。"""
+        if not self._running:
+            return
+        delay = self._seconds_until_beijing(22, 30)
+        self._taiwan_timer = threading.Timer(delay, self._taiwan_precise_open_execute)
+        self._taiwan_timer.daemon = True
+        self._taiwan_timer.start()
+        target_beijing = datetime.now(timezone.utc) + timedelta(hours=8) + timedelta(seconds=delay)
+        print(f"[TaiwanScheduler] Next Taiwan open at {target_beijing.strftime('%Y-%m-%d %H:%M:%S')} Beijing (in {delay:.0f}s)")
+
+    def _taiwan_precise_open_execute(self) -> None:
+        """执行台湾彩开奖任务，含重试策略。成功则调度次日，失败则按间隔重试。"""
+        try:
+            self._open_taiwan_draws_and_update_next_time()
+            self._taiwan_retry_count = 0
+            self._schedule_taiwan_precise_open()
+        except Exception as e:
+            self._taiwan_retry_count += 1
+            _log_taiwan_task_error(f"Attempt {self._taiwan_retry_count}/{self._TAIWAN_MAX_RETRIES} failed: {e}")
+            if self._taiwan_retry_count <= self._TAIWAN_MAX_RETRIES:
+                delay = self._TAIWAN_RETRY_DELAYS[self._taiwan_retry_count - 1]
+                print(f"[TaiwanScheduler] Retry in {delay}s (attempt {self._taiwan_retry_count}/{self._TAIWAN_MAX_RETRIES})")
+                self._taiwan_timer = threading.Timer(delay, self._taiwan_precise_open_execute)
+                self._taiwan_timer.daemon = True
+                self._taiwan_timer.start()
+            else:
+                print(f"[TaiwanScheduler] All retries exhausted, scheduling next day")
+                _log_taiwan_task_error(f"All {self._TAIWAN_MAX_RETRIES} retries exhausted")
+                self._taiwan_retry_count = 0
+                self._schedule_taiwan_precise_open()
+
+    def _open_taiwan_draws_and_update_next_time(self) -> None:
+        """北京时间 22:30 精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，
+        并立即计算下一期 draw_time 更新 next_time 为 Unix 秒级时间戳。
+
+        注意：draw_time 字段存储的是北京时间字符串，比较时必须使用北京时间。"""
+        from calendar import timegm
+
+        now_utc_dt = datetime.now(timezone.utc)
+        now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
+        now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+
+        with db_connect(self.db_path) as conn:
+            cur = conn.execute(
+                """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
+                   WHERE lottery_type_id = 3 AND is_opened = 0
+                   AND draw_time IS NOT NULL AND draw_time != ''
+                   AND draw_time <= ?""",
+                (now_utc, now_beijing),
+            )
+            opened_count = cur.rowcount
+            if opened_count > 0:
+                print(f"[TaiwanOpen] 22:30 Beijing — opened {opened_count} Taiwan draw(s)")
+            else:
+                print(f"[TaiwanOpen] 22:30 Beijing — no Taiwan draws to open")
+
+            rows = conn.execute(
+                """SELECT id, year, term, draw_time FROM lottery_draws
+                   WHERE lottery_type_id = 3 AND updated_at = ?""",
+                (now_utc,),
+            ).fetchall()
+
+            for row in rows:
+                self._calc_and_update_next_time(conn, row, now_utc)
+
+            if rows:
+                conn.commit()
+
+    def _calc_and_update_next_time(self, conn, row, now_str: str) -> None:
+        """根据当期 draw_time + 1 天计算下一期 draw_time，将 next_time 更新为 Unix 秒级时间戳。"""
+        from calendar import timegm
+
+        draw_time_str = row["draw_time"]
+        draw_dt = datetime.strptime(draw_time_str, "%Y-%m-%d %H:%M:%S")
+        next_dt = draw_dt + timedelta(days=1)
+        # draw_time 存储的是北京时间，转为 UTC 后计算 Unix 时间戳
+        utc_dt = next_dt - timedelta(hours=8)
+        unix_seconds = int(timegm(utc_dt.timetuple()))
+        next_time_str = str(unix_seconds)
+
+        conn.execute(
+            "UPDATE lottery_draws SET next_time = ?, updated_at = ? WHERE id = ?",
+            (next_time_str, now_str, row["id"]),
+        )
+        conn.execute(
+            "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = 3",
+            (next_time_str, now_str),
+        )
+        print(f"[TaiwanOpen] Term {row['term']}: next_time={unix_seconds} "
+              f"({next_dt.strftime('%Y-%m-%d %H:%M:%S')} Beijing)")
 
 
 # ─────────────────────────────────────────────────────────
@@ -405,6 +536,14 @@ def _log_auto_task_error(message: str) -> None:
     ts = datetime.now(timezone.utc).isoformat()
     with open(ERROR_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] AUTO_PREDICT_FAIL {message}\n")
+
+
+def _log_taiwan_task_error(message: str) -> None:
+    """将台湾彩每日定时开奖任务错误追加写入 error.log。"""
+    ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).isoformat()
+    with open(ERROR_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(f"[{ts}] TAIWAN_OPEN_FAIL {message}\n")
 
 
 def _update_auto_task_status(

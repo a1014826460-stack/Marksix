@@ -14,16 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from db import connect as db_connect, quote_identifier
-
-
-def connect(db_path: str | Path) -> Any:
-    """打开并返回数据库连接对象。
-
-    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
-    :return: 数据库连接对象
-    """
-    return db_connect(db_path)
+from db import connect, quote_identifier
 
 
 # ---------------------------------------------------------------------------

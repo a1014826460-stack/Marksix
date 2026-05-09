@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
+
+from db import utc_now  # noqa: E402
 
 
 SOURCE_SCHEMA_NAME = "public"
@@ -66,17 +67,7 @@ def quote_qualified_identifier(schema_name: str, table_name: str) -> str:
     return f"{quote_identifier(schema_name)}.{quote_identifier(table_name)}"
 
 
-def utc_now_iso() -> str:
-    """返回当前 UTC 时间的 ISO 字符串。
-
-    Args:
-        无。
-
-    Returns:
-        str: 当前 UTC 时间，例如 `2026-05-08T09:30:00+00:00`。
-    """
-
-    return datetime.now(timezone.utc).isoformat()
+utc_now_iso = utc_now  # 兼容别名，保留旧名称引用
 
 
 def ensure_postgres_connection(conn: Any) -> None:

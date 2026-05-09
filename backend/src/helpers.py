@@ -8,6 +8,22 @@ from __future__ import annotations
 from typing import Any
 
 from db import quote_identifier
+from utils.created_prediction_store import (
+    CREATED_SCHEMA_NAME,
+    normalize_color_label,
+    quote_qualified_identifier as quote_schema_table,
+    schema_table_exists,
+    table_column_names,
+)
+
+
+# 前端需要的站点预测模块 mode_id 清单，按展示顺序排列
+REQUIRED_SITE_PREDICTION_MODE_IDS = (
+    3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
+    44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
+    57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
+    67, 68, 69, 151, 197,
+)
 
 
 def row_to_dict(row: Any | None) -> dict[str, Any] | None:
@@ -22,13 +38,6 @@ def parse_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     return str(value).strip().lower() in {"1", "true", "yes", "on", "是", "启用"}
-from utils.created_prediction_store import (
-    CREATED_SCHEMA_NAME,
-    normalize_color_label,
-    quote_qualified_identifier as quote_schema_table,
-    schema_table_exists,
-    table_column_names,
-)
 
 
 def split_csv(value: Any) -> list[str]:

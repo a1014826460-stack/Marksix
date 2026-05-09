@@ -58,7 +58,7 @@ def fetch_current_term_data(
     # ── 使用从数据库传入的 url 发起请求 ──
     response = requests.get(url, headers=headers, cookies=cookies, params=params)
     # response.json()["issus"] = response.text.get("issus", [])[4:]
-    print(response.text)      # 解析JSON响应，确保数据格式正确
+    # print(response.text)      # 解析JSON响应，确保数据格式正确
     return response.text, response.status_code
 
 
@@ -131,8 +131,8 @@ def transform_standard_list(
 
 if __name__ == "__main__":
     history_data, status_code = fetch_current_term_data(type=2)
-    transformed_data = transform_standard_list(history_data)
+    transformed_data = transform_standard_list(history_data, crawler_type=2)
     print(transformed_data)
-    print(history_data)
+    # print(history_data)
     print(status_code)
-    print(len(transformed_data))
+    # print(len(transformed_data))

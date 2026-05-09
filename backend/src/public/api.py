@@ -12,7 +12,7 @@ _PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
 if str(_PREDICT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PREDICT_ROOT))
 
-from db import connect as db_connect  # noqa: E402
+from db import connect  # noqa: E402
 from helpers import (  # noqa: E402
     apply_lottery_draw_overlay, build_draw_result_payload, color_name_to_key,
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
@@ -24,9 +24,6 @@ from utils.created_prediction_store import (  # noqa: E402
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
 )
 
-
-def connect(db_path: str | Path) -> Any:
-    return db_connect(db_path)
 
 def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
     """从历史记录中提取特码号、生肖和波色，供前端公开页展示开奖号。"""

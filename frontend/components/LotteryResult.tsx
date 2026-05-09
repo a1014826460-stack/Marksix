@@ -39,6 +39,11 @@ function formatCountdown(remainingMs: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
+/** 规范化时间戳：>10 位视为毫秒 → 转为秒；≤10 位已经是秒，直接返回 */
+function normalizeToSeconds(raw: number): number {
+  return raw > 9999999999 ? Math.floor(raw / 1000) : raw
+}
+
 /**
  * 开奖结果展示组件
  * ---------------------------------------------------------------
@@ -48,10 +53,11 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
   const [countdown, setCountdown] = useState("--:--:--")
   const [isExpired, setIsExpired] = useState(false)
   const deadlineRef = useRef<number>(0)
+  const serverOffsetRef = useRef<number>(0)
   const iframeKeyRef = useRef(0)
   const [iframeKey, setIframeKey] = useState(0)
 
-  // 切换彩种时重新获取 next_time
+  // 切换彩种时重新获取 next_time + 可选的 server_time
   useEffect(() => {
     let cancelled = false
     const lt = LOTTERY_TYPE_MAP[activeGame]
@@ -62,10 +68,17 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
         const data = await res.json()
         if (cancelled) return
         if (data.next_time) {
-          deadlineRef.current = Number(data.next_time)
+          deadlineRef.current = normalizeToSeconds(Number(data.next_time))
+          if (data.server_time) {
+            const clientSec = Math.floor(Date.now() / 1000)
+            serverOffsetRef.current = Number(data.server_time) - clientSec
+          } else {
+            serverOffsetRef.current = 0
+          }
           setIsExpired(false)
         } else {
           deadlineRef.current = 0
+          serverOffsetRef.current = 0
           setCountdown("--:--:--")
         }
       } catch {
@@ -77,16 +90,17 @@ export function LotteryResult({ activeGame, onGameChange }: LotteryResultProps) 
     return () => { cancelled = true }
   }, [activeGame, iframeKey])
 
-  // 每秒更新倒计时
+  // 每秒使用服务器同步时间更新倒计时
   useEffect(() => {
     const timer = setInterval(() => {
       if (deadlineRef.current > 0) {
-        const remaining = deadlineRef.current - Date.now()
+        const serverNow = Math.floor(Date.now() / 1000) + serverOffsetRef.current
+        const remainingSec = deadlineRef.current - serverNow
+        const remaining = remainingSec * 1000
         if (remaining <= 0) {
           setCountdown("00:00:00")
           if (!isExpired) {
             setIsExpired(true)
-            // 倒计时归零：重新加载 iframe 获取最新开奖结果
             iframeKeyRef.current += 1
             setIframeKey(iframeKeyRef.current)
           }

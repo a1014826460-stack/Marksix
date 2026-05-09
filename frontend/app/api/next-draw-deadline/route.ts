@@ -1,8 +1,8 @@
 /**
  * 下次开奖截止时间 API 代理 — /api/next-draw-deadline/route.ts
  * ---------------------------------------------------------------
- * 从 Python 后端获取指定彩种的下次开奖时间（毫秒时间戳）。
- * 前端 LotteryResult 组件以此计算倒计时。
+ * 从 Python 后端获取指定彩种的下次开奖时间（Unix 秒级时间戳）+ 服务器当前时间。
+ * 前端 LotteryResult 组件以此计算倒计时，并通过 server_time 同步时钟。
  */
 import { NextResponse } from "next/server"
 import { getBackendApiBaseUrl } from "@/lib/backend-api"

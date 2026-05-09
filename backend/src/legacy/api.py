@@ -12,7 +12,7 @@ _PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
 if str(_PREDICT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PREDICT_ROOT))
 
-from db import connect as db_connect, quote_identifier
+from db import connect, quote_identifier
 from helpers import (
     apply_lottery_draw_overlay,
     build_mode_payload_filters, build_mode_payload_order_clause, load_fixed_data_maps,
@@ -26,9 +26,6 @@ from utils.created_prediction_store import (  # noqa: E402
     table_column_names,
 )
 
-
-def connect(db_path: str | Path) -> Any:
-    return db_connect(db_path)
 
 def _ensure_tables(db_path):
     from tables import ensure_admin_tables as _eat
