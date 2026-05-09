@@ -274,6 +274,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
             """
         )
         ensure_column(conn, "lottery_types", "next_time", "TEXT")
+        ensure_column(conn, "lottery_types", "last_auto_task_status", "TEXT")
         conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS lottery_draws (
