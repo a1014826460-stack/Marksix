@@ -530,10 +530,12 @@ def predict(
             config.selection_groups, config.selection_widths,
         )
 
-        # 未来期差异保证：不同种子产生不同标签序列（循环位移）
-        if _seed_int is not None and len(predicted_labels) > 1:
-            shift = (_seed_int % (len(predicted_labels) - 1)) + 1
-            predicted_labels = predicted_labels[shift:] + predicted_labels[:shift]
+        # 未来期差异保证：种子相关的标签顺序重排，影响 score_labels 平局决胜
+        if _seed_int is not None:
+            random.seed(_seed_int)
+            shuffled = list(labels)
+            random.shuffle(shuffled)
+            labels = tuple(shuffled)
 
         # 绝杀类单选模块随机化：避免每次都生成相同结果
         is_exclude = config.hit_checker is excludes_hit
