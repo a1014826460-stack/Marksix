@@ -423,8 +423,52 @@ export function LotteryTypesPageClient() {
     await load()
   }
 
+  /** 触发爬取 + 自动生成预测，轮询后台任务状态 */
+  async function crawlAndGenerate(ltId: number, ltName: string) {
+    setCrawlingId(ltId)
+    setCrawlMsg(`正在爬取 ${ltName} 开奖数据并生成预测…`)
+    try {
+      const { job_id } = await adminApi<{ ok: boolean; job_id: string }>(`/admin/lottery-types/${ltId}/crawl-and-generate`, { method: "POST" })
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        try {
+          const job = await adminApi<{ status: string; result?: Record<string, unknown>; error?: string }>(`/admin/jobs/${job_id}`)
+          if (job.status === "done") {
+            const res = job.result as Record<string, unknown> | undefined
+            const crawl = res?.crawl as Record<string, unknown> | undefined
+            const gen = (res?.generation as Array<Record<string, unknown>>) || []
+            const totalIns = gen.reduce((s: number, g) => s + Number(g.inserted || 0), 0)
+            const totalUpd = gen.reduce((s: number, g) => s + Number(g.updated || 0), 0)
+            const totalErr = gen.reduce((s: number, g) => s + Number(g.errors || 0), 0)
+            setCrawlMsg(`${ltName} 爬取完成 ✓ | 爬取: ${JSON.stringify(crawl?.source || "")} ${crawl?.saved || crawl?.fetched || 0}条 | 预测: 新增${totalIns} 覆盖${totalUpd} 失败${totalErr}`)
+            setTimeout(() => setCrawlMsg(""), 8000)
+            setCrawlingId(0)
+            return
+          }
+          if (job.status === "error") { setCrawlMsg(`${ltName} 失败: ${job.error || ""}`); setCrawlingId(0); return }
+          // 更新进度提示
+          setCrawlMsg(`正在处理 ${ltName}…（已等待 ${(i + 1) * 2} 秒）`)
+        } catch { /* 继续轮询 */ }
+      }
+      setCrawlMsg(`${ltName} 超时（3分钟），请稍后查看开奖记录`)
+      setCrawlingId(0)
+    } catch (e) { setCrawlMsg(`${ltName} 请求失败: ${e instanceof Error ? e.message : "?"}`); setCrawlingId(0) }
+  }
+
+  const [crawlMsg, setCrawlMsg] = useState("")
+  const [crawlingId, setCrawlingId] = useState(0)
+
   return (
     <AdminShell title="彩种管理" description="设置彩种名称、开奖时间、采集地址和状态。">
+      {crawlMsg && (
+        <div className={`rounded-md px-4 py-3 text-sm font-medium ${
+          crawlMsg.includes("完成") ? "border border-green-300 bg-green-50 text-green-800" :
+          crawlMsg.includes("失败") || crawlMsg.includes("超时") ? "border border-red-300 bg-red-50 text-red-800" :
+          "border border-blue-300 bg-blue-50 text-blue-800"
+        }`}>
+          {crawlMsg}
+        </div>
+      )}
       <div className="space-y-4">
         <Button
           onClick={() => { setFormOpen((prev) => !prev); setEditing(null) }}
@@ -463,7 +507,12 @@ export function LotteryTypesPageClient() {
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.id}</TableCell><TableCell>{row.name}</TableCell><TableCell>{row.draw_time}</TableCell><TableCell className="text-xs">{formatNextTime(row.next_time)}</TableCell><TableCell className="max-w-[200px] truncate">{row.collect_url}</TableCell><TableCell><StatusBadge value={row.status} /></TableCell>
-                  <TableCell><Button variant="outline" size="sm" onClick={() => { setEditing(row); setFormOpen(true) }}>修改</Button></TableCell>
+                  <TableCell className="space-x-1">
+                    <Button variant="outline" size="sm" onClick={() => { setEditing(row); setFormOpen(true) }}>修改</Button>
+                    <Button variant="outline" size="sm" onClick={() => crawlAndGenerate(row.id, row.name)} disabled={crawlingId !== 0}>
+                      {crawlingId === row.id ? "爬取中…" : "更新开奖"}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

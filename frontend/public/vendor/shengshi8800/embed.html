@@ -364,9 +364,22 @@
           const type = window.__LEGACY_EMBED_CONFIG__?.type || 3;
           const branding = getBrandingByType(type);
 
+          // 当 React shell 已提供论坛头图时，通过 CSS 从源头阻止 iframe 内重复渲染
+          if (window.__LEGACY_EMBED_CONFIG__?.shellHeader) {
+            patched = patched.replace(
+              /(<\/head>)/i,
+              "<style>body > .box.news-box, body > .box.pad#yxym, #fhdb, #nav2{display:none!important}</style>$1"
+            );
+          }
+
           const replacementBootstrap = [
             "<script>",
             "(function(){",
+            "  if (window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.shellHeader) {",
+            "    var _style = document.createElement('style');",
+            "    _style.textContent = 'body>.box.news-box,body>.box.pad#yxym,#fhdb,#nav2{display:none!important}';",
+            "    document.head.appendChild(_style);",
+            "  }",
             "  var forumTitle = " + JSON.stringify(branding.forumTitle) + ";",
             "  var dataSite = " + JSON.stringify(branding.dataSite) + ";",
             "  var shortForum = " + JSON.stringify(branding.shortForum) + ";",
@@ -381,7 +394,7 @@
             "  function replaceSiteText(input){",
             "    var text = String(input == null ? '' : input);",
             "    var currentType = window.__LEGACY_EMBED_CONFIG__ ? window.__LEGACY_EMBED_CONFIG__.type : 3;",
-            "    var adText = currentType === 2 ? 'AAA级大公开;准确率绝对100%' : currentType === 1 ? '【单车变宝马】 借钱拿高利贷也要大胆下注! <br/>你嫌长就改短点' : '勇敢向钱钱钱飞!';",
+            "    var adText = currentType === 2 ? 'AAA级大公开;准确率绝对100%' : currentType === 1 ? '【单车变宝马】 借钱拿高利贷也要大胆下注!' : '勇敢向钱钱钱飞!';",
             "    return preserveTaiwanLotteryTab(text",
             "      .replace(/\u53f0\u6e7e\u516d\u5408\u5f69\u8bba\u575b/g, forumTitle)",
             "      .replace(/\u53f0\u6e7e\u8d44\u6599\u7f51/g, dataSite)",

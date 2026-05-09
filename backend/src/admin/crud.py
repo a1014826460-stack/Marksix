@@ -1,4 +1,8 @@
-"""Admin CRUD operations for managed sites, users, lottery types, draws, and numbers.
+"""
+Admin CRUD 操作模块 —— 托管站点、管理员用户、彩种、开奖记录、号码数据的增删改查。
+
+从 app.py 中提取，将 HTTP 路由与数据访问逻辑分离。所有函数保持原有的
+签名、函数体和文档字符串不变，仅新增规范的中文注释（含 param / return / raises）。
 
 Extracted from app.py to provide a clean separation between HTTP routing
 and data-access logic. All functions preserve their original signatures,
@@ -19,6 +23,7 @@ from predict.mechanisms import get_prediction_config, list_prediction_configs
 from tables import ensure_admin_tables
 from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
 
+# 前端需要的站点预测模块 mode_id 清单，按展示顺序排列
 REQUIRED_SITE_PREDICTION_MODE_IDS = (
     3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
     44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
@@ -28,23 +33,41 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Local utility helpers
+#  本地工具函数 / Local utility helpers
 # ─────────────────────────────────────────────────────────────────
 
 def utc_now() -> str:
+    """获取当前 UTC 时间，返回 ISO 8601 格式字符串。
+
+    :return: 当前 UTC 时间的 ISO 8601 字符串，形如 ``"2025-01-01T12:00:00.123456+00:00"``
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
 def connect(db_path: str | Path) -> Any:
+    """打开并返回数据库连接对象。
+
+    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
+    :return: 数据库连接对象（具体类型由 ``db.connect`` 实现决定）
+    """
     return db_connect(db_path)
 
 
 # ─────────────────────────────────────────────────────────────────
+#  同步辅助函数（save_site 依赖，原位于 admin.prediction）
 #  Sync helpers (dependency of save_site — originally in admin.prediction)
 # ─────────────────────────────────────────────────────────────────
 
 def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
-    """返回站点预测模块的标准配置清单，并按前端要求的 mode_id 顺序输出。"""
+    """获取站点预测模块的标准配置清单，按前端要求的 mode_id 顺序输出。
+
+    遍历所有预测配置，根据 ``REQUIRED_SITE_PREDICTION_MODE_IDS`` 筛选并排序，
+    生成每个模块的蓝图字典，包含 mode_id、sort_order 等字段。
+
+    :return: 预测模块蓝图列表，每个元素为包含 mode_id、sort_order 等字段的字典
+    :raises ValueError: 当 REQUIRED_SITE_PREDICTION_MODE_IDS 中的某个 mode_id
+                         在预测配置中不存在时抛出
+    """
     configs_by_mode_id: dict[int, dict[str, Any]] = {}
     for item in list_prediction_configs():
         try:
@@ -66,7 +89,14 @@ def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
 
 
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """将 site_prediction_modules 与前端站点模块清单保持同步。"""
+    """将 site_prediction_modules 表与前端站点模块清单保持同步。
+
+    对指定站点（或全部站点）的预测模块记录进行增量更新：
+    已存在的记录仅更新 mode_id 和 sort_order；不存在的记录则插入新行。
+
+    :param conn: 数据库连接对象
+    :param site_id: 可选，指定要同步的站点 ID；为 None 时同步所有托管站点
+    """
     blueprints = get_site_prediction_module_blueprints()
     allowed_keys = tuple(str(item["key"]) for item in blueprints)
     now = utc_now()
@@ -130,10 +160,16 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Site CRUD
+#  站点 CRUD / Site CRUD
 # ─────────────────────────────────────────────────────────────────
 
 def public_site(row: Any) -> dict[str, Any]:
+    """将数据库中的站点行转换为对外安全的字典（隐藏完整 token，增加预览信息）。
+
+    :param row: 数据库查询返回的站点行对象（通常为 sqlite3.Row 或字典）
+    :return: 处理后的站点字典，包含 ``token_present``（布尔值）和
+             ``token_preview``（token 前 8 位预览）等字段，不暴露完整 token
+    """
     data = dict(row)
     token = data.pop("token", "") or ""
     data["enabled"] = bool(data["enabled"])
@@ -143,6 +179,11 @@ def public_site(row: Any) -> dict[str, Any]:
 
 
 def list_sites(db_path: str | Path) -> list[dict[str, Any]]:
+    """获取所有托管站点列表，关联彩种名称，按启用状态降序、ID 升序排列。
+
+    :param db_path: SQLite 数据库文件路径
+    :return: 处理后的站点字典列表（已脱敏 token）
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -157,6 +198,14 @@ def list_sites(db_path: str | Path) -> list[dict[str, Any]]:
 
 
 def get_site(db_path: str | Path, site_id: int, include_secret: bool = False) -> dict[str, Any]:
+    """根据 ID 获取单个托管站点的详细信息。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID
+    :param include_secret: 是否返回包含完整 token 的原始数据，默认 False（脱敏）
+    :return: 站点字典（include_secret=True 时包含完整 token，否则使用 public_site 脱敏）
+    :raises KeyError: 当 site_id 对应的站点不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -176,6 +225,21 @@ def get_site(db_path: str | Path, site_id: int, include_secret: bool = False) ->
 
 
 def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None = None) -> dict[str, Any]:
+    """创建或更新托管站点。
+
+    当 site_id 为 None 时创建新站点，并从模板站点（site 1）复制预测模块配置；
+    否则更新已有站点。创建和更新时均会对字段进行校验。
+
+    :param db_path: SQLite 数据库文件路径
+    :param payload: 站点字段字典，可包含 name、domain、lottery_type_id、enabled、
+                    start_web_id、end_web_id、manage_url_template、modes_data_url、
+                    token、request_limit、request_delay、announcement、notes 等字段
+    :param site_id: 可选，要更新的站点 ID；为 None 时表示新建
+    :return: 创建或更新后的站点字典（已脱敏）
+    :raises ValueError: 当站点名称为空、start_web_id > end_web_id，
+                        或 manage_url_template 缺少 {web_id}/{id} 占位符时抛出
+    :raises KeyError: 当 site_id 对应的站点不存在（更新场景）时抛出
+    """
     ensure_admin_tables(db_path)
     now = utc_now()
     fields = {
@@ -309,6 +373,12 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
 
 
 def delete_site(db_path: str | Path, site_id: int) -> None:
+    """删除指定 ID 的托管站点。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 要删除的站点 ID
+    :raises KeyError: 当 site_id 对应的站点不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         cur = conn.execute("DELETE FROM managed_sites WHERE id = ?", (site_id,))
@@ -317,10 +387,15 @@ def delete_site(db_path: str | Path, site_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  User CRUD
+#  管理员用户 CRUD / User CRUD
 # ─────────────────────────────────────────────────────────────────
 
 def list_users(db_path: str | Path) -> list[dict[str, Any]]:
+    """获取所有管理员用户列表，按 ID 升序排列。
+
+    :param db_path: SQLite 数据库文件路径
+    :return: 脱敏后的管理员用户字典列表（已移除密码哈希等敏感字段）
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         rows = conn.execute("SELECT * FROM admin_users ORDER BY id").fetchall()
@@ -328,6 +403,18 @@ def list_users(db_path: str | Path) -> list[dict[str, Any]]:
 
 
 def save_user(db_path: str | Path, payload: dict[str, Any], user_id: int | None = None) -> dict[str, Any]:
+    """创建或更新管理员用户。
+
+    当 user_id 为 None 时创建新用户（必须提供密码）；否则更新已有用户，
+    密码为空时保留原密码不变。
+
+    :param db_path: SQLite 数据库文件路径
+    :param payload: 用户字段字典，可包含 username、display_name、role、status、password 等字段
+    :param user_id: 可选，要更新的用户 ID；为 None 时表示新建
+    :return: 创建或更新后的管理员用户字典（已脱敏）
+    :raises ValueError: 当用户名为空或新增用户未设置密码时抛出
+    :raises KeyError: 当 user_id 对应的用户不存在（更新场景）时抛出
+    """
     ensure_admin_tables(db_path)
     now = utc_now()
     username = str(payload.get("username") or "").strip()
@@ -376,6 +463,15 @@ def save_user(db_path: str | Path, payload: dict[str, Any], user_id: int | None 
 
 
 def delete_user(db_path: str | Path, user_id: int) -> None:
+    """删除指定 ID 的管理员用户。
+
+    删除前会校验至少保留一个可登录（status=1）的管理员，防止全部删除。
+
+    :param db_path: SQLite 数据库文件路径
+    :param user_id: 要删除的用户 ID
+    :raises KeyError: 当 user_id 对应的用户不存在时抛出
+    :raises ValueError: 当系统中仅剩一个可登录管理员且尝试删除该用户时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         total = int(
@@ -391,10 +487,15 @@ def delete_user(db_path: str | Path, user_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Lottery Type CRUD
+#  彩种 CRUD / Lottery Type CRUD
 # ─────────────────────────────────────────────────────────────────
 
 def list_lottery_types(db_path: str | Path) -> list[dict[str, Any]]:
+    """获取所有彩种列表，按启用状态降序、ID 升序排列。
+
+    :param db_path: SQLite 数据库文件路径
+    :return: 彩种字典列表，其中 ``status`` 字段已转换为布尔值
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         rows = conn.execute("SELECT * FROM lottery_types ORDER BY status DESC, id").fetchall()
@@ -402,6 +503,17 @@ def list_lottery_types(db_path: str | Path) -> list[dict[str, Any]]:
 
 
 def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: int | None = None) -> dict[str, Any]:
+    """创建或更新彩种信息。
+
+    当 lottery_id 为 None 时创建新彩种；否则更新已有彩种。
+
+    :param db_path: SQLite 数据库文件路径
+    :param payload: 彩种字段字典，可包含 name、draw_time、collect_url、next_time、status 等字段
+    :param lottery_id: 可选，要更新的彩种 ID；为 None 时表示新建
+    :return: 创建或更新后的彩种字典，其中 ``status`` 字段已转换为布尔值
+    :raises ValueError: 当彩种名称为空时抛出
+    :raises KeyError: 当 lottery_id 对应的彩种不存在（更新场景）时抛出
+    """
     ensure_admin_tables(db_path)
     now = utc_now()
     name = str(payload.get("name") or "").strip()
@@ -437,6 +549,12 @@ def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: 
 
 
 def delete_lottery_type(db_path: str | Path, lottery_id: int) -> None:
+    """删除指定 ID 的彩种。
+
+    :param db_path: SQLite 数据库文件路径
+    :param lottery_id: 要删除的彩种 ID
+    :raises KeyError: 当 lottery_id 对应的彩种不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -447,10 +565,16 @@ def delete_lottery_type(db_path: str | Path, lottery_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Draw CRUD
+#  开奖记录 CRUD / Draw CRUD
 # ─────────────────────────────────────────────────────────────────
 
 def list_draws(db_path: str | Path, limit: int = 200) -> list[dict[str, Any]]:
+    """获取开奖记录列表，关联彩种名称，按年份降序、期号降序、ID 降序排列。
+
+    :param db_path: SQLite 数据库文件路径
+    :param limit: 返回记录的最大条数，默认 200
+    :return: 开奖记录字典列表，其中 ``status`` 和 ``is_opened`` 字段已转换为布尔值
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -470,6 +594,19 @@ def list_draws(db_path: str | Path, limit: int = 200) -> list[dict[str, Any]]:
 
 
 def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None = None) -> dict[str, Any]:
+    """创建或更新开奖记录。
+
+    当 draw_id 为 None 时创建新记录；否则更新已有记录。创建或更新时会对号码进行校验：
+    必须恰好 7 个号码，每个号码为 01~49 之间的两位数。
+
+    :param db_path: SQLite 数据库文件路径
+    :param payload: 开奖字段字典，可包含 lottery_type_id、year、term、numbers、
+                    draw_time、status、is_opened、next_term 等字段
+    :param draw_id: 可选，要更新的开奖记录 ID；为 None 时表示新建
+    :return: 创建或更新后的开奖记录字典，其中 ``status`` 和 ``is_opened`` 已转换为布尔值
+    :raises ValueError: 当号码为空、号码数量不为 7、或号码不在 01~49 范围内时抛出
+    :raises KeyError: 当 draw_id 对应的记录不存在（更新场景）时抛出
+    """
     ensure_admin_tables(db_path)
     now = utc_now()
     fields = {
@@ -521,6 +658,12 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
 
 
 def delete_draw(db_path: str | Path, draw_id: int) -> None:
+    """删除指定 ID 的开奖记录。
+
+    :param db_path: SQLite 数据库文件路径
+    :param draw_id: 要删除的开奖记录 ID
+    :raises KeyError: 当 draw_id 对应的记录不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         cur = conn.execute("DELETE FROM lottery_draws WHERE id = ?", (draw_id,))
@@ -529,11 +672,20 @@ def delete_draw(db_path: str | Path, draw_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
+#  号码 CRUD（操作 fixed_data 表）
 #  Number CRUD (operates on fixed_data)
 # ─────────────────────────────────────────────────────────────────
 
 def list_numbers(db_path: str | Path, limit: int = 300, keyword: str = "") -> list[dict[str, Any]]:
-    """号码管理直接读取 fixed_data 单表，保持和预测映射同源。"""
+    """获取号码列表，直接读取 fixed_data 表，保持与预测映射同源。
+
+    支持按关键字模糊搜索（匹配 name、sign、code 字段）。
+
+    :param db_path: SQLite 数据库文件路径
+    :param limit: 返回记录的最大条数，默认 300
+    :param keyword: 可选，搜索关键字，用于模糊匹配 name、sign 或 code 字段
+    :return: 号码字典列表，其中 ``status`` 字段已转换为布尔值
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         params: list[Any] = []
@@ -555,6 +707,14 @@ def list_numbers(db_path: str | Path, limit: int = 300, keyword: str = "") -> li
 
 
 def update_number(db_path: str | Path, number_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """更新 fixed_data 表中指定 ID 的号码记录。
+
+    :param db_path: SQLite 数据库文件路径
+    :param number_id: 要更新的号码 ID
+    :param payload: 号码字段字典，可包含 name、code、category_key（或 sign）、year、status 等字段
+    :return: 更新后的号码字典，其中 ``status`` 字段已转换为布尔值
+    :raises KeyError: 当 number_id 对应的号码不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -583,6 +743,12 @@ def update_number(db_path: str | Path, number_id: int, payload: dict[str, Any]) 
 
 
 def create_number(db_path: str | Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """在 fixed_data 表中创建一条新的号码记录。
+
+    :param db_path: SQLite 数据库文件路径
+    :param payload: 号码字段字典，可包含 name、code、category_key（或 sign）、year、status、type、xu 等字段
+    :return: 新创建的号码字典，其中 ``status`` 字段已转换为布尔值
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -605,6 +771,12 @@ def create_number(db_path: str | Path, payload: dict[str, Any]) -> dict[str, Any
 
 
 def delete_number(db_path: str | Path, number_id: int) -> None:
+    """从 fixed_data 表中删除指定 ID 的号码记录。
+
+    :param db_path: SQLite 数据库文件路径
+    :param number_id: 要删除的号码 ID
+    :raises KeyError: 当 number_id 对应的号码不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -615,10 +787,22 @@ def delete_number(db_path: str | Path, number_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Site prediction module CRUD
+#  站点预测模块 CRUD / Site prediction module CRUD
 # ─────────────────────────────────────────────────────────────────
 
 def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str, Any]:
+    """获取指定站点的预测模块列表，同时返回站点信息与可用机制清单。
+
+    模块列表中会补充 ``display_title``、``resolved_mode_id`` 等前端渲染所需字段。
+    可用机制清单中标记每个机制是否已配置。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID
+    :return: 字典，包含三个键：
+             - ``site``: 站点信息字典
+             - ``modules``: 该站点的预测模块列表
+             - ``available_mechanisms``: 可用预测机制列表，每个元素含 key、title、configured 等字段
+    """
     from predict.mechanisms import ensure_prediction_configs_loaded as _ensure_loaded
     _ensure_loaded(db_path)
     ensure_admin_tables(db_path)
@@ -694,6 +878,14 @@ def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str,
 def add_site_prediction_module(
     db_path: str | Path, site_id: int, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    """为指定站点添加一个新的预测模块。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID
+    :param payload: 模块字段字典，可包含 mechanism_key、mode_id、status、sort_order 等字段
+    :return: 新创建的预测模块字典
+    :raises ValueError: 当 mechanism_key 为空时抛出
+    """
     from predict.mechanisms import ensure_prediction_configs_loaded as _ensure_loaded
     _ensure_loaded(db_path)
     ensure_admin_tables(db_path)
@@ -725,6 +917,15 @@ def add_site_prediction_module(
 def update_site_prediction_module(
     db_path: str | Path, site_id: int, module_id: int, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    """更新指定站点下的某个预测模块。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID
+    :param module_id: 要更新的模块 ID
+    :param payload: 模块字段字典，可包含 mechanism_key、mode_id、status、sort_order 等字段
+    :return: 更新后的预测模块字典
+    :raises KeyError: 当 module_id 在指定 site_id 下不存在时抛出
+    """
     ensure_admin_tables(db_path)
     now = utc_now()
 
@@ -757,6 +958,13 @@ def update_site_prediction_module(
 
 
 def delete_site_prediction_module(db_path: str | Path, site_id: int, module_id: int) -> None:
+    """删除指定站点下的某个预测模块。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID
+    :param module_id: 要删除的模块 ID
+    :raises KeyError: 当 module_id 在指定 site_id 下不存在时抛出
+    """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         row = conn.execute(
@@ -768,6 +976,15 @@ def delete_site_prediction_module(db_path: str | Path, site_id: int, module_id: 
 
 
 def run_site_prediction_module(db_path: str | Path, site_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """执行一次站点预测模块的预测运算。
+
+    :param db_path: SQLite 数据库文件路径
+    :param site_id: 站点 ID（保留参数，当前实现中未直接使用，通过预测配置间接关联）
+    :param payload: 预测参数字典，可包含 mechanism_key、res_code、content、
+                    source_table、target_hit_rate 等字段
+    :return: 预测结果字典，结构与 ``predict`` 函数的返回值一致
+    :raises ValueError: 当 mechanism_key 为空时抛出
+    """
     ensure_admin_tables(db_path)
     mechanism_key = str(payload.get("mechanism_key") or "").strip()
     if not mechanism_key:

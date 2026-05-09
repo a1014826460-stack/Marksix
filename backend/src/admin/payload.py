@@ -1,4 +1,8 @@
-"""Admin mode_payload data management functions.
+"""
+Admin mode_payload 数据管理模块。
+
+提供 mode_payload_* 表的表名校验、列读取、数据查询、筛选排序、
+以及 CRUD 操作，同时支持 public 和 created 两种 schema 的数据源。
 
 Provides table validation, column reading, filtering, sorting, and CRUD
 operations for mode_payload_* tables across public and created schemas.
@@ -14,6 +18,11 @@ from db import connect as db_connect, quote_identifier
 
 
 def connect(db_path: str | Path) -> Any:
+    """打开并返回数据库连接对象。
+
+    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
+    :return: 数据库连接对象
+    """
     return db_connect(db_path)
 
 
@@ -21,11 +30,17 @@ def connect(db_path: str | Path) -> Any:
 # mode_payload 表直读 / 直写 (站点数据管理页)
 # ---------------------------------------------------------------------------
 
+# 只允许 mode_payload_{数字} 格式的表名，用于防止 SQL 注入
 _MODE_PAYLOAD_TABLE_RE = re.compile(r"^mode_payload_\d+$")
 
 
 def validate_mode_payload_table(table_name: str) -> str:
-    """安全校验：只允许 mode_payload_{数字} 格式的表名，防止 SQL 注入。"""
+    """安全校验表名，只允许 ``mode_payload_{数字}`` 格式，防止 SQL 注入。
+
+    :param table_name: 表名（字符串）
+    :return: 去除首尾空格后的合法表名
+    :raises ValueError: 当表名不符合 ``mode_payload_{数字}`` 格式时抛出
+    """
     table_name = str(table_name or "").strip()
     if not _MODE_PAYLOAD_TABLE_RE.match(table_name):
         raise ValueError(f"无效的 mode_payload 表名: {table_name}")
@@ -33,7 +48,14 @@ def validate_mode_payload_table(table_name: str) -> str:
 
 
 def normalize_mode_payload_source(source: str) -> str:
-    """统一归一后台 mode_payload 数据源参数。"""
+    """统一归一化后台 mode_payload 数据源参数。
+
+    将数据源参数标准化为以下三者之一：``"public"``、``"created"``、``"all"``。
+
+    :param source: 数据源参数（大小写不敏感，如 "PUBLIC"、"Created" 等）
+    :return: 归一化后的数据源字符串（小写）
+    :raises ValueError: 当 source 不是 "public"、"created" 或 "all" 时抛出
+    """
     normalized = str(source or "public").strip().lower()
     if normalized not in {"public", "created", "all"}:
         raise ValueError(f"不支持的数据源: {source}")
@@ -41,7 +63,13 @@ def normalize_mode_payload_source(source: str) -> str:
 
 
 def mode_payload_table_exists(conn: Any, table_name: str, source: str) -> bool:
-    """判断 public / created schema 下的目标表是否存在。"""
+    """判断 public 或 created schema 下的目标表是否存在。
+
+    :param conn: 数据库连接对象
+    :param table_name: 表名
+    :param source: 数据源 ("public" 或 "created")
+    :return: 表存在则返回 True，否则返回 False
+    """
     if source == "created":
         row = conn.execute(
             """
@@ -56,7 +84,13 @@ def mode_payload_table_exists(conn: Any, table_name: str, source: str) -> bool:
 
 
 def mode_payload_table_columns(conn: Any, table_name: str, source: str) -> tuple[str, ...]:
-    """读取目标表列名，兼容 public / created schema。"""
+    """读取目标表的列名列表，兼容 public 和 created schema。
+
+    :param conn: 数据库连接对象
+    :param table_name: 表名
+    :param source: 数据源 ("public" 或 "created")
+    :return: 列名字符串元组，按序号排列
+    """
     if source == "created":
         rows = conn.execute(
             """
@@ -77,7 +111,23 @@ def build_admin_mode_payload_filters(
     web_filter: str = "",
     search: str = "",
 ) -> tuple[list[str], list[Any]]:
-    """构建 mode_payload 列表页筛选条件。"""
+    """构建 mode_payload 列表页的 SQL WHERE 筛选条件。
+
+    支持三种筛选维度：
+    - ``type_filter``: 按 type 列精确匹配
+    - ``web_filter``: 按 web_id 或 web 列精确匹配（任一列存在即可匹配）
+    - ``search``: 按所有列（除 id 外）模糊搜索
+
+    若指定的筛选列在目标表中不存在，则生成 ``1 = 0`` 空条件。
+
+    :param columns: 目标表的列名元组
+    :param type_filter: 彩种类型筛选值（字符串），为空则不过滤
+    :param web_filter: 站点 web 标识筛选值（字符串），为空则不过滤
+    :param search: 模糊搜索关键字，为空则不过滤
+    :return: (where_clauses, params) 元组
+             - where_clauses: SQL WHERE 子句列表（不含 WHERE 关键字）
+             - params: 对应的参数列表
+    """
     where_clauses: list[str] = []
     params: list[Any] = []
 
@@ -116,9 +166,21 @@ def build_admin_mode_payload_filters(
 
 
 def sort_mode_payload_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按 year / term / 来源 / 创建时间排序。"""
+    """按 year / term / 数据来源 / 创建时间对 mode_payload 行进行排序。
+
+    排序规则（降序）：
+    1. 年份（year）
+    2. 期数（term）
+    3. 数据来源排名（created > public），确保同一期次下生成数据优先展示
+    4. 记录 ID（数字优先，文本取数字部分）
+    5. 创建时间（created_at）
+
+    :param rows: 待排序的行字典列表，每行需包含 year、term 等字段
+    :return: 排序后的行字典列表
+    """
 
     def parse_int_like(value: Any) -> int:
+        """将类似数字的值解析为整数，用于排序比较。不可解析时返回 -1。"""
         text = str(value or "").strip()
         if not text:
             return -1
@@ -150,7 +212,19 @@ def fetch_mode_payload_source_rows(
     web_filter: str = "",
     search: str = "",
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """读取单一数据源下的 mode_payload 行数据。"""
+    """从单一数据源（public 或 created）读取 mode_payload 表中的行数据。
+
+    :param conn: 数据库连接对象
+    :param table_name: 表名
+    :param source: 数据源 ("public" 或 "created"，不支持 "all")
+    :param type_filter: 彩种类型筛选值，可选
+    :param web_filter: 站点 web 筛选值，可选
+    :param search: 模糊搜索关键字，可选
+    :return: (rows, columns) 元组
+             - rows: 行字典列表
+             - columns: 列名列表
+    :raises ValueError: 当 source 为 "all" 时抛出（不适用于本函数）
+    """
     normalized_source = normalize_mode_payload_source(source)
     if normalized_source == "all":
         raise ValueError("fetch_mode_payload_source_rows 不支持 all，请分别读取 public / created。")
@@ -186,7 +260,16 @@ def fetch_mode_payload_source_rows(
 
 
 def normalize_mode_payload_row_id(row_id: Any) -> Any:
-    """兼容 public 整数 id 与 created 的 `c123` 字符串 id。"""
+    """兼容 public 的整数 id 与 created 的 ``c123`` 字符串 id。
+
+    自动判断 row_id 类型并返回对应的 id 值：
+    - 纯数字字符串或整数 → 返回 int
+    - 非纯数字字符串 → 原样返回
+
+    :param row_id: 行 ID（整数或字符串）
+    :return: 归一化后的 ID（int 或 str）
+    :raises ValueError: 当 row_id 为空时抛出
+    """
     text = str(row_id or "").strip()
     if not text:
         raise ValueError("row_id 不能为空。")
@@ -203,7 +286,26 @@ def list_mode_payload_rows(
     search: str = "",
     source: str = "public",
 ) -> dict[str, Any]:
-    """新版 mode_payload 列表：支持 public / created / all 三种数据源。"""
+    """获取 mode_payload 表的行数据列表，支持分页和三种数据源模式。
+
+    数据源模式：
+    - ``"public"``: 仅查询 public schema 下的表
+    - ``"created"``: 仅查询 created schema 下的表
+    - ``"all"``: 合并 public 和 created 两个数据源的结果，
+      每行增加 ``data_source`` 字段标记来源
+
+    :param db_path: 数据库文件路径
+    :param table_name: mode_payload 表名（必须符合 ``mode_payload_{数字}`` 格式）
+    :param type_filter: 彩种类型筛选值，可选
+    :param web_filter: 站点 web 筛选值，可选
+    :param page: 页码（从 1 开始），默认 1
+    :param page_size: 每页条数（1-100），默认 50
+    :param search: 模糊搜索关键字，可选
+    :param source: 数据源 ("public" / "created" / "all")，默认 "public"
+    :return: 字典，包含 rows（当前页行数据列表）、total（总行数）、
+             page（当前页码）、page_size（每页条数）、columns（列名列表）
+    :raises ValueError: 当表名无效时抛出
+    """
     table_name = validate_mode_payload_table(table_name)
     page = max(1, int(page))
     page_size = min(max(1, int(page_size)), 100)
@@ -273,7 +375,21 @@ def update_mode_payload_row(
     data: dict[str, Any],
     source: str = "public",
 ) -> dict[str, Any]:
-    """新版更新接口：支持修改 public 或 created schema 中的记录。"""
+    """更新 mode_payload 表中的单行数据。
+
+    支持修改 public 或 created schema 中的记录。
+    自动过滤 id、table_modes_id、data_source 等不可编辑的字段，
+    仅更新目标表中实际存在的列。
+
+    :param db_path: 数据库文件路径
+    :param table_name: mode_payload 表名（必须符合 ``mode_payload_{数字}`` 格式）
+    :param row_id: 行 ID（整数或字符串，支持 created 的 "c123" 格式）
+    :param data: 要更新的字段字典
+    :param source: 数据源 ("public" 或 "created")，不支持 "all"
+    :return: 字典，包含 ``row`` 键，值为更新后的行数据字典
+    :raises ValueError: 当表名无效、数据源为 "all"、表不存在、
+                       无可编辑列、或行 ID 不存在时抛出
+    """
     table_name = validate_mode_payload_table(table_name)
     normalized_source = normalize_mode_payload_source(source)
     if normalized_source == "all":
@@ -324,7 +440,16 @@ def delete_mode_payload_row(
     row_id: Any,
     source: str = "public",
 ) -> None:
-    """新版删除接口：支持删除 public 或 created schema 中的记录。"""
+    """从 mode_payload 表中删除单行数据。
+
+    支持删除 public 或 created schema 中的记录。
+
+    :param db_path: 数据库文件路径
+    :param table_name: mode_payload 表名（必须符合 ``mode_payload_{数字}`` 格式）
+    :param row_id: 行 ID（整数或字符串，支持 created 的 "c123" 格式）
+    :param source: 数据源 ("public" 或 "created")，不支持 "all"
+    :raises ValueError: 当表名无效、数据源为 "all"、表不存在、或行 ID 不存在时抛出
+    """
     table_name = validate_mode_payload_table(table_name)
     normalized_source = normalize_mode_payload_source(source)
     if normalized_source == "all":

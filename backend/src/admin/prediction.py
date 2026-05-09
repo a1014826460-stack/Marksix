@@ -1,4 +1,13 @@
-"""Admin 预测管理 — 模块同步/生成/批量操作/安全控制。
+"""
+Admin 预测管理 —— 模块同步 / 生成 / 批量操作 / 安全控制。
+
+提供以下核心能力：
+- 站点预测模块的同步与蓝图查询
+- 预测行数据的构建与规范化
+- 开奖可见性安全控制（防止未开奖期次泄露号码）
+- 预测 API 响应构建
+- 期号范围解析与已开奖数据查询
+- 批量生成预测数据 & 单表重生成
 
 从 app.py 提取，不改变任何函数签名与行为。
 """
@@ -30,6 +39,7 @@ from utils.created_prediction_store import (  # noqa: E402
     schema_table_exists, table_column_names, upsert_created_prediction_row,
 )
 
+# 前端需要的站点预测模块 mode_id 清单，按展示顺序排列
 REQUIRED_SITE_PREDICTION_MODE_IDS = (
     3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
     44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
@@ -39,15 +49,31 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
 
 
 def utc_now() -> str:
+    """获取当前 UTC 时间，返回 ISO 8601 格式字符串。
+
+    :return: 当前 UTC 时间的 ISO 8601 字符串
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
 def connect(db_path: str | Path) -> Any:
+    """打开并返回数据库连接对象。
+
+    :param db_path: SQLite 数据库文件路径（字符串或 pathlib.Path 对象）
+    :return: 数据库连接对象
+    """
     return db_connect(db_path)
 
 
 def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
-    """返回站点预测模块的标准配置清单，并按前端要求的 mode_id 顺序输出。"""
+    """获取站点预测模块的标准配置清单，按前端要求的 mode_id 顺序输出。
+
+    遍历所有预测配置，根据 ``REQUIRED_SITE_PREDICTION_MODE_IDS`` 筛选并排序，
+    生成每个模块的蓝图字典，包含 mode_id、sort_order 等字段。
+
+    :return: 预测模块蓝图列表，每个元素包含 key、mode_id、sort_order 等字段
+    :raises ValueError: 当某个必需 mode_id 在预测配置中不存在时抛出
+    """
     configs_by_mode_id: dict[int, dict[str, Any]] = {}
     for item in list_prediction_configs():
         try:
@@ -69,7 +95,14 @@ def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
 
 
 def get_site_prediction_module_blueprint_by_key(mechanism_key: str) -> dict[str, Any]:
-    """按 mechanism_key 获取站点允许使用的模块配置。"""
+    """按 mechanism_key 获取站点允许使用的模块配置。
+
+    从站点预测模块蓝图清单中查找匹配 mechanism_key 的配置项。
+
+    :param mechanism_key: 预测机制的唯一标识 key
+    :return: 匹配的模块蓝图字典
+    :raises ValueError: 当 mechanism_key 不在站点模块同步清单中时抛出
+    """
     for item in get_site_prediction_module_blueprints():
         if str(item["key"]) == str(mechanism_key):
             return item
@@ -81,7 +114,16 @@ def resolve_prediction_table_for_mode(
     mode_id: int,
     fallback_table: str = "",
 ) -> str:
-    """Resolve the payload table from mode_payload_tables for the selected mode_id."""
+    """根据 mode_id 从 mode_payload_tables 解析对应的数据表名。
+
+    优先从 mode_payload_tables 表中查找 mode_id 对应的 table_name；
+    若未找到，则依次回退到 fallback_table 或默认格式 ``mode_payload_{mode_id}``。
+
+    :param conn: 数据库连接对象
+    :param mode_id: 预测模式 ID（modes_id）
+    :param fallback_table: 可选，未找到映射时的回退表名
+    :return: 解析后的数据表名
+    """
     resolved_mode_id = int(mode_id or 0)
     if resolved_mode_id > 0 and conn.table_exists("mode_payload_tables"):
         row = conn.execute(
@@ -103,7 +145,14 @@ def resolve_prediction_table_for_mode(
 
 
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """将 site_prediction_modules 与前端站点模块清单保持同步。"""
+    """将 site_prediction_modules 表与前端站点模块清单保持同步。
+
+    对指定站点（或全部站点）的预测模块记录进行增量更新：
+    已存在的记录仅更新 mode_id 和 sort_order；不存在的记录则插入新行。
+
+    :param conn: 数据库连接对象
+    :param site_id: 可选，指定要同步的站点 ID；为 None 时同步所有托管站点
+    """
     blueprints = get_site_prediction_module_blueprints()
     allowed_keys = tuple(str(item["key"]) for item in blueprints)
     now = utc_now()
@@ -166,7 +215,7 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
 
 
 # ─────────────────────────────────────────────────────────
-# 预测行数据构建
+# 预测行数据构建 / Prediction row data construction
 # ─────────────────────────────────────────────────────────
 
 def build_generated_prediction_row_data(
@@ -180,10 +229,22 @@ def build_generated_prediction_row_data(
     generated_content: Any,
     db_path: str | Path = "",
 ) -> dict[str, Any]:
-    """将 predict() 的输出转换成 created schema 可直接落库的结构。
+    """将 ``predict()`` 的输出转换成 created schema 可直接落库的行数据结构。
 
-    若 term 非空，自动计算三期窗口字段 start=term, end=term-2，
-    目标表无 start/end 列时由 upsert 自动忽略。
+    自动处理：
+    - 三期窗口字段（start / end）的计算与填充
+    - 列表、字典等复杂类型的 JSON 序列化
+    - 根据 res_code 计算 res_sx（生肖）和 res_color（波色）
+
+    :param mode_id: 预测模式 ID
+    :param lottery_type: 彩种类型，默认空字符串
+    :param year: 年份，默认空字符串
+    :param term: 期号，非空时自动计算三期窗口（start=term, end=term-2）
+    :param web_value: 站点 web 标识，默认 "4"
+    :param res_code: 开奖号码（逗号分隔的 7 个数字），用于计算 res_sx 和 res_color
+    :param generated_content: ``predict()`` 返回的预测内容（dict / list / str）
+    :param db_path: 数据库路径，用于加载固定数据映射以计算生肖/波色
+    :return: 可直接写入数据库的行数据字典
     """
     web_val = str(web_value or "4")
     row_data: dict[str, Any] = {
@@ -239,7 +300,11 @@ def build_generated_prediction_row_data(
 
 
 def normalize_prediction_display_text(content: Any) -> str:
-    """将预测内容统一转为前端可直接展示的文本。"""
+    """将预测内容统一转为前端可直接展示的文本字符串。
+
+    :param content: 预测内容（可为 None、str、dict、list 等任意类型）
+    :return: 标准化后的展示文本字符串
+    """
     if content is None:
         return ""
     if isinstance(content, str):
@@ -250,7 +315,7 @@ def normalize_prediction_display_text(content: Any) -> str:
 
 
 # ─────────────────────────────────────────────────────────
-# 预测安全控制
+# 预测安全控制 / Prediction safety control
 # ─────────────────────────────────────────────────────────
 
 def lookup_draw_visibility(
@@ -260,7 +325,23 @@ def lookup_draw_visibility(
     year: Any = "",
     term: Any = "",
 ) -> dict[str, Any]:
-    """查询指定期次的开奖可见性，供预测接口做安全策略复用。"""
+    """查询指定期次的开奖可见性，供预测接口做安全策略复用。
+
+    根据 lottery_draws 表中的 is_opened 字段判断该期是否已开奖：
+    - 已开奖（is_opened=1）：result_visibility = "visible"
+    - 未开奖（is_opened=0）：result_visibility = "hidden"
+    - 找不到记录：result_visibility = "unknown"
+
+    :param conn: 数据库连接对象
+    :param lottery_type: 彩种类型（支持字符串如 "3" 或整数）
+    :param year: 年份
+    :param term: 期号
+    :return: 字典，包含以下字段：
+             - ``issue``: 期次字符串
+             - ``lottery_type`` / ``year`` / ``term``: 原始参数
+             - ``result_visibility``: "visible" / "hidden" / "unknown"
+             - ``reason``: "draw_found" / "draw_not_found" / "missing_issue_context"
+    """
     lottery_type_id = parse_issue_int(lottery_type)
     year_value = parse_issue_int(year)
     term_value = parse_issue_int(term)
@@ -307,7 +388,13 @@ def lookup_draw_visibility(
 
 
 def redact_prediction_result_fields(row_data: dict[str, Any]) -> dict[str, Any]:
-    """统一抹除开奖结果字段，避免未开奖期泄露号码、生肖、波色。"""
+    """统一抹除开奖结果字段，避免未开奖期次泄露号码、生肖、波色。
+
+    将 res_code、res_sx、res_color 三个字段置为空字符串。
+
+    :param row_data: 预测行数据字典
+    :return: 抹除敏感字段后的数据字典（新字典，不影响原数据）
+    """
     sanitized = dict(row_data)
     for field_name in ("res_code", "res_sx", "res_color"):
         sanitized[field_name] = ""
@@ -322,7 +409,18 @@ def apply_prediction_row_safety(
     year: Any = "",
     term: Any = "",
 ) -> dict[str, Any]:
-    """根据开奖状态决定是否需要对预测行做安全处理。"""
+    """根据开奖状态决定是否需要对预测行数据做安全处理。
+
+    如果目标期次尚未开奖，则抹除 res_code / res_sx / res_color 字段；
+    否则原样返回。
+
+    :param conn: 数据库连接对象
+    :param row_data: 预测行数据字典
+    :param lottery_type: 彩种类型
+    :param year: 年份
+    :param term: 期号
+    :return: 安全处理后的数据字典
+    """
     visibility = lookup_draw_visibility(
         conn,
         lottery_type=lottery_type,
@@ -342,9 +440,19 @@ def resolve_prediction_request_safety(
     term: Any = "",
     res_code: Any = "",
 ) -> tuple[str | None, dict[str, Any]]:
-    """检查预测请求是否允许携带 `res_code` 参与算法。
+    """检查预测请求是否允许携带 ``res_code`` 参与算法。
 
-    若目标期次已开奖，则拒绝携带 res_code（返回 None），防止利用已知结果作弊。
+    若目标期次已开奖，则拒绝携带 res_code（返回 None），防止利用已知结果作弊；
+    若未开奖，则正常传入 res_code。
+
+    :param conn: 数据库连接对象
+    :param lottery_type: 彩种类型
+    :param year: 年份
+    :param term: 期号
+    :param res_code: 请求中携带的开奖号码
+    :return: 元组 (safe_res_code, visibility_dict)
+             - safe_res_code: 允许使用的 res_code（已开奖时为 None）
+             - visibility_dict: 开奖可见性字典
     """
     normalized_res_code = str(res_code or "").strip() or ""
     visibility = lookup_draw_visibility(
@@ -359,7 +467,7 @@ def resolve_prediction_request_safety(
 
 
 # ─────────────────────────────────────────────────────────
-# API 响应构建
+# API 响应构建 / API response construction
 # ─────────────────────────────────────────────────────────
 
 def build_prediction_api_response(
@@ -369,7 +477,24 @@ def build_prediction_api_response(
     raw_result: dict[str, Any],
     safety: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """将 `predict()` 的原始返回包装成对外稳定的 HTTP 协议。"""
+    """将 ``predict()`` 的原始返回包装成对外稳定的 HTTP 协议格式。
+
+    构建一个标准化的 API 响应字典，包含以下区块：
+    - mechanism: 预测机制元信息
+    - source: 数据源信息
+    - request: 回显的请求参数
+    - context: 上下文信息（最新期次、开奖可见性）
+    - prediction: 预测结果（含标签、文本）
+    - backtest: 回测结果
+    - explanation: 解释信息
+    - warning: 警告信息
+
+    :param mechanism_key: 预测机制的唯一标识 key
+    :param request_payload: 前端请求参数字典
+    :param raw_result: ``predict()`` 的原始返回结果
+    :param safety: 可选，开奖可见性字典（由 ``lookup_draw_visibility`` 返回）
+    :return: 标准化的 API 响应字典
+    """
     prediction_block = raw_result.get("prediction") or {}
     normalized_safety = dict(safety or {})
 
@@ -428,10 +553,20 @@ def build_prediction_api_response(
 
 # ─────────────────────────────────────────────────────────
 # 期号范围解析 & 开奖数据查询
+# Issue range parsing & draw data query
 # ─────────────────────────────────────────────────────────
 
 def parse_issue_range_value(value: Any, label: str) -> tuple[int, int]:
-    """解析前端传入的期号范围值，格式示例：2026001 / 2026-001。"""
+    """解析前端传入的期号范围值，返回 (year, term) 元组。
+
+    支持格式示例：``"2026001"``、``"2026-001"``、``"2026_001"`` 等，
+    自动去除所有非数字字符后解析。
+
+    :param value: 前端传入的期号值（字符串或数字）
+    :param label: 字段标签（如 "起始期号"），用于错误提示
+    :return: (year, term) 元组
+    :raises ValueError: 当期号格式无效、年份/期数格式无效、或期数为 0 时抛出
+    """
     digits = re.sub(r"\D", "", str(value or ""))
     if len(digits) < 5:
         raise ValueError(f"{label} 格式无效，请输入完整期号（例如 2026001）。")
@@ -456,7 +591,17 @@ def list_opened_draws_in_issue_range(
     start_issue: tuple[int, int],
     end_issue: tuple[int, int],
 ) -> list[dict[str, Any]]:
-    """获取指定彩种、指定期号范围内的已开奖期次。"""
+    """获取指定彩种、指定期号范围内的已开奖期次列表。
+
+    返回仅包含已开奖（is_opened=1）且在期号范围内的记录，
+    号码会规范化为两位数格式（如 "01,15,23,..."）。
+
+    :param conn: 数据库连接对象
+    :param lottery_type_id: 彩种类型 ID
+    :param start_issue: 起始期号 (year, term) 元组
+    :param end_issue: 结束期号 (year, term) 元组
+    :return: 已开奖期次列表，每个元素包含 year、term、numbers_str 字段
+    """
     rows = conn.execute(
         """
         SELECT year, term, numbers
@@ -503,10 +648,19 @@ def list_opened_draws_in_issue_range(
 
 # ─────────────────────────────────────────────────────────
 # 批量生成 & 单表重生成
+# Bulk generation & single-table regeneration
 # ─────────────────────────────────────────────────────────
 
 def _compute_res_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> tuple[str, str]:
-    """根据开奖号码字符串计算 res_sx 和 res_color 逗号分隔值。"""
+    """根据开奖号码字符串计算 res_sx（生肖）和 res_color（波色）逗号分隔值。
+
+    内部辅助函数，供批量生成时使用。
+
+    :param numbers_str: 逗号分隔的开奖号码字符串（如 "01,15,23,34,42,08,11"）
+    :param zodiac_map: 号码 → 生肖映射字典（{生肖名: [号码列表], ...}）
+    :param color_map: 号码 → 波色映射字典（{波色名: [号码列表], ...}）
+    :return: (res_sx, res_color) 元组，均为逗号分隔的字符串
+    """
     res_sx_parts: list[str] = []
     res_color_parts: list[str] = []
     for num_str in (numbers_str or "").split(","):
@@ -539,9 +693,25 @@ def bulk_generate_site_prediction_data(
 ) -> dict[str, Any]:
     """为站点所选模块批量生成指定期号范围内的预测数据。
 
-    payload 可选字段:
-    - mechanism_keys: 要生成的模块 key 列表，为空则生成全部
-    - lottery_type / start_issue / end_issue: 期号范围
+    对指定期号范围内的每一期已开奖数据，依次对每个启用的预测模块执行
+    ``predict()`` 并写入 created schema 对应的 mode_payload 表中。
+    支持以下 payload 字段：
+
+    - ``mechanism_keys``: 要生成的模块 key 列表（list），为空则生成全部启用模块
+    - ``lottery_type``: 彩种类型 ID
+    - ``start_issue``: 起始期号（如 "2026001"）
+    - ``end_issue``: 结束期号（如 "2026127"）
+
+    特殊处理：
+    - mode_id=65（特码段数）：不调用 predict()，根据特码直接生成 12 个号码段
+    - 台湾彩（lottery_type_id=3）：未开奖期次不传 res_code，防止号码泄露
+
+    :param db_path: 数据库文件路径
+    :param site_id: 站点 ID
+    :param payload: 批量生成参数字典
+    :return: 批量生成报告字典，包含 site_id、site_name、total_modules、
+             draw_count、inserted、updated、errors 及各模块详细报告
+    :raises ValueError: 当起始期号大于结束期号或范围内无已开奖数据时抛出
     """
     from admin.crud import get_site as _get_site
 
@@ -728,7 +898,29 @@ def regenerate_payload_data(
     year: str = "",
     term: str = "",
 ) -> dict[str, Any]:
-    """调用 predict() 生成新预测，覆盖 mode_payload 表中同彩种同期数的数据。"""
+    """调用 ``predict()`` 生成新预测，覆盖 mode_payload 表中同彩种同期数的数据。
+
+    用于后台"重新生成"单条预测数据的操作。对输入参数进行严格校验：
+    - table_name 必须符合 ``mode_payload_{数字}`` 格式
+    - res_code 必须为 7 个逗号分隔的数字
+    - year 必须为 4 位数字
+    - term 必须为 1-5 位数字且不为 0
+
+    特殊处理：
+    - mode_id=65（特码段数）：根据特码直接计算 12 个号码段，不调用 predict()
+
+    :param db_path: 数据库文件路径
+    :param table_name: 目标 mode_payload 表名（如 "mode_payload_8"）
+    :param mechanism_key: 预测机制的唯一标识 key
+    :param res_code: 开奖号码（逗号分隔的 7 个数字）
+    :param lottery_type: 彩种类型，默认 "3"
+    :param year: 年份（4 位数字），可选
+    :param term: 期号（1-5 位数字），可选
+    :return: 字典，包含 inserted_id、action、created_at、prediction_labels、
+             content、table、qualified_table 等字段
+    :raises ValueError: 当 mechanism_key 为空、res_code 格式无效、year/term 格式无效、
+                        表不存在或生成数据无法匹配目标表列时抛出
+    """
     from admin.payload import validate_mode_payload_table as _validate
 
     table_name = _validate(table_name)
