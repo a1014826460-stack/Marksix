@@ -52,22 +52,30 @@ def _upsert_draw(
     draw_time: str,
     is_opened: int,
     now: str,
+    next_time: str = "",
 ) -> None:
     conn.execute(
         """
         INSERT INTO lottery_draws
             (lottery_type_id, year, term, numbers, draw_time,
-             status, is_opened, next_term, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+             status, is_opened, next_term, next_time, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
         ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
             numbers = excluded.numbers,
             draw_time = excluded.draw_time,
             is_opened = excluded.is_opened,
+            next_time = excluded.next_time,
             updated_at = excluded.updated_at
         """,
         (lottery_type_id, year, term, numbers, draw_time,
-         is_opened, term + 1, now, now),
+         is_opened, term + 1, next_time, now, now),
     )
+    # 同步更新 lottery_types.next_time，保持彩种管理页面数据一致
+    if next_time:
+        conn.execute(
+            "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+            (next_time, now, lottery_type_id),
+        )
 
 
 def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
@@ -109,7 +117,8 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
                 year = int(open_time[:4])
                 term_num = int(item["issue"])
                 _upsert_draw(conn, hk_meta["id"], year, term_num,
-                             item["result"], open_time, 1, now)
+                             item["result"], open_time, 1, now,
+                             next_time=str(item.get("next_time") or ""))
                 saved += 1
             except (ValueError, KeyError) as e:
                 print(f"  SKIP: {item.get('issue', '?')} - {e}")
@@ -154,7 +163,8 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
                 year = int(expect[:4])
                 term_num = int(expect[4:])
                 _upsert_draw(conn, macau_meta["id"], year, term_num,
-                             item["result"], item["open_time"], 1, now)
+                             item["result"], item["open_time"], 1, now,
+                             next_time=str(item.get("next_time") or ""))
                 saved += 1
             except (ValueError, KeyError) as e:
                 print(f"  SKIP: {item.get('issue', '?')} - {e}")
@@ -192,12 +202,113 @@ def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, 
                 if not numbers:
                     continue
                 _upsert_draw(conn, taiwan_meta["id"], year, term_num, numbers,
-                             draw_time, is_opened, now)
+                             draw_time, is_opened, now,
+                             next_time=str(item.get("next_time") or ""))
                 saved += 1
             except (ValueError, KeyError) as e:
                 print(f"  SKIP: {item.get('term', '?')} - {e}")
     return {"source": "taiwan", "total_in_file": total_in_file,
             "parsed": len(records), "saved": saved}
+
+
+def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
+    """爬取指定彩种的开奖数据，然后自动生成所有启用站点的预测资料。
+
+    供 HTTP API（app.py 的 _crawl_and_generate）和定时调度器
+    （CrawlerScheduler._run_once）共同使用，避免逻辑重复。
+
+    :param db_path: 数据库连接字符串
+    :param lottery_type_id: 彩种 ID（1=香港, 2=澳门, 3=台湾）
+    :return: 包含 lottery_name、crawl、generation 三部分的字典
+    """
+    from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
+    from db import connect as _connect
+
+    # ── 1. 确定彩种名称 ──
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, name FROM lottery_types WHERE id = ?", (lottery_type_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError(f"lottery_type_id={lottery_type_id} 不存在")
+        lottery_name = str(row["name"])
+
+    # ── 2. 执行爬虫 ──
+    crawl_result: dict[str, Any] = {"status": "skipped", "message": ""}
+    if lottery_name in ("香港彩", "六合彩"):
+        crawl_result = run_hk_crawler(db_path)
+    elif lottery_name == "澳门彩":
+        crawl_result = run_macau_crawler(db_path)
+    else:
+        crawl_result["message"] = f"台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON"
+
+    # ── 3. 自动生成预测资料 ──
+    generation_results: list[dict[str, Any]] = []
+    with _connect(db_path) as conn:
+        sites = conn.execute(
+            "SELECT id, name, lottery_type_id FROM managed_sites WHERE enabled = 1"
+        ).fetchall()
+
+        for site in sites:
+            site_id = int(site["id"])
+            modules = conn.execute(
+                """
+                SELECT id, mechanism_key, mode_id
+                FROM site_prediction_modules
+                WHERE site_id = ? AND status = 1
+                ORDER BY sort_order, id
+                """,
+                (site_id,),
+            ).fetchall()
+
+            if not modules:
+                continue
+
+            latest_draw = conn.execute(
+                """
+                SELECT year, term FROM lottery_draws
+                WHERE lottery_type_id = ? AND is_opened = 1
+                ORDER BY year DESC, term DESC LIMIT 1
+                """,
+                (lottery_type_id,),
+            ).fetchone()
+
+            if not latest_draw:
+                continue
+
+            latest_term = int(latest_draw["term"])
+            latest_year = int(latest_draw["year"])
+
+            try:
+                gen_result = _bulk_gen(
+                    db_path,
+                    site_id,
+                    {
+                        "lottery_type": lottery_type_id,
+                        "start_issue": f"{latest_year}{max(1, latest_term):03d}",
+                        "end_issue": f"{latest_year}{latest_term:03d}",
+                        "mechanism_keys": [str(m["mechanism_key"]) for m in modules],
+                    },
+                )
+                generation_results.append({
+                    "site_id": site_id,
+                    "site_name": str(site["name"]),
+                    "inserted": gen_result.get("inserted", 0),
+                    "updated": gen_result.get("updated", 0),
+                    "errors": gen_result.get("errors", 0),
+                })
+            except Exception as exc:
+                generation_results.append({
+                    "site_id": site_id,
+                    "site_name": str(site["name"]),
+                    "error": str(exc),
+                })
+
+    return {
+        "lottery_name": lottery_name,
+        "crawl": crawl_result,
+        "generation": generation_results,
+    }
 
 
 class CrawlerScheduler:
@@ -234,78 +345,16 @@ class CrawlerScheduler:
 
     def _run_once(self) -> None:
         """执行一轮爬取：香港彩 → 澳门彩，爬取后自动生成预测数据。"""
-        # 收集爬取到的彩种 ID，后续只对这些彩种生成预测
         crawled_type_ids: list[int] = []
 
         with self._lock:
-            # ── 香港彩 ──
-            try:
-                result = run_hk_crawler(self.db_path)
-                print(f"  [HK] {result}")
-                crawled_type_ids.append(1)  # lottery_type_id=1
-            except Exception as e:
-                print(f"  [HK] error: {e}")
-
-            # ── 澳门彩 ──
-            try:
-                result = run_macau_crawler(self.db_path)
-                print(f"  [Macau] {result}")
-                crawled_type_ids.append(2)  # lottery_type_id=2
-            except Exception as e:
-                print(f"  [Macau] error: {e}")
-
-        # ── 爬取完成后，自动为相关彩种生成预测数据 ──
-        if crawled_type_ids:
-            try:
-                from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
-                from db import connect as _db_connect
-
-                with _db_connect(self.db_path) as conn:
-                    # 遍历所有启用站点
-                    sites = conn.execute(
-                        "SELECT id, name, lottery_type_id FROM managed_sites WHERE enabled = 1"
-                    ).fetchall()
-
-                    for site in sites:
-                        site_id = int(site["id"])
-                        site_lt = int(site.get("lottery_type_id") or 0)
-
-                        # 只处理匹配爬取彩种的站点
-                        relevant_types = [t for t in crawled_type_ids if site_lt in (0, t)]
-                        if not relevant_types:
-                            continue
-
-                        # 获取该站点启用模块
-                        modules = conn.execute(
-                            "SELECT mechanism_key FROM site_prediction_modules WHERE site_id = ? AND status = 1",
-                            (site_id,),
-                        ).fetchall()
-                        if not modules:
-                            continue
-
-                        for lt_id in relevant_types:
-                            latest = conn.execute(
-                                "SELECT year, term FROM lottery_draws WHERE lottery_type_id = ? AND is_opened = 1 ORDER BY year DESC, term DESC LIMIT 1",
-                                (lt_id,),
-                            ).fetchone()
-                            if not latest:
-                                continue
-                            year, term = int(latest["year"]), int(latest["term"])
-                            try:
-                                gen = _bulk_gen(
-                                    self.db_path, site_id,
-                                    {
-                                        "lottery_type": lt_id,
-                                        "start_issue": f"{year}{max(1, term):03d}",
-                                        "end_issue": f"{year}{term:03d}",
-                                        "mechanism_keys": [str(m["mechanism_key"]) for m in modules],
-                                    },
-                                )
-                                print(f"  [AutoGen] site={site_id} lt={lt_id} inserted={gen.get('inserted',0)} updated={gen.get('updated',0)} errors={gen.get('errors',0)}")
-                            except Exception as e:
-                                print(f"  [AutoGen] site={site_id} lt={lt_id} error: {e}")
-            except Exception as e:
-                print(f"  [AutoGen] init error: {e}")
+            for lt_id, label in [(1, "HK"), (2, "Macau")]:
+                try:
+                    result = crawl_and_generate_for_type(self.db_path, lt_id)
+                    print(f"  [{label}] crawl={result.get('crawl',{})} generation_count={len(result.get('generation',[]))}")
+                    crawled_type_ids.append(lt_id)
+                except Exception as e:
+                    print(f"  [{label}] error: {e}")
 
     def _run(self) -> None:
         """定时执行爬取（由内部定时器调用）。"""

@@ -76,8 +76,7 @@ from utils.created_prediction_store import (  # noqa: E402
     table_column_names,
     upsert_created_prediction_row,
 )
-from db import auto_increment_primary_key, connect as db_connect, detect_database_engine, quote_identifier  # noqa: E402
-connect = db_connect  # 简写，兼容现有函数体内 connect(...) 调用
+from db import auto_increment_primary_key, connect, detect_database_engine, quote_identifier, utc_now  # noqa: E402
 from auth import (  # noqa: E402
     auth_user_from_token,
     ensure_generation_permission,
@@ -159,16 +158,10 @@ from tables import (  # noqa: E402
 )
 from crawler_service import (  # noqa: E402
     CrawlerScheduler,
+    crawl_and_generate_for_type,
     import_taiwan_json,
     run_hk_crawler,
     run_macau_crawler,
-)
-
-REQUIRED_SITE_PREDICTION_MODE_IDS = (
-    3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
-    44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
-    57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
-    67, 68, 69, 151, 197,
 )
 
 # ── 后台异步任务 ─────────────────────────────────────────
@@ -206,114 +199,9 @@ def _get_background_job(job_id: str) -> dict[str, Any] | None:
 def _crawl_and_generate(db_path: str, lottery_type_id: int) -> dict[str, Any]:
     """爬取指定彩种的开奖数据，然后自动生成所有启用站点的预测资料。
 
-    流程：
-    1. 根据 lottery_type_id 确定彩种名称（香港/澳门/台湾）
-    2. 调用对应爬虫采集最新开奖数据，写入 lottery_draws 表
-    3. 遍历所有启用站点，对每个站点的全部启用预测模块
-       用最新一期开奖数据生成预测，写入 created schema
-
-    :param db_path: 数据库连接字符串
-    :param lottery_type_id: 彩种 ID（1=香港, 2=澳门, 3=台湾）
-    :return: 包含爬取结果和生成统计的字典
+    委托给 crawler_service.crawl_and_generate_for_type 执行实际逻辑。
     """
-    # ── 1. 确定彩种名称 ──
-    with connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT id, name FROM lottery_types WHERE id = ?", (lottery_type_id,)
-        ).fetchone()
-        if not row:
-            raise ValueError(f"lottery_type_id={lottery_type_id} 不存在")
-        lottery_name = str(row["name"])
-
-    # ── 2. 执行爬虫 ──
-    crawl_result: dict[str, Any] = {"status": "skipped", "message": ""}
-    if lottery_name in ("香港彩", "六合彩"):
-        crawl_result = run_hk_crawler(db_path)
-    elif lottery_name == "澳门彩":
-        crawl_result = run_macau_crawler(db_path)
-    else:
-        crawl_result["message"] = f"台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON"
-
-    # ── 3. 自动生成预测资料 ──
-    from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
-
-    generation_results: list[dict[str, Any]] = []
-    with connect(db_path) as conn:
-        # 遍历所有启用站点
-        sites = conn.execute(
-            "SELECT id, name, lottery_type_id FROM managed_sites WHERE enabled = 1"
-        ).fetchall()
-
-        for site in sites:
-            site_id = int(site["id"])
-
-            # 对每个启用站点，用爬取到的彩种数据生成其所有模块的预测
-            # 不再限制站点必须匹配爬取的彩种——站点可以拥有多个彩种的模块
-
-            # 获取该站点下所有启用模块
-            modules = conn.execute(
-                """
-                SELECT id, mechanism_key, mode_id
-                FROM site_prediction_modules
-                WHERE site_id = ? AND status = 1
-                ORDER BY sort_order, id
-                """,
-                (site_id,),
-            ).fetchall()
-
-            if not modules:
-                continue
-
-            # 获取该彩种最新一期开奖数据，用于确定生成范围
-            latest_draw = conn.execute(
-                """
-                SELECT year, term FROM lottery_draws
-                WHERE lottery_type_id = ? AND is_opened = 1
-                ORDER BY year DESC, term DESC LIMIT 1
-                """,
-                (lottery_type_id,),
-            ).fetchone()
-
-            if not latest_draw:
-                continue
-
-            latest_term = int(latest_draw["term"])
-            latest_year = int(latest_draw["year"])
-
-            # 生成最近一期预测
-            try:
-                gen_result = _bulk_gen(
-                    db_path,
-                    site_id,
-                    {
-                        "lottery_type": lottery_type_id,
-                        "start_issue": f"{latest_year}{max(1, latest_term - 0):03d}",
-                        "end_issue": f"{latest_year}{latest_term:03d}",
-                        "mechanism_keys": [str(m["mechanism_key"]) for m in modules],
-                    },
-                )
-                generation_results.append({
-                    "site_id": site_id,
-                    "site_name": str(site["name"]),
-                    "inserted": gen_result.get("inserted", 0),
-                    "updated": gen_result.get("updated", 0),
-                    "errors": gen_result.get("errors", 0),
-                })
-            except Exception as exc:
-                generation_results.append({
-                    "site_id": site_id,
-                    "site_name": str(site["name"]),
-                    "error": str(exc),
-                })
-
-    return {
-        "lottery_name": lottery_name,
-        "crawl": crawl_result,
-        "generation": generation_results,
-    }
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return crawl_and_generate_for_type(db_path, lottery_type_id)
 
 def create_fetch_run(db_path: str | Path, site_id: int) -> int:
     with connect(db_path) as conn:
@@ -519,6 +407,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send_json(
                     get_public_latest_draw(self.db_path, lottery_type)
                 )
+                return
+
+            if method == "GET" and path == "/api/public/next-draw-deadline":
+                lottery_type = int(query.get("lottery_type", ["3"])[0] or 3)
+                with connect(self.db_path) as conn:
+                    row = conn.execute(
+                        "SELECT next_time FROM lottery_draws WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != '' ORDER BY year DESC, term DESC LIMIT 1",
+                        (lottery_type,),
+                    ).fetchone()
+                    self.send_json({"next_time": str(row["next_time"]) if row else None})
                 return
 
             if method == "GET" and path == "/api/public/draw-history":

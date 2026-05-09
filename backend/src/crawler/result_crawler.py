@@ -13,54 +13,50 @@ from typing import Union, List, Dict, Any
 # ──────────────────────────────────────────────────────────────
 
 
-def fetch_hongkong_history_data(
-    date: int = 2026,
-    collect_url: str = "https://www.lnlllt.com/api.php",
-) -> tuple[str, int]:
+def fetch_current_term_data(
+    type: int = 1,
+    ) -> tuple[str, int]:
     """
     获取香港彩历史数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
 
     Args:
-        date (int): 需要查询的年份，默认为2026年。
-        collect_url (str): 采集接口的完整URL地址，
-            由调用方从数据库 lottery_types 表的 collect_url 字段获取并传入，
-            避免将URL硬编码在脚本中。
+        type (int): 需要查询的彩票格式，1为香港；2为澳门。
 
     Returns:
         tuple[str, int]: 包含响应文本（JSON字符串）和HTTP状态码的元组。
     """
     # ── 构造请求头，模拟浏览器访问 ──
     headers = {
-        "accept": "*/*",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
         "cache-control": "no-cache",
         "pragma": "no-cache",
-        "priority": "u=1, i",
-        "referer": "https://www.lnlllt.com/?id=20",
+        "priority": "u=0, i",
+        "referer": "https://www.lnlllt.com/",
         "sec-ch-ua": "\"Microsoft Edge\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\"",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
     }
     cookies = {
         # 当前接口不需要cookie，保留空字典以便后续扩展
     }
-
+    url = "https://www.lnlllt.com/api.php"  
+    
     # ── 构造查询参数，请求指定年份的历史开奖数据 ──
     # lottery_id=20 表示香港六合彩，page=1取第一页，limit=50每页最多50条
     params = {
-        "action": "history_page",
-        "lottery_id": "20",
-        "date": str(date),
-        "page": "1",
-        "limit": "50"
+        "lottery_id": "49" if type == 2 else "20",
+        "action": "current"
     }
 
-    # ── 使用从数据库传入的 collect_url 发起请求 ──
-    response = requests.get(collect_url, headers=headers, cookies=cookies, params=params)
+    # ── 使用从数据库传入的 url 发起请求 ──
+    response = requests.get(url, headers=headers, cookies=cookies, params=params)
 
     return response.text, response.status_code
 
@@ -104,9 +100,9 @@ def transform_standard_list(data: Union[str, List[Dict[str, Any]]]) -> List[Dict
 
 
 if __name__ == "__main__":
-    history_data, status_code = fetch_hongkong_history_data()
-    transformed_data = transform_standard_list(history_data)
-    print(transformed_data)
-    # print(history_data)
+    history_data, status_code = fetch_current_term_data(type=2)
+    # transformed_data = transform_standard_list(history_data)
+    # print(transformed_data)
+    print(history_data)
     print(status_code)
-    print(len(transformed_data))
+    # print(len(transformed_data))

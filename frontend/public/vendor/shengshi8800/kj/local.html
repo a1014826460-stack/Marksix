@@ -90,7 +90,6 @@
         <span id="lotteryLabel">台湾彩</span> 第<font class="kj-font-red"><span id="q">--</span></font>期
       </div>
       <div class="new-KJ-TabBox-box-tit-r">
-        <span id="beijingTime" class="beijing-time-badge">北京时间 --:--:--</span>
         <a id="historyLink" target="_blank" href="/history?type=3" class="kj-font-red">查看历史记录</a>
       </div>
     </div>
@@ -172,27 +171,6 @@
         for (var i = 0; i < 7; i++) {
           setBall(i, null);
         }
-      }
-
-      function updateBeijingClock() {
-        var now = new Date();
-        var dateParts = beijingDateFormatter.formatToParts(now);
-        var timeText = beijingTimeFormatter.format(now);
-        var weekday = "";
-        var year = "";
-        var month = "";
-        var day = "";
-
-        for (var i = 0; i < dateParts.length; i++) {
-          var part = dateParts[i];
-          if (part.type === "weekday") weekday = part.value;
-          if (part.type === "year") year = part.value;
-          if (part.type === "month") month = part.value;
-          if (part.type === "day") day = part.value;
-        }
-
-        $("beijingTime").textContent = "北京时间 " + timeText;
-        $("beijingDate").textContent = weekday + " " + year + "-" + month + "-" + day;
       }
 
       function formatBeijingTime(date) {
@@ -311,8 +289,6 @@
 
       fillEmpty();
       updateHistoryLink();
-      updateBeijingClock();
-      setInterval(updateBeijingClock, 1000);
       load();
     })();
   </script>
