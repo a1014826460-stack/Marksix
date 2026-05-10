@@ -32,6 +32,7 @@ from helpers import (
     parse_issue_int, REQUIRED_SITE_PREDICTION_MODE_IDS, split_csv,
 )
 from mechanisms import get_prediction_config, list_prediction_configs  # noqa: E402
+from prediction_generation.service import generate_prediction_batch
 from utils.created_prediction_store import (  # noqa: E402
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
     quote_qualified_identifier as quote_schema_table,
@@ -689,28 +690,7 @@ def bulk_generate_site_prediction_data(
     site_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """为站点所选模块批量生成指定期号范围内的预测数据。
-
-    对指定期号范围内的每一期已开奖数据，依次对每个启用的预测模块执行
-    ``predict()`` 并写入 created schema 对应的 mode_payload 表中。
-    支持以下 payload 字段：
-
-    - ``mechanism_keys``: 要生成的模块 key 列表（list），为空则生成全部启用模块
-    - ``lottery_type``: 彩种类型 ID
-    - ``start_issue``: 起始期号（如 "2026001"）
-    - ``end_issue``: 结束期号（如 "2026127"）
-
-    特殊处理：
-    - mode_id=65（特码段数）：不调用 predict()，根据特码直接生成 12 个号码段
-    - 台湾彩（lottery_type_id=3）：未开奖期次不传 res_code，防止号码泄露
-
-    :param db_path: 数据库文件路径
-    :param site_id: 站点 ID
-    :param payload: 批量生成参数字典
-    :return: 批量生成报告字典，包含 site_id、site_name、total_modules、
-             draw_count、inserted、updated、errors 及各模块详细报告
-    :raises ValueError: 当起始期号大于结束期号或范围内无已开奖数据时抛出
-    """
+    """为站点批量生成预测数据，并统一委托给共享生成服务。"""
     from admin.crud import get_site as _get_site
 
     site = _get_site(db_path, site_id)
@@ -728,224 +708,19 @@ def bulk_generate_site_prediction_data(
     requested_keys = payload.get("mechanism_keys") or []
     if isinstance(requested_keys, str):
         requested_keys = [k.strip() for k in requested_keys.split(",") if k.strip()]
-
-    with connect(db_path) as conn:
-        sync_site_prediction_modules(conn, site_id)
-        zodiac_map, color_map = load_fixed_data_maps(conn)
-
-        query = """
-            SELECT id, mechanism_key, mode_id, status, sort_order
-            FROM site_prediction_modules
-            WHERE site_id = ?
-              AND status = 1
-        """
-        params: list[Any] = [site_id]
-        if requested_keys:
-            placeholders = ", ".join("?" for _ in requested_keys)
-            query += f" AND mechanism_key IN ({placeholders})"
-            params.extend(requested_keys)
-        query += " ORDER BY sort_order, id"
-
-        module_rows = conn.execute(query, params).fetchall()
-
-        draws = list_opened_draws_in_issue_range(conn, lottery_type, start_issue, end_issue)
-        if not draws:
-            raise ValueError("指定期号范围内没有可用的已开奖数据。")
-
-        # ── 未来期预测数据构造（res_code 为空，基于历史数据预测）──
-        future_periods = int(payload.get("future_periods") or 0)
-        future_draws: list[dict[str, Any]] = []
-        if future_periods > 0:
-            # 取最新一期已开奖记录作为基准
-            latest = draws[-1]
-            for offset in range(1, future_periods + 1):
-                fy, ft = _compute_next_issue(latest["year"], latest["term"], offset)
-                future_draws.append({
-                    "year": fy,
-                    "term": ft,
-                    "numbers_str": "",  # 无开奖号码
-                    "_future": True,    # 标记为未来期
-                })
-
-        # 安全机制：台湾彩 (type=3) 未开奖期次的号码不能用于预测
-        safety_draw_map: dict[tuple[int, int], bool] = {}
-        if int(lottery_type) == 3:
-            safety_rows = conn.execute(
-                """
-                SELECT year, term, is_opened FROM lottery_draws
-                WHERE lottery_type_id = ? AND is_opened = 0
-                """,
-                (int(lottery_type),),
-            ).fetchall()
-            for sr in safety_rows:
-                safety_draw_map[(int(sr["year"]), int(sr["term"]))] = True
-
-        module_reports: list[dict[str, Any]] = []
-        total_inserted = 0
-        total_updated = 0
-        total_errors = 0
-
-        for module_row in module_rows:
-            mechanism_key = str(module_row["mechanism_key"] or "")
-            mode_id = int(module_row["mode_id"] or 0)
-            config = get_prediction_config(mechanism_key)
-            table_name = resolve_prediction_table_for_mode(conn, mode_id, config.default_table)
-
-            module_report: dict[str, Any] = {
-                "module_id": int(module_row["id"]),
-                "mechanism_key": mechanism_key,
-                "mode_id": mode_id,
-                "table_name": table_name,
-                "draw_count": len(draws),
-                "inserted": 0,
-                "updated": 0,
-                "errors": 0,
-                "error_message": "",
-            }
-
-            for draw in draws:
-                try:
-                    draw_key = (draw["year"], draw["term"])
-                    # 台湾彩未开奖期次不传 res_code，防止泄密
-                    safe_res_code: str | None = draw["numbers_str"]
-                    if draw_key in safety_draw_map:
-                        safe_res_code = None
-
-                    # ── mode_id=65 特码段数：根据特码生成连续12个号码段 ──
-                    if mode_id == 65:
-                        numbers = [n.strip() for n in draw["numbers_str"].split(",") if n.strip()]
-                        try:
-                            special_code = int(numbers[-1]) if numbers else 0
-                        except (ValueError, IndexError):
-                            special_code = 0
-
-                        if special_code <= 12:
-                            content = ",".join(f"{i:02d}" for i in range(1, 13))
-                        elif special_code <= 24:
-                            content = ",".join(f"{i:02d}" for i in range(13, 25))
-                        elif special_code <= 36:
-                            content = ",".join(f"{i:02d}" for i in range(25, 37))
-                        else:
-                            content = ",".join(f"{i:02d}" for i in range(37, 50))
-
-                        row_data = build_generated_prediction_row_data(
-                            mode_id=mode_id,
-                            lottery_type=str(lottery_type),
-                            year=str(draw["year"]),
-                            term=str(draw["term"]),
-                            web_value="4",
-                            res_code=safe_res_code or "",
-                            generated_content=content,
-                        )
-                        row_data["res_sx"], row_data["res_color"] = _compute_res_fields(
-                            draw["numbers_str"], zodiac_map, color_map,
-                        )
-                        stored = upsert_created_prediction_row(conn, table_name, row_data)
-                        if stored.get("action") == "inserted":
-                            module_report["inserted"] += 1
-                            total_inserted += 1
-                        else:
-                            module_report["updated"] += 1
-                            total_updated += 1
-                        continue
-
-                    result = predict(
-                        config=config,
-                        res_code=safe_res_code,
-                        source_table=table_name,
-                        db_path=db_path,
-                        target_hit_rate=DEFAULT_TARGET_HIT_RATE,
-                    )
-                    row_data = build_generated_prediction_row_data(
-                        mode_id=mode_id,
-                        lottery_type=str(lottery_type),
-                        year=str(draw["year"]),
-                        term=str(draw["term"]),
-                        web_value="4",
-                        res_code=safe_res_code or "",
-                        generated_content=result["prediction"]["content"],
-                    )
-                    # 统一补充 res_sx / res_color，避免 enrich_prediction_result_fields
-                    # 因 public 表无历史样本而跳过填充
-                    row_data["res_sx"], row_data["res_color"] = _compute_res_fields(
-                        draw["numbers_str"], zodiac_map, color_map,
-                    )
-                    stored = upsert_created_prediction_row(conn, table_name, row_data)
-                    if stored.get("action") == "inserted":
-                        module_report["inserted"] += 1
-                        total_inserted += 1
-                    else:
-                        module_report["updated"] += 1
-                        total_updated += 1
-                except Exception as exc:
-                    conn.rollback()
-                    module_report["errors"] += 1
-                    total_errors += 1
-                    if not module_report["error_message"]:
-                        module_report["error_message"] = str(exc)
-
-            # ── 未来期生成（T+1, T+2 ...）──
-            for fdraw in future_draws:
-                try:
-                    # mode_id=65 特码段数依赖真实开奖号码，未来期跳过
-                    if mode_id == 65:
-                        continue
-
-                    fy_year = str(fdraw["year"])
-                    fy_term = str(fdraw["term"])
-                    fy_seed = f"{fdraw['year']}{fdraw['term']:03d}"
-
-                    result = predict(
-                        config=config,
-                        res_code=None,
-                        source_table=table_name,
-                        db_path=db_path,
-                        target_hit_rate=DEFAULT_TARGET_HIT_RATE,
-                        random_seed=fy_seed,
-                    )
-                    row_data = build_generated_prediction_row_data(
-                        mode_id=mode_id,
-                        lottery_type=str(lottery_type),
-                        year=fy_year,
-                        term=fy_term,
-                        web_value="4",
-                        res_code="",
-                        generated_content=result["prediction"]["content"],
-                    )
-                    # 未来期无开奖数据，res_sx/res_color 强制为空
-                    row_data["res_sx"] = ""
-                    row_data["res_color"] = ""
-                    stored = upsert_created_prediction_row(conn, table_name, row_data)
-                    if stored.get("action") == "inserted":
-                        module_report["inserted"] += 1
-                        total_inserted += 1
-                    else:
-                        module_report["updated"] += 1
-                        total_updated += 1
-                except Exception as exc:
-                    conn.rollback()
-                    module_report["errors"] += 1
-                    total_errors += 1
-                    if not module_report["error_message"]:
-                        module_report["error_message"] = str(exc)
-
-            module_reports.append(module_report)
-
-        return {
-            "site_id": int(site_id),
-            "site_name": str(site.get("name") or ""),
-            "lottery_type": lottery_type,
-            "start_issue": f"{start_issue[0]}{start_issue[1]}",
-            "end_issue": f"{end_issue[0]}{end_issue[1]}",
-            "web_id": 4,
-            "future_periods": future_periods,
-            "total_modules": len(module_reports),
-            "draw_count": len(draws),
-            "inserted": total_inserted,
-            "updated": total_updated,
-            "errors": total_errors,
-            "modules": module_reports,
-        }
+    return generate_prediction_batch(
+        db_path,
+        site_id=int(site_id),
+        lottery_type=int(lottery_type),
+        start_issue=start_issue,
+        end_issue=end_issue,
+        mechanism_keys=list(requested_keys),
+        future_periods=int(payload.get("future_periods") or 0),
+        trigger="admin_generate_all",
+        sync_site_modules=sync_site_prediction_modules,
+        resolve_prediction_table_for_mode=resolve_prediction_table_for_mode,
+        build_generated_prediction_row_data=build_generated_prediction_row_data,
+    )
 
 
 def regenerate_payload_data(

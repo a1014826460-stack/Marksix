@@ -440,16 +440,16 @@ def score_labels(
             gaps[outcome] = len(recent) - 1 - index
 
     if strategy == "hot":
-        key = lambda label: (counts[label], -labels.index(label))
+        key = lambda label: (counts[label], random.random())
     elif strategy == "cold":
-        key = lambda label: (-counts[label], gaps[label], -labels.index(label))
+        key = lambda label: (-counts[label], gaps[label], random.random())
     elif strategy == "hybrid":
-        key = lambda label: (gaps[label] + 0.55 * counts[label], -labels.index(label))
+        key = lambda label: (gaps[label] + 0.55 * counts[label], random.random())
     elif strategy == "anti_recent":
-        key = lambda label: (gaps[label] - 0.35 * counts[label], -labels.index(label))
+        key = lambda label: (gaps[label] - 0.35 * counts[label], random.random())
     elif strategy == "balanced":
         average = len(recent) / max(len(labels), 1)
-        key = lambda label: (-abs(counts[label] - average), gaps[label], -labels.index(label))
+        key = lambda label: (-abs(counts[label] - average), gaps[label], random.random())
     else:
         raise ValueError(f"未知预测策略: {strategy}")
 
