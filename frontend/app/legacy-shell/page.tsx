@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import type { LotteryGame } from "@/lib/lotteryData"
 import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
+import { getCalConvTitle } from "@/lib/calconv"
 
 const VALID_GAMES: LotteryGame[] = ["taiwan", "macau", "hongkong"]
 const GAME_TYPE_PARAM_MAP: Record<LotteryGame, string> = {
@@ -32,7 +33,6 @@ const SECTION_ROWS = [
     { id: "lx", label: "复式连肖" },
   ],
 ] as const
-const SHELL_TITLE = "台湾六合彩论坛"
 
 function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
@@ -69,6 +69,7 @@ function LegacyShellContent() {
   )
   const [activeGame, setActiveGame] = useState<LotteryGame>(initialGame)
   const [anchorMap, setAnchorMap] = useState<Record<string, number>>({})
+  const [shellTitle] = useState(() => getCalConvTitle())
 
   useEffect(() => {
     setActiveGame(initialGame)
@@ -104,7 +105,7 @@ function LegacyShellContent() {
       }}
     >
       <div className="box news-box">
-        <div className="riqi">{SHELL_TITLE}</div>
+        <div className="riqi">{shellTitle}</div>
       </div>
       <div className="box pad" id="yxym">
         <img alt="论坛头图" src="/vendor/shengshi8800/static/picture/header.jpg" width="100%" />
@@ -122,7 +123,7 @@ function LegacyShellContent() {
           <ul>
             <li>
               <a>
-              <b>{SHELL_TITLE}</b>
+              <b>{shellTitle}</b>
               </a>
             </li>
           </ul>

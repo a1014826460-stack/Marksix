@@ -405,31 +405,53 @@ def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: 
         raise ValueError("彩种名称不能为空")
     draw_time = str(payload.get("draw_time") or "").strip()
     collect_url = str(payload.get("collect_url") or "").strip()
-    next_time = str(payload.get("next_time") or "").strip()
     status = 1 if parse_bool(payload.get("status"), True) else 0
+
+    # next_time 始终从 lottery_draws 最新一期推导，不接受前端直接修改
+    effective_lottery_id = lottery_id
     with connect(db_path) as conn:
-        if lottery_id is None:
+        if effective_lottery_id is None:
             row = conn.execute(
                 """
                 INSERT INTO lottery_types (name, draw_time, collect_url, next_time, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING *
                 """,
-                (name, draw_time, collect_url, next_time, status, now, now),
+                (name, draw_time, collect_url, "", status, now, now),
             ).fetchone()
+            effective_lottery_id = int(row["id"])
         else:
             row = conn.execute(
                 """
                 UPDATE lottery_types
-                SET name = ?, draw_time = ?, collect_url = ?, next_time = ?, status = ?, updated_at = ?
+                SET name = ?, draw_time = ?, collect_url = ?, status = ?, updated_at = ?
                 WHERE id = ?
                 RETURNING *
                 """,
-                (name, draw_time, collect_url, next_time, status, now, lottery_id),
+                (name, draw_time, collect_url, status, now, effective_lottery_id),
             ).fetchone()
             if not row:
-                raise KeyError(f"lottery_id={lottery_id} 不存在")
-        return dict(row) | {"status": bool(row["status"])}
+                raise KeyError(f"lottery_id={effective_lottery_id} 不存在")
+
+        # 从 lottery_draws 获取该彩种最新一期的 next_time 回填
+        ld_row = conn.execute(
+            """SELECT next_time FROM lottery_draws
+               WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != ''
+               ORDER BY year DESC, term DESC LIMIT 1""",
+            (effective_lottery_id,),
+        ).fetchone()
+        derived_next_time = str(ld_row["next_time"]) if ld_row else ""
+        if derived_next_time:
+            conn.execute(
+                "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+                (derived_next_time, now, effective_lottery_id),
+            )
+
+        # 重新读取以获取最终状态
+        final_row = conn.execute(
+            "SELECT * FROM lottery_types WHERE id = ?", (effective_lottery_id,)
+        ).fetchone()
+        return dict(final_row) | {"status": bool(final_row["status"])}
 
 
 def delete_lottery_type(db_path: str | Path, lottery_id: int) -> None:
@@ -506,6 +528,8 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
     }
     # 台湾彩自动推算开奖时间：时间取自 lottery_types.draw_time
     if fields["lottery_type_id"] == 3 and not fields["draw_time"]:
+        from calendar import timegm
+
         with connect(db_path) as conn:
             # 获取 lottery_types 中 id=3 的 draw_time（如 "22:30"）
             lt_row = conn.execute("SELECT draw_time FROM lottery_types WHERE id = 3").fetchone()
@@ -533,6 +557,16 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 fields["draw_time"] = beijing_now.replace(
                     hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
                 ).strftime("%Y-%m-%d %H:%M:%S")
+
+        # type=3 的 next_time = 下一期 draw_time 的 Unix 秒级时间戳
+        if fields["draw_time"]:
+            try:
+                draw_dt = datetime.strptime(fields["draw_time"].strip(), "%Y-%m-%d %H:%M:%S")
+                next_dt = draw_dt + timedelta(days=1)
+                utc_dt = next_dt - timedelta(hours=8)
+                fields["next_time"] = str(int(timegm(utc_dt.timetuple())))
+            except (ValueError, OverflowError):
+                pass
 
     # 开奖时间已过：自动标记为已开奖（draw_time 为北京时间，须与北京时间比较）
     if fields["draw_time"] and not fields["is_opened"]:

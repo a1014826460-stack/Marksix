@@ -17,8 +17,8 @@ type BackendLegacyRowsPayload = {
 }
 
 const LEGACY_WEB_FALLBACK_BY_TYPE: Record<number, Partial<Record<number, number>>> = {
-  2: { 1: 2, 2: 2, 3: 2 },
-  3: { 1: 2, 2: 2, 3: 2 },
+  2: { 1: 4, 2: 4, 3: 2 },
+  3: { 1: 4, 2: 4, 3: 4 },
   44: { 1: 2, 2: 2, 3: 2 },
   48: { 1: 2, 2: 2, 3: 2 },
   57: { 1: 2, 2: 2, 3: 2 },
@@ -158,12 +158,26 @@ async function fetchLegacyRows(url: URL, modesId: number, limit = 10) {
   const primary = await fetchWithWeb(requestedWeb)
   const fallbackWeb = LEGACY_WEB_FALLBACK_BY_TYPE[modesId]?.[typeNumber]
 
-  if (primary.rows.length > 0 || !fallbackWeb || fallbackWeb === requestedWeb) {
+  if (primary.rows.length > 0) {
     return primary
   }
 
-  const fallback = await fetchWithWeb(fallbackWeb)
-  return fallback.rows.length > 0 ? fallback : primary
+  if (fallbackWeb !== undefined && fallbackWeb !== requestedWeb) {
+    const fallback = await fetchWithWeb(fallbackWeb)
+    if (fallback.rows.length > 0) {
+      return fallback
+    }
+  }
+
+  // 最后兜底：不带 web 过滤查询，捕获所有 web 值下的数据
+  if (requestedWeb !== undefined || fallbackWeb !== undefined) {
+    const unfiltered = await fetchWithWeb(undefined)
+    if (unfiltered.rows.length > 0) {
+      return unfiltered
+    }
+  }
+
+  return primary
 }
 
 async function fetchLegacyCurrentTerm() {

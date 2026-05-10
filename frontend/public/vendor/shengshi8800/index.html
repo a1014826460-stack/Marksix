@@ -12,7 +12,7 @@
 		<link rel="stylesheet" type="text/css" href="static/css/style1.css">
 		<link rel="stylesheet" type="text/css" href="static/css/style2.css">
 		<link rel="stylesheet" type="text/css" href="static/css/style3.css">
-		<title>全网最准尽在台湾六合彩</title>
+		<title>台湾六合彩论坛</title>
 		<meta name="keywords" content="全网最准尽在台湾六合彩">
 		<meta name="description" content="全网最准尽在台湾六合彩">
 		<script src="static/js/jquery.js"></script>
@@ -161,6 +161,12 @@
 				setTimeout("www_helpor_net()",1000)}
 			www_helpor_net();
 			CalConv();
+			(function() {
+				var weekNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+				var lunarM = LunarMonth;
+				if (lunarM < 0) lunarM = "闰" + (-lunarM);
+				document.title = "今:" + SolarMonth + "月" + SolarDate + "日." + weekNames[Weekday] + ".农历:" + lunarM + "月" + LunarDate + "日.煞" + Location + " 正冲生肖:" + Animal;
+			})();
 		</script>
 
 

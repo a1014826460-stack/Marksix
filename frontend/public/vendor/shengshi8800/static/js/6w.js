@@ -1,7 +1,7 @@
 ﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
-    url: httpApi + `/api/kaijiang/getWei?num=6&web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/getWei?num=6&web=${API_WEB}&type=${type}`,
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {

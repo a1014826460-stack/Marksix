@@ -417,7 +417,7 @@ export function LotteryTypesPageClient() {
         name: formValue(form, "name"),
         draw_time: formValue(form, "draw_time"),
         collect_url: formValue(form, "collect_url"),
-        next_time: formValue(form, "next_time"),
+        // next_time 由后端从 lottery_draws 最新一期自动推导，不再由前端提交
         status: boolValue(form, "status"),
       }),
     })
@@ -482,7 +482,11 @@ export function LotteryTypesPageClient() {
             <form className="space-y-3" onSubmit={submit}>
               <Field label="彩种名称"><Input name="name" defaultValue={editing?.name || ""} required /></Field>
               <Field label="开奖时间"><Input name="draw_time" defaultValue={editing?.draw_time || ""} placeholder="21:30" /></Field>
-              <Field label="下次开奖时间 (毫秒时间戳)"><Input name="next_time" defaultValue={editing?.next_time || ""} placeholder="1778419800000" /></Field>
+              <Field label="下次开奖时间 (自动从开奖记录推导)">
+                <span className="block h-9 rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                  {editing?.next_time ? formatNextTime(editing.next_time) : "暂无（保存后自动计算）"}
+                </span>
+              </Field>
               <Field label="采集地址"><Input name="collect_url" defaultValue={editing?.collect_url || ""} /></Field>
               <Field label="状态">
                 <select name="status" defaultValue={editing?.status === false ? "0" : "1"} className="h-9 rounded-md border bg-background px-3 text-sm">
@@ -1502,7 +1506,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
           start_issue: bulkStartIssue.trim(),
           end_issue: bulkEndIssue.trim(),
           mechanism_keys: selectedList,
-          future_periods: 1, // 自动生成下一期预测资料（T+1），该期尚未开奖，预测内容基于历史数据
+          future_periods: 0, // 严格按指定期号范围生成，不自动追加未来期
         }),
       })
       // 轮询任务状态，最多等待 10 分钟
@@ -1609,8 +1613,8 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                         const lt = bulkLotteryType || String(site?.lottery_type_id || 3)
                         const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lt}`)
                         if (info.term > 0) {
-                          // 截止期号 = 当前已开奖最新期号 + 1，确保生成下一期预测资料
-                          const endTerm = info.term + 1
+                          // 严格按已开奖最新期号生成，不再自动 +1 扩到未来期
+                          const endTerm = info.term
                           const startTerm = Math.max(1, endTerm - n + 1)
                           setBulkStartIssue(`${info.year}${String(startTerm).padStart(3, '0')}`)
                           setBulkEndIssue(`${info.year}${String(endTerm).padStart(3, '0')}`)

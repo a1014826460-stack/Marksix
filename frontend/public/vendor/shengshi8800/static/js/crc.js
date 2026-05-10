@@ -87,7 +87,7 @@
 // document.writeln("</table>");
 
 $.ajax({
-    url: httpApi + `/api/kaijiang/getRccx?num=2&web=2&type=${type}`, 
+    url: httpApi + `/api/kaijiang/getRccx?num=2&web=${API_WEB}&type=${type}`,
     type: 'GET', 
     dataType: 'json', 
     success: function(response) {
