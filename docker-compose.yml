@@ -6,7 +6,7 @@
 services:
   # PostgreSQL 数据库
   postgres:
-    image: postgres:16
+    image: postgres:17
     container_name: liuhecai-postgres
     restart: unless-stopped
     environment:

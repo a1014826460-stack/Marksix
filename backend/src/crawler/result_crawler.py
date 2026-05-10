@@ -130,7 +130,7 @@ def transform_standard_list(
 
 
 if __name__ == "__main__":
-    history_data, status_code = fetch_current_term_data(type=2)
+    history_data, status_code = fetch_current_term_data(type=1)
     transformed_data = transform_standard_list(history_data, crawler_type=2)
     print(transformed_data)
     # print(history_data)
