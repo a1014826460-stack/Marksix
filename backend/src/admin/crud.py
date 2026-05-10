@@ -558,13 +558,19 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                     hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
                 ).strftime("%Y-%m-%d %H:%M:%S")
 
-        # type=3 的 next_time = 下一期 draw_time 的 Unix 秒级时间戳
+        # type=3 的 next_time：下一期 draw_time 的毫秒级时间戳
+        # 若无下一期数据，退化为当期 draw_time 的毫秒时间戳
         if fields["draw_time"]:
             try:
                 draw_dt = datetime.strptime(fields["draw_time"].strip(), "%Y-%m-%d %H:%M:%S")
-                next_dt = draw_dt + timedelta(days=1)
-                utc_dt = next_dt - timedelta(hours=8)
-                fields["next_time"] = str(int(timegm(utc_dt.timetuple())))
+                # 优先取下一期（+1天）；若解析失败则回退到当期时间
+                try:
+                    next_dt = draw_dt + timedelta(days=1)
+                    utc_dt = next_dt - timedelta(hours=8)
+                    fields["next_time"] = str(int(timegm(utc_dt.timetuple()) * 1000))
+                except (ValueError, OverflowError):
+                    utc_dt = draw_dt - timedelta(hours=8)
+                    fields["next_time"] = str(int(timegm(utc_dt.timetuple()) * 1000))
             except (ValueError, OverflowError):
                 pass
 

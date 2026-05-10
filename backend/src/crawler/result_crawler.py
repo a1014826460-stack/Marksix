@@ -15,17 +15,18 @@ from typing import Union, List, Dict, Any
 
 def fetch_current_term_data(
     type: int = 1,
+    collect_url: str = "",
     ) -> tuple[str, int]:
     """
-    获取香港彩历史数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
+    获取香港/澳门彩当前期开奖数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
 
     Args:
         type (int): 需要查询的彩票格式，1为香港；2为澳门。
+        collect_url (str): 数据库配置的采集地址，为空时使用默认地址。
 
     Returns:
         tuple[str, int]: 包含响应文本（JSON字符串）和HTTP状态码的元组。
     """
-    # ── 构造请求头，模拟浏览器访问 ──
     headers = {
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -43,22 +44,16 @@ def fetch_current_term_data(
         "upgrade-insecure-requests": "1",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
     }
-    cookies = {
-        # 当前接口不需要cookie，保留空字典以便后续扩展
-    }
-    url = "https://www.lnlllt.com/api.php"  
-    
-    # ── 构造查询参数，请求指定年份的历史开奖数据 ──
-    # lottery_id=20 表示香港六合彩，page=1取第一页，limit=50每页最多50条
+    # 优先使用数据库配置的采集地址，回退到默认地址
+    url = collect_url.strip() if collect_url else "https://www.lnlllt.com/api.php"
+
     params = {
         "lottery_id": "49" if type == 2 else "20",
         "action": "current"
     }
 
-    # ── 使用从数据库传入的 url 发起请求 ──
-    response = requests.get(url, headers=headers, cookies=cookies, params=params)
-    # response.json()["issus"] = response.text.get("issus", [])[4:]
-    # print(response.text)      # 解析JSON响应，确保数据格式正确
+    # 设置 30 秒超时，避免请求无限挂起
+    response = requests.get(url, headers=headers, params=params, timeout=30)
     return response.text, response.status_code
 
 

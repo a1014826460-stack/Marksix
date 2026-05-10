@@ -1506,7 +1506,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
           start_issue: bulkStartIssue.trim(),
           end_issue: bulkEndIssue.trim(),
           mechanism_keys: selectedList,
-          future_periods: 0, // 严格按指定期号范围生成，不自动追加未来期
+          future_periods: 1, // 生成范围内最后一期已开奖的下一期预测（T+1）
         }),
       })
       // 轮询任务状态，最多等待 10 分钟
@@ -1607,14 +1607,14 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
               <div>
                 <label className="mb-1 block text-xs font-medium">快捷期数范围（基于 lottery_draws 最新开奖数据）</label>
                 <div className="flex gap-1.5">
-                  {[10, 20, 50, 100].map((n) => (
+                  {[2, 10, 20, 50, 100].map((n) => (
                     <button key={n} type="button" onClick={async () => {
                       try {
                         const lt = bulkLotteryType || String(site?.lottery_type_id || 3)
                         const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lt}`)
                         if (info.term > 0) {
-                          // 严格按已开奖最新期号生成，不再自动 +1 扩到未来期
-                          const endTerm = info.term
+                          // 结束期号 = 当前已开奖最新期号 + 1，确保范围包含下一期预测
+                          const endTerm = info.term + 1
                           const startTerm = Math.max(1, endTerm - n + 1)
                           setBulkStartIssue(`${info.year}${String(startTerm).padStart(3, '0')}`)
                           setBulkEndIssue(`${info.year}${String(endTerm).padStart(3, '0')}`)

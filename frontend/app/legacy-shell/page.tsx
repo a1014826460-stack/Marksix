@@ -123,7 +123,7 @@ function LegacyShellContent() {
           <ul>
             <li>
               <a>
-              <b>{shellTitle}</b>
+              <b>台湾六合彩论坛</b>
               </a>
             </li>
           </ul>

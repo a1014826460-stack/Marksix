@@ -356,15 +356,18 @@ class CrawlerScheduler:
         self.db_path = db_path
         self._running = False
         self._taiwan_timer: threading.Timer | None = None
+        self._auto_open_timer: threading.Timer | None = None
+        self._auto_crawl_timer: threading.Timer | None = None
         self._taiwan_retry_count = 0
 
     def start(self) -> None:
         if self._running:
             return
         self._running = True
-        _crawler_logger.info("Scheduler started (auto-open check every 60s)")
+        _crawler_logger.info("Scheduler started (auto-open every 60s, auto-crawl every 10min)")
         self._schedule_auto_open()
         self._schedule_taiwan_precise_open()
+        self._schedule_auto_crawl()
 
     def stop(self) -> None:
         _crawler_logger.info("Scheduler stopping")
@@ -375,6 +378,9 @@ class CrawlerScheduler:
         if self._taiwan_timer:
             self._taiwan_timer.cancel()
             self._taiwan_timer = None
+        if hasattr(self, "_auto_crawl_timer") and self._auto_crawl_timer:
+            self._auto_crawl_timer.cancel()
+            self._auto_crawl_timer = None
 
     def _auto_open_draws(self) -> None:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
@@ -386,23 +392,29 @@ class CrawlerScheduler:
             now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
             now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             with db_connect(self.db_path) as conn:
-                cur = conn.execute(
-                    """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
+                # 先查出即将被打开的记录，再执行 UPDATE，避免依赖脆弱的 updated_at 精确匹配
+                pending = conn.execute(
+                    """SELECT id, year, term, draw_time, lottery_type_id FROM lottery_draws
                        WHERE is_opened = 0 AND draw_time IS NOT NULL AND draw_time != ''
                        AND draw_time <= ?""",
-                    (now_utc, now_beijing),
-                )
-                if cur.rowcount > 0:
-                    print(f"[AutoOpen] Set is_opened=1 for {cur.rowcount} draw(s)")
-                    # 兜底：为刚打开的 type=3 记录更新 next_time
-                    rows = conn.execute(
-                        """SELECT id, year, term, draw_time FROM lottery_draws
-                           WHERE lottery_type_id = 3 AND updated_at = ?""",
-                        (now_utc,),
-                    ).fetchall()
-                    for row in rows:
+                    (now_beijing,),
+                ).fetchall()
+
+                if pending:
+                    ids = [row["id"] for row in pending]
+                    placeholders = ",".join("?" for _ in ids)
+                    conn.execute(
+                        f"UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                        f"WHERE id IN ({placeholders})",
+                        [now_utc] + ids,
+                    )
+                    print(f"[AutoOpen] Set is_opened=1 for {len(pending)} draw(s)")
+
+                    # 为刚打开的 type=3 记录更新 next_time
+                    taiwan_opened = [r for r in pending if r["lottery_type_id"] == 3]
+                    for row in taiwan_opened:
                         self._calc_and_update_next_time(conn, row, now_utc)
-                    if rows:
+                    if taiwan_opened:
                         conn.commit()
         except Exception as e:
             print(f"[AutoOpen] Error: {e}")
@@ -415,6 +427,56 @@ class CrawlerScheduler:
         self._auto_open_timer = threading.Timer(60, self._schedule_auto_open)
         self._auto_open_timer.daemon = True
         self._auto_open_timer.start()
+
+    def _schedule_auto_crawl(self) -> None:
+        """每 10 分钟自动尝试爬取香港/澳门当前期开奖数据。"""
+        if not self._running:
+            return
+        self._auto_crawl()
+        self._auto_crawl_timer = threading.Timer(600, self._schedule_auto_crawl)
+        self._auto_crawl_timer.daemon = True
+        self._auto_crawl_timer.start()
+
+    def _auto_crawl(self) -> None:
+        """自动爬取：检查是否有到达开奖时间但未获取数据的记录，尝试爬取。
+
+        设计思路：
+        - 遍历所有启用的 HK/Macau 彩种
+        - 如果该彩种最近 30 分钟内没有已开奖记录（is_opened=1），则触发爬取
+        - 爬取成功后自动标记 is_opened 并安排 6h 延迟预测任务
+        """
+        try:
+            with db_connect(self.db_path) as conn:
+                lt_rows = conn.execute(
+                    "SELECT id, name FROM lottery_types WHERE status = 1 AND id IN (1, 2)"
+                ).fetchall()
+                for lt_row in lt_rows:
+                    lt_id = int(lt_row["id"])
+                    lt_name = str(lt_row["name"])
+                    # 检查最近是否有新开奖记录（30 分钟内）
+                    recent = conn.execute(
+                        """SELECT id FROM lottery_draws
+                           WHERE lottery_type_id = ? AND is_opened = 1
+                           AND updated_at::timestamptz > (NOW() - INTERVAL '30 minutes')
+                           LIMIT 1""",
+                        (lt_id,),
+                    ).fetchone()
+                    if recent:
+                        continue  # 最近已有开奖，跳过
+                    # 触发爬取
+                    try:
+                        result = run_crawl_only(self.db_path, lt_id)
+                        saved = result.get("saved", 0)
+                        if saved > 0:
+                            _crawler_logger.info(
+                                "Auto-crawl %s: saved %d draws", lt_name, saved
+                            )
+                    except Exception as exc:
+                        _crawler_logger.warning(
+                            "Auto-crawl %s failed: %s", lt_name, exc
+                        )
+        except Exception as e:
+            _crawler_logger.error("Auto-crawl scheduler error: %s", e)
 
     # ── 台湾彩每日 22:30 精准开奖调度 ─────────────────────────────
 
@@ -503,16 +565,16 @@ class CrawlerScheduler:
                 conn.commit()
 
     def _calc_and_update_next_time(self, conn, row, now_str: str) -> None:
-        """根据当期 draw_time + 1 天计算下一期 draw_time，将 next_time 更新为 Unix 秒级时间戳。"""
+        """根据当期 draw_time + 1 天计算下一期 draw_time，将 next_time 更新为毫秒级时间戳。"""
         from calendar import timegm
 
         draw_time_str = row["draw_time"]
         draw_dt = datetime.strptime(draw_time_str, "%Y-%m-%d %H:%M:%S")
         next_dt = draw_dt + timedelta(days=1)
-        # draw_time 存储的是北京时间，转为 UTC 后计算 Unix 时间戳
+        # draw_time 存储的是北京时间，转为 UTC 后计算毫秒时间戳
         utc_dt = next_dt - timedelta(hours=8)
-        unix_seconds = int(timegm(utc_dt.timetuple()))
-        next_time_str = str(unix_seconds)
+        unix_ms = int(timegm(utc_dt.timetuple()) * 1000)
+        next_time_str = str(unix_ms)
 
         conn.execute(
             "UPDATE lottery_draws SET next_time = ?, updated_at = ? WHERE id = ?",
@@ -522,7 +584,7 @@ class CrawlerScheduler:
             "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = 3",
             (next_time_str, now_str),
         )
-        print(f"[TaiwanOpen] Term {row['term']}: next_time={unix_seconds} "
+        print(f"[TaiwanOpen] Term {row['term']}: next_time={unix_ms} "
               f"({next_dt.strftime('%Y-%m-%d %H:%M:%S')} Beijing)")
 
 
@@ -758,11 +820,14 @@ def run_crawl_only(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
             "message": "台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON",
         }
 
-    # 调用 result_crawler 获取当前期数据
+    # 调用 result_crawler 获取当前期数据（传入数据库配置的采集地址）
     from result_crawler import fetch_current_term_data, transform_standard_list
 
     crawler_type = 1 if lottery_type_id == 1 else 2
-    raw, status_code = fetch_current_term_data(type=crawler_type)
+    raw, status_code = fetch_current_term_data(
+        type=crawler_type,
+        collect_url=lt_meta.get("collect_url", ""),
+    )
 
     if status_code != 200:
         raise RuntimeError(f"爬虫返回 HTTP {status_code}")
