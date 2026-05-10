@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import json
+import random
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +22,7 @@ from db import utc_now  # noqa: E402
 SOURCE_SCHEMA_NAME = "public"
 CREATED_SCHEMA_NAME = "created"
 MODE_PAYLOAD_TABLE_RE = re.compile(r"^mode_payload_\d+$")
+THREE_PERIOD_SPECIAL_MODE_ID = 197
 FIXED_DATA_ZODIAC_SIGN = "生肖"
 FIXED_DATA_COLOR_SIGN = "波色"
 
@@ -210,6 +213,271 @@ def load_fixed_data_number_label_map(conn: Any, sign_name: str) -> dict[str, str
                 continue
             number_map.setdefault(normalized_number, label)
     return number_map
+
+
+def load_fixed_data_label_code_map(conn: Any, sign_name: str) -> dict[str, tuple[str, ...]]:
+    fixed_table_name = "fixed_data"
+    if not schema_table_exists(conn, SOURCE_SCHEMA_NAME, fixed_table_name):
+        return {}
+
+    rows = conn.execute(
+        f"""
+        SELECT name, code
+        FROM {quote_qualified_identifier(SOURCE_SCHEMA_NAME, fixed_table_name)}
+        WHERE sign = %s
+        ORDER BY id
+        """,
+        (sign_name,),
+    ).fetchall()
+
+    label_map: dict[str, tuple[str, ...]] = {}
+    for row in rows:
+        label = str(row["name"] or "").strip()
+        if not label:
+            continue
+        codes = tuple(split_csv_text(row["code"]))
+        if codes:
+            label_map[label] = codes
+    return label_map
+
+
+def compact_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def compute_three_period_window(term_value: Any) -> tuple[str, str] | None:
+    text = str(term_value or "").strip()
+    if not text:
+        return None
+    try:
+        term_int = int(text)
+    except (TypeError, ValueError):
+        return None
+    if term_int <= 0:
+        return None
+
+    rem = term_int % 3
+    end_val = term_int + ((4 - rem) % 3)
+    start_val = max(1, end_val - 2)
+    return str(start_val), str(end_val)
+
+
+def is_three_period_special_row(source_table_name: str, row_data: dict[str, Any]) -> bool:
+    if validate_mode_payload_table_name(source_table_name) == "mode_payload_197":
+        return True
+
+    for key in ("modes_id", "mode_id", "table_modes_id"):
+        value = row_data.get(key)
+        try:
+            if value is not None and int(str(value).strip()) == THREE_PERIOD_SPECIAL_MODE_ID:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def normalize_three_period_special_row(
+    conn: Any,
+    source_table_name: str,
+    row_data: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(row_data)
+    if not is_three_period_special_row(source_table_name, normalized):
+        return normalized
+
+    window = compute_three_period_window(normalized.get("term"))
+    if window is None:
+        start_value = str(normalized.get("start") or "").strip()
+        end_value = str(normalized.get("end") or "").strip()
+        if not start_value or not end_value:
+            return normalized
+    else:
+        start_value, end_value = window
+
+    normalized["start"] = start_value
+    normalized["end"] = end_value
+
+    zodiac_label_map = load_fixed_data_label_code_map(conn, FIXED_DATA_ZODIAC_SIGN)
+    zodiac_labels = list(zodiac_label_map.keys())
+    if len(zodiac_labels) < 4:
+        return normalized
+
+    seed = "|".join(
+        [
+            str(THREE_PERIOD_SPECIAL_MODE_ID),
+            str(normalized.get("type") or ""),
+            str(normalized.get("year") or ""),
+            str(normalized.get("web") or normalized.get("web_id") or ""),
+            start_value,
+            end_value,
+        ]
+    )
+    rng = random.Random(seed)
+    chosen_labels = rng.sample(zodiac_labels, 4)
+    normalized["content"] = compact_json_dumps(
+        [f"{label}|{','.join(zodiac_label_map[label])}" for label in chosen_labels]
+    )
+    return normalized
+
+
+def build_three_period_special_window_filter(
+    columns: set[str],
+    row_data: dict[str, Any],
+) -> tuple[list[str], list[Any]] | None:
+    required_pairs = [
+        ("type", row_data.get("type")),
+        ("year", row_data.get("year")),
+        ("start", row_data.get("start")),
+        ("end", row_data.get("end")),
+    ]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    for column_name, raw_value in required_pairs:
+        value = str(raw_value or "").strip()
+        if column_name not in columns or not value:
+            return None
+        where_clauses.append(f"CAST({quote_identifier(column_name)} AS TEXT) = %s")
+        params.append(value)
+
+    web_value = str(row_data.get("web") or "").strip()
+    web_id_value = str(row_data.get("web_id") or "").strip()
+    if "web" in columns and web_value:
+        where_clauses.append(f'CAST({quote_identifier("web")} AS TEXT) = %s')
+        params.append(web_value)
+    elif "web_id" in columns and web_id_value:
+        where_clauses.append(f'CAST({quote_identifier("web_id")} AS TEXT) = %s')
+        params.append(web_id_value)
+    elif "web" in columns or "web_id" in columns:
+        return None
+
+    return where_clauses, params
+
+
+def sync_three_period_special_window_rows(
+    conn: Any,
+    source_table_name: str,
+    row_data: dict[str, Any],
+) -> int:
+    table_name = validate_mode_payload_table_name(source_table_name)
+    normalized_row = normalize_three_period_special_row(conn, table_name, row_data)
+    if not is_three_period_special_row(table_name, normalized_row):
+        return 0
+
+    target_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+    window_filter = build_three_period_special_window_filter(target_columns, normalized_row)
+    if window_filter is None:
+        return 0
+
+    content_value = str(normalized_row.get("content") or "").strip()
+    start_value = str(normalized_row.get("start") or "").strip()
+    end_value = str(normalized_row.get("end") or "").strip()
+    if not content_value or not start_value or not end_value:
+        return 0
+
+    update_values: dict[str, Any] = {}
+    if "content" in target_columns:
+        update_values["content"] = content_value
+    if "start" in target_columns:
+        update_values["start"] = start_value
+    if "end" in target_columns:
+        update_values["end"] = end_value
+    if not update_values:
+        return 0
+
+    update_sql = ", ".join(
+        f"{quote_identifier(column_name)} = %s"
+        for column_name in update_values
+    )
+    where_clauses, where_params = window_filter
+    rowcount = conn.execute(
+        f"""
+        UPDATE {quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)}
+        SET {update_sql}
+        WHERE {" AND ".join(where_clauses)}
+        """,
+        list(update_values.values()) + where_params,
+    ).rowcount
+    return max(int(rowcount), 0)
+
+
+def repair_three_period_special_created_rows(
+    conn: Any,
+    source_table_name: str,
+    *,
+    lottery_type: str | int | None = None,
+    web_value: str | int | None = None,
+    year: str | int | None = None,
+) -> dict[str, int]:
+    table_name = validate_mode_payload_table_name(source_table_name)
+    if not created_table_exists(conn, table_name):
+        return {"windows": 0, "rows": 0}
+
+    target_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+    required_columns = {"type", "year", "start", "end"}
+    if not required_columns.issubset(target_columns):
+        return {"windows": 0, "rows": 0}
+
+    select_columns = [
+        quote_identifier("type"),
+        quote_identifier("year"),
+        quote_identifier("start"),
+        quote_identifier("end"),
+    ]
+    if "web" in target_columns:
+        select_columns.append(quote_identifier("web"))
+    if "web_id" in target_columns:
+        select_columns.append(quote_identifier("web_id"))
+
+    where_clauses = [
+        f"COALESCE(CAST({quote_identifier('start')} AS TEXT), '') != ''",
+        f"COALESCE(CAST({quote_identifier('end')} AS TEXT), '') != ''",
+    ]
+    params: list[Any] = []
+
+    if lottery_type is not None and "type" in target_columns:
+        where_clauses.append(f'CAST({quote_identifier("type")} AS TEXT) = %s')
+        params.append(str(lottery_type))
+
+    if year is not None and "year" in target_columns:
+        where_clauses.append(f'CAST({quote_identifier("year")} AS TEXT) = %s')
+        params.append(str(year))
+
+    if web_value is not None:
+        if "web" in target_columns:
+            where_clauses.append(f'CAST({quote_identifier("web")} AS TEXT) = %s')
+            params.append(str(web_value))
+        elif "web_id" in target_columns:
+            where_clauses.append(f'CAST({quote_identifier("web_id")} AS TEXT) = %s')
+            params.append(str(web_value))
+
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT {", ".join(select_columns)}
+        FROM {quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)}
+        WHERE {" AND ".join(where_clauses)}
+        """,
+        params,
+    ).fetchall()
+
+    repaired_rows = 0
+    repaired_windows = 0
+    for row in rows:
+        row_data = {
+            "type": row["type"],
+            "year": row["year"],
+            "start": row["start"],
+            "end": row["end"],
+        }
+        if "web" in row:
+            row_data["web"] = row["web"]
+        if "web_id" in row:
+            row_data["web_id"] = row["web_id"]
+        repaired_rows += sync_three_period_special_window_rows(conn, table_name, row_data)
+        repaired_windows += 1
+
+    conn.commit()
+    return {"windows": repaired_windows, "rows": repaired_rows}
 
 
 def detect_public_result_field_policy(
@@ -674,7 +942,8 @@ def upsert_created_prediction_row(
     table_name = validate_mode_payload_table_name(source_table_name)
     target_qualified = ensure_created_prediction_table(conn, table_name)
     target_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
-    prepared_row_data = enrich_prediction_result_fields(conn, table_name, row_data)
+    normalized_row_data = normalize_three_period_special_row(conn, table_name, row_data)
+    prepared_row_data = enrich_prediction_result_fields(conn, table_name, normalized_row_data)
 
     filtered_data = {
         key: value
@@ -699,6 +968,7 @@ def upsert_created_prediction_row(
             """,
             [filtered_data[column] for column in update_columns] + [existing_row["id"]],
         )
+        sync_three_period_special_window_rows(conn, table_name, filtered_data)
         conn.commit()
         return {
             "action": "updated",
@@ -727,6 +997,7 @@ def upsert_created_prediction_row(
         """,
         [insert_data[column] for column in insert_columns],
     )
+    sync_three_period_special_window_rows(conn, table_name, insert_data)
     conn.commit()
     return {
         "action": "inserted",

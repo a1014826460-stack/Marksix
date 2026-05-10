@@ -437,11 +437,15 @@ class CrawlerScheduler:
         print(f"[TaiwanScheduler] Next Taiwan open at {target_beijing.strftime('%Y-%m-%d %H:%M:%S')} Beijing (in {delay:.0f}s)")
 
     def _taiwan_precise_open_execute(self) -> None:
-        """执行台湾彩开奖任务，含重试策略。成功则调度次日，失败则按间隔重试。"""
+        """执行台湾彩开奖任务，含重试策略。
+        成功则：调度次日 → 异步触发预测数据生成（回填结果 + 生成下一期预测）。
+        失败则：按间隔重试。"""
         try:
             self._open_taiwan_draws_and_update_next_time()
             self._taiwan_retry_count = 0
             self._schedule_taiwan_precise_open()
+            # 开奖成功后异步生成预测数据，填充 mode_payload_* 表
+            _trigger_taiwan_prediction_generation(self.db_path)
         except Exception as e:
             self._taiwan_retry_count += 1
             _log_taiwan_task_error(f"Attempt {self._taiwan_retry_count}/{self._TAIWAN_MAX_RETRIES} failed: {e}")
@@ -544,6 +548,26 @@ def _log_taiwan_task_error(message: str) -> None:
     ts = datetime.now(timezone.utc).isoformat()
     with open(ERROR_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] TAIWAN_OPEN_FAIL {message}\n")
+
+
+def _trigger_taiwan_prediction_generation(db_path: str | Path) -> None:
+    """台湾彩开奖后异步触发预测数据生成。
+
+    后台线程执行：回填开奖结果到 mode_payload_* 表 →
+    生成下一期预测数据。这样前端 JS 模块查询 mode_payload_*
+    表时就能拿到最新预测内容，保证前端显示随数据库更新。
+    """
+    def _run():
+        try:
+            print("[TaiwanPredGen] Starting prediction generation after Taiwan draw open...")
+            _run_auto_prediction(db_path, 3)
+            print("[TaiwanPredGen] Prediction generation completed")
+        except Exception as exc:
+            print(f"[TaiwanPredGen] Prediction generation failed: {exc}")
+            _log_taiwan_task_error(f"Prediction generation failed: {exc}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
 
 
 def _update_auto_task_status(

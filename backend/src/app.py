@@ -358,6 +358,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == "/admin":
                 self.send_html(ADMIN_HTML)
                 return
+            if method == "GET" and path == "/health":
+                self.send_json({"status": "ok", "engine": detect_database_engine(self.db_path)})
+                return
             if method == "GET" and path == "/api/health":
                 self.send_json({"ok": True, "summary": database_summary(self.db_path)})
                 return
@@ -483,6 +486,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                         type_value=int(type_raw) if type_raw not in (None, "") else None,
                     )
                 )
+                return
+
+            # ── 静态资源：旧站图片 /uploads/image/{bucket}/{filename} ──
+            if method == "GET" and path.startswith("/uploads/"):
+                self.serve_upload(path)
                 return
 
             if path.startswith("/api/admin/") and not auth_user_from_token(self.db_path, self.bearer_token()):
@@ -944,6 +952,30 @@ class ApiHandler(BaseHTTPRequestHandler):
         if detail:
             payload["detail"] = detail
         self.send_json(payload, status)
+
+    def serve_upload(self, path: str) -> None:
+        """Serve legacy image files from backend/data/Images/."""
+        filename = Path(path).name
+        if not filename:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+            return
+        file_path = LEGACY_IMAGES_DIR / filename
+        resolved = file_path.resolve()
+        if not resolved.is_file() or not resolved.is_relative_to(LEGACY_IMAGES_DIR.resolve()):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+            return
+        mime_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        try:
+            data = resolved.read_bytes()
+        except OSError:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
 
     def redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND)
