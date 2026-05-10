@@ -138,6 +138,8 @@ def parse_prediction_result(result, draw, zodiac_map, mode_id):
             row["content"] = ""
         # 三期中特: {"start":"","end":"","content":[...]}
         elif "content" in raw_content and isinstance(raw_content["content"], list):
+            row["start"] = str(raw_content.get("start", "") or "")
+            row["end"] = str(raw_content.get("end", "") or "")
             row["content"] = json.dumps(raw_content["content"], ensure_ascii=False)
         else:
             row["content"] = json.dumps(raw_content, ensure_ascii=False)

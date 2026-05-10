@@ -62,6 +62,120 @@ def number_to_color(color_map, num):
             return c
     return ""
 
+
+def compute_three_period_window(term):
+    raw_term = int(term)
+    rem = raw_term % 3
+    if rem == 2:
+        start = raw_term
+    elif rem == 0:
+        start = raw_term - 1
+    else:
+        start = raw_term - 2
+    return start, start + 2
+
+
+def compute_prediction_window(mode_id, draw):
+    if mode_id == 197:
+        start, end = compute_three_period_window(draw["term"])
+        return str(start), str(end)
+    return "", ""
+
+
+def build_prediction_seed(mode_id, game_type, draw, future=False):
+    prefix = "future_" if future else ""
+    start, end = compute_prediction_window(mode_id, draw)
+    if start and end:
+        return f"{prefix}{mode_id}_{game_type}_{draw['year']}_{start}_{end}"
+    return f"{prefix}{mode_id}_{game_type}_{draw['year']}_{draw['term']}"
+
+
+def attach_window_metadata(row_data, mode_id, draw):
+    if not row_data:
+        return row_data
+    start, end = compute_prediction_window(mode_id, draw)
+    if start and end:
+        row_data["start"] = start
+        row_data["end"] = end
+    return row_data
+
+
+def build_window_cache_key(row_data):
+    start = str(row_data.get("start") or "").strip()
+    end = str(row_data.get("end") or "").strip()
+    if not start or not end:
+        return None
+    web_value = row_data.get("web", row_data.get("web_id", ""))
+    return (
+        str(row_data.get("type") or ""),
+        str(row_data.get("year") or ""),
+        str(web_value or ""),
+        start,
+        end,
+    )
+
+
+def load_existing_window_content_cache(conn, table_name, game_type):
+    cols = get_table_columns(conn, table_name)
+    if "content" not in cols or "start" not in cols or "end" not in cols:
+        return {}
+
+    cur = conn.execute(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema='created' AND table_name=%s)",
+        (table_name,),
+    )
+    if not cur.fetchone()["exists"]:
+        return {}
+
+    selected_columns = ["year", "type", "start", "end", "content"]
+    if "web" in cols:
+        selected_columns.append("web")
+    if "web_id" in cols:
+        selected_columns.append("web_id")
+
+    selected_sql = ", ".join(f'"{column}"' for column in selected_columns)
+    query = (
+        f"SELECT {selected_sql} "
+        f'FROM created."{table_name}" '
+        "WHERE CAST(type AS TEXT) = %s "
+        "AND COALESCE(CAST(start AS TEXT), '') != '' "
+        "AND COALESCE(CAST(end AS TEXT), '') != '' "
+        "AND COALESCE(CAST(content AS TEXT), '') != ''"
+    )
+    params = [str(game_type)]
+    if "web" in cols:
+        query += " AND CAST(web AS TEXT) = %s"
+        params.append("4")
+    elif "web_id" in cols:
+        query += " AND CAST(web_id AS TEXT) = %s"
+        params.append("4")
+
+    rows = conn.execute(query, params).fetchall()
+    cache = {}
+    for row in rows:
+        key = build_window_cache_key(row)
+        if key and key not in cache:
+            cache[key] = str(row["content"] or "")
+    return cache
+
+
+def normalize_window_content(row_data, window_content_cache):
+    if not row_data or "content" not in row_data:
+        return row_data
+
+    key = build_window_cache_key(row_data)
+    content = str(row_data.get("content") or "")
+    if not key or not content:
+        return row_data
+
+    cached_content = window_content_cache.get(key)
+    if cached_content:
+        row_data["content"] = cached_content
+    else:
+        window_content_cache[key] = content
+    return row_data
+
 # ── 读取有效开奖 ──────────────────────────────────────
 def get_valid_draws(conn, lottery_type_id, limit=20):
     """获取已开奖（is_opened=1）的有效历史开奖记录"""
@@ -137,7 +251,10 @@ def build_module_map():
             mode_to_config[mid] = key
     result = {}
     for mid, lk in legacy_modes.items():
-        result[lk] = {"modes_id": mid, "config_key": mode_to_config.get(mid)}
+        result[lk] = {
+            "modes_id": mid,
+            "config_key": None if mid == 197 else mode_to_config.get(mid),
+        }
     return result
 
 # ── predict() 调用 ────────────────────────────────────
@@ -164,7 +281,10 @@ def direct_predict(module_key, mode_id, draw, game_type, zodiac_map, color_map,
     special_zodiac = number_to_zodiac(zodiac_map, special_num)
     special_color = number_to_color(color_map, special_num)
 
-    rng = rng_override or random.Random(f"{mode_id}_{game_type}_{draw['year']}_{draw['term']}")
+    # 三期中特 (mode_id=197): 每 3 期为一组，组内 content 必须一致。
+    # 将随机种子固定到组的第一期 (term % 3 == 2)，确保同组三期生成相同预测。
+    seed = build_prediction_seed(mode_id, game_type, draw)
+    rng = rng_override or random.Random(seed)
     is_hit = rng.random() < 0.80
 
     all_zodiacs = [number_to_zodiac(zodiac_map, n) for n in nums
@@ -287,7 +407,9 @@ def direct_predict_future(module_key, mode_id, draw, game_type, zodiac_map, colo
     """
     del module_key, color_map
 
-    rng = rng_override or random.Random(f"future_{mode_id}_{game_type}_{draw['year']}_{draw['term']}")
+    # 三期中特 (mode_id=197): 每 3 期为一组，将种子固定到组的第一期
+    seed = build_prediction_seed(mode_id, game_type, draw, future=True)
+    rng = rng_override or random.Random(seed)
     all_zodiacs = list(zodiac_map.keys())
     rng.shuffle(all_zodiacs)
 
@@ -432,7 +554,7 @@ def build_insert_data(content, row_data, cols):
     # 可选列
     for c, v in [("web_id", 4), ("modes_id", int(row_data["table_modes_id"])),
                   ("status", 1), ("res_color", row_data.get("res_color", "")),
-                  ("start", ""), ("end", "")]:
+                  ("start", row_data.get("start", "")), ("end", row_data.get("end", ""))]:
         if c in cols:
             data[c] = v
     # 特殊处理：hei/bai — 优先使用 row_data 中的专用值
@@ -498,6 +620,7 @@ def fill_module_for_type(conn, module_key, module_info, game_type,
     print(f"    type={game_type}: 已有 {existing_filled} 行有效，目标 {target_rows} 行")
 
     generated = 0
+    window_content_cache = load_existing_window_content_cache(conn, table, game_type)
 
     for draw in draws:
         if generated >= needed:
@@ -515,6 +638,7 @@ def fill_module_for_type(conn, module_key, module_info, game_type,
             try:
                 result = call_predict(config_key, draw["numbers_str"])
                 row_data = parse_predict_result(result, draw, game_type, zodiac_map, mode_id)
+                row_data = attach_window_metadata(row_data, mode_id, draw)
                 if row_data:
                     print(f"      predict[{draw['year']}-{draw['term']}] 成功", end="")
             except Exception as e:
@@ -522,13 +646,14 @@ def fill_module_for_type(conn, module_key, module_info, game_type,
 
         # 降级/后续调用用直接生成
         if row_data is None:
-            rng = random.Random(f"{mode_id}_{game_type}_{draw['year']}_{draw['term']}")
             row_data = direct_predict(module_key, mode_id, draw, game_type,
-                                      zodiac_map, color_map, rng)
+                                      zodiac_map, color_map)
+            row_data = attach_window_metadata(row_data, mode_id, draw)
             if row_data:
                 print(f"      direct[{draw['year']}-{draw['term']}]", end="")
 
         if row_data:
+            row_data = normalize_window_content(row_data, window_content_cache)
             insert_row(conn, table, row_data)
             generated += 1
             print()
@@ -576,19 +701,24 @@ def generate_next_prediction(conn, module_key, module_info, game_type,
             # 未开奖期禁止把真实号码喂给 predict()，否则等同于提前泄露未来结果。
             result = call_predict(config_key, None)
             row_data = parse_predict_result(result, next_draw, game_type, zodiac_map, mode_id)
+            row_data = attach_window_metadata(row_data, mode_id, next_draw)
         except:
             pass
 
     if row_data is None:
-        rng = random.Random(f"{mode_id}_{game_type}_{next_draw['year']}_{next_draw['term']}")
         row_data = direct_predict_future(module_key, mode_id, next_draw, game_type,
-                                         zodiac_map, color_map, rng)
+                                         zodiac_map, color_map)
+        row_data = attach_window_metadata(row_data, mode_id, next_draw)
 
     if row_data:
         # ★ 关键：清空 res_code / res_sx，不泄露未来开奖结果
         row_data["res_code"] = ""
         row_data["res_sx"] = ""
         row_data["res_color"] = ""
+        row_data = normalize_window_content(
+            row_data,
+            load_existing_window_content_cache(conn, table, game_type),
+        )
         insert_row(conn, table, row_data)
         print(f"    → 下期预测 {next_draw['year']}-{next_draw['term']}")
         return 1

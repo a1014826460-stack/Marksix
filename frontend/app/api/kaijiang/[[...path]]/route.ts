@@ -174,6 +174,17 @@ function mapSimpleContent(rows: LegacyRow[]) {
   return rows.map((row) => baseItem(row, { content: asString(row.content) }))
 }
 
+function ensureJsonArray(value: unknown): string {
+  const raw = asString(value).trim()
+  if (!raw) return "[]"
+  try {
+    const parsed = JSON.parse(raw)
+    return JSON.stringify(Array.isArray(parsed) ? parsed : [])
+  } catch {
+    return "[]"
+  }
+}
+
 function mapStructuredTitleRows(rows: LegacyRow[]) {
   return rows.map((row) =>
     baseItem(row, {
@@ -181,7 +192,7 @@ function mapStructuredTitleRows(rows: LegacyRow[]) {
       content: asString(row.content),
       jiexi: asString(row.jiexi),
       image_url: asString(row.image_url),
-      x7m14: asString(row.x7m14),
+      x7m14: ensureJsonArray(row.x7m14),
       code: asString(row.code),
     }),
   )
@@ -334,7 +345,7 @@ function mapYiJuZhenYan(rows: LegacyRow[]) {
         ? currentJiexi
         : asString(exactRow?.jiexi || mappingPayload?.jiexi || currentJiexi),
       image_url: asString(row.image_url),
-      x7m14: asString(row.x7m14),
+      x7m14: ensureJsonArray(row.x7m14),
     })
   })
 }
@@ -356,7 +367,7 @@ function mapSiZiXuanJi(rows: LegacyRow[]) {
         ? currentJiexi
         : asString(exactRow?.jiexi || mappingPayload?.jiexi || currentJiexi),
       image_url: asString(row.image_url),
-      x7m14: asString(row.x7m14),
+      x7m14: ensureJsonArray(row.x7m14),
     })
   })
 }

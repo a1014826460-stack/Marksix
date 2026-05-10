@@ -249,9 +249,14 @@ def build_generated_prediction_row_data(
     # 例如 term=127 → end=127, start=125；term=126 → end=127, start=125
     term_int = int(term) if str(term or "").strip().isdigit() else 0
     if term_int > 0:
-        r = term_int % 3
-        end_val = term_int + ((4 - r) % 3)
-        start_val = max(1, end_val - 2)
+        rem = term_int % 3
+        if rem == 2:
+            start_val = term_int
+        elif rem == 0:
+            start_val = max(1, term_int - 1)
+        else:
+            start_val = max(1, term_int - 2)
+        end_val = start_val + 2
         if isinstance(generated_content, dict):
             generated_content["start"] = str(start_val)
             generated_content["end"] = str(end_val)

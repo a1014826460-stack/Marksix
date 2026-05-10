@@ -342,10 +342,14 @@ docker stats
 ### 健康检查
 
 ```bash
-# API 健康检查
+# Python API 健康检查
 curl http://localhost:8000/health
+# 返回: {"status": "ok", "engine": "postgresql"}
 
-# 通过 Nginx 检查
+# API 详细状态（含数据库摘要）
+curl http://localhost:8000/api/health
+
+# 通过 Nginx 检查（代理到 Python API）
 curl http://localhost/health
 
 # PostgreSQL 连接检查
@@ -418,6 +422,17 @@ docker compose logs
 # 单独检查问题服务
 docker compose logs python-api --tail 100
 ```
+
+### 访问出现 502 Bad Gateway
+
+**原因**: Nginx 在启动时将上游容器域名解析为 IP 并缓存。如果上游容器重启（IP 变化），Nginx 仍使用旧 IP 导致连接被拒。
+
+**快速修复**:
+```bash
+docker compose restart nginx
+```
+
+**永久修复**: 确保 `deploy/nginx.conf` 使用变量化 `proxy_pass`（`set $backend backend-admin:3002; proxy_pass http://$backend;`），配合 `resolver 127.0.0.11 valid=10s;` 实现运行时 DNS 解析。当前配置已包含此修复。
 
 ### 数据库连接失败
 
