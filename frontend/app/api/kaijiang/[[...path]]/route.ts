@@ -212,6 +212,14 @@ function mapSanqi(rows: LegacyRow[]) {
   )
 }
 
+function filterSanqiClosingRows(rows: LegacyRow[]) {
+  return rows.filter((row) => {
+    const term = asString(row.term).trim()
+    const end = asString(row.end || row.term).trim()
+    return Boolean(term) && term === end
+  })
+}
+
 function mapSevenXiaoQiMa(rows: LegacyRow[]) {
   return rows.map((row) => {
     const parsedObject = parseJsonObject(row.xiao) || parseJsonObject(row.content)
@@ -464,7 +472,7 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
       case "getSanqiXiao4new": {
         const payload = await fetchLegacyRows(url, 197, 8)
-        return jsonResponse(mapSanqi(payload.rows))
+        return jsonResponse(mapSanqi(filterSanqiClosingRows(payload.rows)))
       }
 
       case "sbzt": {

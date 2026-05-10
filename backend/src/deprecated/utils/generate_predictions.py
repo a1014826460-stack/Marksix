@@ -1,3 +1,12 @@
+"""DEPRECATED: do not use as production prediction generator.
+
+Reason:
+- contains independent legacy generation logic
+- not guaranteed to match admin/manual or auto-task behavior
+- replaced by the unified generation service described in
+  backend/docs/prediction-generation-refactor-plan.md
+"""
+
 """
 批量预测数据生成脚本 v3
 =========================================================

@@ -1,3 +1,11 @@
+"""DEPRECATED: do not use as production prediction generator.
+
+Reason:
+- implements a separate full-batch generation path
+- bypasses the target single admin entry model
+- must be replaced by a thin wrapper over the unified generation service
+"""
+
 """
 批量预测数据生成脚本 v4 — 全模块覆盖
 ============================================================
