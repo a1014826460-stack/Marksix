@@ -16,9 +16,12 @@ import type { Metadata, Viewport } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "台湾六合彩论坛",
-  description: "全网最准尽在台湾六合彩 — 提供最新开奖结果、预测号码、六合彩资料大全。",
+  title: "全网最准尽在台湾六合彩论坛",
+  description: "全网最准尽在台湾 — 提供最新开奖结果、预测号码、六合彩资料大全。",
   keywords: "六合彩, 台湾六合彩, 开奖结果, 预测号码, 六合彩论坛",
+  icons: {
+    icon: "/favicon.ico",
+  },
 }
 
 export const viewport: Viewport = {

@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no"
     />
-    <title>旧站隔离嵌入页</title>
+    <title>台湾六合彩论坛</title>
     <style>
       body {
         margin: 0;
@@ -244,6 +244,21 @@
             '      }, "*");',
             "    }",
             "  }",
+            "  function setDynamicTitle(){",
+            "    try {",
+            "      if(typeof LunarMonth === 'undefined') return;",
+            "      var weekNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];",
+            "      var lunarM = LunarMonth < 0 ? '闰' + (-LunarMonth) : LunarMonth;",
+            "      var weekday = (typeof Weekday !== 'undefined') ? Weekday : (new Date()).getDay();",
+            "      var solarM = (typeof SolarMonth !== 'undefined') ? SolarMonth : (new Date()).getMonth() + 1;",
+            "      var solarD = (typeof SolarDate !== 'undefined') ? SolarDate : (new Date()).getDate();",
+            "      var loc = (typeof Location !== 'undefined') ? Location : '';",
+            "      var ani = (typeof Animal !== 'undefined') ? Animal : '';",
+            "      var lunM = (typeof LunarDate !== 'undefined') ? LunarDate : '';",
+            "      document.title = '今:' + solarM + '月' + solarD + '日.' + weekNames[weekday] + '.农历:' + lunarM + '月' + lunM + '日.煞' + loc + ' 正冲生肖:' + ani;",
+            "      sendDebug('setDynamicTitle -> ' + document.title);",
+            "    } catch(e) { sendDebug('setDynamicTitle error: ' + (e && e.message)); }",
+            "  }",
             "  function syncLotteryTabs(){",
             "    var container = document.querySelector('.KJ-TabBox');",
             "    if(!container) return false;",
@@ -294,22 +309,27 @@
             "  window.addEventListener('load', function(){",
             "    sendDebug('bridge load, type=' + (window.__LEGACY_EMBED_CONFIG__ ? window.__LEGACY_EMBED_CONFIG__.type : 'unknown'));",
             "    hideShellHeader();",
+            "    setDynamicTitle();",
             "    applyBranding();",
             "    syncLotteryTabs();",
             "    postHeight();",
             "    postAnchorMap();",
             "    setTimeout(applyBranding, 80);",
+            "    setTimeout(setDynamicTitle, 80);",
             "    setTimeout(syncLotteryTabs, 80);",
             "    setTimeout(postHeight, 150);",
             "    setTimeout(postAnchorMap, 150);",
             "    setTimeout(applyBranding, 150);",
+            "    setTimeout(setDynamicTitle, 150);",
             "    setTimeout(syncLotteryTabs, 300);",
             "    setTimeout(postHeight, 500);",
             "    setTimeout(postAnchorMap, 500);",
             "    setTimeout(applyBranding, 500);",
+            "    setTimeout(setDynamicTitle, 500);",
             "    setTimeout(postHeight, 1200);",
             "    setTimeout(postAnchorMap, 1200);",
             "    setTimeout(applyBranding, 1200);",
+            "    setTimeout(setDynamicTitle, 1200);",
             "  });",
             "  window.addEventListener('resize', postHeight);",
             "  document.addEventListener('click', function(event){",

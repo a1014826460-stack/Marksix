@@ -5,6 +5,7 @@ saving all results to the lottery_draws table.
 """
 
 import json
+import logging
 import sys
 import threading
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,8 @@ from Macau_history_crawler import fetch_macau_history_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
+
+_crawler_logger = logging.getLogger("crawler.scheduler")
 
 
 def _get_lottery_meta(db_path: str | Path) -> dict[str, dict[str, Any]]:
@@ -359,11 +362,12 @@ class CrawlerScheduler:
         if self._running:
             return
         self._running = True
-        print("[CrawlerScheduler] Started (auto-open check every 60s)")
+        _crawler_logger.info("Scheduler started (auto-open check every 60s)")
         self._schedule_auto_open()
         self._schedule_taiwan_precise_open()
 
     def stop(self) -> None:
+        _crawler_logger.info("Scheduler stopping")
         self._running = False
         if hasattr(self, "_auto_open_timer") and self._auto_open_timer:
             self._auto_open_timer.cancel()

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib as _hashlib
+import logging
 import random as _random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,8 @@ from db import connect
 from helpers import load_fixed_data_maps
 from mechanisms import SIZE_NUMBER_MAP, get_prediction_config
 from prediction_generation.diversity import enforce_prediction_diversity
+
+_logger = logging.getLogger("prediction.service")
 from utils.created_prediction_store import upsert_created_prediction_row
 
 
@@ -116,8 +120,15 @@ def generate_prediction_batch(
     """
     from admin.crud import get_site as _get_site
 
+    _t_start = time.perf_counter()
     site = _get_site(db_path, site_id)
     requested_keys = list(mechanism_keys or [])
+
+    _logger.info(
+        "Batch generation started: site_id=%d, keys=%s, range=%s-%s, future=%d, trigger=%s",
+        site_id, requested_keys or ["all"], f"{start_issue[0]}{start_issue[1]:03d}",
+        f"{end_issue[0]}{end_issue[1]:03d}", future_periods, trigger,
+    )
 
     with connect(db_path) as conn:
         sync_site_modules(conn, site_id)
@@ -297,6 +308,31 @@ def generate_prediction_batch(
                                 "tou": [head_text],
                             },
                         )
+                    elif mode_id == 246:
+                        # 七肖七码(一肖一码)：正常预测 + 随机平特生肖
+                        result = predict(
+                            config=config,
+                            res_code=None if is_future else safe_res_code,
+                            source_table=table_name,
+                            db_path=db_path,
+                            target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                            random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
+                        )
+                        row_data = build_generated_prediction_row_data(
+                            mode_id=mode_id,
+                            lottery_type=str(lottery_type),
+                            year=str(draw["year"]),
+                            term=str(draw["term"]),
+                            web_value="4",
+                            res_code=safe_res_code or "",
+                            generated_content=result["prediction"]["content"],
+                        )
+                        # 随机选取一个生肖作为 ping 值
+                        if is_future:
+                            seed_str = f"ping_{draw['year']}{draw['term']:03d}"
+                            seed_int = int(_hashlib.sha256(seed_str.encode()).hexdigest(), 16) % (2**32)
+                            _random.seed(seed_int)
+                        row_data["ping"] = _random.choice(list({v for v in zodiac_map.values() if v}))
                     else:
                         result = predict(
                             config=config,
@@ -350,8 +386,25 @@ def generate_prediction_batch(
                     total_errors += 1
                     if not module_report["error_message"]:
                         module_report["error_message"] = str(exc)
+                    _logger.error(
+                        "Module generation error: mode_id=%d, key=%s, draw=%s/%d, future=%s — %s",
+                        mode_id, mechanism_key, draw.get("year"), draw.get("term"),
+                        draw.get("_future", False), exc,
+                    )
 
             module_reports.append(module_report)
+
+        elapsed_s = round(time.perf_counter() - _t_start, 2)
+        _logger.info(
+            "Batch generation completed: modules=%d, draws=%d, inserted=%d, updated=%d, errors=%d, elapsed=%.1fs",
+            len(module_reports), len(draws), total_inserted, total_updated, total_errors, elapsed_s,
+        )
+        if total_errors > 0:
+            _logger.warning(
+                "Batch generation had %d errors across %d modules",
+                total_errors,
+                sum(1 for m in module_reports if m.get("errors", 0) > 0),
+            )
 
         return {
             "site_id": int(site_id),

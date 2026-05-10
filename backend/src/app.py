@@ -66,6 +66,10 @@ from data_fetch import (  # noqa: E402
     save_mode_all_data,
 )
 from mechanisms import ensure_prediction_configs_loaded, get_prediction_config, list_prediction_configs  # noqa: E402
+from logger import (
+    export_error_logs, get_error_log_detail, get_log_stats,
+    init_logging, query_error_logs, trigger_cleanup,
+)  # noqa: E402
 from normalize_sqlite import normalize_payload_tables  # noqa: E402
 from build_text_history_mappings import build_text_history_mappings  # noqa: E402
 from utils.created_prediction_store import (  # noqa: E402
@@ -685,8 +689,63 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.handle_site_detail(method, path)
                 return
 
+            # ── 日志管理 API ──────────────────────────────────
+            if path == "/api/admin/logs/stats" and method == "GET":
+                self.send_json(get_log_stats(self.db_path))
+                return
+            if path == "/api/admin/logs/cleanup" and method == "POST":
+                result = trigger_cleanup()
+                self.send_json({"ok": True, **result})
+                return
+            if path == "/api/admin/logs/export" and method == "GET":
+                qs = parse_qs(urlparse(self.path).query)
+                rows = export_error_logs(
+                    self.db_path,
+                    level=qs.get("level", [""])[0],
+                    module=qs.get("module", [""])[0],
+                    keyword=qs.get("keyword", [""])[0],
+                    date_from=qs.get("date_from", [""])[0],
+                    date_to=qs.get("date_to", [""])[0],
+                )
+                self.send_json({"rows": rows, "total": len(rows)})
+                return
+            if path.startswith("/api/admin/logs/"):
+                log_id_str = path.split("/")[-1]
+                if log_id_str.isdigit() and method == "GET":
+                    detail = get_error_log_detail(self.db_path, int(log_id_str))
+                    if detail:
+                        self.send_json(detail)
+                    else:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, f"log_id={log_id_str} 不存在")
+                    return
+            if path == "/api/admin/logs" and method == "GET":
+                qs = parse_qs(urlparse(self.path).query)
+                result = query_error_logs(
+                    self.db_path,
+                    page=int(qs.get("page", ["1"])[0] or 1),
+                    page_size=min(int(qs.get("page_size", ["30"])[0] or 30), 200),
+                    level=qs.get("level", [""])[0],
+                    module=qs.get("module", [""])[0],
+                    keyword=qs.get("keyword", [""])[0],
+                    date_from=qs.get("date_from", [""])[0],
+                    date_to=qs.get("date_to", [""])[0],
+                )
+                self.send_json(result)
+                return
+
             self.send_error_json(HTTPStatus.NOT_FOUND, "接口不存在")
         except Exception as exc:
+            import logging
+            logger = logging.getLogger("app.request")
+            logger.exception(
+                "Request failed: %s %s — %s",
+                self.command,
+                self.path,
+                exc,
+                extra={
+                    "user_id": (auth_user_from_token(self.db_path, self.bearer_token()) or {}).get("id", ""),
+                },
+            )
             status = HTTPStatus.BAD_REQUEST
             if isinstance(exc, KeyError):
                 status = HTTPStatus.NOT_FOUND
@@ -985,6 +1044,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 def run_server(host: str, port: int, db_path: str | Path) -> None:
     ensure_prediction_configs_loaded(db_path)
     ensure_admin_tables(db_path)
+    init_logging(str(db_path))
     server = ThreadingHTTPServer((host, port), ApiHandler)
     server.db_path = db_path  # type: ignore[attr-defined]
     print(f"Backend API running at http://{host}:{port}")
