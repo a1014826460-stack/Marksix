@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib as _hashlib
+import random as _random
 from pathlib import Path
 from typing import Any
 
 from common import DEFAULT_TARGET_HIT_RATE, predict
 from db import connect
 from helpers import load_fixed_data_maps
-from mechanisms import get_prediction_config
+from mechanisms import SIZE_NUMBER_MAP, get_prediction_config
 from prediction_generation.diversity import enforce_prediction_diversity
 from utils.created_prediction_store import upsert_created_prediction_row
 
@@ -208,8 +210,6 @@ def generate_prediction_batch(
             for draw in all_target_draws:
                 try:
                     is_future = bool(draw.get("_future"))
-                    if mode_id == 65 and is_future:
-                        continue
 
                     draw_key = (draw["year"], draw["term"])
                     safe_res_code: str | None = draw["numbers_str"]
@@ -217,11 +217,17 @@ def generate_prediction_batch(
                         safe_res_code = None
 
                     if mode_id == 65:
-                        numbers = [n.strip() for n in draw["numbers_str"].split(",") if n.strip()]
-                        try:
-                            special_code = int(numbers[-1]) if numbers else 0
-                        except (ValueError, IndexError):
-                            special_code = 0
+                        if is_future:
+                            seed_str = f"{draw['year']}{draw['term']:03d}"
+                            seed_int = int(_hashlib.sha256(seed_str.encode()).hexdigest(), 16) % (2**32)
+                            _random.seed(seed_int)
+                            special_code = _random.randint(1, 49)
+                        else:
+                            numbers = [n.strip() for n in draw["numbers_str"].split(",") if n.strip()]
+                            try:
+                                special_code = int(numbers[-1]) if numbers else 0
+                            except (ValueError, IndexError):
+                                special_code = 0
 
                         if special_code <= 12:
                             content = ",".join(f"{i:02d}" for i in range(1, 13))
@@ -240,6 +246,56 @@ def generate_prediction_batch(
                             web_value="4",
                             res_code=safe_res_code or "",
                             generated_content=content,
+                        )
+                    elif mode_id == 108:
+                        # 大小中特带1头：生成 content（大小|号码）和 tou（头数）
+                        if is_future:
+                            result = predict(
+                                config=config,
+                                res_code=None,
+                                source_table=table_name,
+                                db_path=db_path,
+                                target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                                random_seed=f"{draw['year']}{draw['term']:03d}",
+                            )
+                            predicted_size = str(result["prediction"]["labels"][0])
+                            seed_str = f"{draw['year']}{draw['term']:03d}"
+                            seed_int = int(_hashlib.sha256(seed_str.encode()).hexdigest(), 16) % (2**32)
+                            _random.seed(seed_int)
+                            size_numbers = SIZE_NUMBER_MAP.get(predicted_size, [])
+                            chosen_number = _random.choice(size_numbers) if size_numbers else "00"
+                        else:
+                            numbers = [n.strip() for n in (safe_res_code or "").split(",") if n.strip()]
+                            try:
+                                special_code = int(numbers[-1]) if numbers else 0
+                            except (ValueError, IndexError):
+                                special_code = 0
+                            chosen_number = f"{special_code:02d}"
+                            predicted_size = "大" if special_code >= 25 else "小"
+
+                        num_val = int(chosen_number) if chosen_number.lstrip("0") else 0
+                        if 10 <= num_val <= 19:
+                            head_text = "1头"
+                        elif 20 <= num_val <= 29:
+                            head_text = "2头"
+                        elif 30 <= num_val <= 39:
+                            head_text = "3头"
+                        elif 40 <= num_val <= 49:
+                            head_text = "4头"
+                        else:
+                            head_text = "0头"
+
+                        row_data = build_generated_prediction_row_data(
+                            mode_id=mode_id,
+                            lottery_type=str(lottery_type),
+                            year=str(draw["year"]),
+                            term=str(draw["term"]),
+                            web_value="4",
+                            res_code=safe_res_code or "",
+                            generated_content={
+                                "content": [f"{predicted_size}|{chosen_number}"],
+                                "tou": [head_text],
+                            },
                         )
                     else:
                         result = predict(

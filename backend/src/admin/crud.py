@@ -499,13 +499,22 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         "term": int(payload.get("term") or 1),
         "numbers": str(payload.get("numbers") or "").strip(),
         "draw_time": str(payload.get("draw_time") or "").strip(),
+        "next_time": str(payload.get("next_time") or "").strip(),
         "status": 1 if parse_bool(payload.get("status"), True) else 0,
         "is_opened": 1 if parse_bool(payload.get("is_opened"), False) else 0,
         "next_term": int(payload.get("next_term") or (int(payload.get("term") or 1) + 1)),
     }
-    # 台湾彩自动推算开奖时间
+    # 台湾彩自动推算开奖时间：时间取自 lottery_types.draw_time
     if fields["lottery_type_id"] == 3 and not fields["draw_time"]:
         with connect(db_path) as conn:
+            # 获取 lottery_types 中 id=3 的 draw_time（如 "22:30"）
+            lt_row = conn.execute("SELECT draw_time FROM lottery_types WHERE id = 3").fetchone()
+            lt_time = str(lt_row["draw_time"]).strip() if lt_row and lt_row["draw_time"] else "22:30:00"
+            lt_parts = lt_time.split(":")
+            lt_h = int(lt_parts[0]) if len(lt_parts) >= 1 else 22
+            lt_m = int(lt_parts[1]) if len(lt_parts) >= 2 else 30
+            lt_s = int(lt_parts[2]) if len(lt_parts) >= 3 else 0
+
             prev = conn.execute(
                 """SELECT draw_time FROM lottery_draws
                    WHERE lottery_type_id = 3 ORDER BY year DESC, term DESC LIMIT 1"""
@@ -513,13 +522,17 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
             if prev and prev.get("draw_time"):
                 try:
                     prev_dt = datetime.strptime(str(prev["draw_time"]).strip(), "%Y-%m-%d %H:%M:%S")
-                    next_dt = prev_dt.replace(day=prev_dt.day + 1, hour=22, minute=30, second=0, microsecond=0)
+                    next_dt = prev_dt.replace(
+                        day=prev_dt.day + 1, hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
+                    )
                     fields["draw_time"] = next_dt.strftime("%Y-%m-%d %H:%M:%S")
                 except (ValueError, OverflowError):
                     pass
             if not fields["draw_time"]:
                 beijing_now = (datetime.now(timezone.utc) + timedelta(hours=8)).replace(tzinfo=None)
-                fields["draw_time"] = beijing_now.replace(hour=22, minute=30, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+                fields["draw_time"] = beijing_now.replace(
+                    hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
+                ).strftime("%Y-%m-%d %H:%M:%S")
 
     # 开奖时间已过：自动标记为已开奖（draw_time 为北京时间，须与北京时间比较）
     if fields["draw_time"] and not fields["is_opened"]:
@@ -545,10 +558,10 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
             row = conn.execute(
                 """
                 INSERT INTO lottery_draws (
-                    lottery_type_id, year, term, numbers, draw_time, status,
+                    lottery_type_id, year, term, numbers, draw_time, next_time, status,
                     is_opened, next_term, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING *
                 """,
                 (*fields.values(), now, now),
@@ -558,7 +571,7 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 """
                 UPDATE lottery_draws
                 SET lottery_type_id = ?, year = ?, term = ?, numbers = ?, draw_time = ?,
-                    status = ?, is_opened = ?, next_term = ?, updated_at = ?
+                    next_time = ?, status = ?, is_opened = ?, next_term = ?, updated_at = ?
                 WHERE id = ?
                 RETURNING *
                 """,

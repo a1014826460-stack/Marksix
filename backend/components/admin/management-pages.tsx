@@ -66,6 +66,7 @@ type Draw = {
   term: number
   numbers: string
   draw_time: string
+  next_time?: string
   status: boolean
   is_opened: boolean
   next_term: number
@@ -524,36 +525,101 @@ function DrawNumbersInput({ name, defaultValue }: { name: string; defaultValue: 
   const [selected, setSelected] = useState<number[]>(() =>
     defaultValue ? defaultValue.split(",").map(Number).filter((n) => n >= 1 && n <= 49) : []
   )
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const allNumbers = Array.from({ length: 49 }, (_, i) => i + 1)
 
-  function toggle(n: number) {
-    setSelected((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : prev.length < 7 ? [...prev, n].sort((a, b) => a - b) : prev)
+  function addNumber(n: number) {
+    setSelected((prev) => {
+      if (prev.includes(n)) return prev
+      if (prev.length >= 7) return prev
+      return [...prev, n]
+    })
+  }
+
+  function removeNumber(n: number) {
+    setSelected((prev) => prev.filter((x) => x !== n))
+  }
+
+  function onDragStart(_e: React.DragEvent, index: number) {
+    setDragIndex(index)
+  }
+
+  function onDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault()
+    setDragOverIndex(index)
+  }
+
+  function onDragLeave() {
+    setDragOverIndex(null)
+  }
+
+  function onDrop(e: React.DragEvent, dropIndex: number) {
+    e.preventDefault()
+    setDragOverIndex(null)
+    if (dragIndex === null || dragIndex === dropIndex) return
+    setSelected((prev) => {
+      const next = [...prev]
+      const [item] = next.splice(dragIndex, 1)
+      next.splice(dropIndex, 0, item)
+      return next
+    })
+    setDragIndex(null)
+  }
+
+  function onDragEnd() {
+    setDragIndex(null)
+    setDragOverIndex(null)
   }
 
   const valueStr = selected.map((n) => String(n).padStart(2, "0")).join(",")
   return (
     <div>
       <input type="hidden" name={name} value={valueStr} />
-      <div className="flex flex-wrap gap-1 mb-2 min-h-[28px]">
-        {selected.map((n) => (
-          <span key={n} className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-            {String(n).padStart(2, "0")}
-            <button type="button" onClick={() => toggle(n)} className="ml-0.5 text-primary/60 hover:text-destructive">×</button>
-          </span>
+      {/* 已选号码容器 — 支持拖拽排序 */}
+      <div className="flex flex-wrap items-center gap-2 min-h-[56px] p-3 mb-2 rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 transition-colors">
+        {selected.map((n, idx) => (
+          <div
+            key={n}
+            draggable
+            onDragStart={(e) => onDragStart(e, idx)}
+            onDragOver={(e) => onDragOver(e, idx)}
+            onDragLeave={onDragLeave}
+            onDrop={(e) => onDrop(e, idx)}
+            onDragEnd={onDragEnd}
+            className={`flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-sm font-bold text-primary-foreground shadow-sm cursor-grab active:cursor-grabbing select-none transition-all ${
+              dragIndex === idx ? "opacity-40 scale-90" : ""
+            } ${
+              dragOverIndex === idx && dragIndex !== idx ? "ring-2 ring-primary/60 scale-105" : ""
+            }`}
+            title="拖拽可排序"
+          >
+            <span className="text-[10px] opacity-50 select-none" aria-hidden>⠿</span>
+            <span>{String(n).padStart(2, "0")}</span>
+            <button
+              type="button"
+              onClick={() => removeNumber(n)}
+              className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/20 text-[10px] hover:bg-destructive hover:text-destructive-foreground transition-colors"
+              title="移除"
+            >×</button>
+          </div>
         ))}
-        {selected.length === 0 && <span className="text-xs text-muted-foreground">点击下方号码添加（最多7个）</span>}
+        {selected.length === 0 && (
+          <span className="text-xs text-muted-foreground">点击下方号码添加（最多7个），选中后可拖拽排序</span>
+        )}
       </div>
+      {/* 号码选择面板 */}
       <div className="flex flex-wrap gap-0.5 max-h-[140px] overflow-y-auto">
         {allNumbers.map((n) => {
           const isSelected = selected.includes(n)
           return (
             <button
               key={n} type="button"
-              onClick={() => toggle(n)}
+              onClick={() => isSelected ? removeNumber(n) : addNumber(n)}
               disabled={!isSelected && selected.length >= 7}
               className={`h-7 w-7 rounded text-xs font-medium transition-colors ${
                 isSelected
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/80"
                   : "bg-muted text-muted-foreground hover:bg-muted/70 disabled:opacity-30"
               }`}
             >{String(n).padStart(2, "0")}</button>
@@ -589,14 +655,36 @@ export function DrawsPageClient() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
+    const ltId = Number(formValue(form, "lottery_type_id"))
+
+    // 构建完整 draw_time：用户选择的日期 + 对应彩种 lottery_types.draw_time
+    let drawTime = formValue(form, "draw_time")
+    if (drawTime) {
+      const lt = lotteries.find(l => l.id === ltId)
+      if (lt?.draw_time) {
+        const parts = lt.draw_time.split(":")
+        const timeWithSec = parts.length >= 3 ? lt.draw_time : `${lt.draw_time}:00`
+        drawTime = `${drawTime} ${timeWithSec}`
+      }
+    }
+
+    // next_time = draw_time 的毫秒时间戳（东八区）
+    let nextTime = ""
+    if (drawTime) {
+      try {
+        nextTime = String(new Date(drawTime.replace(" ", "T") + "+08:00").getTime())
+      } catch { /* ignore */ }
+    }
+
     await adminApi(editing ? `/admin/draws/${editing.id}` : "/admin/draws", {
       method: editing ? "PUT" : "POST",
       body: jsonBody({
-        lottery_type_id: Number(formValue(form, "lottery_type_id")),
+        lottery_type_id: ltId,
         year: Number(formValue(form, "year")),
         term: Number(formValue(form, "term")),
         numbers: formValue(form, "numbers"),
-        draw_time: formValue(form, "draw_time"),
+        draw_time: drawTime,
+        next_time: nextTime,
         status: boolValue(form, "status"),
         is_opened: boolValue(form, "is_opened"),
         next_term: Number(formValue(form, "next_term")),
@@ -652,7 +740,7 @@ export function DrawsPageClient() {
                         ;(form.elements.namedItem("term") as HTMLInputElement).value = String(info.term + 1)
                         ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(info.term + 2)
                       }
-                      // 台湾彩自动推算开奖时间：上一期 +1 天，每日 22:30:00
+                      // 台湾彩自动推算开奖时间：上一期 +1 天，时间取自 lottery_types.draw_time
                       if (ltId === 3) {
                         let baseDate: Date
                         if (info.draw_time) {
@@ -661,11 +749,14 @@ export function DrawsPageClient() {
                           baseDate = new Date()
                         }
                         baseDate.setDate(baseDate.getDate() + 1)
-                        baseDate.setHours(22, 30, 0, 0)
+                        const lt = lotteries.find(l => l.id === 3)
+                        const timeStr = lt?.draw_time || "22:30:00"
+                        const parts = timeStr.split(":")
+                        baseDate.setHours(parseInt(parts[0]) || 22, parseInt(parts[1]) || 30, parseInt(parts[2]) || 0, 0)
                         const yyyy = baseDate.getFullYear()
                         const mm = String(baseDate.getMonth() + 1).padStart(2, "0")
                         const dd = String(baseDate.getDate()).padStart(2, "0")
-                        ;(form.elements.namedItem("draw_time") as HTMLInputElement).value = `${yyyy}-${mm}-${dd}T22:30`
+                        ;(form.elements.namedItem("draw_time") as HTMLInputElement).value = `${yyyy}-${mm}-${dd}`
                       }
                     } catch { /* ignore */ }
                   }} className="h-9 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-60">
