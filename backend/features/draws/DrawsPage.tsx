@@ -7,6 +7,7 @@ import { AdminShell } from "@/components/admin/admin-shell"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -18,18 +19,48 @@ import {
 import { adminApi, jsonBody } from "@/lib/admin-api"
 import { Field } from "@/features/shared/Field"
 import { StatusBadge } from "@/features/shared/StatusBadge"
-import { formValue, boolValue } from "@/features/shared/form-helpers"
 import { DrawNumbersInput } from "@/features/draws/DrawNumbersInput"
 import type { Draw, LotteryType } from "@/features/shared/types"
 
 const TAIWAN_LOTTERY_ID = 3
+
+function formatDateInput(date: Date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function parseBeijingDateTime(value: string) {
+  return new Date(value.replace(" ", "T") + "+08:00")
+}
+
+function buildNextTerm(term: string) {
+  const next = Number(term)
+  if (!term || Number.isNaN(next) || next <= 0) return ""
+  return String(next + 1)
+}
 
 export function DrawsPage() {
   const [rows, setRows] = useState<Draw[]>([])
   const [lotteries, setLotteries] = useState<LotteryType[]>([])
   const [editing, setEditing] = useState<Draw | null>(null)
   const [formOpen, setFormOpen] = useState(false)
+  const [draftYear, setDraftYear] = useState(String(new Date().getFullYear()))
+  const [draftTerm, setDraftTerm] = useState("")
+  const [draftNextTerm, setDraftNextTerm] = useState("")
+  const [draftDrawDate, setDraftDrawDate] = useState("")
+  const [draftNumbers, setDraftNumbers] = useState("")
+  const [draftStatus, setDraftStatus] = useState("1")
+  const [draftIsOpened, setDraftIsOpened] = useState("0")
+  const [numbersInputKey, setNumbersInputKey] = useState(0)
   const formRef = useRef<HTMLFormElement | null>(null)
+
+  const taiwanLottery =
+    lotteries.find((lottery) => lottery.id === TAIWAN_LOTTERY_ID) || null
+  const filteredRows = rows.filter(
+    (row) => row.lottery_type_id === TAIWAN_LOTTERY_ID,
+  )
 
   async function load() {
     const [drawData, lotteryData] = await Promise.all([
@@ -40,17 +71,23 @@ export function DrawsPage() {
     setLotteries(lotteryData.lottery_types)
   }
 
-  useEffect(() => {
-    void load()
-  }, [])
+  function applyTermDraft(term: string) {
+    setDraftTerm(term)
+    setDraftNextTerm(buildNextTerm(term))
+  }
 
-  const taiwanLottery =
-    lotteries.find((lottery) => lottery.id === TAIWAN_LOTTERY_ID) || null
-  const filteredRows = rows.filter(
-    (row) => row.lottery_type_id === TAIWAN_LOTTERY_ID,
-  )
+  function applyEditingDraft(row: Draw) {
+    setDraftYear(String(row.year || new Date().getFullYear()))
+    setDraftTerm(String(row.term || ""))
+    setDraftNextTerm(String(row.next_term || Number(row.term || 0) + 1 || ""))
+    setDraftDrawDate(row.draw_time?.slice(0, 10) || "")
+    setDraftNumbers(row.numbers || "")
+    setDraftStatus(row.status ? "1" : "0")
+    setDraftIsOpened(row.is_opened ? "1" : "0")
+    setNumbersInputKey((value) => value + 1)
+  }
 
-  async function populateDraftFields(form: HTMLFormElement) {
+  async function populateCreateDrafts() {
     try {
       const info = await adminApi<{
         year: number
@@ -58,88 +95,142 @@ export function DrawsPage() {
         draw_time: string
       }>(`/admin/lottery-draws/latest-term?lottery_type_id=${TAIWAN_LOTTERY_ID}`)
 
-      ;(form.elements.namedItem("year") as HTMLInputElement).value = String(
-        info.year || new Date().getFullYear(),
-      )
-      ;(form.elements.namedItem("term") as HTMLInputElement).value = String(
-        info.term > 0 ? info.term + 1 : 1,
-      )
-      ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(
-        info.term > 0 ? info.term + 2 : 2,
-      )
-
+      const currentYear = new Date().getFullYear()
+      const baseTerm = info.term > 0 ? info.term + 1 : 1
+      const nextTerm = baseTerm + 1
       let baseDate = info.draw_time
-        ? new Date(info.draw_time.replace(" ", "T"))
+        ? parseBeijingDateTime(info.draw_time)
         : new Date()
+
       if (Number.isNaN(baseDate.getTime())) {
         baseDate = new Date()
       }
       baseDate.setDate(baseDate.getDate() + 1)
-      const timeStr = taiwanLottery?.draw_time || "22:30:00"
-      const parts = timeStr.split(":")
-      baseDate.setHours(
-        parseInt(parts[0]) || 22,
-        parseInt(parts[1]) || 30,
-        parseInt(parts[2]) || 0,
-        0,
-      )
-      const yyyy = baseDate.getFullYear()
-      const mm = String(baseDate.getMonth() + 1).padStart(2, "0")
-      const dd = String(baseDate.getDate()).padStart(2, "0")
-      ;(form.elements.namedItem("draw_time") as HTMLInputElement).value =
-        `${yyyy}-${mm}-${dd}`
+
+      setDraftYear(String(info.year || currentYear))
+      setDraftTerm(String(baseTerm))
+      setDraftNextTerm(String(nextTerm))
+      setDraftDrawDate(formatDateInput(baseDate))
+      setDraftNumbers("")
+      setDraftStatus("1")
+      setDraftIsOpened("0")
+      setNumbersInputKey((value) => value + 1)
     } catch {
-      /* ignore */
+      const today = new Date()
+      setDraftYear(String(today.getFullYear()))
+      setDraftTerm("1")
+      setDraftNextTerm("2")
+      setDraftDrawDate(formatDateInput(today))
+      setDraftNumbers("")
+      setDraftStatus("1")
+      setDraftIsOpened("0")
+      setNumbersInputKey((value) => value + 1)
     }
   }
 
   useEffect(() => {
-    if (!formOpen || editing || !formRef.current) return
-    void populateDraftFields(formRef.current)
-  }, [editing, formOpen, taiwanLottery])
+    void load()
+  }, [])
+
+  useEffect(() => {
+    if (!formOpen) return
+    if (editing) {
+      applyEditingDraft(editing)
+      return
+    }
+    void populateCreateDrafts()
+  }, [editing, formOpen])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
-    const ltId = TAIWAN_LOTTERY_ID
+    const numbers = String(new FormData(form).get("numbers") || "").trim()
+    const missingFields: string[] = []
 
-    let drawTime = formValue(form, "draw_time")
-    if (drawTime) {
-      const timeStr = taiwanLottery?.draw_time || "22:30:00"
-      const parts = timeStr.split(":")
-      const timeWithSec = parts.length >= 3 ? timeStr : `${timeStr}:00`
-      drawTime = `${drawTime} ${timeWithSec}`
+    if (!draftYear) missingFields.push("年份")
+    if (!draftTerm) missingFields.push("本期期数")
+    if (!draftNextTerm) missingFields.push("下一期期数")
+    if (!numbers) missingFields.push("开奖号码")
+    if (!draftDrawDate) missingFields.push("开奖日期")
+
+    if (missingFields.length > 0) {
+      alert(`请先填写完整必填项：${missingFields.join("、")}`)
+      return
     }
 
-    let nextTime = ""
-    if (drawTime) {
-      try {
-        nextTime = String(
-          new Date(drawTime.replace(" ", "T") + "+08:00").getTime(),
-        )
-      } catch {
-        /* ignore */
+    const duplicateTerm = filteredRows.some((row) => {
+      if (editing && row.id === editing.id) return false
+      return String(row.term) === draftTerm
+    })
+    if (duplicateTerm) {
+      alert(`第 ${draftTerm} 期已存在，请勿重复提交。`)
+      return
+    }
+
+    const duplicateDate = filteredRows.some((row) => {
+      if (editing && row.id === editing.id) return false
+      return (row.draw_time || "").slice(0, 10) === draftDrawDate
+    })
+    if (duplicateDate) {
+      alert(`开奖日期 ${draftDrawDate} 已存在，请勿重复提交。`)
+      return
+    }
+
+    const timeStr = taiwanLottery?.draw_time || "22:30:00"
+    const parts = timeStr.split(":")
+    const timeWithSec = parts.length >= 3 ? timeStr : `${timeStr}:00`
+    const drawTime = `${draftDrawDate} ${timeWithSec}`
+
+    if (editing && draftIsOpened === "1") {
+      const drawAt = parseBeijingDateTime(drawTime)
+      if (!Number.isNaN(drawAt.getTime()) && drawAt.getTime() > Date.now()) {
+        alert("当前期开奖时间尚未到达，不能提前设置为已开奖。")
+        return
       }
     }
 
-    await adminApi(editing ? `/admin/draws/${editing.id}` : "/admin/draws", {
-      method: editing ? "PUT" : "POST",
-      body: jsonBody({
-        lottery_type_id: ltId,
-        year: Number(formValue(form, "year")),
-        term: Number(formValue(form, "term")),
-        numbers: formValue(form, "numbers"),
-        draw_time: drawTime,
-        next_time: nextTime,
-        status: boolValue(form, "status"),
-        is_opened: boolValue(form, "is_opened"),
-        next_term: Number(formValue(form, "next_term")),
-      }),
-    })
-    setEditing(null)
-    setFormOpen(false)
-    form.reset()
+    let nextTime = ""
+    try {
+      nextTime = String(parseBeijingDateTime(drawTime).getTime())
+    } catch {
+      nextTime = ""
+    }
+
+    try {
+      await adminApi(editing ? `/admin/draws/${editing.id}` : "/admin/draws", {
+        method: editing ? "PUT" : "POST",
+        body: jsonBody({
+          lottery_type_id: TAIWAN_LOTTERY_ID,
+          year: Number(draftYear),
+          term: Number(draftTerm),
+          numbers,
+          draw_time: drawTime,
+          next_time: nextTime,
+          status: draftStatus === "1",
+          is_opened: draftIsOpened === "1",
+          next_term: Number(draftNextTerm),
+        }),
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "保存失败，请稍后重试。"
+      alert(message)
+      return
+    }
+
     await load()
+
+    if (editing) {
+      toast.success("保存成功")
+      setEditing(null)
+      setFormOpen(false)
+      return
+    }
+
+    setDraftNumbers("")
+    setNumbersInputKey((value) => value + 1)
+    toast.success("保存成功，可直接录入下一期开奖号码")
+    await populateCreateDrafts()
   }
 
   async function remove(id: number) {
@@ -151,7 +242,7 @@ export function DrawsPage() {
   return (
     <AdminShell
       title="开奖记录管理"
-      description="仅管理台湾彩开奖记录，为预测提供统一数据来源。"
+      description="仅管理台湾彩开奖记录，供倒计时、自动开奖与预测资料同步使用。"
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -161,8 +252,9 @@ export function DrawsPage() {
           <div className="flex-1" />
           <Button
             onClick={() => {
-              setFormOpen((prev) => !prev)
+              const nextOpen = !formOpen
               setEditing(null)
+              setFormOpen(nextOpen)
             }}
             className="group relative overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95"
           >
@@ -176,7 +268,7 @@ export function DrawsPage() {
         <div
           className={`relative z-20 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[720px] opacity-100" : "max-h-0 opacity-0"}`}
         >
-          <Card key={editing?.id || "new"} className="relative p-4">
+          <Card className="relative p-4">
             <h2 className="mb-3 text-base font-semibold">
               {editing ? "修改开奖记录" : "新增开奖记录"}
             </h2>
@@ -195,7 +287,7 @@ export function DrawsPage() {
                 <Input value={taiwanLottery?.name || "台湾彩"} readOnly disabled />
                 {!editing && (
                   <span className="mt-1 text-xs text-muted-foreground">
-                    新增记录固定为台湾彩，期数和开奖日期会自动推算。
+                    默认取数据库中最新一条台湾彩记录作为参考，自动预填下一期信息。
                   </span>
                 )}
               </Field>
@@ -203,34 +295,39 @@ export function DrawsPage() {
                 <Input
                   name="year"
                   type="number"
-                  defaultValue={editing?.year || new Date().getFullYear()}
+                  value={draftYear}
+                  onChange={(event) => setDraftYear(event.target.value)}
                 />
               </Field>
-              <Field label="期数">
+              <Field label="本期期数">
                 <Input
                   name="term"
                   type="number"
-                  defaultValue={editing?.term || ""}
+                  value={draftTerm}
                   placeholder="自动获取"
+                  onChange={(event) => applyTermDraft(event.target.value)}
                 />
               </Field>
-              <Field label="开奖号码（点击添加/删除）" className="col-span-2">
+              <Field label="开奖号码（点击添加 / 删除）" className="col-span-2">
                 <DrawNumbersInput
+                  key={numbersInputKey}
                   name="numbers"
-                  defaultValue={editing?.numbers || ""}
+                  defaultValue={draftNumbers}
                 />
               </Field>
               <Field label="开奖日期" className="col-span-2">
                 <Input
                   name="draw_time"
                   type="date"
-                  defaultValue={editing?.draw_time?.slice(0, 10) || ""}
+                  value={draftDrawDate}
+                  onChange={(event) => setDraftDrawDate(event.target.value)}
                 />
               </Field>
               <Field label="状态">
                 <select
                   name="status"
-                  defaultValue={editing?.status === false ? "0" : "1"}
+                  value={draftStatus}
+                  onChange={(event) => setDraftStatus(event.target.value)}
                   className="h-9 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="1">启用</option>
@@ -240,7 +337,8 @@ export function DrawsPage() {
               <Field label="是否开奖">
                 <select
                   name="is_opened"
-                  defaultValue={editing?.is_opened ? "1" : "0"}
+                  value={draftIsOpened}
+                  onChange={(event) => setDraftIsOpened(event.target.value)}
                   className="h-9 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="1">已开奖</option>
@@ -251,8 +349,9 @@ export function DrawsPage() {
                 <Input
                   name="next_term"
                   type="number"
-                  defaultValue={editing?.next_term || ""}
-                  placeholder="自动获取"
+                  value={draftNextTerm}
+                  placeholder="自动计算"
+                  readOnly
                 />
               </Field>
               <div className="col-span-2 sticky bottom-0 z-30 flex gap-2 border-t border-border bg-card py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.08)]">

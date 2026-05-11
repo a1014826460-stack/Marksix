@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 type DrawNumbersInputProps = {
   name: string
@@ -16,6 +16,16 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
           .filter((n) => n >= 1 && n <= 49)
       : [],
   )
+  useEffect(() => {
+    setSelected(
+      defaultValue
+        ? defaultValue
+            .split(",")
+            .map(Number)
+            .filter((n) => n >= 1 && n <= 49)
+        : [],
+    )
+  }, [defaultValue])
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const allNumbers = Array.from({ length: 49 }, (_, i) => i + 1)
