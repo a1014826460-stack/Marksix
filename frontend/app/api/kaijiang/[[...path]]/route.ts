@@ -227,11 +227,31 @@ function mapSanqi(rows: LegacyRow[]) {
   )
 }
 
-function filterSanqiClosingRows(rows: LegacyRow[]) {
-  return rows.filter((row) => {
-    const term = asString(row.term).trim()
+function filterSanqiDisplayRows(rows: LegacyRow[]) {
+  const grouped = new Map<string, LegacyRow>()
+
+  for (const row of rows) {
+    const start = asString(row.start || row.term).trim()
     const end = asString(row.end || row.term).trim()
-    return Boolean(term) && term === end
+    const key = `${start}-${end}`
+    const current = grouped.get(key)
+
+    if (!current) {
+      grouped.set(key, row)
+      continue
+    }
+
+    const rowTerm = Number(asString(row.term).trim() || "0")
+    const currentTerm = Number(asString(current.term).trim() || "0")
+    if (rowTerm > currentTerm) {
+      grouped.set(key, row)
+    }
+  }
+
+  return Array.from(grouped.values()).sort((left, right) => {
+    const leftTerm = Number(asString(left.term).trim() || "0")
+    const rightTerm = Number(asString(right.term).trim() || "0")
+    return rightTerm - leftTerm
   })
 }
 
@@ -487,7 +507,7 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
       case "getSanqiXiao4new": {
         const payload = await fetchLegacyRows(url, 197, 8)
-        return jsonResponse(mapSanqi(filterSanqiClosingRows(payload.rows)))
+        return jsonResponse(mapSanqi(filterSanqiDisplayRows(payload.rows)))
       }
 
       case "sbzt": {

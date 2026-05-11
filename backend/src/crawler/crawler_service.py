@@ -18,7 +18,10 @@ from Macau_history_crawler import fetch_macau_history_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
-from helpers import get_effective_next_draw_payload
+from helpers import (
+    get_effective_next_draw_payload,
+    sync_lottery_type_next_time_from_latest_draw,
+)
 from runtime_config import get_config, get_config_from_conn
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
@@ -280,10 +283,10 @@ def _upsert_draw(
             (lottery_type_id, year, term, numbers, draw_time,
              is_opened, term + 1, now, now),
         )
-    payload = get_effective_next_draw_payload(conn, lottery_type_id)
-    conn.execute(
-        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
-        (payload.get("next_time") or "", now, lottery_type_id),
+    sync_lottery_type_next_time_from_latest_draw(
+        conn,
+        lottery_type_id,
+        updated_at=now,
     )
 
 
@@ -585,6 +588,15 @@ class CrawlerScheduler:
         if self._running:
             return
         self._running = True
+        try:
+            sync_result = sync_all_lottery_type_next_times(self.db_path)
+            _crawler_logger.info(
+                "Startup next_time sync completed (checked=%s, updated=%s)",
+                sync_result["checked"],
+                sync_result["updated"],
+            )
+        except Exception as exc:
+            _crawler_logger.warning("Startup next_time sync failed: %s", exc)
         _crawler_logger.info(
             "Scheduler started (auto-open every %ss, auto-crawl every %ss)",
             self._auto_open_interval_seconds(),
@@ -717,6 +729,11 @@ class CrawlerScheduler:
                         )
         except Exception as e:
             _crawler_logger.error("Auto-crawl scheduler error: %s", e)
+        finally:
+            try:
+                sync_all_lottery_type_next_times(self.db_path)
+            except Exception as exc:
+                _crawler_logger.warning("Periodic next_time sync failed: %s", exc)
 
     def _schedule_task_loop(self) -> None:
         if not self._running:
@@ -869,6 +886,27 @@ def _update_auto_task_status(
             )
     except Exception as e:
         print(f"[AutoPred] Failed to update status for lt={lottery_type_id}: {e}")
+
+
+def sync_all_lottery_type_next_times(db_path: str | Path) -> dict[str, int]:
+    """Align lottery_types.next_time from latest opened draws for all active types."""
+    updated = 0
+    checked = 0
+    now = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        rows = conn.execute("SELECT id, next_time FROM lottery_types WHERE id IN (1, 2, 3)").fetchall()
+        for row in rows:
+            checked += 1
+            current_value = str(row["next_time"] or "")
+            next_value = sync_lottery_type_next_time_from_latest_draw(
+                conn,
+                int(row["id"]),
+                updated_at=now,
+            )
+            if next_value != current_value:
+                updated += 1
+        conn.commit()
+    return {"checked": checked, "updated": updated}
 
 
 def _backfill_draw_to_predictions(
