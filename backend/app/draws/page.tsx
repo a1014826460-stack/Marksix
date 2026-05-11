@@ -1,5 +1,5 @@
-import { DrawsPageClient } from "@/components/admin/management-pages"
+import { DrawsPage } from "@/features/draws/DrawsPage"
 
-export default function DrawsPage() {
-  return <DrawsPageClient />
+export default function DrawsRoutePage() {
+  return <DrawsPage />
 }

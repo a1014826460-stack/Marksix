@@ -587,7 +587,7 @@ POST 请求体支持 snake_case 与 camelCase 混用：
 | `wxzt` | 48 | 无 | content 文本行 |
 | `getWei` | 2 | 常传 `6` | content 文本行 |
 | `jxzt` | 49 | 无 | content 文本行 |
-| `qxbm` | 44 | 无 | xiao/code/ping 行 |
+| `qxbm` | 246 | 无 | xiao/code/ping 行 |
 | `getPmxjcz` | 331 | 无 | title/content/jiexi 行 |
 
 ---
