@@ -55,7 +55,7 @@ for path in (PREDICT_ROOT, UTILS_ROOT, CRAWLER_ROOT):
     if path_text not in sys.path:
         sys.path.insert(0, path_text)
 
-from common import DEFAULT_TARGET_HIT_RATE, predict  # noqa: E402
+from common import predict  # noqa: E402
 from data_fetch import (  # noqa: E402
     DEFAULT_TOKEN,
     MODES_DATA_URL,
@@ -169,6 +169,7 @@ from crawler_service import (  # noqa: E402
     run_hk_crawler,
     run_macau_crawler,
 )
+from runtime_config import list_system_configs, upsert_system_config, get_config  # noqa: E402
 
 # ── 后台异步任务 ─────────────────────────────────────────
 _background_jobs: dict[str, dict[str, Any]] = {}
@@ -504,6 +505,35 @@ class ApiHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == "/api/admin/users":
                 self.send_json({"users": list_users(self.db_path)})
                 return
+            if method == "GET" and path == "/api/admin/system-config":
+                prefix = query.get("prefix", [""])[0]
+                include_secrets = query.get("include_secrets", ["0"])[0] in {"1", "true", "True"}
+                self.send_json(
+                    {
+                        "configs": list_system_configs(
+                            self.db_path,
+                            prefix=prefix,
+                            include_secrets=include_secrets,
+                        )
+                    }
+                )
+                return
+            if method in {"PUT", "PATCH"} and path.startswith("/api/admin/system-config/"):
+                config_key = path.split("/api/admin/system-config/", 1)[1].strip()
+                body = self.read_json()
+                self.send_json(
+                    {
+                        "config": upsert_system_config(
+                            self.db_path,
+                            key=config_key,
+                            value=body.get("value"),
+                            value_type=str(body.get("value_type") or "") or None,
+                            description=str(body.get("description") or "") or None,
+                            is_secret=body.get("is_secret"),
+                        )
+                    }
+                )
+                return
             if method == "POST" and path == "/api/admin/users":
                 self.send_json({"user": save_user(self.db_path, self.read_json())}, HTTPStatus.CREATED)
                 return
@@ -590,7 +620,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                     except Exception as e:
                         errors.append(f"{_label}: {e}")
                 # Also import Taiwan JSON if available
-                _taiwan_json = BACKEND_ROOT / "data" / "lottery_data" / "lottery_page_1_20260506_194209.json"
+                _taiwan_json = BACKEND_ROOT / str(
+                    get_config(self.db_path, "draw.taiwan_import_file", "data/lottery_data/lottery_page_1_20260506_194209.json")
+                )
                 if _taiwan_json.exists():
                     try:
                         results["taiwan"] = import_taiwan_json(self.db_path, _taiwan_json)
@@ -599,7 +631,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send_json({"results": results, "errors": errors if errors else None})
                 return
             if method == "POST" and path == "/api/admin/crawler/import-taiwan":
-                _taiwan_json = BACKEND_ROOT / "data" / "lottery_data" / "lottery_page_1_20260506_194209.json"
+                _taiwan_json = BACKEND_ROOT / str(
+                    get_config(self.db_path, "draw.taiwan_import_file", "data/lottery_data/lottery_page_1_20260506_194209.json")
+                )
                 if not _taiwan_json.exists():
                     self.send_error_json(HTTPStatus.NOT_FOUND, "台湾彩 JSON 数据文件不存在")
                     return
@@ -770,11 +804,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             return query.get(snake, [default])[0]
 
         config = get_prediction_config(mechanism)
+        default_target_hit_rate = float(
+            get_config(self.db_path, "prediction.default_target_hit_rate", 0.65)
+        )
         request_payload = {
             "res_code": pick("res_code"),
             "content": pick("content"),
             "source_table": pick("source_table"),
-            "target_hit_rate": float(pick("target_hit_rate", DEFAULT_TARGET_HIT_RATE)),
+            "target_hit_rate": float(pick("target_hit_rate", default_target_hit_rate)),
             "lottery_type": pick("lottery_type"),
             "year": pick("year"),
             "term": pick("term"),

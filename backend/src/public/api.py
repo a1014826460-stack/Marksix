@@ -499,7 +499,13 @@ def get_draw_history(
 
 
 def _build_number_map(conn: Any, sign: str) -> dict[str, str]:
-    """构建单号码到分类的映射（如五行、合单双）。"""
+    """构建单号码到分类的映射（如五行、合单双）。
+    params:
+        - sign: fixed_data表中的分类标识，如“五行”、“合单双”等。
+        - conn: 数据库连接对象，必须具有 table_exists 和 execute 方法。
+    returns:
+        - dict[str, str]: 号码（两位字符串）到分类标签的映射，以及号码（整数形式）到分类标签的映射。
+    """
     result: dict[str, str] = {}
     if not conn.table_exists("fixed_data"):
         return result
@@ -519,7 +525,12 @@ def _build_number_map(conn: Any, sign: str) -> dict[str, str]:
 
 
 def _build_zodiac_category_map(conn: Any) -> dict[str, str]:
-    """构建生肖→家禽/野兽映射。"""
+    """构建生肖→家禽/野兽映射。
+    params:
+    - conn: 数据库连接对象，必须具有 table_exists 和 execute 方法。
+    returns:
+    - dict[str, str]: 生肖名称到家禽/野兽分类的映射。
+    """
     result: dict[str, str] = {}
     if not conn.table_exists("fixed_data"):
         return result

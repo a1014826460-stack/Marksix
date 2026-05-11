@@ -18,8 +18,196 @@ from Macau_history_crawler import fetch_macau_history_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
+from runtime_config import get_config, get_config_from_conn
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
+HK_NAMES = ("香港彩", "六肖彩")
+MACAU_NAME = "澳门彩"
+TAIWAN_NAME = "台湾彩"
+TASK_TABLE_NAME = "scheduler_tasks"
+TASK_TYPE_AUTO_PREDICTION = "auto_prediction"
+TASK_TYPE_TAIWAN_PRECISE_OPEN = "taiwan_precise_open"
+
+
+def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
+    try:
+        return get_config(db_path, key, fallback)
+    except Exception:
+        return fallback
+
+
+def _cfg_from_conn(conn: Any, key: str, fallback: Any) -> Any:
+    try:
+        return get_config_from_conn(conn, key, fallback)
+    except Exception:
+        return fallback
+
+
+def _task_poll_interval_seconds(db_path: str | Path) -> int:
+    return max(5, int(_cfg(db_path, "crawler.task_poll_interval_seconds", 30)))
+
+
+def _task_lock_timeout_seconds(db_path: str | Path) -> int:
+    return max(30, int(_cfg(db_path, "crawler.task_lock_timeout_seconds", 300)))
+
+
+def _task_retry_delay_seconds(db_path: str | Path) -> int:
+    return max(5, int(_cfg(db_path, "crawler.task_retry_delay_seconds", 60)))
+
+
+def _json_dumps(data: dict[str, Any]) -> str:
+    return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+
+def _task_key(task_type: str, payload: dict[str, Any]) -> str:
+    if task_type == TASK_TYPE_AUTO_PREDICTION:
+        return f"{task_type}:{payload.get('lottery_type_id')}"
+    if task_type == TASK_TYPE_TAIWAN_PRECISE_OPEN:
+        return f"{task_type}:{payload.get('schedule_date')}"
+    return f"{task_type}:{_json_dumps(payload)}"
+
+
+def _upsert_scheduler_task(
+    db_path: str | Path,
+    *,
+    task_type: str,
+    payload: dict[str, Any],
+    run_at: str,
+    max_attempts: int = 3,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    task_key = _task_key(task_type, payload)
+    payload_json = _json_dumps(payload)
+    with db_connect(db_path) as conn:
+        existing = conn.execute(
+            f"SELECT id FROM {TASK_TABLE_NAME} WHERE task_key = ? LIMIT 1",
+            (task_key,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                f"""
+                UPDATE {TASK_TABLE_NAME}
+                SET task_type = ?, payload_json = ?, status = 'pending', run_at = ?,
+                    locked_at = NULL, locked_by = NULL, last_error = NULL,
+                    max_attempts = ?, updated_at = ?
+                WHERE task_key = ?
+                """,
+                (task_type, payload_json, run_at, max_attempts, now, task_key),
+            )
+        else:
+            conn.execute(
+                f"""
+                INSERT INTO {TASK_TABLE_NAME} (
+                    task_key, task_type, payload_json, status, run_at,
+                    attempt_count, max_attempts, created_at, updated_at
+                )
+                VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, ?)
+                """,
+                (task_key, task_type, payload_json, run_at, max_attempts, now, now),
+            )
+
+
+def _acquire_due_scheduler_tasks(db_path: str | Path, *, worker_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat()
+    stale_before = (now - timedelta(seconds=_task_lock_timeout_seconds(db_path))).isoformat()
+    tasks: list[dict[str, Any]] = []
+    with db_connect(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, task_key, task_type, payload_json, run_at, attempt_count, max_attempts
+            FROM {TASK_TABLE_NAME}
+            WHERE run_at <= ?
+              AND (
+                    status = 'pending'
+                    OR (status = 'running' AND locked_at IS NOT NULL AND locked_at < ?)
+                  )
+            ORDER BY run_at ASC, id ASC
+            LIMIT ?
+            """,
+            (now_text, stale_before, limit),
+        ).fetchall()
+        for row in rows:
+            updated = conn.execute(
+                f"""
+                UPDATE {TASK_TABLE_NAME}
+                SET status = 'running',
+                    locked_at = ?,
+                    locked_by = ?,
+                    attempt_count = COALESCE(attempt_count, 0) + 1,
+                    updated_at = ?
+                WHERE id = ?
+                  AND (
+                        status = 'pending'
+                        OR (status = 'running' AND locked_at IS NOT NULL AND locked_at < ?)
+                      )
+                """,
+                (now_text, worker_id, now_text, row["id"], stale_before),
+            )
+            if updated.rowcount:
+                tasks.append(dict(row))
+    return tasks
+
+
+def _mark_scheduler_task_done(db_path: str | Path, task_id: int) -> None:
+    now_text = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        conn.execute(
+            f"""
+            UPDATE {TASK_TABLE_NAME}
+            SET status = 'done', locked_at = NULL, locked_by = NULL,
+                last_error = NULL, last_finished_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (now_text, now_text, task_id),
+        )
+
+
+def _mark_scheduler_task_failed(db_path: str | Path, task: dict[str, Any], exc: Exception) -> None:
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat()
+    attempt_count = int(task.get("attempt_count") or 0) + 1
+    max_attempts = int(task.get("max_attempts") or 3)
+    final_status = "failed" if attempt_count >= max_attempts else "pending"
+    retry_at = (now + timedelta(seconds=_task_retry_delay_seconds(db_path))).isoformat()
+    with db_connect(db_path) as conn:
+        conn.execute(
+            f"""
+            UPDATE {TASK_TABLE_NAME}
+            SET status = ?,
+                locked_at = NULL,
+                locked_by = NULL,
+                run_at = ?,
+                last_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                final_status,
+                retry_at if final_status == "pending" else now_text,
+                f"{type(exc).__name__}: {exc}",
+                now_text,
+                int(task["id"]),
+            ),
+        )
+
+
+def _ensure_taiwan_precise_open_task(db_path: str | Path) -> None:
+    now_utc = datetime.now(timezone.utc)
+    beijing_now = now_utc + timedelta(hours=8)
+    hour = int(_cfg(db_path, "crawler.taiwan_precise_open_hour", 22))
+    minute = int(_cfg(db_path, "crawler.taiwan_precise_open_minute", 30))
+    target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if beijing_now >= target_beijing:
+        target_beijing += timedelta(days=1)
+    target_utc = target_beijing - timedelta(hours=8)
+    _upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_TAIWAN_PRECISE_OPEN,
+        payload={"schedule_date": target_beijing.strftime("%Y-%m-%d")},
+        run_at=target_utc.isoformat(),
+        max_attempts=max(1, int(_cfg(db_path, "crawler.taiwan_max_retries", 3))),
+    )
 
 
 def _get_lottery_meta(db_path: str | Path) -> dict[str, dict[str, Any]]:
@@ -113,7 +301,7 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
     """
     # ── 从数据库获取香港彩的配置信息 ──
     meta_map = _get_lottery_meta(db_path)
-    hk_meta = meta_map.get("香港彩") or meta_map.get("六合彩")
+    hk_meta = meta_map.get(HK_NAMES[0]) or meta_map.get(HK_NAMES[1])
     if hk_meta is None:
         raise ValueError("香港彩 lottery type not found - please ensure 香港彩 exists")
 
@@ -130,7 +318,12 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
 
     records = transform_standard_list(raw)
     if not records:
-        return {"source": "hk", "fetched": 0, "saved": 0, "message": "API 返回空数据，将在下一周期自动重试"}
+        return {
+            "source": "hk",
+            "fetched": 0,
+            "saved": 0,
+            "message": str(_cfg(db_path, "crawler.message.hk_empty_data", "API returned no Hong Kong draw data.")),
+        }
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -162,7 +355,7 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
     """
     # ── 从数据库获取澳门彩的配置信息 ──
     meta_map = _get_lottery_meta(db_path)
-    macau_meta = meta_map.get("澳门彩")
+    macau_meta = meta_map.get(MACAU_NAME)
     if macau_meta is None:
         raise ValueError("澳门彩 lottery type not found")
 
@@ -178,7 +371,12 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
 
     records = transform_standard_list(raw)
     if not records:
-        return {"source": "macau", "fetched": 0, "saved": 0, "message": "API 返回空数据或格式异常，将在下一周期自动重试"}
+        return {
+            "source": "macau",
+            "fetched": 0,
+            "saved": 0,
+            "message": str(_cfg(db_path, "crawler.message.macau_empty_data", "API returned no Macau draw data.")),
+        }
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with db_connect(db_path) as conn:
@@ -210,7 +408,7 @@ def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, 
 
     # ── 台湾彩不需要采集地址，直接从数据库获取彩种ID即可 ──
     meta_map = _get_lottery_meta(db_path)
-    taiwan_meta = meta_map.get("台湾彩")
+    taiwan_meta = meta_map.get(TAIWAN_NAME)
     if taiwan_meta is None:
         raise ValueError("台湾彩 lottery type not found")
 
@@ -260,12 +458,14 @@ def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> di
 
     # ── 2. 执行爬虫 ──
     crawl_result: dict[str, Any] = {"status": "skipped", "message": ""}
-    if lottery_name in ("香港彩", "六合彩"):
+    if lottery_name in HK_NAMES:
         crawl_result = run_hk_crawler(db_path)
-    elif lottery_name == "澳门彩":
+    elif lottery_name == MACAU_NAME:
         crawl_result = run_macau_crawler(db_path)
     else:
-        crawl_result["message"] = f"台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON"
+        crawl_result["message"] = str(
+            _cfg(db_path, "crawler.message.taiwan_import_only", "Taiwan data must be imported from JSON.")
+        )
 
     # ── 3. 自动生成预测资料 ──
     generation_results: list[dict[str, Any]] = []
@@ -348,26 +548,52 @@ class CrawlerScheduler:
     应由管理员通过后台"更新开奖"按钮手动触发。
     """
 
-    # 台湾彩开奖重试间隔（秒）：第1次重试60s，第2次300s，第3次900s
-    _TAIWAN_RETRY_DELAYS = [60, 300, 900]
-    _TAIWAN_MAX_RETRIES = 3
-
     def __init__(self, db_path: str | Path):
         self.db_path = db_path
         self._running = False
-        self._taiwan_timer: threading.Timer | None = None
         self._auto_open_timer: threading.Timer | None = None
         self._auto_crawl_timer: threading.Timer | None = None
-        self._taiwan_retry_count = 0
+        self._task_timer: threading.Timer | None = None
+        self._worker_id = f"crawler:{id(self)}"
+
+    def _auto_open_interval_seconds(self) -> int:
+        return max(5, int(_cfg(self.db_path, "crawler.auto_open_interval_seconds", 60)))
+
+    def _auto_crawl_interval_seconds(self) -> int:
+        return max(30, int(_cfg(self.db_path, "crawler.auto_crawl_interval_seconds", 600)))
+
+    def _auto_crawl_recent_minutes(self) -> int:
+        return max(1, int(_cfg(self.db_path, "crawler.auto_crawl_recent_minutes", 30)))
+
+    def _taiwan_retry_delays(self) -> list[int]:
+        raw = _cfg(self.db_path, "crawler.taiwan_retry_delays_seconds", [60, 300, 900])
+        if isinstance(raw, list):
+            delays: list[int] = []
+            for item in raw:
+                try:
+                    delays.append(max(1, int(item)))
+                except (TypeError, ValueError):
+                    continue
+            if delays:
+                return delays
+        return [60, 300, 900]
+
+    def _taiwan_max_retries(self) -> int:
+        return max(1, int(_cfg(self.db_path, "crawler.taiwan_max_retries", 3)))
 
     def start(self) -> None:
         if self._running:
             return
         self._running = True
-        _crawler_logger.info("Scheduler started (auto-open every 60s, auto-crawl every 10min)")
+        _crawler_logger.info(
+            "Scheduler started (auto-open every %ss, auto-crawl every %ss)",
+            self._auto_open_interval_seconds(),
+            self._auto_crawl_interval_seconds(),
+        )
         self._schedule_auto_open()
-        self._schedule_taiwan_precise_open()
         self._schedule_auto_crawl()
+        self._schedule_task_loop()
+        _ensure_taiwan_precise_open_task(self.db_path)
 
     def stop(self) -> None:
         _crawler_logger.info("Scheduler stopping")
@@ -375,12 +601,12 @@ class CrawlerScheduler:
         if hasattr(self, "_auto_open_timer") and self._auto_open_timer:
             self._auto_open_timer.cancel()
             self._auto_open_timer = None
-        if self._taiwan_timer:
-            self._taiwan_timer.cancel()
-            self._taiwan_timer = None
         if hasattr(self, "_auto_crawl_timer") and self._auto_crawl_timer:
             self._auto_crawl_timer.cancel()
             self._auto_crawl_timer = None
+        if self._task_timer:
+            self._task_timer.cancel()
+            self._task_timer = None
 
     def _auto_open_draws(self) -> None:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
@@ -424,7 +650,7 @@ class CrawlerScheduler:
         if not self._running:
             return
         self._auto_open_draws()
-        self._auto_open_timer = threading.Timer(60, self._schedule_auto_open)
+        self._auto_open_timer = threading.Timer(self._auto_open_interval_seconds(), self._schedule_auto_open)
         self._auto_open_timer.daemon = True
         self._auto_open_timer.start()
 
@@ -433,7 +659,7 @@ class CrawlerScheduler:
         if not self._running:
             return
         self._auto_crawl()
-        self._auto_crawl_timer = threading.Timer(600, self._schedule_auto_crawl)
+        self._auto_crawl_timer = threading.Timer(self._auto_crawl_interval_seconds(), self._schedule_auto_crawl)
         self._auto_crawl_timer.daemon = True
         self._auto_crawl_timer.start()
 
@@ -447,20 +673,34 @@ class CrawlerScheduler:
         """
         try:
             with db_connect(self.db_path) as conn:
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=self._auto_crawl_recent_minutes())
                 lt_rows = conn.execute(
                     "SELECT id, name FROM lottery_types WHERE status = 1 AND id IN (1, 2)"
                 ).fetchall()
                 for lt_row in lt_rows:
                     lt_id = int(lt_row["id"])
                     lt_name = str(lt_row["name"])
-                    # 检查最近是否有新开奖记录（30 分钟内）
-                    recent = conn.execute(
-                        """SELECT id FROM lottery_draws
-                           WHERE lottery_type_id = ? AND is_opened = 1
-                           AND updated_at::timestamptz > (NOW() - INTERVAL '30 minutes')
-                           LIMIT 1""",
+                    recent_rows = conn.execute(
+                        """
+                        SELECT updated_at FROM lottery_draws
+                        WHERE lottery_type_id = ? AND is_opened = 1
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 10
+                        """,
                         (lt_id,),
-                    ).fetchone()
+                    ).fetchall()
+                    recent = False
+                    for recent_row in recent_rows:
+                        updated_text = str(recent_row["updated_at"] or "").strip()
+                        if not updated_text:
+                            continue
+                        try:
+                            updated_dt = datetime.fromisoformat(updated_text.replace("Z", "+00:00"))
+                        except ValueError:
+                            continue
+                        if updated_dt > cutoff:
+                            recent = True
+                            break
                     if recent:
                         continue  # 最近已有开奖，跳过
                     # 触发爬取
@@ -478,54 +718,36 @@ class CrawlerScheduler:
         except Exception as e:
             _crawler_logger.error("Auto-crawl scheduler error: %s", e)
 
-    # ── 台湾彩每日 22:30 精准开奖调度 ─────────────────────────────
-
-    @staticmethod
-    def _seconds_until_beijing(hour: int, minute: int) -> float:
-        """计算距离下一个北京时间指定时刻的秒数。"""
-        now_utc = datetime.now(timezone.utc)
-        beijing_now = now_utc + timedelta(hours=8)
-        target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if beijing_now >= target_beijing:
-            target_beijing += timedelta(days=1)
-        target_utc = target_beijing - timedelta(hours=8)
-        return max(0, (target_utc - now_utc).total_seconds())
-
-    def _schedule_taiwan_precise_open(self) -> None:
-        """调度下一次北京时间 22:30 的台湾彩精准开奖任务。"""
+    def _schedule_task_loop(self) -> None:
         if not self._running:
             return
-        delay = self._seconds_until_beijing(22, 30)
-        self._taiwan_timer = threading.Timer(delay, self._taiwan_precise_open_execute)
-        self._taiwan_timer.daemon = True
-        self._taiwan_timer.start()
-        target_beijing = datetime.now(timezone.utc) + timedelta(hours=8) + timedelta(seconds=delay)
-        print(f"[TaiwanScheduler] Next Taiwan open at {target_beijing.strftime('%Y-%m-%d %H:%M:%S')} Beijing (in {delay:.0f}s)")
+        self._run_due_tasks()
+        self._task_timer = threading.Timer(_task_poll_interval_seconds(self.db_path), self._schedule_task_loop)
+        self._task_timer.daemon = True
+        self._task_timer.start()
 
-    def _taiwan_precise_open_execute(self) -> None:
-        """执行台湾彩开奖任务，含重试策略。
-        成功则：调度次日 → 异步触发预测数据生成（回填结果 + 生成下一期预测）。
-        失败则：按间隔重试。"""
-        try:
+    def _run_due_tasks(self) -> None:
+        tasks = _acquire_due_scheduler_tasks(self.db_path, worker_id=self._worker_id, limit=10)
+        for task in tasks:
+            try:
+                self._execute_task(task)
+                _mark_scheduler_task_done(self.db_path, int(task["id"]))
+            except Exception as exc:
+                _mark_scheduler_task_failed(self.db_path, task, exc)
+                _crawler_logger.exception("Scheduler task failed: %s", task.get("task_key"))
+
+    def _execute_task(self, task: dict[str, Any]) -> None:
+        task_type = str(task.get("task_type") or "")
+        payload = json.loads(str(task.get("payload_json") or "{}"))
+        if task_type == TASK_TYPE_AUTO_PREDICTION:
+            _run_auto_prediction(self.db_path, int(payload["lottery_type_id"]))
+            return
+        if task_type == TASK_TYPE_TAIWAN_PRECISE_OPEN:
             self._open_taiwan_draws_and_update_next_time()
-            self._taiwan_retry_count = 0
-            self._schedule_taiwan_precise_open()
-            # 开奖成功后异步生成预测数据，填充 mode_payload_* 表
+            _ensure_taiwan_precise_open_task(self.db_path)
             _trigger_taiwan_prediction_generation(self.db_path)
-        except Exception as e:
-            self._taiwan_retry_count += 1
-            _log_taiwan_task_error(f"Attempt {self._taiwan_retry_count}/{self._TAIWAN_MAX_RETRIES} failed: {e}")
-            if self._taiwan_retry_count <= self._TAIWAN_MAX_RETRIES:
-                delay = self._TAIWAN_RETRY_DELAYS[self._taiwan_retry_count - 1]
-                print(f"[TaiwanScheduler] Retry in {delay}s (attempt {self._taiwan_retry_count}/{self._TAIWAN_MAX_RETRIES})")
-                self._taiwan_timer = threading.Timer(delay, self._taiwan_precise_open_execute)
-                self._taiwan_timer.daemon = True
-                self._taiwan_timer.start()
-            else:
-                print(f"[TaiwanScheduler] All retries exhausted, scheduling next day")
-                _log_taiwan_task_error(f"All {self._TAIWAN_MAX_RETRIES} retries exhausted")
-                self._taiwan_retry_count = 0
-                self._schedule_taiwan_precise_open()
+            return
+        raise ValueError(f"Unsupported scheduler task type: {task_type}")
 
     def _open_taiwan_draws_and_update_next_time(self) -> None:
         """北京时间 22:30 精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，
@@ -591,10 +813,6 @@ class CrawlerScheduler:
 # ─────────────────────────────────────────────────────────
 # 独立爬取（不生成预测）+ 6 小时延迟自动预测任务
 # ─────────────────────────────────────────────────────────
-
-# 全局字典：跟踪已调度的自动预测定时器，按 (db_path, lottery_type_id) 索引
-_auto_prediction_timers: dict[tuple[str, int], threading.Timer] = {}
-_auto_timers_lock = threading.Lock()
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ERROR_LOG_PATH = _BACKEND_ROOT / "data" / "error.log"
@@ -753,12 +971,6 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
         _log_auto_task_error(f"lt_id={lottery_type_id} {err_msg}")
         _update_auto_task_status(db_path, lottery_type_id, "error", err_msg)
         print(f"[AutoPred] FAILED lt={lottery_type_id}: {err_msg}")
-    finally:
-        # 清理已完成的定时器
-        with _auto_timers_lock:
-            _auto_prediction_timers.pop((str(db_path), lottery_type_id), None)
-
-
 def _schedule_auto_prediction(
     db_path: str | Path, lottery_type_id: int, draw_time_str: str
 ) -> float:
@@ -776,21 +988,19 @@ def _schedule_auto_prediction(
         # 回退：30 分钟后
         draw_dt = datetime.now(timezone.utc) + timedelta(minutes=30)
 
-    target_dt = draw_dt + timedelta(hours=6)
+    delay_hours = float(_cfg(db_path, "crawler.auto_prediction_delay_hours", 6))
+    target_dt = draw_dt + timedelta(hours=delay_hours)
     now_dt = datetime.now(timezone.utc)
     delay = max(60.0, (target_dt - now_dt).total_seconds())
 
-    key = (str(db_path), lottery_type_id)
-    with _auto_timers_lock:
-        old = _auto_prediction_timers.pop(key, None)
-        if old:
-            old.cancel()
-        timer = threading.Timer(delay, _run_auto_prediction, args=(db_path, lottery_type_id))
-        timer.daemon = True
-        timer.start()
-        _auto_prediction_timers[key] = timer
-
     target_iso = target_dt.isoformat()
+    _upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_AUTO_PREDICTION,
+        payload={"lottery_type_id": int(lottery_type_id)},
+        run_at=target_iso,
+        max_attempts=max(1, int(_cfg(db_path, "crawler.taiwan_max_retries", 3))),
+    )
     print(f"[AutoPred] Scheduled for lt={lottery_type_id} at {target_iso} (delay={delay:.0f}s)")
     return delay
 
@@ -817,7 +1027,9 @@ def run_crawl_only(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
         return {
             "ok": True,
             "draw": None,
-            "message": "台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON",
+            "message": str(
+                _cfg(db_path, "crawler.message.taiwan_import_only", "Taiwan data must be imported from JSON.")
+            ),
         }
 
     # 调用 result_crawler 获取当前期数据（传入数据库配置的采集地址）

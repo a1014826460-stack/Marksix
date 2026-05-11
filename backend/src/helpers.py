@@ -41,6 +41,15 @@ def parse_bool(value: Any, default: bool = False) -> bool:
 
 
 def split_csv(value: Any) -> list[str]:
+    """把逗号分隔的字符串安全转成列表，去除空白项。 
+    例如 "01, 02,03,, " → ["01", "02", "03"]，而不是 ["01", "02", "03", "", ""]。
+    
+    param 
+        - value: 可能是逗号分隔的字符串，也可能是 None 或其他类型。
+    return: 
+        - list[str]: 去除空白项后的字符串列表。
+    
+    """
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
@@ -120,7 +129,15 @@ def build_mode_payload_filters(
 
 
 def load_fixed_data_maps(conn: Any) -> tuple[dict[str, str], dict[str, str]]:
-    """读取 fixed_data 中的生肖 / 波色映射，统一给多个公开接口复用。"""
+    """读取 fixed_data 中的生肖 / 波色映射，统一给多个公开接口复用。
+    
+    params:
+    - conn: 数据库连接对象，必须具有 table_exists 和 execute 方法。
+    returns:
+    - tuple[dict[str, str], dict[str, str]]: 包含两个字典的元组，分别是：
+        - zodiac_map: 号码（两位字符串）到生肖标签的映射，以及号码（整数形式）到生肖标签的映射。
+        - color_map: 号码（两位字符串）到波色标签的映射，以及号码（整数形式）到波色标签的映射。
+    """
     zodiac_map: dict[str, str] = {}
     color_map: dict[str, str] = {}
     if not conn.table_exists("fixed_data"):

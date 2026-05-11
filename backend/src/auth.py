@@ -1,30 +1,44 @@
-"""Auth functions extracted from app.py for admin user authentication and session management.
-
-Contains password hashing/verification (PBKDF2-SHA256), user login/logout,
-token-based authentication, and admin permission checks.
-"""
+"""Admin authentication and session management."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from db import connect, utc_now
+from runtime_config import get_bootstrap_config_value, get_config
 from tables import ensure_admin_tables
 
 
-def hash_password(password: str, salt: str | None = None) -> str:
-    """使用 PBKDF2 保存管理员密码，避免明文密码进入 SQLite。
+def _password_iterations(db_path: str | Path | None = None) -> int:
+    value = get_bootstrap_config_value("auth.password_iterations", 260000)
+    if db_path:
+        try:
+            value = get_config(db_path, "auth.password_iterations", value)
+        except Exception:
+            pass
+    try:
+        return max(100000, int(value))
+    except (TypeError, ValueError):
+        return 260000
 
-    这里不引入第三方认证框架，密码格式固定为
-    `pbkdf2_sha256$iterations$salt$hash`，后续迁移到其他框架时也容易转换。
-    """
+
+def _session_ttl_seconds(db_path: str | Path) -> int:
+    try:
+        value = get_config(db_path, "auth.session_ttl_seconds", 86400)
+        return max(60, int(value))
+    except (TypeError, ValueError):
+        return 86400
+
+
+def hash_password(password: str, salt: str | None = None, db_path: str | Path | None = None) -> str:
     if not password:
         raise ValueError("密码不能为空")
-    iterations = 260_000
+    iterations = _password_iterations(db_path)
     resolved_salt = salt or secrets.token_urlsafe(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -37,7 +51,6 @@ def hash_password(password: str, salt: str | None = None) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """校验管理员密码，兼容当前 PBKDF2 哈希格式。"""
     try:
         algorithm, iterations, salt, expected = password_hash.split("$", 3)
     except ValueError:
@@ -55,7 +68,6 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def public_user(row: Any) -> dict[str, Any]:
-    """过滤密码哈希，只向前端返回可展示的管理员信息。"""
     data = dict(row)
     data.pop("password_hash", None)
     data["status"] = bool(data["status"])
@@ -73,17 +85,27 @@ def login_user(db_path: str | Path, username: str, password: str) -> dict[str, A
             raise PermissionError("用户名或密码错误")
 
         token = secrets.token_urlsafe(32)
-        now = utc_now()
+        created_at = utc_now()
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=_session_ttl_seconds(db_path))
+        ).isoformat()
+        conn.execute("DELETE FROM admin_sessions WHERE user_id = ?", (row["id"],))
         conn.execute(
-            "INSERT INTO admin_sessions (token, user_id, created_at) VALUES (?, ?, ?)",
-            (token, row["id"], now),
+            """
+            INSERT INTO admin_sessions (token, user_id, created_at, expires_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (token, row["id"], created_at, expires_at),
         )
         conn.execute(
             "UPDATE admin_users SET last_login_at = ?, updated_at = ? WHERE id = ?",
-            (now, now, row["id"]),
+            (created_at, created_at, row["id"]),
         )
-        refreshed = conn.execute("SELECT * FROM admin_users WHERE id = ?", (row["id"],)).fetchone()
-        return {"token": token, "user": public_user(refreshed)}
+        refreshed = conn.execute(
+            "SELECT * FROM admin_users WHERE id = ?",
+            (row["id"],),
+        ).fetchone()
+        return {"token": token, "expires_at": expires_at, "user": public_user(refreshed)}
 
 
 def auth_user_from_token(db_path: str | Path, token: str | None) -> dict[str, Any] | None:
@@ -93,18 +115,31 @@ def auth_user_from_token(db_path: str | Path, token: str | None) -> dict[str, An
     with connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT u.*
+            SELECT s.expires_at, u.*
             FROM admin_sessions s
             JOIN admin_users u ON u.id = s.user_id
             WHERE s.token = ? AND u.status = 1
             """,
             (token,),
         ).fetchone()
-        return public_user(row) if row else None
+        if not row:
+            return None
+
+        expires_at = str(row.get("expires_at") or "").strip()
+        if expires_at:
+            try:
+                expires_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except ValueError:
+                conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+                return None
+            if expires_dt <= datetime.now(timezone.utc):
+                conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+                return None
+
+        return public_user(row)
 
 
 def ensure_generation_permission(user: dict[str, Any] | None) -> None:
-    """只有后台管理员才能主动触发生成预测。"""
     if not user:
         raise PermissionError("未登录或登录已失效")
     role = str(user.get("role") or "").strip().lower()

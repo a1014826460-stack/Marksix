@@ -28,6 +28,8 @@ admin:
 auth:
   # session 过期时间（秒），默认 24 小时
   session_ttl_seconds: 86400
+  # PBKDF2 迭代次数
+  password_iterations: 260000
 
 # -----------------------------------------------------------
 # 默认站点配置（data_fetch 模块使用）
@@ -67,6 +69,52 @@ fetch:
 crawler:
   # 自动抓取间隔（秒），默认 3600 秒 = 1 小时
   interval_seconds: 3600
+  # 爬虫 HTTP 超时（秒）
+  http_timeout_seconds: 30
+  # 爬虫 HTTP 重试次数（首轮失败后的额外重试次数）
+  http_retry_count: 2
+  # 爬虫 HTTP 重试间隔（秒）
+  http_retry_delay_seconds: 1.0
+  # 自动开盘扫描间隔（秒）
+  auto_open_interval_seconds: 60
+  # 自动抓取轮询间隔（秒）
+  auto_crawl_interval_seconds: 600
+  # 自动抓取“最近已更新”判断窗口（分钟）
+  auto_crawl_recent_minutes: 30
+  # 开奖后自动预测延迟（小时）
+  auto_prediction_delay_hours: 6
+  # 台湾彩精准开盘北京时间
+  taiwan_precise_open_hour: 22
+  taiwan_precise_open_minute: 30
+  # 台湾彩精准开盘失败重试计划（秒）
+  taiwan_retry_delays_seconds: [60, 300, 900]
+  taiwan_max_retries: 3
+  # 运营提示文案
+  message_hk_empty_data: "API 返回空数据，将在下一周期自动重试"
+  message_macau_empty_data: "API 返回空数据或格式异常，将在下一周期自动重试"
+  message_taiwan_import_only: "台湾彩无在线爬虫，请使用 /api/admin/crawler/import-taiwan 导入 JSON"
+
+draw:
+  hk_default_draw_time: "21:30"
+  macau_default_draw_time: "21:00"
+  taiwan_default_draw_time: "22:30"
+  hk_default_collect_url: "https://www.lnlllt.com/api.php"
+  macau_default_collect_url: "https://www.lnlllt.com/api.php"
+  taiwan_import_file: "data/lottery_data/lottery_page_1_20260506_194209.json"
+
+prediction:
+  default_target_hit_rate: 0.65
+  max_terms_per_year: 365
+
+logging:
+  max_file_size_mb: 10
+  backup_count: 10
+  error_retention_days: 30
+  warn_retention_days: 7
+  info_retention_days: 3
+  max_total_log_size_mb: 500
+  cleanup_interval_seconds: 3600
+  slow_call_warning_ms: 5000
 
 # -----------------------------------------------------------
 # 历史遗留配置

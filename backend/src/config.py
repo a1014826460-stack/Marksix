@@ -10,8 +10,8 @@ are returned so the server can still start.
 
 from __future__ import annotations
 
-import os
 import re
+import json
 from pathlib import Path
 from typing import Any
 
@@ -47,15 +47,17 @@ def _parse_yaml(text: str) -> dict[str, Any]:
                 qm = quoted.match(raw)
                 if qm:
                     raw = qm.group(1)
-                # Empty string
                 if raw == "''" or raw == '""':
                     raw = ""
-                # Boolean
-                if raw.lower() == "true":
+                elif raw.startswith("[") and raw.endswith("]"):
+                    try:
+                        raw = json.loads(raw)
+                    except json.JSONDecodeError:
+                        pass
+                elif raw.lower() == "true":
                     raw = True
                 elif raw.lower() == "false":
                     raw = False
-                # Number
                 else:
                     try:
                         if "." in raw:
@@ -83,6 +85,7 @@ def _merge_defaults(loaded: dict[str, Any]) -> dict[str, Any]:
         },
         "auth": {
             "session_ttl_seconds": 86400,
+            "password_iterations": 260000,
         },
         "site": {
             "manage_url_template": "https://admin.shengshi8800.com/ds67BvM/web/webManage?id={web_id}",
@@ -102,6 +105,45 @@ def _merge_defaults(loaded: dict[str, Any]) -> dict[str, Any]:
         },
         "crawler": {
             "interval_seconds": 3600,
+            "http_timeout_seconds": 30,
+            "http_retry_count": 2,
+            "http_retry_delay_seconds": 1.0,
+            "auto_open_interval_seconds": 60,
+            "auto_crawl_interval_seconds": 600,
+            "auto_crawl_recent_minutes": 30,
+            "auto_prediction_delay_hours": 6,
+            "task_poll_interval_seconds": 30,
+            "task_lock_timeout_seconds": 300,
+            "task_retry_delay_seconds": 60,
+            "taiwan_precise_open_hour": 22,
+            "taiwan_precise_open_minute": 30,
+            "taiwan_retry_delays_seconds": [60, 300, 900],
+            "taiwan_max_retries": 3,
+            "message_hk_empty_data": "API returned no Hong Kong draw data.",
+            "message_macau_empty_data": "API returned no Macau draw data.",
+            "message_taiwan_import_only": "Taiwan data must be imported from JSON.",
+        },
+        "draw": {
+            "hk_default_draw_time": "21:30",
+            "macau_default_draw_time": "21:00",
+            "taiwan_default_draw_time": "22:30",
+            "hk_default_collect_url": "https://www.lnlllt.com/api.php",
+            "macau_default_collect_url": "https://www.lnlllt.com/api.php",
+            "taiwan_import_file": "data/lottery_data/lottery_page_1_20260506_194209.json",
+        },
+        "prediction": {
+            "default_target_hit_rate": 0.65,
+            "max_terms_per_year": 365,
+        },
+        "logging": {
+            "max_file_size_mb": 10,
+            "backup_count": 10,
+            "error_retention_days": 30,
+            "warn_retention_days": 7,
+            "info_retention_days": 3,
+            "max_total_log_size_mb": 500,
+            "cleanup_interval_seconds": 3600,
+            "slow_call_warning_ms": 5000,
         },
         "legacy": {
             "images_dir": "data/Images",

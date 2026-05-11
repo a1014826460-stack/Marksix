@@ -25,7 +25,7 @@ for _p in (_PREDICT_ROOT, _UTILS_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from common import DEFAULT_TARGET_HIT_RATE, predict  # noqa: E402
+from common import predict  # noqa: E402
 from db import connect, quote_identifier, utc_now
 from helpers import (
     apply_lottery_draw_overlay, load_fixed_data_maps, normalize_issue_part,
@@ -33,6 +33,7 @@ from helpers import (
 )
 from mechanisms import get_prediction_config, list_prediction_configs  # noqa: E402
 from prediction_generation.service import generate_prediction_batch
+from runtime_config import get_config
 from utils.created_prediction_store import (  # noqa: E402
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
     quote_qualified_identifier as quote_schema_table,
@@ -862,7 +863,7 @@ def regenerate_payload_data(
         res_code=res_code or None,
         source_table=table_name,
         db_path=db_path,
-        target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+        target_hit_rate=float(get_config(db_path, "prediction.default_target_hit_rate", 0.65)),
     )
 
     generated_content = result["prediction"]["content"]
