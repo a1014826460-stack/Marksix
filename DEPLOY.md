@@ -391,7 +391,7 @@ sudo ufw status verbose
 
 ### 3. 配置 HTTPS（可选）
 
-当前仓库默认的 `deploy/nginx.conf` **只监听 80**。要让 `https://` 正常访问，至少要完成下面两件事：
+当前仓库默认的 `deploy/nginx.conf` 已包含 `shengshi8800.com / www.shengshi8800.com` 的 HTTP + HTTPS 配置，但要让 `https://` 真正可用，至少还要完成下面两件事：
 
 1. 准备证书文件并放入 `deploy/ssl/`
 2. 在 `deploy/nginx.conf` 中新增 443 `server`，显式配置：
