@@ -16,10 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from auth import hash_password, public_user
-from predict.common import DEFAULT_TARGET_HIT_RATE, predict
+from predict.common import predict
 from db import connect, utc_now
 from helpers import parse_bool
 from predict.mechanisms import get_prediction_config, list_prediction_configs
+from runtime_config import get_config
 from tables import ensure_admin_tables
 from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
 from admin.prediction import sync_site_prediction_modules
@@ -115,10 +116,16 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
         "enabled": 1 if parse_bool(payload.get("enabled"), True) else 0,
         "start_web_id": int(payload.get("start_web_id") or 1),
         "end_web_id": int(payload.get("end_web_id") or payload.get("start_web_id") or 10),
-        "manage_url_template": str(payload.get("manage_url_template") or WEB_MANAGE_URL_TEMPLATE).strip(),
-        "modes_data_url": str(payload.get("modes_data_url") or MODES_DATA_URL).strip(),
-        "request_limit": int(payload.get("request_limit") or 250),
-        "request_delay": float(payload.get("request_delay") or 0.5),
+        "manage_url_template": str(
+            payload.get("manage_url_template")
+            or get_config(db_path, "site.manage_url_template", WEB_MANAGE_URL_TEMPLATE)
+        ).strip(),
+        "modes_data_url": str(
+            payload.get("modes_data_url")
+            or get_config(db_path, "site.modes_data_url", MODES_DATA_URL)
+        ).strip(),
+        "request_limit": int(payload.get("request_limit") or get_config(db_path, "site.request_limit", 250)),
+        "request_delay": float(payload.get("request_delay") or get_config(db_path, "site.request_delay", 0.5)),
         "announcement": str(payload.get("announcement") or "").strip(),
         "notes": str(payload.get("notes") or "").strip(),
     }
@@ -303,14 +310,14 @@ def save_user(db_path: str | Path, payload: dict[str, Any], user_id: int | None 
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING *
                 """,
-                (username, display_name, hash_password(password), role, status, now, now),
+                (username, display_name, hash_password(password, db_path=db_path), role, status, now, now),
             ).fetchone()
             return public_user(row)
 
         existing = conn.execute("SELECT * FROM admin_users WHERE id = ?", (user_id,)).fetchone()
         if not existing:
             raise KeyError(f"user_id={user_id} 不存在")
-        password_hash = hash_password(password) if password else existing["password_hash"]
+        password_hash = hash_password(password, db_path=db_path) if password else existing["password_hash"]
         row = conn.execute(
             """
             UPDATE admin_users
@@ -961,5 +968,8 @@ def run_site_prediction_module(db_path: str | Path, site_id: int, payload: dict[
         content=str(payload.get("content") or "").strip() or None,
         source_table=str(payload.get("source_table") or "").strip() or None,
         db_path=db_path,
-        target_hit_rate=float(payload.get("target_hit_rate") or DEFAULT_TARGET_HIT_RATE),
+        target_hit_rate=float(
+            payload.get("target_hit_rate")
+            or get_config(db_path, "prediction.default_target_hit_rate", 0.65)
+        ),
     )

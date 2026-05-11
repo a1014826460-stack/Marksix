@@ -7,14 +7,23 @@ import time
 from pathlib import Path
 from typing import Any
 
-from common import DEFAULT_TARGET_HIT_RATE, predict
+from common import predict
 from db import connect
 from helpers import load_fixed_data_maps
 from mechanisms import SIZE_NUMBER_MAP, get_prediction_config
 from prediction_generation.diversity import enforce_prediction_diversity
+from runtime_config import get_config_from_conn
 
 _logger = logging.getLogger("prediction.service")
 from utils.created_prediction_store import upsert_created_prediction_row
+
+
+def _default_target_hit_rate(conn: Any) -> float:
+    return float(get_config_from_conn(conn, "prediction.default_target_hit_rate", 0.65))
+
+
+def _max_terms_per_year(conn: Any) -> int:
+    return int(get_config_from_conn(conn, "prediction.max_terms_per_year", 365))
 
 
 def compute_result_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> tuple[str, str]:
@@ -43,8 +52,7 @@ def compute_result_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -
     return ",".join(res_sx_parts), ",".join(res_color_parts)
 
 
-def compute_next_issue(year: int, term: int, offset: int) -> tuple[int, int]:
-    max_terms_per_year = 365
+def compute_next_issue(year: int, term: int, offset: int, *, max_terms_per_year: int = 365) -> tuple[int, int]:
     new_term = term + offset
     new_year = year
     while new_term > max_terms_per_year:
@@ -117,6 +125,25 @@ def generate_prediction_batch(
     """Shared batch generation service.
 
     This is the canonical orchestration point for admin, automation, and CLI wrappers.
+    
+    共享批量生成服务。
+
+    这是管理、自动化和命令行界面（CLI）包装器的标准编排点。
+
+    params:
+    - db_path: 数据库文件路径，支持字符串或Path对象。
+    - site_id: 生成预测的站点ID。
+    - lottery_type: 彩票类型ID。
+    - start_issue: 生成预测的起始期号，格式为(year, term)。
+    - end_issue: 生成预测的结束期号，格式为(year, term)。
+    - mechanism_keys: 可选的机制键列表，用于过滤要生成的模块；如果为None或空列表，则生成所有模块。
+    - future_periods: 未来期号的数量，生成时会基于最后一个已开奖的期号进行推算。
+    - trigger: 触发生成的来源标识，如"admin_manual"、"scheduled_task"等。
+    - sync_site_modules: 同步站点模块的函数，接受数据库连接和站点ID作为参数。
+    - resolve_prediction_table_for_mode: 根据模式ID和默认表名解析实际使用的预测表名的函数，接受数据库连接、模式ID和默认表名作为参数。
+    - build_generated_prediction_row_data: 构建生成的预测行数据的函数，接受模式ID、彩票类型、年、期、web值、开奖号码和生成内容等参数，返回一个包含预测数据的字典。
+    returns:
+    - dict[str, Any]: 包含生成结果摘要和详细模块报告的字典。
     """
     from admin.crud import get_site as _get_site
 
@@ -133,6 +160,8 @@ def generate_prediction_batch(
     with connect(db_path) as conn:
         sync_site_modules(conn, site_id)
         zodiac_map, color_map = load_fixed_data_maps(conn)
+        default_target_hit_rate = _default_target_hit_rate(conn)
+        max_terms_per_year = _max_terms_per_year(conn)
 
         query = """
             SELECT id, mechanism_key, mode_id, status, sort_order
@@ -156,7 +185,12 @@ def generate_prediction_batch(
         if int(future_periods or 0) > 0:
             latest = draws[-1]
             for offset in range(1, int(future_periods) + 1):
-                next_year, next_term = compute_next_issue(latest["year"], latest["term"], offset)
+                next_year, next_term = compute_next_issue(
+                    latest["year"],
+                    latest["term"],
+                    offset,
+                    max_terms_per_year=max_terms_per_year,
+                )
                 future_draws.append(
                     {
                         "year": next_year,
@@ -266,7 +300,7 @@ def generate_prediction_batch(
                                 res_code=None,
                                 source_table=table_name,
                                 db_path=db_path,
-                                target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                                target_hit_rate=default_target_hit_rate,
                                 random_seed=f"{draw['year']}{draw['term']:03d}",
                             )
                             predicted_size = str(result["prediction"]["labels"][0])
@@ -315,7 +349,7 @@ def generate_prediction_batch(
                             res_code=None if is_future else safe_res_code,
                             source_table=table_name,
                             db_path=db_path,
-                            target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                            target_hit_rate=default_target_hit_rate,
                             random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
                         )
                         row_data = build_generated_prediction_row_data(
@@ -339,7 +373,7 @@ def generate_prediction_batch(
                             res_code=None if is_future else safe_res_code,
                             source_table=table_name,
                             db_path=db_path,
-                            target_hit_rate=DEFAULT_TARGET_HIT_RATE,
+                            target_hit_rate=default_target_hit_rate,
                             random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
                         )
                         row_data = build_generated_prediction_row_data(
@@ -422,4 +456,3 @@ def generate_prediction_batch(
             "trigger": trigger,
             "modules": module_reports,
         }
-

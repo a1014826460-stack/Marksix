@@ -2,6 +2,26 @@ import requests
 import json
 from typing import Union, List, Dict, Any
 
+from runtime_config import get_bootstrap_config_value
+
+
+def _request_with_retry(url: str, *, headers: dict[str, str], cookies: dict[str, str], params: dict[str, str]) -> requests.Response:
+    timeout = int(get_bootstrap_config_value("crawler.http_timeout_seconds", 30))
+    retries = int(get_bootstrap_config_value("crawler.http_retry_count", 2))
+    retry_delay = float(get_bootstrap_config_value("crawler.http_retry_delay_seconds", 1.0))
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return requests.get(url, headers=headers, cookies=cookies, params=params, timeout=timeout)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt >= retries:
+                raise
+            import time
+            time.sleep(retry_delay)
+    assert last_error is not None
+    raise last_error
+
 
 # ──────────────────────────────────────────────────────────────
 # 澳门彩历史数据采集器
@@ -57,7 +77,7 @@ def fetch_macau_history_data(
         # 当前接口不需要cookie，保留空字典以便后续扩展
     }
     # ── 使用从数据库传入的 collect_url 拼接年份路径后发起请求 ──
-    response = requests.get(collect_url, headers=headers, cookies=cookies, params=params)
+    response = _request_with_retry(collect_url, headers=headers, cookies=cookies, params=params)
 
     return response.text, response.status_code
 

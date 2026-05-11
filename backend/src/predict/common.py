@@ -17,9 +17,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from db import connect as db_connect
+from runtime_config import get_bootstrap_config_value
 
 DEFAULT_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
-DEFAULT_TARGET_HIT_RATE = 0.65
+DEFAULT_TARGET_HIT_RATE = float(get_bootstrap_config_value("prediction.default_target_hit_rate", 0.65))
 
 # 固定顺序用于稳定输出，避免同分策略在不同 Python 版本或数据库顺序下产生不同结果。
 ZODIAC_ORDER = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]

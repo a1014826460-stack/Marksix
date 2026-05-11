@@ -3,6 +3,11 @@
 Provides table creation, schema migration, legacy asset sync, and database
 summary functions extracted from the main app module for reuse across the
 backend without depending on the HTTP server layer.
+
+
+彩票平台的数据库表管理和引导工具。
+提供从主应用模块中提取的表创建、模式迁移、遗留资产同步和数据库摘要功能，
+以便在后端重复使用，而无需依赖HTTP服务器层。
 """
 
 from __future__ import annotations
@@ -52,8 +57,16 @@ from db import (  # noqa: E402
     utc_now,
 )
 from mechanisms import list_prediction_configs  # noqa: E402
+from runtime_config import (  # noqa: E402
+    ensure_system_config_table,
+    get_bootstrap_config_value,
+    seed_system_config_defaults,
+)
 
 _tables_initialized = False
+HK_NAMES = ("香港彩", "六肖彩")
+MACAU_NAME = "澳门彩"
+TAIWAN_NAME = "台湾彩"
 
 
 def default_db_target() -> str:
@@ -67,7 +80,9 @@ def default_db_target() -> str:
 
 
 def ensure_column(conn: Any, table_name: str, column_name: str, definition: str) -> None:
-    """轻量迁移工具：SQLite 旧表缺列时补列，保留既有业务数据。"""
+    """
+    deprecated:
+    轻量迁移工具：SQLite 旧表缺列时补列，保留既有业务数据。"""
     columns = set(conn.table_columns(table_name))
     if column_name not in columns:
         conn.execute(
@@ -82,6 +97,10 @@ def sync_legacy_image_assets(conn: Any) -> None:
     The old static page reads image URLs through `/api/post/getList` and direct
     `/uploads/image/...` paths. This sync keeps a deterministic mapping between
     the filesystem source in `backend/data/Images` and those legacy URLs.
+
+    将旧的image文件路径及其公共旧版网址保留到PostgreSQL中。
+    旧的静态页面通过`/api/post/getList`读取图片URL，并直接指向`/uploads/image/...`路径。
+    这种同步保持了`backend/data/Images`中的文件系统源与这些旧URL之间的确定性映射。
     """
     if not LEGACY_IMAGES_DIR.exists():
         return
@@ -179,6 +198,45 @@ def sync_legacy_image_assets(conn: Any) -> None:
         )
 
 
+def seed_default_lottery_types(conn: Any, *, now: str) -> None:
+    conn.execute(
+        "UPDATE lottery_types SET name = ? WHERE name = ?",
+        (HK_NAMES[0], HK_NAMES[1]),
+    )
+    defaults = [
+        (
+            HK_NAMES[0],
+            str(get_bootstrap_config_value("draw.hk_default_draw_time", "21:30")),
+            str(get_bootstrap_config_value("draw.hk_default_collect_url", "https://www.lnlllt.com/api.php")),
+        ),
+        (
+            MACAU_NAME,
+            str(get_bootstrap_config_value("draw.macau_default_draw_time", "21:00")),
+            str(get_bootstrap_config_value("draw.macau_default_collect_url", "https://www.lnlllt.com/api.php")),
+        ),
+        (
+            TAIWAN_NAME,
+            str(get_bootstrap_config_value("draw.taiwan_default_draw_time", "22:30")),
+            "",
+        ),
+    ]
+    for lottery_name, draw_time, collect_url in defaults:
+        exists = conn.execute(
+            "SELECT COUNT(*) AS total FROM lottery_types WHERE name = ?",
+            (lottery_name,),
+        ).fetchone()["total"]
+        if exists:
+            continue
+        conn.execute(
+            """
+            INSERT INTO lottery_types
+                (name, draw_time, collect_url, status, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?)
+            """,
+            (lottery_name, draw_time, collect_url, now, now),
+        )
+
+
 def ensure_admin_tables(db_path: str | Path) -> None:
     from auth import hash_password as _hash_password
     from admin.prediction import sync_site_prediction_modules as _sync_modules
@@ -192,6 +250,8 @@ def ensure_admin_tables(db_path: str | Path) -> None:
 
     now = utc_now()
     with connect(db_path) as conn:
+        ensure_system_config_table(conn)
+        seed_system_config_defaults(conn, now=now)
         pk_sql = auto_increment_primary_key("id", conn.engine)
         conn.execute(
             f"""
@@ -231,6 +291,26 @@ def ensure_admin_tables(db_path: str | Path) -> None:
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 FOREIGN KEY (site_id) REFERENCES managed_sites(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS scheduler_tasks (
+                {pk_sql},
+                task_key TEXT NOT NULL UNIQUE,
+                task_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{{}}',
+                status TEXT NOT NULL DEFAULT 'pending',
+                run_at TEXT NOT NULL,
+                locked_at TEXT,
+                locked_by TEXT,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                last_error TEXT,
+                last_finished_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -361,6 +441,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
         ensure_column(conn, "legacy_image_assets", "notes", "TEXT")
         sync_legacy_image_assets(conn)
         _sync_modules(conn)
+        seed_default_lottery_types(conn, now=now)
 
         if (
             int(
@@ -371,11 +452,10 @@ def ensure_admin_tables(db_path: str | Path) -> None:
             )
             == 0
         ):
-            _cfg_admin = app_config.section("admin")
-            _admin_user = str(_cfg_admin.get("username", "admin"))
-            _admin_display = str(_cfg_admin.get("display_name", "系统管理员"))
-            _admin_pass = str(_cfg_admin.get("password", "admin123"))
-            _admin_role = str(_cfg_admin.get("role", "super_admin"))
+            _admin_user = str(get_bootstrap_config_value("admin.username", "admin"))
+            _admin_display = str(get_bootstrap_config_value("admin.display_name", "系统管理员"))
+            _admin_pass = str(get_bootstrap_config_value("admin.password", "admin123"))
+            _admin_role = str(get_bootstrap_config_value("admin.role", "super_admin"))
             conn.execute(
                 """
                 INSERT INTO admin_users (
@@ -459,7 +539,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
                 """,
                 (
                     "台湾彩",
-                    "20:30",
+                    "22:30",
                     now,
                     now,
                 ),
@@ -476,21 +556,17 @@ def ensure_admin_tables(db_path: str | Path) -> None:
             or 0
         )
         if existing == 0:
-            _site_name = str(
-                _cfg_site.get("default_site_name", "默认盛世站点")
-            )
-            _site_domain = str(
-                _cfg_site.get("default_domain", "admin.shengshi8800.com")
-            )
-            _site_url = str(_cfg_site.get("manage_url_template", ""))
-            _site_data_url = str(_cfg_site.get("modes_data_url", ""))
-            _site_token = str(_cfg_site.get("default_token", ""))
-            _site_req_limit = int(_cfg_site.get("request_limit", 250))
-            _site_req_delay = float(_cfg_site.get("request_delay", 0.5))
-            _site_announcement = str(_cfg_site.get("default_announcement", ""))
-            _site_notes = str(_cfg_site.get("default_notes", ""))
-            _site_start = int(_cfg_site.get("start_web_id", 1))
-            _site_end = int(_cfg_site.get("end_web_id", 10))
+            _site_name = str(get_bootstrap_config_value("site.default_site_name", "默认盛世站点"))
+            _site_domain = str(get_bootstrap_config_value("site.default_domain", "admin.shengshi8800.com"))
+            _site_url = str(get_bootstrap_config_value("site.manage_url_template", ""))
+            _site_data_url = str(get_bootstrap_config_value("site.modes_data_url", ""))
+            _site_token = str(get_bootstrap_config_value("site.default_token", ""))
+            _site_req_limit = int(get_bootstrap_config_value("site.request_limit", 250))
+            _site_req_delay = float(get_bootstrap_config_value("site.request_delay", 0.5))
+            _site_announcement = str(get_bootstrap_config_value("site.default_announcement", ""))
+            _site_notes = str(get_bootstrap_config_value("site.default_notes", ""))
+            _site_start = int(get_bootstrap_config_value("site.start_web_id", 1))
+            _site_end = int(get_bootstrap_config_value("site.end_web_id", 10))
             conn.execute(
                 """
                 INSERT INTO managed_sites (
