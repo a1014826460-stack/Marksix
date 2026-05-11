@@ -18,7 +18,12 @@ from typing import Any
 from auth import hash_password, public_user
 from predict.common import predict
 from db import connect, utc_now
-from helpers import draw_time_to_unix_ms, get_effective_next_draw_payload, parse_bool
+from helpers import (
+    draw_time_to_unix_ms,
+    get_effective_next_draw_payload,
+    parse_bool,
+    sync_lottery_type_next_time_from_latest_draw,
+)
 from predict.mechanisms import get_prediction_config, list_prediction_configs
 from runtime_config import get_config
 from tables import ensure_admin_tables
@@ -92,10 +97,10 @@ def _update_taiwan_previous_draw_next_time(
 
 def _sync_lottery_type_next_time(conn: Any, lottery_type_id: int, updated_at: str) -> None:
     """Keep lottery_types.next_time aligned with the effective next draw payload."""
-    payload = get_effective_next_draw_payload(conn, lottery_type_id)
-    conn.execute(
-        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
-        (payload.get("next_time") or "", updated_at, lottery_type_id),
+    sync_lottery_type_next_time_from_latest_draw(
+        conn,
+        lottery_type_id,
+        updated_at=updated_at,
     )
 
 

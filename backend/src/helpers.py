@@ -43,7 +43,12 @@ def next_draw_time_from_current_draw(draw_time: str) -> str:
 
 
 def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str, Any]:
-    """Derive the next draw countdown payload from the latest opened draw."""
+    """Return the canonical next-draw payload for the lottery type.
+
+    For Hong Kong/Macau (type 1/2), the only source of truth is the crawler-
+    persisted `lottery_draws.next_time` on the latest opened issue.
+    For Taiwan (type 3), keep the existing derived fallback behavior.
+    """
     row = conn.execute(
         """
         SELECT year, term, next_term, draw_time, next_time
@@ -61,19 +66,21 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
         data = dict(row)
         current_term = int(data.get("term") or 0)
         next_term = int(data.get("next_term") or (current_term + 1 if current_term else 0))
-        next_draw_time = ""
-        draw_time = str(data.get("draw_time") or "").strip()
-        if draw_time:
-            next_draw_time = next_draw_time_from_current_draw(draw_time)
         stored_next_time = str(data.get("next_time") or "").strip()
+        next_draw_time = ""
         effective_next_time = stored_next_time
-        if next_draw_time:
-            try:
-                expected_next_time = draw_time_to_unix_ms(next_draw_time)
-                if not effective_next_time or effective_next_time != expected_next_time:
-                    effective_next_time = expected_next_time
-            except ValueError:
-                pass
+
+        if int(lottery_type_id) == 3:
+            draw_time = str(data.get("draw_time") or "").strip()
+            if draw_time:
+                next_draw_time = next_draw_time_from_current_draw(draw_time)
+            if next_draw_time:
+                try:
+                    expected_next_time = draw_time_to_unix_ms(next_draw_time)
+                    if not effective_next_time or effective_next_time != expected_next_time:
+                        effective_next_time = expected_next_time
+                except ValueError:
+                    pass
         return {
             "current_issue": f"{data.get('year') or ''}{data.get('term') or ''}",
             "next_issue": f"{data.get('year') or ''}{next_term}" if next_term else "",
@@ -91,6 +98,22 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
         "next_draw_time": "",
         "next_time": str(lt_row["next_time"]) if lt_row and lt_row["next_time"] else None,
     }
+
+
+def sync_lottery_type_next_time_from_latest_draw(
+    conn: Any,
+    lottery_type_id: int,
+    *,
+    updated_at: str,
+) -> str:
+    """Sync lottery_types.next_time from the canonical effective payload."""
+    payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
+    next_time = str(payload.get("next_time") or "")
+    conn.execute(
+        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+        (next_time, updated_at, int(lottery_type_id)),
+    )
+    return next_time
 
 
 def row_to_dict(row: Any | None) -> dict[str, Any] | None:

@@ -19,13 +19,13 @@ $.ajax({
                 let result = '00'
                 let content = d.content.split(',');
 
-                if (code && content.indexOf(code) === -1) continue;
+                var hit = code && content.indexOf(code) !== -1;
 
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
-        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</td>
+        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${hit ? '准' : ''}</td>
     </tr>
             `}
         }
