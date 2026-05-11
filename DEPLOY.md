@@ -402,6 +402,17 @@ ssl_certificate /etc/nginx/ssl/fullchain.pem;
 ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 ```
 
+如果你的目标是：
+
+- `https://www.shengshi8800.com/` 可访问
+- 并且根路径自动跳到 `/legacy-shell?t=3`
+
+可以直接参考仓库内的示例文件：
+
+```text
+deploy/nginx.www.shengshi8800.ssl.conf.example
+```
+
 如果你使用 Certbot，建议在宿主机签发证书后，把证书文件挂载给容器使用；不要直接假设 `certbot --nginx` 能自动改到容器内的 Nginx 配置。
 
 ### 4. Nginx 安全加固

@@ -1,0 +1,128 @@
+# ============================================================
+# Example Nginx config for:
+#   https://www.shengshi8800.com/
+#     -> /legacy-shell?t=3
+#
+# Usage:
+# 1. Put your certificates into deploy/ssl/
+#    - deploy/ssl/fullchain.pem
+#    - deploy/ssl/privkey.pem
+# 2. Replace deploy/nginx.conf with this file's content
+# 3. Restart nginx:
+#    docker compose restart nginx
+# ============================================================
+
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Apex domain -> canonical www domain over HTTPS
+server {
+    listen 80;
+    server_name shengshi8800.com;
+    return 301 https://www.shengshi8800.com$request_uri;
+}
+
+# www domain over HTTP -> canonical HTTPS
+server {
+    listen 80;
+    server_name www.shengshi8800.com;
+    return 301 https://www.shengshi8800.com$request_uri;
+}
+
+# Apex domain over HTTPS -> canonical www domain
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name shengshi8800.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    return 301 https://www.shengshi8800.com$request_uri;
+}
+
+# Main site
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.shengshi8800.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # Uncomment after HTTPS is fully verified in production.
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    server_tokens off;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    client_max_body_size 100m;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    # Direct root visits to the legacy shell entry.
+    location = / {
+        return 302 /legacy-shell?t=3;
+    }
+
+    # ---- Real health check: proxy to Python API ----
+    location /health {
+        set $python_api python-api:8000;
+        proxy_pass http://$python_api/api/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        access_log off;
+    }
+
+    # ---- Frontend Next.js API proxy ----
+    location /api/ {
+        set $frontend_web frontend:3000;
+        proxy_pass http://$frontend_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- Next.js admin interface ----
+    location /admin {
+        set $backend_admin backend-admin:3002;
+        proxy_pass http://$backend_admin;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- Main frontend ----
+    location / {
+        set $frontend_web frontend:3000;
+        proxy_pass http://$frontend_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- Static assets ----
+    location /uploads/ {
+        set $python_api python-api:8000;
+        proxy_pass http://$python_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
