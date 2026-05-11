@@ -18,12 +18,85 @@ from typing import Any
 from auth import hash_password, public_user
 from predict.common import predict
 from db import connect, utc_now
-from helpers import parse_bool
+from helpers import draw_time_to_unix_ms, get_effective_next_draw_payload, parse_bool
 from predict.mechanisms import get_prediction_config, list_prediction_configs
 from runtime_config import get_config
 from tables import ensure_admin_tables
 from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
 from admin.prediction import sync_site_prediction_modules
+
+
+def _draw_time_to_unix_ms(draw_time: str) -> str:
+    """Convert a Beijing-time draw timestamp to a UTC unix-ms string."""
+    return draw_time_to_unix_ms(draw_time)
+
+
+def _load_taiwan_placeholder_previous_draw_ids(
+    conn: Any,
+    *,
+    year: int,
+    term: int,
+) -> list[int]:
+    """Find previous terminal draws whose next_time still points to their own draw_time."""
+    rows = conn.execute(
+        """
+        SELECT d.id, d.draw_time, d.next_time
+        FROM lottery_draws d
+        WHERE d.lottery_type_id = 3
+          AND (d.year < ? OR (d.year = ? AND d.term < ?))
+          AND NOT EXISTS (
+              SELECT 1
+              FROM lottery_draws newer
+              WHERE newer.lottery_type_id = d.lottery_type_id
+                AND (newer.year > d.year OR (newer.year = d.year AND newer.term > d.term))
+                AND (newer.year < ? OR (newer.year = ? AND newer.term < ?))
+          )
+        """,
+        (year, year, term, year, year, term),
+    ).fetchall()
+
+    candidate_ids: list[int] = []
+    for row in rows:
+        draw_time = str(row["draw_time"] or "").strip()
+        next_time = str(row["next_time"] or "").strip()
+        if not draw_time or not next_time:
+            continue
+        try:
+            if next_time == _draw_time_to_unix_ms(draw_time):
+                candidate_ids.append(int(row["id"]))
+        except ValueError:
+            continue
+    return candidate_ids
+
+
+def _update_taiwan_previous_draw_next_time(
+    conn: Any,
+    *,
+    draw_ids: list[int],
+    next_draw_time: str,
+    updated_at: str,
+) -> None:
+    """Backfill previous Taiwan draws so their next_time points to the new draw."""
+    if not draw_ids or not next_draw_time:
+        return
+    replacement_next_time = _draw_time_to_unix_ms(next_draw_time)
+    conn.executemany(
+        """
+        UPDATE lottery_draws
+        SET next_time = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        [(replacement_next_time, updated_at, draw_id) for draw_id in draw_ids],
+    )
+
+
+def _sync_lottery_type_next_time(conn: Any, lottery_type_id: int, updated_at: str) -> None:
+    """Keep lottery_types.next_time aligned with the effective next draw payload."""
+    payload = get_effective_next_draw_payload(conn, lottery_type_id)
+    conn.execute(
+        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+        (payload.get("next_time") or "", updated_at, lottery_type_id),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -375,20 +448,15 @@ def list_lottery_types(db_path: str | Path) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for row in rows:
             d: dict[str, Any] = dict(row) | {"status": bool(row["status"])}
-            if not d.get("next_time"):
-                ld_row = conn.execute(
-                    """SELECT next_time FROM lottery_draws
-                       WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != ''
-                       ORDER BY year DESC, term DESC LIMIT 1""",
-                    (d["id"],),
-                ).fetchone()
-                if ld_row:
-                    d["next_time"] = ld_row["next_time"]
-                    # 回填 lottery_types，保持数据一致
-                    conn.execute(
-                        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
-                        (ld_row["next_time"], utc_now(), d["id"]),
-                    )
+            stored_next_time = str(d.get("next_time") or "")
+            payload = get_effective_next_draw_payload(conn, int(d["id"]))
+            effective_next_time = str(payload.get("next_time") or "")
+            d["next_time"] = effective_next_time
+            if effective_next_time != stored_next_time:
+                conn.execute(
+                    "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+                    (effective_next_time, utc_now(), d["id"]),
+                )
             result.append(d)
         return result
 
@@ -440,19 +508,7 @@ def save_lottery_type(db_path: str | Path, payload: dict[str, Any], lottery_id: 
             if not row:
                 raise KeyError(f"lottery_id={effective_lottery_id} 不存在")
 
-        # 从 lottery_draws 获取该彩种最新一期的 next_time 回填
-        ld_row = conn.execute(
-            """SELECT next_time FROM lottery_draws
-               WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != ''
-               ORDER BY year DESC, term DESC LIMIT 1""",
-            (effective_lottery_id,),
-        ).fetchone()
-        derived_next_time = str(ld_row["next_time"]) if ld_row else ""
-        if derived_next_time:
-            conn.execute(
-                "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
-                (derived_next_time, now, effective_lottery_id),
-            )
+        _sync_lottery_type_next_time(conn, int(effective_lottery_id), now)
 
         # 重新读取以获取最终状态
         final_row = conn.execute(
@@ -603,6 +659,7 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         if not n.isdigit() or int(n) < 1 or int(n) > 49:
             raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
     with connect(db_path) as conn:
+        previous_placeholder_ids: list[int] = []
         duplicate = (
             conn.execute(
                 """
@@ -636,6 +693,11 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 f"该彩种的 {fields['year']} 年第 {fields['term']} 期已存在，请检查期数或改为编辑现有记录"
             )
         if draw_id is None:
+            previous_placeholder_ids = _load_taiwan_placeholder_previous_draw_ids(
+                conn,
+                year=fields["year"],
+                term=fields["term"],
+            )
             row = conn.execute(
                 """
                 INSERT INTO lottery_draws (
@@ -647,6 +709,13 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 """,
                 (*fields.values(), now, now),
             ).fetchone()
+            _update_taiwan_previous_draw_next_time(
+                conn,
+                draw_ids=previous_placeholder_ids,
+                next_draw_time=fields["draw_time"],
+                updated_at=now,
+            )
+            _sync_lottery_type_next_time(conn, fields["lottery_type_id"], now)
         else:
             row = conn.execute(
                 """
@@ -660,6 +729,7 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
             ).fetchone()
             if not row:
                 raise KeyError(f"draw_id={draw_id} 不存在")
+            _sync_lottery_type_next_time(conn, fields["lottery_type_id"], now)
         return dict(row) | {"status": bool(row["status"]), "is_opened": bool(row["is_opened"])}
 
 

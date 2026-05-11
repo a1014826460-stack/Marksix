@@ -18,6 +18,7 @@ from Macau_history_crawler import fetch_macau_history_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from db import connect as db_connect
+from helpers import get_effective_next_draw_payload
 from runtime_config import get_config, get_config_from_conn
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
@@ -279,12 +280,11 @@ def _upsert_draw(
             (lottery_type_id, year, term, numbers, draw_time,
              is_opened, term + 1, now, now),
         )
-    # 同步更新 lottery_types.next_time，保持彩种管理页面数据一致
-    if next_time:
-        conn.execute(
-            "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
-            (next_time, now, lottery_type_id),
-        )
+    payload = get_effective_next_draw_payload(conn, lottery_type_id)
+    conn.execute(
+        "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
+        (payload.get("next_time") or "", now, lottery_type_id),
+    )
 
 
 def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
@@ -802,9 +802,10 @@ class CrawlerScheduler:
             "UPDATE lottery_draws SET next_time = ?, updated_at = ? WHERE id = ?",
             (next_time_str, now_str, row["id"]),
         )
+        payload = get_effective_next_draw_payload(conn, 3)
         conn.execute(
             "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = 3",
-            (next_time_str, now_str),
+            (payload.get("next_time") or "", now_str),
         )
         print(f"[TaiwanOpen] Term {row['term']}: next_time={unix_ms} "
               f"({next_dt.strftime('%Y-%m-%d %H:%M:%S')} Beijing)")
