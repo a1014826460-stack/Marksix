@@ -15,6 +15,7 @@ if str(_PREDICT_ROOT) not in sys.path:
 from db import connect  # noqa: E402
 from helpers import (  # noqa: E402
     apply_lottery_draw_overlay, build_draw_result_payload, color_name_to_key,
+    get_effective_next_draw_payload,
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
     merge_preferred_mode_payload_rows, split_csv,
 )
@@ -349,6 +350,20 @@ def get_public_latest_draw(
             "current_issue": f"{latest_draw['year']}{latest_draw['term']}",
             "result_balls": balls[:-1],
             "special_ball": balls[-1] if balls else None,
+        }
+
+
+def get_public_next_draw_deadline(
+    db_path: str | Path,
+    lottery_type_id: int = 3,
+) -> dict[str, Any]:
+    """Return next draw time derived from the latest opened issue only."""
+    with connect(db_path) as conn:
+        payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
+        return {
+            "current_issue": payload.get("current_issue") or "",
+            "next_issue": payload.get("next_issue") or "",
+            "next_time": payload.get("next_time"),
         }
 
 

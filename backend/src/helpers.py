@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 from db import quote_identifier
@@ -24,6 +25,72 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
     57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
     67, 68, 69, 108, 151, 197,
 )
+
+
+def draw_time_to_unix_ms(draw_time: str) -> str:
+    """Convert a Beijing-time draw timestamp to a UTC unix-ms string."""
+    from calendar import timegm
+
+    draw_dt = datetime.strptime(str(draw_time).strip(), "%Y-%m-%d %H:%M:%S")
+    utc_dt = draw_dt - timedelta(hours=8)
+    return str(int(timegm(utc_dt.timetuple()) * 1000))
+
+
+def next_draw_time_from_current_draw(draw_time: str) -> str:
+    """Return the next Beijing draw timestamp by advancing one day."""
+    draw_dt = datetime.strptime(str(draw_time).strip(), "%Y-%m-%d %H:%M:%S")
+    return (draw_dt + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str, Any]:
+    """Derive the next draw countdown payload from the latest opened draw."""
+    row = conn.execute(
+        """
+        SELECT year, term, next_term, draw_time, next_time
+        FROM lottery_draws
+        WHERE lottery_type_id = ?
+          AND is_opened = 1
+          AND draw_time IS NOT NULL AND draw_time != ''
+        ORDER BY year DESC, term DESC, id DESC
+        LIMIT 1
+        """,
+        (int(lottery_type_id),),
+    ).fetchone()
+
+    if row:
+        data = dict(row)
+        current_term = int(data.get("term") or 0)
+        next_term = int(data.get("next_term") or (current_term + 1 if current_term else 0))
+        next_draw_time = ""
+        draw_time = str(data.get("draw_time") or "").strip()
+        if draw_time:
+            next_draw_time = next_draw_time_from_current_draw(draw_time)
+        stored_next_time = str(data.get("next_time") or "").strip()
+        effective_next_time = stored_next_time
+        if next_draw_time:
+            try:
+                expected_next_time = draw_time_to_unix_ms(next_draw_time)
+                if not effective_next_time or effective_next_time != expected_next_time:
+                    effective_next_time = expected_next_time
+            except ValueError:
+                pass
+        return {
+            "current_issue": f"{data.get('year') or ''}{data.get('term') or ''}",
+            "next_issue": f"{data.get('year') or ''}{next_term}" if next_term else "",
+            "next_draw_time": next_draw_time,
+            "next_time": effective_next_time or None,
+        }
+
+    lt_row = conn.execute(
+        "SELECT next_time FROM lottery_types WHERE id = ?",
+        (int(lottery_type_id),),
+    ).fetchone()
+    return {
+        "current_issue": "",
+        "next_issue": "",
+        "next_draw_time": "",
+        "next_time": str(lt_row["next_time"]) if lt_row and lt_row["next_time"] else None,
+    }
 
 
 def row_to_dict(row: Any | None) -> dict[str, Any] | None:

@@ -153,6 +153,7 @@ from legacy.api import (  # noqa: E402
 from public.api import (  # noqa: E402
     get_draw_history,
     get_public_latest_draw,
+    get_public_next_draw_deadline,
     get_public_site_page_data,
 )
 from tables import (  # noqa: E402
@@ -421,7 +422,10 @@ class ApiHandler(BaseHTTPRequestHandler):
 
             if method == "GET" and path == "/api/public/next-draw-deadline":
                 lottery_type = int(query.get("lottery_type", ["3"])[0] or 3)
-                next_time: str | None = None
+                payload = get_public_next_draw_deadline(self.db_path, lottery_type)
+                payload["server_time"] = str(int(time.time()))
+                self.send_json(payload)
+                return
                 with connect(self.db_path) as conn:
                     row = conn.execute(
                         "SELECT next_time FROM lottery_draws WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != '' ORDER BY year DESC, term DESC LIMIT 1",
