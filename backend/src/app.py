@@ -426,26 +426,6 @@ class ApiHandler(BaseHTTPRequestHandler):
                 payload["server_time"] = str(int(time.time()))
                 self.send_json(payload)
                 return
-                with connect(self.db_path) as conn:
-                    row = conn.execute(
-                        "SELECT next_time FROM lottery_draws WHERE lottery_type_id = ? AND next_time IS NOT NULL AND next_time != '' ORDER BY year DESC, term DESC LIMIT 1",
-                        (lottery_type,),
-                    ).fetchone()
-                    if row:
-                        next_time = str(row["next_time"])
-                    else:
-                        # 兜底：从 lottery_types 读取
-                        lt_row = conn.execute(
-                            "SELECT next_time FROM lottery_types WHERE id = ?",
-                            (lottery_type,),
-                        ).fetchone()
-                        if lt_row and lt_row["next_time"]:
-                            next_time = str(lt_row["next_time"])
-                    self.send_json({
-                        "next_time": next_time,
-                        "server_time": str(int(time.time())),
-                    })
-                return
 
             if method == "GET" and path == "/api/public/draw-history":
                 lottery_type = int(query.get("lottery_type", ["3"])[0] or 3)
@@ -707,11 +687,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.send_json(job)
                 return
             if method == "GET" and path == "/api/admin/lottery-draws/latest-term":
-                qs = parse_qs(urlparse(self.path).query)
-                lt_id = int(qs.get("lottery_type_id", ["1"])[0])
+                lt_id = int(query.get("lottery_type_id", ["1"])[0])
                 with connect(self.db_path) as conn:
                     row = conn.execute(
-                        "SELECT year, term, draw_time FROM lottery_draws WHERE lottery_type_id = ? AND is_opened = 1 ORDER BY year DESC, term DESC LIMIT 1",
+                        "SELECT year, term, draw_time FROM lottery_draws WHERE lottery_type_id = ? ORDER BY id DESC LIMIT 1",
                         (lt_id,),
                     ).fetchone()
                     if row:

@@ -605,14 +605,18 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
             lt_s = int(lt_parts[2]) if len(lt_parts) >= 3 else 0
 
             prev = conn.execute(
-                """SELECT draw_time FROM lottery_draws
-                   WHERE lottery_type_id = 3 ORDER BY year DESC, term DESC LIMIT 1"""
+                """
+                SELECT draw_time FROM lottery_draws
+                WHERE lottery_type_id = 3
+                ORDER BY id DESC
+                LIMIT 1
+                """
             ).fetchone()
             if prev and prev.get("draw_time"):
                 try:
                     prev_dt = datetime.strptime(str(prev["draw_time"]).strip(), "%Y-%m-%d %H:%M:%S")
-                    next_dt = prev_dt.replace(
-                        day=prev_dt.day + 1, hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
+                    next_dt = (prev_dt + timedelta(days=1)).replace(
+                        hour=lt_h, minute=lt_m, second=lt_s, microsecond=0
                     )
                     fields["draw_time"] = next_dt.strftime("%Y-%m-%d %H:%M:%S")
                 except (ValueError, OverflowError):
@@ -648,6 +652,16 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
                 fields["is_opened"] = 1
         except ValueError:
             pass  # 只包含日期的格式，不做自动判断
+
+    if fields["draw_time"] and fields["is_opened"]:
+        try:
+            draw_dt = datetime.strptime(fields["draw_time"].strip(), "%Y-%m-%d %H:%M:%S")
+            beijing_now = (datetime.now(timezone.utc) + timedelta(hours=8)).replace(tzinfo=None)
+            if draw_dt > beijing_now:
+                raise ValueError("当前期开奖时间尚未到达，不能提前设置为已开奖")
+        except ValueError as exc:
+            if str(exc) == "当前期开奖时间尚未到达，不能提前设置为已开奖":
+                raise
 
     if not fields["numbers"]:
         raise ValueError("开奖号码不能为空")
@@ -691,6 +705,36 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         if duplicate:
             raise ValueError(
                 f"该彩种的 {fields['year']} 年第 {fields['term']} 期已存在，请检查期数或改为编辑现有记录"
+            )
+        duplicate_draw_date = (
+            conn.execute(
+                """
+                SELECT id FROM lottery_draws
+                WHERE lottery_type_id = ? AND substr(draw_time, 1, 10) = substr(?, 1, 10)
+                LIMIT 1
+                """,
+                (
+                    fields["lottery_type_id"],
+                    fields["draw_time"],
+                ),
+            ).fetchone()
+            if draw_id is None
+            else conn.execute(
+                """
+                SELECT id FROM lottery_draws
+                WHERE lottery_type_id = ? AND substr(draw_time, 1, 10) = substr(?, 1, 10) AND id <> ?
+                LIMIT 1
+                """,
+                (
+                    fields["lottery_type_id"],
+                    fields["draw_time"],
+                    draw_id,
+                ),
+            ).fetchone()
+        )
+        if duplicate_draw_date:
+            raise ValueError(
+                f"开奖日期 {fields['draw_time'][:10]} 已存在，请检查后再提交"
             )
         if draw_id is None:
             previous_placeholder_ids = _load_taiwan_placeholder_previous_draw_ids(
