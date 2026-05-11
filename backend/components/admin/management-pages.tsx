@@ -641,6 +641,7 @@ export function DrawsPageClient() {
   const [editing, setEditing] = useState<Draw | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [drawTypeFilter, setDrawTypeFilter] = useState("")
+  const formRef = useRef<HTMLFormElement | null>(null)
 
   async function load() {
     const [drawData, lotteryData] = await Promise.all([
@@ -655,6 +656,35 @@ export function DrawsPageClient() {
   const filteredRows = drawTypeFilter
     ? rows.filter((r) => String(r.lottery_type_id) === drawTypeFilter)
     : rows
+
+  async function populateDraftFields(lotteryTypeId: number, form: HTMLFormElement) {
+    if (!lotteryTypeId) return
+    try {
+      const info = await adminApi<{ year: number; term: number; draw_time: string }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lotteryTypeId}`)
+      ;(form.elements.namedItem("year") as HTMLInputElement).value = String(info.year || new Date().getFullYear())
+      ;(form.elements.namedItem("term") as HTMLInputElement).value = String(info.term > 0 ? info.term + 1 : 1)
+      ;(form.elements.namedItem("next_term") as HTMLInputElement).value = String(info.term > 0 ? info.term + 2 : 2)
+
+      if (lotteryTypeId === 3) {
+        let baseDate = info.draw_time ? new Date(info.draw_time.replace(" ", "T")) : new Date()
+        if (Number.isNaN(baseDate.getTime())) baseDate = new Date()
+        baseDate.setDate(baseDate.getDate() + 1)
+        const lt = lotteries.find(l => l.id === 3)
+        const timeStr = lt?.draw_time || "22:30:00"
+        const parts = timeStr.split(":")
+        baseDate.setHours(parseInt(parts[0]) || 22, parseInt(parts[1]) || 30, parseInt(parts[2]) || 0, 0)
+        const yyyy = baseDate.getFullYear()
+        const mm = String(baseDate.getMonth() + 1).padStart(2, "0")
+        const dd = String(baseDate.getDate()).padStart(2, "0")
+        ;(form.elements.namedItem("draw_time") as HTMLInputElement).value = `${yyyy}-${mm}-${dd}`
+      }
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (!formOpen || editing || !lotteries.length || !formRef.current) return
+    void populateDraftFields(3, formRef.current)
+  }, [editing, formOpen, lotteries])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -725,8 +755,8 @@ export function DrawsPageClient() {
         </Button>
         </div>
 
-        <div className={`overflow-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
-          <Card key={editing?.id || "new"} className="p-4">
+        <div className={`relative z-20 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[720px] opacity-100" : "max-h-0 opacity-0"}`}>
+          <Card key={editing?.id || "new"} className="relative p-4">
             <h2 className="mb-3 text-base font-semibold">{editing ? "修改开奖记录" : "新增开奖记录"}</h2>
             <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
               <Field label="彩种" className="col-span-2">
@@ -788,7 +818,7 @@ export function DrawsPageClient() {
                 </select>
               </Field>
               <Field label="下一期数" className="col-span-2"><Input name="next_term" type="number" defaultValue={editing?.next_term || ""} placeholder="自动获取" /></Field>
-              <div className="col-span-2 flex gap-2">
+              <div className="col-span-2 sticky bottom-0 z-30 flex gap-2 border-t border-border bg-card py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.08)]">
                 <Button type="submit" size="sm"><Save className="mr-1 h-4 w-4" />保存</Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => { setFormOpen(false); setEditing(null) }}>取消</Button>
               </div>

@@ -1,0 +1,49 @@
+[33m072c2d9[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add backend README and Chinese translation; implement runtime configuration management
+[33m88c423d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Add global styles and legacy compatibility for old site components
+[33m25bd4b4[m feat(logging): implement centralized logging system with file rotation, database persistence, and automatic cleanup
+[33mb931e38[m feat: 添加 next_time 字段支持，优化预测生成逻辑和拖拽排序功能
+[33mfe00b43[m feat(prediction_generation): add diversity handling and prediction generation service
+[33m6f92964[m feat: Enhance health check endpoints and Nginx configuration
+[33m2226c40[m feat: implement future period prediction in bulk_generate_site_prediction_data
+[33m6cda10e[m refactor: remove periodic history crawl from CrawlerScheduler
+[33m53e8dc0[m fix: prevent history crawler from overwriting valid next_time with empty values
+[33m6ea3c1e[m fix: remove immediate crawl on server startup to avoid unnecessary API requests
+[33m54b680f[m fix: add graceful error handling for Macau crawler API format errors
+[33m2f1963b[m feat: Taiwan draw auto-fill with time calculation and auto-open
+[33m05d7ef4[m feat: normalize Macau issue format in result_crawler transform_standard_list
+[33mb543463[m fix: restore countdown timer and weekday/date display in local.html
+[33ma67fe1a[m fix: iterate over enabled sites in auto-prediction, fix BACKEND_ROOT shadowing
+[33m90c4633[m feat: decouple crawl from prediction, add 6h delayed auto-prediction task
+[33m8823a42[m feat: implement draw management with next_time, countdown, and auto-refresh
+[33mf820de9[m feat: extend auto-generate end issue to current+1, hide redundant regenerate button
+[33m81cb0f6[m fix: use seed high bits for replacement position to avoid mod collision
+[33m3b96ada[m fix: use seed-based label replacement to guarantee prediction differentiation
+[33mbccaee7[m fix: use label shuffle instead of rotation for seed-based differentiation
+[33m28327ee[m fix: ensure random_seed produces distinct predictions via label rotation
+[33m6ed5bcc[m feat: add future_periods support to bulk_generate_site_prediction_data
+[33me8c7ab4[m feat: add random_seed parameter to predict() for future period differentiation
+[33ma59e007[m feat: 修改爬虫逻辑以支持多彩种数据生成，更新 API 测试以验证返回数据完整性
+[33mc455d5f[m feat: remove obsolete zip file, update TypeScript environment import, enhance embed HTML for conditional rendering, modify index HTML to comment out header image, add comprehensive API test suite, and create a script for easy test execution
+[33m0331b60[m fix: lock pnpm version to v9 in Dockerfiles, compatible with Node 20-alpine
+[33mf2283e1[m 更新 .gitignore 文件，添加对 *.sql 文件的忽略规则；修改 Nginx 配置，将 Python API 代理更改为前端 Next.js API 代理
+[33m51a6018[m 更新 .gitignore 文件，添加对 *.dump 文件的忽略规则
+[33mf05c311[m 更新部署指南，添加 PostgreSQL 数据库备份与恢复的详细步骤；在管理页面中添加下次开奖时间字段；调整 API 路径以符合新结构；更新数据库模型以支持新字段；优化预测数据生成逻辑；确保数据库表结构与新字段一致。
+[33m737fb22[m Merge branch 'main' of https://github.com/a1014826460-stack/Marksix
+[33m1a3aac0[m Refactor code structure for improved readability and maintainability
+[33mec324f0[m Delete .vscode directory
+[33m638cf3b[m Delete .next/dev/static/chunks directory
+[33m0d7b18d[m Delete .claude directory
+[33m567da7d[m Delete frontend/Zz_shengshi8800.com directory
+[33m9881d6e[m Delete frontend/Zz_admin.shengshi8800.com directory
+[33m0790c7c[m Add WOW.js library for animation effects on scroll
+[33m62f8902[m feat: update SiteDataPageClient for improved display and add latest-term API endpoint
+[33m29ace1e[m feat: integrate legacy text replacement function across multiple JS files
+[33mc265cfb[m Add initial HTML structure and styling for new KJ Tab Box interface
+[33me8b1e6d[m Merge branch 'main' of https://github.com/a1014826460-stack/Marksix
+[33m1954f0c[m feat: remove deprecated cleanup and restore scripts; refactor CRUD and prediction modules
+[33m175ff86[m Delete liuhecai_dump.bak
+[33mfef63f0[m Add Playwright tests and scripts for legacy shell rendering
+[33m8571dfa[m Fix: remove __pycache__ from tracking, update db.py, add type generator
+[33m6b0851c[m Fix: remove large data files from Git tracking, update .gitignore
+[33mc2ccf2a[m feat: Enhance lottery data management system with new features and deployment setup
+[33mbb1079f[m Add README for Liuhecai lottery data management system with setup instructions, architecture overview, and configuration details

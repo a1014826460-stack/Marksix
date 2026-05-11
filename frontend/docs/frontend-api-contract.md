@@ -404,7 +404,7 @@ type JuziRow = LegacyBaseRow & {
 | `wxzt` | `48` | 无 | `ContentRow` | 五肖中特 |
 | `getWei` | `2` | 常传 `6` | `ContentRow` | 六尾中特 |
 | `jxzt` | `49` | 无 | `ContentRow` | 九肖中特 |
-| `qxbm` | `44` | 无 | `QxBmRow` | 七肖七码 / 五行八码兼容格式 |
+| `qxbm` | `246` | 无 | `QxBmRow` | 七肖七码 / 五行八码兼容格式 |
 | `getPmxjcz` | `331` | 无 | `TitleContentJiexiRow` | 跑马玄机测字 |
 
 ### 特别说明 1：`getXiaoma`

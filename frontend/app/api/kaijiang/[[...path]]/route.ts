@@ -24,6 +24,7 @@ const LEGACY_WEB_FALLBACK_BY_TYPE: Record<number, Partial<Record<number, number>
   57: { 1: 2, 2: 2, 3: 2 },
   108: { 1: 2, 2: 2, 3: 2 },
   244: { 1: 2, 2: 2, 3: 2 },
+  246: { 1: 2, 2: 2, 3: 2 },
   331: { 1: 2, 2: 2, 3: 2 },
 }
 
@@ -646,7 +647,7 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
       }
 
       case "qxbm": {
-        const payload = await fetchLegacyRows(url, 44, 10)
+        const payload = await fetchLegacyRows(url, 246, 10)
         return jsonResponse(mapQxBm(payload.rows))
       }
 

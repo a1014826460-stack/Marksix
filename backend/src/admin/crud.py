@@ -533,6 +533,8 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         "is_opened": 1 if parse_bool(payload.get("is_opened"), False) else 0,
         "next_term": int(payload.get("next_term") or (int(payload.get("term") or 1) + 1)),
     }
+    if fields["lottery_type_id"] != 3:
+        raise ValueError("当前仅允许管理台湾彩开奖记录")
     # 台湾彩自动推算开奖时间：时间取自 lottery_types.draw_time
     if fields["lottery_type_id"] == 3 and not fields["draw_time"]:
         from calendar import timegm
@@ -601,6 +603,38 @@ def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None 
         if not n.isdigit() or int(n) < 1 or int(n) > 49:
             raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
     with connect(db_path) as conn:
+        duplicate = (
+            conn.execute(
+                """
+                SELECT id FROM lottery_draws
+                WHERE lottery_type_id = ? AND year = ? AND term = ?
+                LIMIT 1
+                """,
+                (
+                    fields["lottery_type_id"],
+                    fields["year"],
+                    fields["term"],
+                ),
+            ).fetchone()
+            if draw_id is None
+            else conn.execute(
+                """
+                SELECT id FROM lottery_draws
+                WHERE lottery_type_id = ? AND year = ? AND term = ? AND id <> ?
+                LIMIT 1
+                """,
+                (
+                    fields["lottery_type_id"],
+                    fields["year"],
+                    fields["term"],
+                    draw_id,
+                ),
+            ).fetchone()
+        )
+        if duplicate:
+            raise ValueError(
+                f"该彩种的 {fields['year']} 年第 {fields['term']} 期已存在，请检查期数或改为编辑现有记录"
+            )
         if draw_id is None:
             row = conn.execute(
                 """

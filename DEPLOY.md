@@ -23,35 +23,40 @@
                     │   用户请求    │
                     └──────┬───────┘
                            │
-                    ┌──────▼───────┐
-                    │  Nginx :80   │  ← 反向代理（统一入口）
-                    └──┬───┬───┬──┘
-                       │   │   │
-          ┌────────────┼───┼───┼────────────┐
-          │            │   │   │            │
-  ┌───────▼──┐  ┌──────▼───▼──┐  ┌───────▼──┐
-  │ 前端站点  │  │ 后台管理    │  │ Python   │
-  │ :3000    │  │ :3002       │  │ API:8000 │
-  │ Next.js  │  │ Next.js     │  │ + 爬虫   │
-  └──────────┘  └─────────────┘  │ + 预测   │
-                                 └─────┬─────┘
-                                       │
-                                ┌──────▼──────┐
-                                │ PostgreSQL  │
-                                │    :5432    │
-                                │  持久化存储  │
-                                └─────────────┘
+              ┌────────────▼────────────┐
+              │ Nginx :80 / :443(可选)  │  ← 统一入口
+              └──────┬────────┬─────────┘
+                     │        │
+          ┌──────────▼──┐  ┌──▼──────────┐
+          │ 前端站点     │  │ 后台管理     │
+          │ :3000       │  │ :3002        │
+          │ Next.js 16  │  │ Next.js 16   │
+          └─────────────┘  └──────────────┘
+                     │        │
+                     └────┬───┘
+                          │
+                    ┌─────▼─────┐
+                    │ Python API │
+                    │ :8000      │
+                    │ Python 3.12│
+                    └─────┬──────┘
+                          │
+                    ┌─────▼──────┐
+                    │ PostgreSQL │
+                    │ :5432      │
+                    │ 17         │
+                    └────────────┘
 ```
 
 ### 组件说明
 
 | 组件 | 技术栈 | 端口 | 说明 |
 |------|--------|------|------|
-| **前端站点** | Next.js 14 | 3000 | 面向用户的彩票数据展示站 |
-| **后台管理** | Next.js 14 | 3002 | 管理员后台 CMS |
+| **前端站点** | Next.js 16 | 3000 | 面向用户的彩票数据展示站 |
+| **后台管理** | Next.js 16 | 3002 | 管理员后台 CMS |
 | **Python API** | Python 3.12 | 8000 | 数据处理、预测、爬虫服务 |
-| **PostgreSQL** | PostgreSQL 16 | 5432 | 数据持久化存储 |
-| **Nginx** | Nginx 1.27 | 80/443 | 反向代理、静态文件、SSL 终端 |
+| **PostgreSQL** | PostgreSQL 17 | 5432 | 数据持久化存储 |
+| **Nginx** | Nginx 1.27 | 80 / 443 | 反向代理；HTTPS 需额外启用 |
 
 ---
 
@@ -82,9 +87,12 @@ sudo usermod -aG docker $USER
 newgrp docker
 
 # 验证安装
-docker --version      # ≥ 24.0
-docker compose version # ≥ 2.24
+docker --version
+docker compose version
+docker info
 ```
+
+> `deploy/deploy.sh` 会额外检查 Docker daemon 是否已经启动；仅安装 CLI 不够。
 
 ---
 
@@ -93,24 +101,19 @@ docker compose version # ≥ 2.24
 ### 步骤 1：获取项目
 
 ```bash
-# 从 Git 仓库克隆
 git clone https://github.com/a1014826460-stack/Marksix.git
 cd Marksix
-
-# 或直接上传整个项目目录到服务器
 ```
 
 ### 步骤 2：配置环境变量
 
 ```bash
-# 从模板创建 .env 文件
 cp .env.example .env
-
-# 编辑 .env，务必修改数据库密码
 nano .env
 ```
 
-`.env` 文件内容：
+`.env` 最少需要：
+
 ```ini
 POSTGRES_PASSWORD=请设置强密码
 LOTTERY_SITE_ID=1
@@ -124,30 +127,45 @@ chmod +x deploy/deploy.sh
 ```
 
 脚本会自动完成：
-1. ✅ 检查 Docker 环境
-2. ✅ 准备环境变量
-3. ✅ 构建所有 Docker 镜像
-4. ✅ 启动全部服务
-5. ✅ 导入初始数据
 
-部署完成后访问：
+1. 检查 Docker / Docker Compose / Docker daemon
+2. 准备 `.env`
+3. 创建 `deploy/ssl/` 目录
+4. 构建所有镜像
+5. 启动全部服务
+6. 初始化 `fixed_data`（如果目标库中尚不存在）
+
+默认访问地址：
+
 - 前端站点：`http://服务器IP/`
 - 后台管理：`http://服务器IP/admin`
 - Python API：`http://服务器IP/api/`
+
+> 默认只保证 `HTTP` 可用。`HTTPS` 需要你先补充证书和 `deploy/nginx.conf` 中的 443 `server` 配置。
+
+### 可选：首次从 SQLite 自动迁移到 PostgreSQL
+
+如果这是第一次部署，而且你希望把仓库中的 `backend/data/lottery_modes.sqlite3` 自动迁移到 PostgreSQL，再执行：
+
+```bash
+RUN_SQLITE_MIGRATION=1 ./deploy/deploy.sh
+```
+
+> 这个开关默认关闭，避免重部署时误把旧 SQLite 数据覆盖回 PostgreSQL。
 
 ---
 
 ## 手动部署步骤
 
-如果需要更细粒度的控制，可以按以下步骤手动操作：
-
 ### 1. 构建镜像
 
 ```bash
-# 构建所有镜像
 docker compose build
+```
 
-# 或单独构建
+或单独构建：
+
+```bash
 docker compose build python-api
 docker compose build backend-admin
 docker compose build frontend
@@ -156,38 +174,43 @@ docker compose build frontend
 ### 2. 启动服务
 
 ```bash
-# 启动所有服务（后台运行）
 docker compose up -d
-
-# 查看启动日志
-docker compose logs -f
-
-# 确认所有服务正常运行
 docker compose ps
+docker compose logs -f
 ```
 
-预期输出：
-```
-NAME                       STATUS
-liuhecai-postgres          Up (healthy)
-liuhecai-python-api        Up
-liuhecai-backend-admin     Up
-liuhecai-frontend          Up
-liuhecai-nginx             Up
+预期至少应看到以下服务处于运行状态：
+
+```text
+postgres
+python-api
+backend-admin
+frontend
+nginx
 ```
 
 ### 3. 初始化数据
 
+导入固定数据：
+
 ```bash
-# 导入固定数据（号码映射等）
-docker compose exec python-api python /app/src/utils/import_fixed_data.py \
-    --json /app/data/fixed_data.json
+docker compose exec python-api python /app/src/tools/import_fixed_data.py \
+    --fixed-data-path /app/data/fixed_data.json \
+    --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
+```
 
-# 生成文本历史映射（预测用）
-docker compose exec python-api python /app/src/utils/build_text_history_mappings.py
+规范化 `mode_payload_*` 表：
 
-# 规范化数据表
-docker compose exec python-api python /app/src/utils/normalize_sqlite.py
+```bash
+docker compose exec python-api python /app/src/utils/normalize_sqlite.py \
+    --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
+```
+
+生成文本历史映射：
+
+```bash
+docker compose exec python-api python /app/src/utils/build_text_history_mappings.py \
+    --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
 ---
@@ -196,71 +219,78 @@ docker compose exec python-api python /app/src/utils/normalize_sqlite.py
 
 ### SQLite → PostgreSQL 迁移
 
-项目默认使用 PostgreSQL，如果你有旧的 SQLite 数据需要迁移：
+当前仓库的迁移脚本位置和参数如下：
 
 ```bash
-docker compose exec python-api python /app/src/utils/migrate_sqlite_to_postgres.py \
-    --sqlite /app/data/lottery_modes.sqlite3 \
-    --postgres "postgresql://postgres:你的密码@postgres:5432/liuhecai"
+docker compose exec python-api python /app/src/tools/migrate_sqlite_to_postgres.py \
+    --source-sqlite /app/data/lottery_modes.sqlite3 \
+    --target-dsn "postgresql://postgres:你的密码@postgres:5432/liuhecai" \
+    --drop-existing
 ```
 
-### 数据库备份
+说明：
+
+- `--drop-existing` 会先删除 PostgreSQL 中已有同名表，适合首次全量导入或明确要重建目标库的场景。
+- 如果你要保留目标 PostgreSQL 现有数据，不要直接加这个参数。
+- 当前迁移脚本会迁移 **表** 和 **索引**，并重置自增序列。
+- 当前仓库中的 SQLite 数据库没有自定义 `view` / `trigger`，所以现有脚本覆盖范围对当前数据结构是够用的。
+
+### PostgreSQL 备份
 
 ```bash
-# 备份 PostgreSQL 数据库（纯 SQL 格式）
+# 纯 SQL
 docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%d).sql
 
-# 或使用自定义格式（体积更小，支持并行恢复）
+# 自定义格式
 docker compose exec postgres pg_dump -U postgres liuhecai -F c -f /tmp/backup.dump
 docker compose cp postgres:/tmp/backup.dump ./backup_$(date +%Y%m%d).dump
+```
 
-# 恢复数据库（纯 SQL）
+### PostgreSQL 恢复
+
+```bash
+# 从 SQL 恢复
 docker compose exec -T postgres psql -U postgres liuhecai < backup_20250101.sql
 
-# 恢复数据库（自定义格式，--clean 会先删除已有表）
+# 从自定义 dump 恢复
 docker compose cp ./backup_20250101.dump postgres:/tmp/restore.dump
 docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
 ```
 
-### 本地数据迁移到服务器
+### 本地 PostgreSQL 迁移到服务器
 
-将本地开发环境的 PostgreSQL 数据导出并上传到生产服务器：
-
-**1. 本地导出**
+本地导出：
 
 ```bash
-# 如果本地使用 Docker PostgreSQL
+# 本地也是 Docker PostgreSQL
 docker compose exec -T postgres pg_dump -U postgres liuhecai -F c > liuhecai_backup.dump
 
-# 如果本地使用原生 PostgreSQL
+# 本地是原生 PostgreSQL
 pg_dump -h localhost -U postgres -d liuhecai -F c -f liuhecai_backup.dump
 ```
 
-**2. 上传到服务器**
+上传到服务器：
 
 ```bash
 scp liuhecai_backup.dump root@你的服务器IP:/opt/Liuhecai/
 ```
 
-**3. 服务器上导入**
+服务器导入：
 
 ```bash
 ssh root@你的服务器IP
 cd /opt/Liuhecai
-
-# 复制 dump 文件到容器并恢复（--clean 会先删除已有表，适合首次导入）
 docker compose cp liuhecai_backup.dump postgres:/tmp/restore.dump
 docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
 ```
 
-> **注意**：本地与服务器 PostgreSQL 大版本应保持一致（均为 16），否则可能出现兼容性问题。导入前建议先备份服务器现有数据。
+> 建议本地和服务器使用相同 PostgreSQL 主版本；当前仓库默认镜像为 PostgreSQL 17。
 
 ### 数据库重置
 
 ```bash
-# 完全重置数据库（警告：会删除所有数据）
-docker compose down -v   # 删除 volumes
-docker compose up -d     # 重新创建
+docker compose down -v
+docker compose up -d
 ```
 
 ---
@@ -270,27 +300,14 @@ docker compose up -d     # 重新创建
 ### 常用操作
 
 ```bash
-# 查看所有服务状态
 docker compose ps
-
-# 查看实时日志
 docker compose logs -f
-
-# 查看特定服务日志
 docker compose logs -f python-api
 docker compose logs -f postgres
-
-# 重启单个服务
 docker compose restart python-api
 docker compose restart frontend
-
-# 停止所有服务
 docker compose down
-
-# 停止服务并删除数据卷（慎用）
 docker compose down -v
-
-# 更新并重新部署
 git pull
 docker compose build
 docker compose up -d
@@ -299,25 +316,19 @@ docker compose up -d
 ### 进入容器调试
 
 ```bash
-# 进入 Python API 容器
 docker compose exec python-api bash
-
-# 进入 PostgreSQL
 docker compose exec postgres psql -U postgres -d liuhecai
-
-# 查看 Nginx 配置
 docker compose exec nginx nginx -T
 ```
 
-### 手动触发爬虫
+### 验证部署
 
 ```bash
-# 运行香港彩爬虫
-docker compose exec python-api python /app/src/crawler/crawler_service.py --type hk
-
-# 运行澳门彩爬虫
-docker compose exec python-api python /app/src/crawler/crawler_service.py --type macau
+chmod +x deploy/verify.sh
+./deploy/verify.sh
 ```
+
+> 该脚本默认验证 HTTP。只有当你的 `deploy/nginx.conf` 中真正启用了 `listen 443` 时，它才会检查 HTTPS。
 
 ---
 
@@ -329,7 +340,7 @@ docker compose exec python-api python /app/src/crawler/crawler_service.py --type
 docker stats
 ```
 
-### 日志文件位置
+### 日志来源
 
 | 服务 | 日志来源 |
 |------|----------|
@@ -342,18 +353,16 @@ docker stats
 ### 健康检查
 
 ```bash
-# Python API 健康检查
 curl http://localhost:8000/health
-# 返回: {"status": "ok", "engine": "postgresql"}
-
-# API 详细状态（含数据库摘要）
 curl http://localhost:8000/api/health
-
-# 通过 Nginx 检查（代理到 Python API）
 curl http://localhost/health
-
-# PostgreSQL 连接检查
 docker compose exec postgres pg_isready -U postgres -d liuhecai
+```
+
+如果已经启用了 HTTPS，再额外检查：
+
+```bash
+curl -k https://localhost/health
 ```
 
 ---
@@ -366,44 +375,41 @@ docker compose exec postgres pg_isready -U postgres -d liuhecai
 
 | 项目 | 默认值 | 修改方式 |
 |------|--------|----------|
-| 数据库密码 | change_me_in_production | 修改 `.env` 中 `POSTGRES_PASSWORD` |
-| 后台管理员 | admin / admin123 | 登录后台管理修改 |
-| config.yaml 管理员 | admin / admin123 | 编辑 `backend/src/config.yaml` |
+| 数据库密码 | `change_me_in_production` | 修改 `.env` 中 `POSTGRES_PASSWORD` |
+| 后台管理员 | `admin / admin123` | 登录后台管理后修改 |
+| 启动配置默认值 | `backend/src/config.yaml` 中的默认项 | 仅作为 bootstrap 使用，生产环境建议改掉 |
 
 ### 2. 配置防火墙
 
 ```bash
-# Ubuntu 使用 ufw
-sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 80/tcp    # HTTP
-sudo ufw allow 443/tcp   # HTTPS
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
-
-# 确认规则
 sudo ufw status verbose
 ```
 
-### 3. 配置 HTTPS (SSL)
+### 3. 配置 HTTPS（可选）
 
-```bash
-# 安装 Certbot
-sudo apt install -y certbot python3-certbot-nginx
+当前仓库默认的 `deploy/nginx.conf` **只监听 80**。要让 `https://` 正常访问，至少要完成下面两件事：
 
-# 将证书放到 deploy/ssl/ 目录，或
-# 修改 deploy/nginx.conf 添加 SSL 配置
+1. 准备证书文件并放入 `deploy/ssl/`
+2. 在 `deploy/nginx.conf` 中新增 443 `server`，显式配置：
 
-# 使用 Certbot 自动获取证书
-sudo certbot --nginx -d your-domain.com
+```nginx
+listen 443 ssl;
+ssl_certificate /etc/nginx/ssl/fullchain.pem;
+ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 ```
+
+如果你使用 Certbot，建议在宿主机签发证书后，把证书文件挂载给容器使用；不要直接假设 `certbot --nginx` 能自动改到容器内的 Nginx 配置。
 
 ### 4. Nginx 安全加固
 
-在 `deploy/nginx.conf` 中添加：
-```nginx
-# 隐藏版本号
-server_tokens off;
+建议在 `deploy/nginx.conf` 中加入：
 
-# 安全头
+```nginx
+server_tokens off;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "SAMEORIGIN" always;
 add_header X-XSS-Protection "1; mode=block" always;
@@ -416,31 +422,36 @@ add_header X-XSS-Protection "1; mode=block" always;
 ### 服务启动失败
 
 ```bash
-# 查看完整日志
 docker compose logs
-
-# 单独检查问题服务
 docker compose logs python-api --tail 100
+docker compose logs backend-admin --tail 100
+docker compose logs frontend --tail 100
+```
+
+### Docker 命令存在但无法启动项目
+
+如果 `docker --version` 正常，但 `docker compose ps`、`docker info` 报错，通常是 Docker daemon 没启动：
+
+```bash
+sudo systemctl status docker
+sudo systemctl start docker
 ```
 
 ### 访问出现 502 Bad Gateway
 
-**原因**: Nginx 在启动时将上游容器域名解析为 IP 并缓存。如果上游容器重启（IP 变化），Nginx 仍使用旧 IP 导致连接被拒。
+当前 `deploy/nginx.conf` 已使用变量化 `proxy_pass` 和 `resolver 127.0.0.11 valid=10s;`，可以降低容器重启后的 DNS 缓存问题。
 
-**快速修复**:
+快速修复仍然是：
+
 ```bash
 docker compose restart nginx
 ```
 
-**永久修复**: 确保 `deploy/nginx.conf` 使用变量化 `proxy_pass`（`set $backend backend-admin:3002; proxy_pass http://$backend;`），配合 `resolver 127.0.0.11 valid=10s;` 实现运行时 DNS 解析。当前配置已包含此修复。
-
 ### 数据库连接失败
 
 ```bash
-# 检查 PostgreSQL 是否就绪
-docker compose exec postgres pg_isready -U postgres
+docker compose exec postgres pg_isready -U postgres -d liuhecai
 
-# 检查 API 是否能连接数据库
 docker compose exec python-api python -c "
 from db import connect
 conn = connect('postgresql://postgres:密码@postgres:5432/liuhecai')
@@ -451,35 +462,23 @@ print('连接成功')
 ### 端口冲突
 
 ```bash
-# 检查端口占用
 sudo ss -tlnp | grep -E ':(80|443|3000|3002|5432|8000)'
-
-# 修改 docker-compose.yml 中的端口映射
-# 例如将 host 端口 3000 改为 3001:
-#   ports:
-#     - "127.0.0.1:3001:3000"
 ```
+
+如果宿主机端口冲突，可改 `docker-compose.yml` 的宿主机端口映射。
 
 ### 镜像构建失败
 
 ```bash
-# 清理构建缓存后重试
 docker compose build --no-cache
-
-# 清理未使用的镜像和缓存
 docker system prune -a
 ```
 
 ### 磁盘空间不足
 
 ```bash
-# 查看磁盘使用
 df -h
-
-# 清理 Docker 资源
 docker system prune -a --volumes
-
-# 清理旧日志
 sudo journalctl --vacuum-size=200M
 ```
 
@@ -487,37 +486,35 @@ sudo journalctl --vacuum-size=200M
 
 ## 目录结构
 
-```
+```text
 Liuhecai/
-├── docker-compose.yml          # Docker Compose 编排配置
-├── Dockerfile.python           # Python API Dockerfile
-├── Dockerfile.backend          # Next.js 后台管理 Dockerfile
-├── Dockerfile.frontend         # Next.js 前端站点 Dockerfile
-├── .env.example                # 环境变量模板
-├── DEPLOY.md                   # 本部署文档
+├── docker-compose.yml
+├── Dockerfile.python
+├── Dockerfile.backend
+├── Dockerfile.frontend
+├── .env.example
+├── DEPLOY.md
 ├── backend/
-│   ├── requirements.txt        # Python 依赖清单
-│   ├── next.config.mjs         # Next.js 配置（standalone）
-│   ├── src/                    # Python 源码
-│   │   ├── app.py              # API 主入口
-│   │   ├── config.yaml         # 应用配置
-│   │   ├── db.py               # 数据库适配层
-│   │   ├── config.py           # 配置加载
-│   │   ├── crawler/            # 爬虫模块
-│   │   ├── predict/            # 预测模块
-│   │   └── utils/              # 工具模块
-│   └── data/                   # 数据目录
-│       ├── fixed_data.json     # 固定数据（号码映射）
-│       ├── lottery_modes.sqlite3 # SQLite 数据库
-│       ├── Images/             # 图片资源
-│       └── lottery_data/       # 彩票数据
+│   ├── requirements.txt
+│   ├── next.config.mjs
+│   ├── src/
+│   │   ├── app.py
+│   │   ├── config.yaml
+│   │   ├── db.py
+│   │   ├── crawler/
+│   │   ├── predict/
+│   │   ├── tools/
+│   │   └── utils/
+│   └── data/
+│       ├── fixed_data.json
+│       ├── lottery_modes.sqlite3
+│       ├── Images/
+│       └── lottery_data/
 ├── frontend/
-│   ├── next.config.mjs         # Next.js 配置（standalone）
-│   └── ...
 └── deploy/
-    ├── deploy.sh               # 一键部署脚本
-    ├── nginx.conf              # Nginx 配置
-    └── ssl/                    # SSL 证书（可选）
+    ├── deploy.sh
+    ├── nginx.conf
+    └── ssl/
 ```
 
 ---
@@ -525,4 +522,4 @@ Liuhecai/
 ## 技术支持
 
 - **项目仓库**: https://github.com/a1014826460-stack/Marksix
-- **技术栈**: Python 3.12 + Next.js 14 + PostgreSQL 16 + Nginx + Docker
+- **技术栈**: Python 3.12 + Next.js 16 + PostgreSQL 17 + Nginx + Docker

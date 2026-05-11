@@ -85,6 +85,7 @@ const LEGACY_WEB_PREFERENCE_BY_TYPE: Record<number, Partial<Record<number, numbe
   57: { 3: 2 },
   108: { 3: 2 },
   244: { 3: 2 },
+  246: { 3: 2 },
   331: { 3: 2 },
 }
 
@@ -314,7 +315,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   { endpoint: "getJuzi",     modesId: 62,  title: "欲钱解特诗", key: "legacy_juzi",    limit: 10, tableClass: "duilianpt1 legacy-module-text", contentColumn: "title" },
 
   // ---- 七肖七码（新版 qxbm） ----
-  { endpoint: "qxbm",        modesId: 44, title: "七肖七码",   key: "legacy_qxbm",    limit: 10, contentColumn: "content",
+  { endpoint: "qxbm",        modesId: 246, title: "七肖七码",   key: "legacy_qxbm",    limit: 10, contentColumn: "content",
     contentTransform: (content) => {
       try {
         const parsed = JSON.parse(content)
@@ -341,7 +342,7 @@ const LEGACY_MODULE_DEFS: LegacyModuleDef[] = [
   },
 
   // ---- 五行八码 ----
-  { endpoint: "qxbm",        modesId: 44, title: "五行八码",   key: "legacy_wxbm",    limit: 10, contentColumn: "content",
+  { endpoint: "qxbm",        modesId: 246, title: "五行八码",   key: "legacy_wxbm",    limit: 10, contentColumn: "content",
     contentTransform: (content) => {
       try {
         const parsed = JSON.parse(content)

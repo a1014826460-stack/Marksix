@@ -28,6 +28,13 @@ check() {
     fi
 }
 
+check_service_running() {
+    local service="$1"
+    check "${service} 运行中" \
+        "docker compose ps --services --status running | grep -x '${service}'" \
+        "${service}"
+}
+
 echo ""
 echo "========================================"
 echo "  六合彩部署验证"
@@ -36,11 +43,11 @@ echo ""
 
 # ── 容器状态 ──
 echo "[容器状态]"
-check "postgres 运行中"      "docker compose ps --format json | grep -o 'liuhecai-postgres.*Up'"
-check "python-api 运行中"    "docker compose ps --format json | grep -o 'liuhecai-python-api.*Up'"
-check "backend-admin 运行中" "docker compose ps --format json | grep -o 'liuhecai-backend-admin.*Up'"
-check "frontend 运行中"      "docker compose ps --format json | grep -o 'liuhecai-frontend.*Up'"
-check "nginx 运行中"         "docker compose ps --format json | grep -o 'liuhecai-nginx.*Up'"
+check_service_running "postgres"
+check_service_running "python-api"
+check_service_running "backend-admin"
+check_service_running "frontend"
+check_service_running "nginx"
 
 echo ""
 echo "[健康检查端点]"
@@ -75,6 +82,16 @@ check "后台管理 /admin" \
 check "PostgreSQL 连接" \
     "docker compose exec postgres pg_isready -U postgres -d liuhecai 2>&1" \
     "accepting"
+
+echo ""
+echo "[HTTPS]"
+if grep -q "listen 443" deploy/nginx.conf 2>/dev/null; then
+    check "HTTPS /health" \
+        "curl -k -s -o /dev/null -w '%{http_code}' https://localhost/health" \
+        "200"
+else
+    echo -e "  ${YELLOW}SKIP${NC} HTTPS 未在当前 nginx.conf 中启用"
+fi
 
 echo ""
 echo "========================================"
