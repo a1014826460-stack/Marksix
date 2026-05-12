@@ -17,6 +17,7 @@ from runtime_config import get_config_from_conn
 _logger = logging.getLogger("prediction.service")
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
+    normalize_color_label,
     table_column_names,
     upsert_created_prediction_row,
 )
@@ -41,19 +42,12 @@ def compute_result_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -
             num_zf = f"{int(raw_num):02d}"
         except ValueError:
             continue
-        sx = ""
-        for zodiac_name, codes in zodiac_map.items():
-            if num_zf in codes:
-                sx = zodiac_name
-                break
-        res_sx_parts.append(sx)
-        color = ""
-        for color_name, codes in color_map.items():
-            if num_zf in codes:
-                color = color_name
-                break
-        res_color_parts.append(color)
-    return ",".join(res_sx_parts), ",".join(res_color_parts)
+        res_sx_parts.append(str(zodiac_map.get(num_zf) or ""))
+        res_color_parts.append(normalize_color_label(color_map.get(num_zf, "")))
+    return (
+        ",".join(res_sx_parts) if any(res_sx_parts) else "",
+        ",".join(res_color_parts) if any(res_color_parts) else "",
+    )
 
 
 def compute_next_issue(year: int, term: int, offset: int, *, max_terms_per_year: int = 365) -> tuple[int, int]:

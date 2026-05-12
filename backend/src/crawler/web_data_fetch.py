@@ -33,6 +33,7 @@ if str(SRC_ROOT) not in sys.path:
 
 import config as app_config
 from db import connect, default_postgres_target, quote_identifier
+from helpers import normalize_csv_placeholder_text
 
 # ── 日志 ──────────────────────────────────────────────────
 _logger = logging.getLogger("crawler.web_data_fetch")
@@ -156,6 +157,8 @@ def _clean_value(value: Any, column: str) -> Any:
         return str(value).strip()
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
+    if column in ("res_code", "res_sx", "res_color"):
+        return normalize_csv_placeholder_text(value)
     return str(value)
 
 

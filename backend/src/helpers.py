@@ -232,6 +232,12 @@ def sql_normalized_csv_text_expr(column_name: str) -> str:
     return f"TRIM(REPLACE(COALESCE(CAST({quoted} AS TEXT), ''), ',', ''))"
 
 
+def normalize_csv_placeholder_text(value: Any) -> str:
+    """把只含逗号/空白的逗号分隔文本归一为空串。"""
+    text = str(value or "")
+    return "" if text.replace(",", "").strip() == "" else text
+
+
 def build_mode_payload_order_clause(columns: set[str]) -> str:
     """统一 mode_payload_* 历史记录排序，避免空字符串强转整数报错。"""
     order_parts: list[str] = []
@@ -273,14 +279,6 @@ def build_mode_payload_filters(
         elif web_start is not None and web_end is not None:
             filters.append(f"{sql_safe_int_expr(web_column)} BETWEEN ? AND ?")
             params.extend((int(web_start), int(web_end)))
-
-    if require_result_consistency and "res_code" in columns and "res_sx" in columns:
-        normalized_res_code = sql_normalized_csv_text_expr("res_code")
-        normalized_res_sx = sql_normalized_csv_text_expr("res_sx")
-        filters.append(
-            f"(({normalized_res_code} != '' AND {normalized_res_sx} != '') "
-            f"OR ({normalized_res_code} = '' AND {normalized_res_sx} = ''))"
-        )
 
     return filters, params
 

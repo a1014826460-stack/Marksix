@@ -1233,7 +1233,8 @@ def _backfill_draw_to_predictions(
                 try:
                     cur = conn.execute(
                         f"UPDATE {qualified} SET res_sx = ?, res_color = ? "
-                        "WHERE type = ? AND year = ? AND term = ? AND (res_sx IS NULL OR res_sx = '')",
+                        "WHERE type = ? AND year = ? AND term = ? "
+                        "AND (res_sx IS NULL OR res_sx = '' OR REPLACE(res_sx, ',', '') = '')",
                         (res_sx, res_color, str(lottery_type_id), str(year), str(term)),
                     )
                     total_updated += cur.rowcount

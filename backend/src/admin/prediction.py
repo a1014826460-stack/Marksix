@@ -638,8 +638,8 @@ def _compute_res_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> 
     内部辅助函数，供批量生成时使用。
 
     :param numbers_str: 逗号分隔的开奖号码字符串（如 "01,15,23,34,42,08,11"）
-    :param zodiac_map: 号码 → 生肖映射字典（{生肖名: [号码列表], ...}）
-    :param color_map: 号码 → 波色映射字典（{波色名: [号码列表], ...}）
+    :param zodiac_map: 号码 → 生肖映射字典
+    :param color_map: 号码 → 波色映射字典
     :return: (res_sx, res_color) 元组，均为逗号分隔的字符串
     """
     res_sx_parts: list[str] = []
@@ -652,19 +652,12 @@ def _compute_res_fields(numbers_str: str, zodiac_map: dict, color_map: dict) -> 
             num_zf = f"{int(num_str):02d}"
         except ValueError:
             continue
-        sx = ""
-        for z, codes in zodiac_map.items():
-            if num_zf in codes:
-                sx = z
-                break
-        res_sx_parts.append(sx)
-        col = ""
-        for c, codes in color_map.items():
-            if num_zf in codes:
-                col = c
-                break
-        res_color_parts.append(col)
-    return ",".join(res_sx_parts), ",".join(res_color_parts)
+        res_sx_parts.append(str(zodiac_map.get(num_zf) or ""))
+        res_color_parts.append(normalize_color_label(color_map.get(num_zf, "")))
+    return (
+        ",".join(res_sx_parts) if any(res_sx_parts) else "",
+        ",".join(res_color_parts) if any(res_color_parts) else "",
+    )
 
 
 def _compute_next_issue(year: int, term: int, offset: int) -> tuple[int, int]:
@@ -809,26 +802,7 @@ def regenerate_payload_data(
             zodiac_map, color_map = load_fixed_data_maps(conn)
             columns = set(conn.table_columns(table_name))
 
-            res_sx_parts = []
-            res_color_parts = []
-            for num_str in codes_list:
-                try:
-                    num_val = int(num_str)
-                    num_zf = f"{num_val:02d}"
-                except ValueError:
-                    continue
-                sx = ""
-                for z, codes in zodiac_map.items():
-                    if num_zf in codes:
-                        sx = z
-                        break
-                res_sx_parts.append(sx)
-                col = ""
-                for c, codes in color_map.items():
-                    if num_zf in codes:
-                        col = c
-                        break
-                res_color_parts.append(col)
+            res_sx, res_color = _compute_res_fields(res_code, zodiac_map, color_map)
 
             insert_data: dict[str, Any] = {
                 "type": str(lottery_type),
@@ -838,8 +812,8 @@ def regenerate_payload_data(
                 "web_id": 4,
                 "modes_id": 65,
                 "res_code": res_code,
-                "res_sx": ",".join(res_sx_parts),
-                "res_color": ",".join(res_color_parts),
+                "res_sx": res_sx,
+                "res_color": res_color,
                 "content": content,
                 "status": 1,
             }
