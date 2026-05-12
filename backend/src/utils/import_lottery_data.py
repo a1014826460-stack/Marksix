@@ -24,16 +24,8 @@ SRC_ROOT = BACKEND_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-import config as app_config
-from db import connect, quote_identifier
+from db import connect, DEFAULT_POSTGRES_DSN, quote_identifier
 
-_db_cfg = app_config.load_config().get("database", {})
-DEFAULT_POSTGRES_DSN = str(
-    _db_cfg.get(
-        "default_postgres_dsn",
-        "postgresql://postgres:2225427@localhost:5432/liuhecai",
-    )
-)
 DEFAULT_DATA_DIR = BACKEND_ROOT / "lottery_data"
 TABLE_PREFIX = "mode_payload_"
 

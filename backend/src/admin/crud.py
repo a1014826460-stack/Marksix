@@ -27,13 +27,7 @@ from helpers import (
 from predict.mechanisms import get_prediction_config, list_prediction_configs
 from runtime_config import get_config
 from tables import ensure_admin_tables
-from utils.data_fetch import MODES_DATA_URL, WEB_MANAGE_URL_TEMPLATE
 from admin.prediction import sync_site_prediction_modules
-
-
-def _draw_time_to_unix_ms(draw_time: str) -> str:
-    """Convert a Beijing-time draw timestamp to a UTC unix-ms string."""
-    return draw_time_to_unix_ms(draw_time)
 
 
 def _load_taiwan_placeholder_previous_draw_ids(
@@ -67,7 +61,7 @@ def _load_taiwan_placeholder_previous_draw_ids(
         if not draw_time or not next_time:
             continue
         try:
-            if next_time == _draw_time_to_unix_ms(draw_time):
+            if next_time == draw_time_to_unix_ms(draw_time):
                 candidate_ids.append(int(row["id"]))
         except ValueError:
             continue
@@ -84,7 +78,7 @@ def _update_taiwan_previous_draw_next_time(
     """Backfill previous Taiwan draws so their next_time points to the new draw."""
     if not draw_ids or not next_draw_time:
         return
-    replacement_next_time = _draw_time_to_unix_ms(next_draw_time)
+    replacement_next_time = draw_time_to_unix_ms(next_draw_time)
     conn.executemany(
         """
         UPDATE lottery_draws
@@ -110,232 +104,48 @@ def _sync_lottery_type_next_time(conn: Any, lottery_type_id: int, updated_at: st
 # ─────────────────────────────────────────────────────────────────
 
 def public_site(row: Any) -> dict[str, Any]:
-    """将数据库中的站点行转换为对外安全的字典（隐藏完整 token，增加预览信息）。
+    """将数据库中的站点行转换为对外安全的字典（隐藏完整 token）。
 
-    :param row: 数据库查询返回的站点行对象（通常为 sqlite3.Row 或字典）
-    :return: 处理后的站点字典，包含 ``token_present``（布尔值）和
-             ``token_preview``（token 前 8 位预览）等字段，不暴露完整 token
+    委托给 domains/sites/service.py 的统一实现。
     """
-    data = dict(row)
-    token = data.pop("token", "") or ""
-    data["enabled"] = bool(data["enabled"])
-    data["token_present"] = bool(token)
-    data["token_preview"] = f"{token[:8]}..." if token else ""
-    return data
+    from domains.sites.service import public_site as _impl
+    return _impl(row)
 
 
 def list_sites(db_path: str | Path) -> list[dict[str, Any]]:
-    """获取所有托管站点列表，关联彩种名称，按启用状态降序、ID 升序排列。
+    """获取所有托管站点列表。
 
-    :param db_path: SQLite 数据库文件路径
-    :return: 处理后的站点字典列表（已脱敏 token）
+    委托给 domains/sites/service.py 的统一实现。
     """
-    ensure_admin_tables(db_path)
-    with connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT s.*, l.name AS lottery_name
-            FROM managed_sites s
-            LEFT JOIN lottery_types l ON l.id = s.lottery_type_id
-            ORDER BY s.enabled DESC, s.id ASC
-            """
-        ).fetchall()
-        return [public_site(row) for row in rows]
+    from domains.sites.service import list_sites as _impl
+    return _impl(db_path)
 
 
 def get_site(db_path: str | Path, site_id: int, include_secret: bool = False) -> dict[str, Any]:
     """根据 ID 获取单个托管站点的详细信息。
 
-    :param db_path: SQLite 数据库文件路径
-    :param site_id: 站点 ID
-    :param include_secret: 是否返回包含完整 token 的原始数据，默认 False（脱敏）
-    :return: 站点字典（include_secret=True 时包含完整 token，否则使用 public_site 脱敏）
-    :raises KeyError: 当 site_id 对应的站点不存在时抛出
+    委托给 domains/sites/service.py 的统一实现。
     """
-    ensure_admin_tables(db_path)
-    with connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT s.*, l.name AS lottery_name
-            FROM managed_sites s
-            LEFT JOIN lottery_types l ON l.id = s.lottery_type_id
-            WHERE s.id = ?
-            """,
-            (site_id,),
-        ).fetchone()
-        if not row:
-            raise KeyError(f"site_id={site_id} 不存在")
-        data = dict(row) if include_secret else public_site(row)
-        data["enabled"] = bool(data["enabled"])
-        return data
+    from domains.sites.service import get_site as _impl
+    return _impl(db_path, site_id, include_secret)
 
 
 def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None = None) -> dict[str, Any]:
     """创建或更新托管站点。
 
-    当 site_id 为 None 时创建新站点，并从模板站点（site 1）复制预测模块配置；
-    否则更新已有站点。创建和更新时均会对字段进行校验。
-
-    :param db_path: SQLite 数据库文件路径
-    :param payload: 站点字段字典，可包含 name、domain、lottery_type_id、enabled、
-                    start_web_id、end_web_id、manage_url_template、modes_data_url、
-                    token、request_limit、request_delay、announcement、notes 等字段
-    :param site_id: 可选，要更新的站点 ID；为 None 时表示新建
-    :return: 创建或更新后的站点字典（已脱敏）
-    :raises ValueError: 当站点名称为空、start_web_id > end_web_id，
-                        或 manage_url_template 缺少 {web_id}/{id} 占位符时抛出
-    :raises KeyError: 当 site_id 对应的站点不存在（更新场景）时抛出
+    委托给 domains/sites/service.py 的统一实现。
     """
-    ensure_admin_tables(db_path)
-    now = utc_now()
-    fields = {
-        "name": str(payload.get("name") or "").strip(),
-        "domain": str(payload.get("domain") or "").strip(),
-        "lottery_type_id": int(payload.get("lottery_type_id") or 1),
-        "enabled": 1 if parse_bool(payload.get("enabled"), True) else 0,
-        "start_web_id": int(payload.get("start_web_id") or 1),
-        "end_web_id": int(payload.get("end_web_id") or payload.get("start_web_id") or 10),
-        "manage_url_template": str(
-            payload.get("manage_url_template")
-            or get_config(db_path, "site.manage_url_template", WEB_MANAGE_URL_TEMPLATE)
-        ).strip(),
-        "modes_data_url": str(
-            payload.get("modes_data_url")
-            or get_config(db_path, "site.modes_data_url", MODES_DATA_URL)
-        ).strip(),
-        "request_limit": int(payload.get("request_limit") or get_config(db_path, "site.request_limit", 250)),
-        "request_delay": float(payload.get("request_delay") or get_config(db_path, "site.request_delay", 0.5)),
-        "announcement": str(payload.get("announcement") or "").strip(),
-        "notes": str(payload.get("notes") or "").strip(),
-    }
-    token = payload.get("token")
-    if not fields["name"]:
-        raise ValueError("站点名称不能为空")
-    if fields["start_web_id"] > fields["end_web_id"]:
-        raise ValueError("start_web_id 不能大于 end_web_id")
-    if "{web_id}" not in fields["manage_url_template"] and "{id}" not in fields["manage_url_template"]:
-        raise ValueError("manage_url_template 必须包含 {web_id} 或 {id}")
-
-    with connect(db_path) as conn:
-        if site_id is None:
-            row = conn.execute(
-                """
-                INSERT INTO managed_sites (
-                    name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-                    manage_url_template, modes_data_url, token, request_limit,
-                    request_delay, announcement, notes,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING *
-                """,
-                (
-                    fields["name"],
-                    fields["domain"],
-                    fields["lottery_type_id"],
-                    fields["enabled"],
-                    fields["start_web_id"],
-                    fields["end_web_id"],
-                    fields["manage_url_template"],
-                    fields["modes_data_url"],
-                    str(token or ""),
-                    fields["request_limit"],
-                    fields["request_delay"],
-                    fields["announcement"],
-                    fields["notes"],
-                    now,
-                    now,
-                ),
-            ).fetchone()
-            new_site = public_site(row)
-            new_site_id = int(new_site["id"])
-
-            # 从模板站点（site 1）复制预测模块配置到新站点
-            template_modules = conn.execute(
-                "SELECT mechanism_key, mode_id, status, sort_order FROM site_prediction_modules WHERE site_id = 1 ORDER BY sort_order, id"
-            ).fetchall()
-            if template_modules:
-                for tm in template_modules:
-                    conn.execute(
-                        """
-                        INSERT INTO site_prediction_modules (
-                            site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(site_id, mechanism_key) DO NOTHING
-                        """,
-                        (
-                            new_site_id,
-                            tm["mechanism_key"],
-                            tm["mode_id"],
-                            tm["status"],
-                            tm["sort_order"],
-                            now,
-                            now,
-                        ),
-                    )
-                sync_site_prediction_modules(conn, site_id=new_site_id)
-                conn.commit()
-
-            return new_site
-
-        existing = conn.execute("SELECT token FROM managed_sites WHERE id = ?", (site_id,)).fetchone()
-        if not existing:
-            raise KeyError(f"site_id={site_id} 不存在")
-        resolved_token = str(token) if token not in (None, "") else str(existing["token"] or "")
-        row = conn.execute(
-            """
-            UPDATE managed_sites
-            SET name = ?,
-                domain = ?,
-                lottery_type_id = ?,
-                enabled = ?,
-                start_web_id = ?,
-                end_web_id = ?,
-                manage_url_template = ?,
-                modes_data_url = ?,
-                token = ?,
-                request_limit = ?,
-                request_delay = ?,
-                announcement = ?,
-                notes = ?,
-                updated_at = ?
-            WHERE id = ?
-            RETURNING *
-            """,
-            (
-                fields["name"],
-                fields["domain"],
-                fields["lottery_type_id"],
-                fields["enabled"],
-                fields["start_web_id"],
-                fields["end_web_id"],
-                fields["manage_url_template"],
-                fields["modes_data_url"],
-                resolved_token,
-                fields["request_limit"],
-                fields["request_delay"],
-                fields["announcement"],
-                fields["notes"],
-                now,
-                site_id,
-            ),
-        ).fetchone()
-        return public_site(row)
+    from domains.sites.service import save_site as _impl
+    return _impl(db_path, payload, site_id)
 
 
 def delete_site(db_path: str | Path, site_id: int) -> None:
     """删除指定 ID 的托管站点。
 
-    :param db_path: SQLite 数据库文件路径
-    :param site_id: 要删除的站点 ID
-    :raises KeyError: 当 site_id 对应的站点不存在时抛出
+    委托给 domains/sites/service.py 的统一实现。
     """
-    ensure_admin_tables(db_path)
-    with connect(db_path) as conn:
-        cur = conn.execute("DELETE FROM managed_sites WHERE id = ?", (site_id,))
-        if cur.rowcount == 0:
-            raise KeyError(f"site_id={site_id} 不存在")
+    from domains.sites.service import delete_site as _impl
+    return _impl(db_path, site_id)
 
 
 # ─────────────────────────────────────────────────────────────────

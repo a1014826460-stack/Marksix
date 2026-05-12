@@ -200,7 +200,7 @@ def build_generated_prediction_row_data(
     lottery_type: str = "",
     year: str = "",
     term: str = "",
-    web_value: str = "4",
+    web_value: str = "",
     res_code: str = "",
     generated_content: Any,
     db_path: str | Path = "",
@@ -222,13 +222,17 @@ def build_generated_prediction_row_data(
     :param db_path: 数据库路径，用于加载固定数据映射以计算生肖/波色
     :return: 可直接写入数据库的行数据字典
     """
-    web_val = str(web_value or "4")
+    web_val = str(web_value or "").strip()
+    if not web_val:
+        raise ValueError("web_value 不能为空")
+    if not web_val.isdigit():
+        raise ValueError("web_value 必须为整数")
     row_data: dict[str, Any] = {
         "type": str(lottery_type or ""),
         "year": str(year or ""),
         "term": str(term or ""),
         "web": web_val,
-        "web_id": int(web_val) if web_val.isdigit() else 4,
+        "web_id": int(web_val),
         "modes_id": int(mode_id) if mode_id else 0,
         "res_code": str(res_code or ""),
     }
@@ -726,6 +730,7 @@ def regenerate_payload_data(
     lottery_type: str = "3",
     year: str = "",
     term: str = "",
+    web_value: str = "",
 ) -> dict[str, Any]:
     """调用 ``predict()`` 生成新预测，覆盖 mode_payload 表中同彩种同期数的数据。
 
@@ -776,6 +781,12 @@ def regenerate_payload_data(
     if term and int(term) == 0:
         raise ValueError("期数不能为0。")
 
+    web_value = str(web_value or "").strip()
+    if not web_value:
+        raise ValueError("web_value 不能为空")
+    if not web_value.isdigit():
+        raise ValueError("web_value 必须为整数")
+
     config = get_prediction_config(mechanism_key)
     mode_id = int(config.default_modes_id or 0)
 
@@ -808,8 +819,8 @@ def regenerate_payload_data(
                 "type": str(lottery_type),
                 "year": str(year) if year else "",
                 "term": str(term) if term else "",
-                "web": "4",
-                "web_id": 4,
+                "web": web_value,
+                "web_id": int(web_value),
                 "modes_id": 65,
                 "res_code": res_code,
                 "res_sx": res_sx,
@@ -854,7 +865,8 @@ def regenerate_payload_data(
             "type": str(lottery_type),
             "year": str(year) if year else "",
             "term": str(term) if term else "",
-            "web": "4",
+            "web": web_value,
+            "web_id": int(web_value),
         }
 
         if res_code:

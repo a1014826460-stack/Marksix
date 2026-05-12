@@ -123,6 +123,12 @@ def split_csv_text(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
+def normalize_csv_placeholder_text(value: Any) -> str:
+    """把只含逗号/空白的逗号分隔文本归一为空串。"""
+    text = str(value or "")
+    return "" if text.replace(",", "").strip() == "" else text
+
+
 def normalize_res_code_numbers(res_code: Any) -> list[str]:
     """把 `res_code` 归一成两位数号码列表。
 
@@ -144,6 +150,15 @@ def normalize_res_code_numbers(res_code: Any) -> list[str]:
         except (TypeError, ValueError):
             continue
     return normalized_numbers
+
+
+def normalize_prediction_result_placeholders(row_data: dict[str, Any]) -> dict[str, Any]:
+    """归一化预测结果字段，避免 `,,,,,,` 这类伪空值进入 created schema。"""
+    normalized = dict(row_data)
+    for field_name in ("res_code", "res_sx", "res_color"):
+        if field_name in normalized:
+            normalized[field_name] = normalize_csv_placeholder_text(normalized[field_name])
+    return normalized
 
 
 def normalize_color_label(label: Any) -> str:
@@ -489,7 +504,7 @@ def repair_three_period_special_created_rows(
 def detect_public_result_field_policy(
     conn: Any,
     source_table_name: str,
-    sample_web_value: str | int = "4",
+    sample_web_value: str | int | None = None,
     sample_type_value: str | int = "3",
 ) -> dict[str, bool]:
     """根据 `public.mode_payload_{x}` 历史样本判断是否应生成 `res_sx/res_color`。
@@ -526,7 +541,7 @@ def detect_public_result_field_policy(
     where_clauses = [f"CAST({quote_identifier('type')} AS TEXT) = %s"]
     params: list[Any] = [str(sample_type_value)]
 
-    if web_column:
+    if web_column and sample_web_value not in (None, ""):
         where_clauses.append(f"CAST({quote_identifier(web_column)} AS TEXT) = %s")
         params.append(str(sample_web_value))
 
@@ -589,7 +604,12 @@ def enrich_prediction_result_fields(
     if not numbers:
         return enriched_data
 
-    field_policy = detect_public_result_field_policy(conn, source_table_name)
+    field_policy = detect_public_result_field_policy(
+        conn,
+        source_table_name,
+        sample_web_value=enriched_data.get("web") or enriched_data.get("web_id"),
+        sample_type_value=enriched_data.get("type") or "3",
+    )
     if field_policy.get("res_sx") and not str(enriched_data.get("res_sx") or "").strip():
         zodiac_map = load_fixed_data_number_label_map(conn, FIXED_DATA_ZODIAC_SIGN)
         zodiac_values = [zodiac_map.get(number, "") for number in numbers]
@@ -949,7 +969,8 @@ def upsert_created_prediction_row(
     target_qualified = ensure_created_prediction_table(conn, table_name)
     target_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
     normalized_row_data = normalize_three_period_special_row(conn, table_name, row_data)
-    prepared_row_data = enrich_prediction_result_fields(conn, table_name, normalized_row_data)
+    enriched_row_data = enrich_prediction_result_fields(conn, table_name, normalized_row_data)
+    prepared_row_data = normalize_prediction_result_placeholders(enriched_row_data)
 
     filtered_data = {
         key: value

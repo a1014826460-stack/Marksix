@@ -197,6 +197,9 @@ def generate_prediction_batch(
         site_id, requested_keys or ["all"], f"{start_issue[0]}{start_issue[1]:03d}",
         f"{end_issue[0]}{end_issue[1]:03d}", future_periods, bool(future_only), trigger,
     )
+    site_web_id = int(site.get("web_id") or 0)
+    if site_web_id <= 0:
+        raise ValueError(f"site_id={site_id} 缺少有效 web_id")
 
     with connect(db_path) as conn:
         sync_site_modules(conn, site_id)
@@ -297,7 +300,7 @@ def generate_prediction_batch(
                         f"SELECT content FROM {created_table} "
                         f"WHERE type = ? AND web = ? AND modes_id = ? "
                         f"ORDER BY year DESC, term DESC LIMIT 10",
-                        (str(lottery_type), "4", mode_id),
+                        (str(lottery_type), str(site_web_id), mode_id),
                     ).fetchall()
                     recent_rows = [{"content": row["content"]} for row in existing]
             except Exception:
@@ -341,7 +344,7 @@ def generate_prediction_batch(
                             lottery_type=str(lottery_type),
                             year=str(draw["year"]),
                             term=str(draw["term"]),
-                            web_value="4",
+                            web_value=str(site_web_id),
                             res_code=safe_res_code or "",
                             generated_content=content,
                         )
@@ -388,7 +391,7 @@ def generate_prediction_batch(
                             lottery_type=str(lottery_type),
                             year=str(draw["year"]),
                             term=str(draw["term"]),
-                            web_value="4",
+                            web_value=str(site_web_id),
                             res_code=safe_res_code or "",
                             generated_content={
                                 "content": [f"{predicted_size}|{chosen_number}"],
@@ -410,7 +413,7 @@ def generate_prediction_batch(
                             lottery_type=str(lottery_type),
                             year=str(draw["year"]),
                             term=str(draw["term"]),
-                            web_value="4",
+                            web_value=str(site_web_id),
                             res_code=safe_res_code or "",
                             generated_content=result["prediction"]["content"],
                         )
@@ -434,7 +437,7 @@ def generate_prediction_batch(
                             lottery_type=str(lottery_type),
                             year=str(draw["year"]),
                             term=str(draw["term"]),
-                            web_value="4",
+                            web_value=str(site_web_id),
                             res_code=safe_res_code or "",
                             generated_content=result["prediction"]["content"],
                         )
@@ -499,7 +502,7 @@ def generate_prediction_batch(
             "lottery_type": int(lottery_type),
             "start_issue": f"{start_issue[0]}{start_issue[1]}",
             "end_issue": f"{end_issue[0]}{end_issue[1]}",
-            "web_id": 4,
+            "web_id": site_web_id,
             "future_periods": int(future_periods or 0),
             "future_only": bool(future_only),
             "total_modules": len(module_reports),
