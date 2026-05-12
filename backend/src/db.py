@@ -20,10 +20,17 @@ from typing import Any, Iterable, Sequence
 import psycopg
 from psycopg.rows import dict_row
 
+import config as app_config
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SQLITE_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
+
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
+DEFAULT_POSTGRES_DSN = str(
+    app_config.section("database").get("default_postgres_dsn", "")
+).strip()
+POSTGRES_REQUIRED_ERROR = (
+    "未配置 PostgreSQL 数据库连接。请设置 DATABASE_URL "
+    "或 config.yaml 中的 PostgreSQL DSN。"
+)
 
 
 def is_postgres_target(target: str | Path | None) -> bool:
@@ -33,24 +40,31 @@ def is_postgres_target(target: str | Path | None) -> bool:
     return str(target).strip().lower().startswith(POSTGRES_SCHEMES)
 
 
+def default_postgres_target() -> str:
+    """Return the PostgreSQL target used by formal runtime code.
+
+    正式运行数据库统一使用 PostgreSQL；不再回退到
+    `backend/data/lottery_modes.sqlite3`，避免误创建空 SQLite 文件。
+    """
+    env_target = os.getenv("DATABASE_URL", "").strip()
+    if env_target:
+        return env_target
+    if DEFAULT_POSTGRES_DSN:
+        return DEFAULT_POSTGRES_DSN
+    raise RuntimeError(POSTGRES_REQUIRED_ERROR)
+
+
 def resolve_database_target(target: str | Path | None = None) -> str:
     """统一解析数据库目标。
 
-    优先级：
-    1. 显式传入的 PostgreSQL DSN
-    2. 环境变量 DATABASE_URL
-    3. 显式传入的 SQLite 路径
-    4. 默认 SQLite 路径
+    正式运行默认只解析 PostgreSQL 目标。只有显式传入非 PostgreSQL 路径时，
+    才把它当作 SQLite 目标，用于历史迁移或显式测试。
     """
     if is_postgres_target(target):
         return str(target).strip()
 
-    env_target = os.getenv("DATABASE_URL", "").strip()
-    if env_target:
-        return env_target
-
     if target is None:
-        return str(DEFAULT_SQLITE_PATH)
+        return default_postgres_target()
 
     return str(Path(target))
 
@@ -262,12 +276,18 @@ def utc_now() -> str:
 
 
 def connect(target: str | Path | None = None) -> ConnectionAdapter:
-    """创建数据库连接。"""
+    """创建数据库连接。
+
+    当 `target` 为空时，默认连接正式运行使用的 PostgreSQL。
+    只有显式传入 SQLite 路径时，才启用 SQLite 兼容分支。
+    """
     resolved = resolve_database_target(target)
     engine = detect_database_engine(resolved)
 
     if engine == "postgres":
-        raw = psycopg.connect(resolved, row_factory=dict_row)
+        # connect_timeout=10 避免 PostgreSQL 不可达时无限挂起，
+        # 10 秒后抛出 psycopg.OperationalError，由上层处理
+        raw = psycopg.connect(resolved, row_factory=dict_row, connect_timeout=10)
         return ConnectionAdapter(raw, engine, resolved)
 
     db_path = Path(resolved)

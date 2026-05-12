@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent, ReactNode } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Plus, RefreshCw, Save, Trash2 } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { adminApi, jsonBody, setAdminToken } from "@/lib/admin-api"
+import { adminApi, jsonBody } from "@/lib/admin-api"
 import { cn } from "@/lib/utils"
 
 type AnyRecord = Record<string, any>
@@ -215,50 +215,6 @@ function boolValue(form: HTMLFormElement, name: string) {
 
 function isLongSummaryValue(value: string | number) {
   return String(value).length > 24
-}
-
-export function LoginPageClient() {
-  const router = useRouter()
-  const [message, setMessage] = useState("")
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = event.currentTarget
-    try {
-      const result = await adminApi<{ token: string }>("/auth/login", {
-        method: "POST",
-        body: jsonBody({
-          username: formValue(form, "username"),
-          password: formValue(form, "password"),
-        }),
-      })
-      setAdminToken(result.token)
-      router.replace("/")
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "登录失败")
-    }
-  }
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-sm p-6">
-        <h1 className="text-xl font-semibold">彩票软件后台登录</h1>
-        <p className="mt-1 text-sm text-muted-foreground">默认账号：admin，默认密码：admin123。上线后请立即修改。</p>
-        <form className="mt-5 space-y-3" onSubmit={submit}>
-          <Field label="用户名">
-            <Input name="username" defaultValue="admin" autoComplete="username" />
-          </Field>
-          <Field label="密码">
-            <Input name="password" type="password" defaultValue="admin123" autoComplete="current-password" />
-          </Field>
-          <AdminNotice message={message} />
-          <Button className="w-full" type="submit">
-            登录
-          </Button>
-        </form>
-      </Card>
-    </main>
-  )
 }
 
 export function DashboardPageClient() {

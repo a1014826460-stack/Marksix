@@ -19,7 +19,7 @@ Main entry: `backend/src/app.py`
 
 Startup sequence:
 
-1. Resolve database target from `LOTTERY_DB_PATH`, `DATABASE_URL`, configured PostgreSQL DSN, or local SQLite fallback.
+1. Resolve the PostgreSQL target from `DATABASE_URL` or the configured PostgreSQL DSN.
 2. Call `ensure_admin_tables()` to create core tables and seed baseline data.
 3. Call `init_logging()` to enable structured file logs and database-backed error logs.
 4. Start HTTP server.
@@ -358,7 +358,7 @@ Current remaining risks:
 
 ## Recommended Deployment Practice
 
-1. Set `DATABASE_URL` or `LOTTERY_DB_PATH` explicitly in production.
+1. Set `DATABASE_URL` explicitly in production, or provide the PostgreSQL DSN in `config.yaml`.
 2. Change bootstrap admin password before exposure.
 3. Review `system_config` values after first startup.
 4. Monitor `/api/health` and `error_logs`.

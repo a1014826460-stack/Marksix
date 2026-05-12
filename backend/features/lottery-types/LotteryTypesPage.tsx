@@ -19,7 +19,14 @@ import { adminApi, jsonBody } from "@/lib/admin-api"
 import { Field } from "@/features/shared/Field"
 import { StatusBadge } from "@/features/shared/StatusBadge"
 import { formValue, boolValue } from "@/features/shared/form-helpers"
-import { formatNextTime, type LotteryType } from "@/features/shared/types"
+import { formatNextTime, type LotteryType, type ConfigEntry } from "@/features/shared/types"
+
+// lottery_type_id → system_config key 映射
+const NEXT_TIME_CONFIG_KEYS: Record<number, string> = {
+  1: "lottery.hk_next_time",
+  2: "lottery.macau_next_time",
+  3: "lottery.taiwan_next_time",
+}
 
 export function LotteryTypesPage() {
   const [rows, setRows] = useState<LotteryType[]>([])
@@ -27,12 +34,23 @@ export function LotteryTypesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [crawlMsg, setCrawlMsg] = useState("")
   const [crawlingId, setCrawlingId] = useState(0)
+  // 从 system_config 读取的 next_time 值
+  const [nextTimeMap, setNextTimeMap] = useState<Record<string, string>>({})
 
   async function load() {
-    const data = await adminApi<{ lottery_types: LotteryType[] }>(
-      "/admin/lottery-types",
-    )
-    setRows(data.lottery_types)
+    const [ltData, cfgData] = await Promise.all([
+      adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
+      adminApi<{ configs: ConfigEntry[] }>("/admin/configs/effective?group=lottery"),
+    ])
+    setRows(ltData.lottery_types)
+    // 从配置中提取各彩种 next_time
+    const map: Record<string, string> = {}
+    for (const c of cfgData.configs) {
+      if (c.key.startsWith("lottery.") && c.key.endsWith("_next_time")) {
+        map[c.key] = String(c.effective_value ?? "")
+      }
+    }
+    setNextTimeMap(map)
   }
 
   useEffect(() => {
@@ -56,6 +74,21 @@ export function LotteryTypesPage() {
         }),
       },
     )
+    // 如果编辑时提供了 next_time，同步写入 system_config
+    if (editing) {
+      const nextTimeValue = formValue(form, "next_time")
+      if (nextTimeValue) {
+        const cfgKey = NEXT_TIME_CONFIG_KEYS[editing.id]
+        if (cfgKey) {
+          try {
+            await adminApi(`/admin/system-config/${encodeURIComponent(cfgKey)}`, {
+              method: "PUT",
+              body: jsonBody({ value: nextTimeValue, value_type: "string" }),
+            })
+          } catch { /* 静默失败，不影响主流程 */ }
+        }
+      }
+    }
     setEditing(null)
     setFormOpen(false)
     form.reset()
@@ -147,12 +180,23 @@ export function LotteryTypesPage() {
                   placeholder="21:30"
                 />
               </Field>
-              <Field label="下次开奖时间 (自动从开奖记录推导)">
-                <span className="block h-9 rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                  {editing?.next_time
-                    ? formatNextTime(editing.next_time)
-                    : "暂无（保存后自动计算）"}
-                </span>
+              <Field label="下次开奖时间 (从 system_config 读取，可手动修改)">
+                <Input
+                  name="next_time"
+                  defaultValue={
+                    editing
+                      ? (nextTimeMap[NEXT_TIME_CONFIG_KEYS[editing.id]] || editing.next_time || "")
+                      : ""
+                  }
+                  placeholder="毫秒时间戳，由调度器自动同步"
+                />
+                {editing && (
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    当前 system_config 值: {nextTimeMap[NEXT_TIME_CONFIG_KEYS[editing.id]]
+                      ? formatNextTime(nextTimeMap[NEXT_TIME_CONFIG_KEYS[editing.id]])
+                      : "暂无"}
+                  </span>
+                )}
               </Field>
               <Field label="采集地址">
                 <Input
@@ -211,7 +255,9 @@ export function LotteryTypesPage() {
                   <TableCell>{row.name}</TableCell>
                   <TableCell>{row.draw_time}</TableCell>
                   <TableCell className="text-xs">
-                    {formatNextTime(row.next_time)}
+                    {formatNextTime(
+                      nextTimeMap[NEXT_TIME_CONFIG_KEYS[row.id]] || row.next_time,
+                    )}
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">
                     {row.collect_url}

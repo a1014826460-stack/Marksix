@@ -11,9 +11,10 @@ cd d:\pythonProject\outsource\Liuhecai
 python backend/src/app.py
 ```
 
-默认使用 SQLite 数据库 `backend/data/lottery_modes.sqlite3`。
+正式运行必须配置 PostgreSQL 数据库连接。推荐使用环境变量 `DATABASE_URL`，
+或在 `backend/src/config.yaml` 中提供 PostgreSQL DSN。
 
-如需指定 PostgreSQL：
+如需显式指定 PostgreSQL：
 
 ```powershell
 python backend/src/app.py --db-path "postgresql://user:password@localhost:5432/liuhecai"
@@ -22,7 +23,7 @@ python backend/src/app.py --db-path "postgresql://user:password@localhost:5432/l
 可选参数：
 - `--host` 监听地址（默认 `127.0.0.1`，可通过环境变量 `LOTTERY_API_HOST` 设置）
 - `--port` 端口号（默认 `8000`，可通过环境变量 `LOTTERY_API_PORT` 设置）
-- `--db-path` 数据库目标（SQLite 路径或 PostgreSQL DSN）
+- `--db-path` 数据库目标（仅正式运行 PostgreSQL DSN）
 
 启动后访问：
 - API 接口：`http://127.0.0.1:8000/api`
@@ -62,10 +63,16 @@ python backend/src/predict/run_prediction.py --mechanism title_234 --json
 ### 5. 数据迁移（SQLite → PostgreSQL）
 
 ```powershell
-python backend/src/utils/migrate_sqlite_to_postgres.py ^
-  --source-sqlite backend/data/lottery_modes.sqlite3 ^
+python backend/src/deprecated/tools/migrate_sqlite_to_postgres.py ^
+  --source-sqlite D:\backup\old-lottery.sqlite3 ^
   --target-dsn "postgresql://user:password@host:5432/liuhecai"
 ```
+
+说明：
+
+- `backend/data/lottery_modes.sqlite3` 已不再作为默认数据库。
+- 删除该文件不会影响正式运行，前提是 PostgreSQL 数据完整。
+- 旧 SQLite 数据如需保留，请单独备份后再使用迁移脚本。
 
 ## 默认管理员账号
 

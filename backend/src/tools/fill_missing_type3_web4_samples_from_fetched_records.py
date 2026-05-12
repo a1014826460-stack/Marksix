@@ -33,7 +33,7 @@ for path_item in (PREDICT_ROOT, SRC_ROOT):
         sys.path.insert(0, str(path_item))
 
 import config as app_config  # noqa: E402
-from db import connect, detect_database_engine, quote_identifier  # noqa: E402
+from db import connect, default_postgres_target, detect_database_engine, quote_identifier  # noqa: E402
 from mechanisms import PREDICTION_CONFIGS, build_title_prediction_configs  # noqa: E402
 
 
@@ -45,12 +45,6 @@ FORCED_LOTTERY_TYPE = 3
 FORCED_WEB_ID = 4
 RESERVED_COLUMN_FALLBACK = "value"
 
-_db_cfg = app_config.section("database")
-DEFAULT_POSTGRES_DSN = str(
-    _db_cfg.get("default_postgres_dsn", "postgresql://postgres:2225427@localhost:5432/liuhecai")
-)
-
-
 def default_db_target() -> str:
     """返回脚本默认使用的数据库目标。
 
@@ -58,14 +52,9 @@ def default_db_target() -> str:
         无。
 
     Returns:
-        str: 优先读取 `LOTTERY_DB_PATH`、`DATABASE_URL`，否则回退到本地 PostgreSQL DSN。
+        str: 正式运行统一读取 `DATABASE_URL` 或 `config.yaml` 中的 PostgreSQL DSN。
     """
-
-    return (
-        str(os.environ.get("LOTTERY_DB_PATH") or "").strip()
-        or str(os.environ.get("DATABASE_URL") or "").strip()
-        or DEFAULT_POSTGRES_DSN
-    )
+    return default_postgres_target()
 
 
 def quote_qualified_table(schema_name: str, table_name: str) -> str:

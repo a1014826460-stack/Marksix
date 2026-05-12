@@ -130,6 +130,48 @@ def sync_lottery_type_next_time_from_latest_draw(
         "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
         (next_time, updated_at, int(lottery_type_id)),
     )
+    # 同步写入 system_config，使前台页面可直接从配置中心读取
+    _lt_cfg_prefix = {1: "lottery.hk", 2: "lottery.macau", 3: "lottery.taiwan"}
+    _cfg_prefix = _lt_cfg_prefix.get(int(lottery_type_id))
+    if _cfg_prefix:
+        # 获取最新已开奖记录的期号和年份
+        _latest = conn.execute(
+            """
+            SELECT year, term FROM lottery_draws
+            WHERE lottery_type_id = ? AND is_opened = 1
+            ORDER BY year DESC, term DESC LIMIT 1
+            """,
+            (int(lottery_type_id),),
+        ).fetchone()
+        _current_period = ""
+        _current_year = 0
+        if _latest:
+            _current_year = int(_latest["year"])
+            _current_period = f"{_current_year}{int(_latest['term']):03d}"
+
+        _config_updates = [
+            (f"{_cfg_prefix}_next_time", next_time, "string", "彩种下一期开奖时间（自动同步）"),
+            (f"{_cfg_prefix}_current_period", _current_period, "string", "彩种当前期号（自动同步）"),
+            (f"{_cfg_prefix}_current_year", str(_current_year), "int", "彩种当前年份（自动同步）"),
+        ]
+        for _key, _val, _vtype, _desc in _config_updates:
+            try:
+                existing = conn.execute(
+                    "SELECT id FROM system_config WHERE key = ? LIMIT 1", (_key,)
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE system_config SET value_text = ?, updated_at = ? WHERE key = ?",
+                        (_val, updated_at, _key),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO system_config (key, value_text, value_type, description, is_secret, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, 0, ?, ?)",
+                        (_key, _val, _vtype, _desc, updated_at, updated_at),
+                    )
+            except Exception:
+                pass  # system_config 表可能尚未初始化，静默跳过
     return next_time
 
 

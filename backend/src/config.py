@@ -87,7 +87,7 @@ def _merge_defaults(loaded: dict[str, Any]) -> dict[str, Any]:
             "session_ttl_seconds": 86400,
             "password_iterations": 260000,
         },
-        "site": {
+        "fetch_site": {
             "manage_url_template": "https://admin.shengshi8800.com/ds67BvM/web/webManage?id={web_id}",
             "modes_data_url": "https://admin.shengshi8800.com/ds67BvM/web/getModesDataList",
             "default_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJhdWQiOiIiLCJpYXQiOjE3NzgxNTQyMzEsIm5iZiI6MTc3ODE1NDIzNCwiZXhwIjoxNzc4MjQwNjMxLCJkYXRhIjp7ImlkIjoxLCJuYW1lIjoiYWRtaW4iLCJzaWduIjoiXHU4ZDg1XHU3ZWE3XHU3YmExXHU3NDA2XHU1NDU4IiwianVyIjpudWxsfX0.1IaOuliRxxiil00NGadmiRii1XTb9u-HsdXKJLH-I04",
@@ -125,14 +125,14 @@ def _merge_defaults(loaded: dict[str, Any]) -> dict[str, Any]:
         },
         "draw": {
             "hk_default_draw_time": "21:30",
-            "macau_default_draw_time": "21:00",
+            "macau_default_draw_time": "21:30",
             "taiwan_default_draw_time": "22:30",
             "hk_default_collect_url": "https://www.lnlllt.com/api.php",
             "macau_default_collect_url": "https://www.lnlllt.com/api.php",
             "taiwan_import_file": "data/lottery_data/lottery_page_1_20260506_194209.json",
         },
         "prediction": {
-            "default_target_hit_rate": 0.65,
+            "default_target_hit_rate": 0.7,
             "max_terms_per_year": 365,
         },
         "logging": {

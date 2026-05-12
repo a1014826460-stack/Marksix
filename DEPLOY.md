@@ -493,6 +493,11 @@ docker system prune -a --volumes
 sudo journalctl --vacuum-size=200M
 ```
 
+```bash
+git pull
+docker compose build
+docker compose up -d
+```
 ---
 
 ## 目录结构

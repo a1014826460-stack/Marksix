@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  FileText,
   Globe2,
   Hash,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
   Ticket,
   Trophy,
   Users,
@@ -32,6 +34,8 @@ const menuItems = [
   { icon: Globe2, label: "站点管理", href: "/sites" },
   { icon: Hash, label: "静态数据管理", href: "/numbers" },
   { icon: BarChart3, label: "预测模块", href: "/prediction-modules" },
+  { icon: FileText, label: "日志管理", href: "/logs" },
+  { icon: Settings, label: "配置管理", href: "/configs" },
 ]
 
 type AdminShellProps = {

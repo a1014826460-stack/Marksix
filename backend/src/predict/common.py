@@ -16,10 +16,10 @@ SRC_ROOT = Path(__file__).resolve().parents[1]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from db import connect as db_connect
+from db import connect as db_connect, default_postgres_target
 from runtime_config import get_bootstrap_config_value
 
-DEFAULT_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
+DEFAULT_DB_TARGET = default_postgres_target()
 DEFAULT_TARGET_HIT_RATE = float(get_bootstrap_config_value("prediction.default_target_hit_rate", 0.65))
 
 # 固定顺序用于稳定输出，避免同分策略在不同 Python 版本或数据库顺序下产生不同结果。
@@ -500,7 +500,7 @@ def predict(
     res_code: str | None = None,
     content: str | None = None,
     source_table: str | None = None,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    db_path: str | Path = DEFAULT_DB_TARGET,
     target_hit_rate: float = DEFAULT_TARGET_HIT_RATE,
     random_seed: str | None = None,
 ) -> dict[str, Any]:
@@ -613,7 +613,11 @@ def build_common_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--res-code", help="最新开奖结果，逗号分隔，最后一个号码按特码处理。")
     parser.add_argument("--content", help="可选：前端或外部传入的原 content，响应中原样返回用于审计。")
     parser.add_argument("--source-table", help="可选：覆盖默认历史来源表。")
-    parser.add_argument("--db-path", default=str(DEFAULT_DB_PATH), help="数据库目标，可传 SQLite 路径或 PostgreSQL DSN。")
+    parser.add_argument(
+        "--db-path",
+        default=str(DEFAULT_DB_TARGET),
+        help="数据库目标。正式运行默认使用 PostgreSQL；SQLite 仅限显式 legacy/test 用途。",
+    )
     parser.add_argument("--target-hit-rate", type=float, default=DEFAULT_TARGET_HIT_RATE, help="目标历史回测命中率。")
     parser.add_argument("--json", action="store_true", help="输出 JSON。")
     return parser

@@ -13,7 +13,6 @@ backend without depending on the HTTP server layer.
 from __future__ import annotations
 
 import mimetypes
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,8 +23,6 @@ SRC_ROOT = Path(__file__).resolve().parent
 PREDICT_ROOT = SRC_ROOT / "predict"
 UTILS_ROOT = SRC_ROOT / "utils"
 CRAWLER_ROOT = SRC_ROOT / "crawler"
-DEFAULT_SQLITE_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
-
 # Load configuration from config.yaml
 import config as app_config  # noqa: E402
 _cfg_defaults = app_config.load_config()
@@ -52,6 +49,7 @@ for path in (PREDICT_ROOT, UTILS_ROOT, CRAWLER_ROOT):
 from db import (  # noqa: E402
     auto_increment_primary_key,
     connect,
+    default_postgres_target,
     detect_database_engine,
     quote_identifier,
     utc_now,
@@ -70,13 +68,8 @@ TAIWAN_NAME = "台湾彩"
 
 
 def default_db_target() -> str:
-    """Prefer an explicit database URL, then the configured PostgreSQL DSN, then SQLite."""
-    return (
-        os.environ.get("LOTTERY_DB_PATH")
-        or os.environ.get("DATABASE_URL")
-        or DEFAULT_POSTGRES_DSN
-        or str(DEFAULT_SQLITE_DB_PATH)
-    )
+    """Return the PostgreSQL target used by formal runtime code."""
+    return default_postgres_target()
 
 
 def ensure_column(conn: Any, table_name: str, column_name: str, definition: str) -> None:
@@ -394,6 +387,15 @@ def ensure_admin_tables(db_path: str | Path) -> None:
         ensure_column(conn, "site_prediction_modules", "mode_id", "INTEGER")
         conn.execute(
             f"""
+            CREATE TABLE IF NOT EXISTS mechanism_status (
+                mechanism_key TEXT PRIMARY KEY,
+                status INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS legacy_image_assets (
                 {pk_sql},
                 source_key TEXT NOT NULL DEFAULT 'legacy-post-list',
@@ -517,8 +519,8 @@ def ensure_admin_tables(db_path: str | Path) -> None:
                 """,
                 (
                     "澳门彩",
-                    "21:00",
-                    "https://history.macaumarksix.com/history/macaujc2",
+                    "21:30",
+                    "https://www.lnlllt.com/api.php",
                     now,
                     now,
                 ),
@@ -600,6 +602,59 @@ def ensure_admin_tables(db_path: str | Path) -> None:
                 (default_lottery_id,),
             )
         _sync_modules(conn)
+
+        # ── 确保 error_logs 表存在并扩展业务上下文字段 ──
+        # 主表定义与 logger.py:DatabaseLogHandler._ensure_table 保持一致，
+        # 确保表在首次启动时就存在，同时兼容已有数据库的列扩展。
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS error_logs (
+                {pk_sql},
+                created_at TEXT NOT NULL,
+                level TEXT NOT NULL DEFAULT 'ERROR',
+                logger_name TEXT NOT NULL DEFAULT '',
+                module TEXT NOT NULL DEFAULT '',
+                func_name TEXT NOT NULL DEFAULT '',
+                file_path TEXT NOT NULL DEFAULT '',
+                line_number INTEGER NOT NULL DEFAULT 0,
+                message TEXT NOT NULL DEFAULT '',
+                exc_type TEXT,
+                exc_message TEXT,
+                stack_trace TEXT,
+                user_id TEXT,
+                request_params TEXT,
+                duration_ms REAL,
+                extra_data TEXT
+            )
+            """
+        )
+        # 扩展业务筛选维度列，使用 ensure_column 轻量迁移兼容已有数据库
+        ensure_column(conn, "error_logs", "site_id", "INTEGER")
+        ensure_column(conn, "error_logs", "web_id", "INTEGER")
+        ensure_column(conn, "error_logs", "lottery_type_id", "INTEGER")
+        ensure_column(conn, "error_logs", "year", "INTEGER")
+        ensure_column(conn, "error_logs", "term", "INTEGER")
+        ensure_column(conn, "error_logs", "task_key", "TEXT")
+        ensure_column(conn, "error_logs", "task_type", "TEXT")
+        ensure_column(conn, "error_logs", "request_path", "TEXT")
+        ensure_column(conn, "error_logs", "request_method", "TEXT")
+
+        # ── 配置变更历史表 ──
+        # 记录每次通过后台修改 system_config 的变更记录，方便回溯配置变更原因。
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS system_config_history (
+                {pk_sql},
+                config_key TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by TEXT,
+                changed_at TEXT NOT NULL,
+                change_reason TEXT,
+                source TEXT NOT NULL DEFAULT 'admin'
+            )
+            """
+        )
 
 
 def database_summary(db_path: str | Path) -> dict[str, Any]:
