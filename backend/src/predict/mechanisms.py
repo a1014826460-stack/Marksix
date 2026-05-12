@@ -6,10 +6,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from db import connect as db_connect
+from db import connect as db_connect, utc_now
 
 from common import (
-    DEFAULT_DB_PATH,
+    DEFAULT_DB_TARGET,
     ELEMENT_ORDER,
     ZODIAC_ORDER,
     PredictionConfig,
@@ -3523,8 +3523,8 @@ def _classify_title_config(
     return None
 
 
-def build_title_prediction_configs(db_path=DEFAULT_DB_PATH) -> dict[str, PredictionConfig]:
-    """从本地 SQLite 的 mode_payload_tables.title 自动建立预测机制。
+def build_title_prediction_configs(db_path=DEFAULT_DB_TARGET) -> dict[str, PredictionConfig]:
+    """从当前数据库的 mode_payload_tables.title 自动建立预测机制。
 
     - 已经在 PREDICTION_CONFIGS 中手写维护的 modes_id/title 会跳过，避免重复机制。
     - 只生成本地已归一化为 mode_payload_xxx 的表，确保回测和预测都使用本地数据。
@@ -3585,7 +3585,7 @@ def build_title_prediction_configs(db_path=DEFAULT_DB_PATH) -> dict[str, Predict
 _title_configs_loaded = False
 
 
-def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_PATH) -> None:
+def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_TARGET) -> None:
     """在服务启动时加载动态预测配置。
 
     传入实际数据库路径（如 PostgreSQL DSN），避免依赖本地 SQLite。
@@ -3602,17 +3602,43 @@ def supported_prediction_keys() -> tuple[str, ...]:
     return tuple(sorted(PREDICTION_CONFIGS))
 
 
-def list_prediction_configs() -> list[dict[str, Any]]:
+def list_prediction_configs(db_path: str | Path | None = None) -> list[dict[str, Any]]:
     """输出机制清单，便于前端或命令行查看 title 到 key 的映射。"""
+    status_map: dict[str, int] = {}
+    if db_path is not None:
+        status_map = get_mechanism_statuses(db_path)
     return [
         {
             "key": key,
             "title": config.title,
             "default_modes_id": config.default_modes_id,
             "default_table": config.default_table,
+            "status": status_map.get(key, 1),
         }
         for key, config in sorted(PREDICTION_CONFIGS.items())
     ]
+
+
+def get_mechanism_statuses(db_path: str | Path) -> dict[str, int]:
+    """获取所有预测机制的启用/禁用状态映射。"""
+    from db import connect
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT mechanism_key, status FROM mechanism_status"
+        ).fetchall()
+    return {str(row["mechanism_key"]): int(row["status"]) for row in rows}
+
+
+def set_mechanism_status(db_path: str | Path, key: str, status: int) -> None:
+    """设置预测机制的启用/禁用状态（status: 1=启用, 0=禁用）。"""
+    now = utc_now()
+    with db_connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO mechanism_status (mechanism_key, status, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(mechanism_key) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at""",
+            (key, status, now),
+        )
 
 
 def get_prediction_config(key: str) -> PredictionConfig:

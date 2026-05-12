@@ -32,7 +32,6 @@ SRC_ROOT = Path(__file__).resolve().parent
 PREDICT_ROOT = SRC_ROOT / "predict"
 UTILS_ROOT = SRC_ROOT / "utils"
 CRAWLER_ROOT = SRC_ROOT / "crawler"
-DEFAULT_SQLITE_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
 
 # Load configuration from config.yaml
 import config as app_config  # noqa: E402
@@ -65,12 +64,12 @@ from data_fetch import (  # noqa: E402
     fetch_web_id_list,
     save_mode_all_data,
 )
-from mechanisms import ensure_prediction_configs_loaded, get_prediction_config, list_prediction_configs  # noqa: E402
+from mechanisms import ensure_prediction_configs_loaded, get_prediction_config, list_prediction_configs, set_mechanism_status  # noqa: E402
 from logger import (
-    export_error_logs, get_error_log_detail, get_log_stats,
-    init_logging, query_error_logs, trigger_cleanup,
+    export_error_logs, get_error_log_detail, get_log_modules, get_log_levels, get_log_stats,
+    get_logger, init_logging, query_error_logs, trigger_cleanup,
 )  # noqa: E402
-from normalize_sqlite import normalize_payload_tables  # noqa: E402
+from utils.normalize_payload_tables import normalize_payload_tables  # noqa: E402
 from build_text_history_mappings import build_text_history_mappings  # noqa: E402
 from utils.created_prediction_store import (  # noqa: E402
     CREATED_SCHEMA_NAME,
@@ -81,7 +80,15 @@ from utils.created_prediction_store import (  # noqa: E402
     table_column_names,
     upsert_created_prediction_row,
 )
-from db import auto_increment_primary_key, connect, detect_database_engine, quote_identifier, utc_now  # noqa: E402
+from db import (  # noqa: E402
+    auto_increment_primary_key,
+    connect,
+    default_postgres_target,
+    detect_database_engine,
+    is_postgres_target,
+    quote_identifier,
+    utc_now,
+)
 from auth import (  # noqa: E402
     auth_user_from_token,
     ensure_generation_permission,
@@ -165,12 +172,15 @@ from tables import (  # noqa: E402
 from crawler_service import (  # noqa: E402
     CrawlerScheduler,
     crawl_and_generate_for_type,
-    import_taiwan_json,
     run_crawl_only,
     run_hk_crawler,
     run_macau_crawler,
 )
-from runtime_config import list_system_configs, upsert_system_config, get_config  # noqa: E402
+from runtime_config import (
+    batch_update_configs, get_config, get_config_effective, get_config_history,
+    get_config_groups, list_configs_effective, list_system_configs,
+    reset_config, upsert_system_config, validate_config_value,
+)  # noqa: E402
 
 # ── 后台异步任务 ─────────────────────────────────────────
 _background_jobs: dict[str, dict[str, Any]] = {}
@@ -392,7 +402,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
                 return
             if method == "GET" and path == "/api/predict/mechanisms":
-                self.send_json({"mechanisms": list_prediction_configs()})
+                self.send_json({"mechanisms": list_prediction_configs(self.db_path)})
                 return
             if path.startswith("/api/predict/") and method in {"GET", "POST"}:
                 mechanism = path.split("/")[-1]
@@ -502,18 +512,104 @@ class ApiHandler(BaseHTTPRequestHandler):
                     }
                 )
                 return
+
+            # ── 配置管理增强 API ──────────────────────────
+            # 配置分组列表
+            if method == "GET" and path == "/api/admin/configs/groups":
+                self.send_json({"groups": get_config_groups()})
+                return
+
+            # 批量更新配置
+            if method == "POST" and path == "/api/admin/configs/batch-update":
+                body = self.read_json()
+                updates = body.get("updates", [])
+                if not isinstance(updates, list):
+                    self.send_error_json(HTTPStatus.BAD_REQUEST, "updates 必须是数组")
+                    return
+                # 逐项校验
+                for item in updates:
+                    key = str(item.get("key", ""))
+                    val = item.get("value")
+                    vt = str(item.get("value_type", ""))
+                    if vt:
+                        is_valid, err_msg = validate_config_value(key, val, vt)
+                        if not is_valid:
+                            self.send_error_json(HTTPStatus.BAD_REQUEST, f"配置 '{key}': {err_msg}")
+                            return
+                user = auth_user_from_token(self.db_path, self.bearer_token())
+                changed_by = user.get("username", "unknown") if user else "unknown"
+                self.send_json(batch_update_configs(self.db_path, updates, changed_by=changed_by))
+                return
+
+            # 配置生效值列表（支持分组、关键词、来源筛选）
+            if method == "GET" and path == "/api/admin/configs/effective":
+                qs = parse_qs(urlparse(self.path).query)
+                group = qs.get("group", [""])[0]
+                keyword = qs.get("keyword", [""])[0]
+                source = qs.get("source", [""])[0]
+                self.send_json({
+                    "configs": list_configs_effective(
+                        self.db_path,
+                        group=group,
+                        keyword=keyword,
+                        source=source,
+                    )
+                })
+                return
+
+            # 单个配置生效值
+            if method == "GET" and path.startswith("/api/admin/configs/effective/"):
+                config_key = path.split("/api/admin/configs/effective/", 1)[1].strip()
+                self.send_json(get_config_effective(self.db_path, config_key))
+                return
+
+            # 配置变更历史（全局或按 key 筛选）
+            if method == "GET" and path == "/api/admin/configs/history":
+                qs = parse_qs(urlparse(self.path).query)
+                config_key = qs.get("key", [""])[0]
+                page = int(qs.get("page", ["1"])[0] or 1)
+                page_size = min(int(qs.get("page_size", ["30"])[0] or 30), 200)
+                self.send_json(get_config_history(self.db_path, key=config_key, page=page, page_size=page_size))
+                return
+
+            # 恢复配置默认值
+            if method == "POST" and re.match(r"^/api/admin/configs/.+/reset$", path):
+                config_key = path.rsplit("/", 2)[-2]
+                user = auth_user_from_token(self.db_path, self.bearer_token())
+                changed_by = user.get("username", "unknown") if user else "unknown"
+                try:
+                    self.send_json({"config": reset_config(self.db_path, config_key, changed_by=changed_by)})
+                except ValueError as e:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, str(e))
+                return
+
             if method in {"PUT", "PATCH"} and path.startswith("/api/admin/system-config/"):
                 config_key = path.split("/api/admin/system-config/", 1)[1].strip()
                 body = self.read_json()
+                value = body.get("value")
+                value_type = str(body.get("value_type") or "")
+
+                # 类型校验
+                if value_type:
+                    is_valid, err_msg = validate_config_value(config_key, value, value_type)
+                    if not is_valid:
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, err_msg)
+                        return
+
+                user = auth_user_from_token(self.db_path, self.bearer_token())
+                changed_by = user.get("username", "unknown") if user else "unknown"
+
                 self.send_json(
                     {
                         "config": upsert_system_config(
                             self.db_path,
                             key=config_key,
-                            value=body.get("value"),
-                            value_type=str(body.get("value_type") or "") or None,
+                            value=value,
+                            value_type=value_type or None,
                             description=str(body.get("description") or "") or None,
                             is_secret=body.get("is_secret"),
+                            changed_by=changed_by,
+                            change_reason=str(body.get("change_reason") or ""),
                         )
                     }
                 )
@@ -530,6 +626,32 @@ class ApiHandler(BaseHTTPRequestHandler):
                     delete_user(self.db_path, user_id)
                     self.send_json({"ok": True})
                     return
+
+            # ── 预测机制状态管理 ──
+            if path.startswith("/api/admin/predict/mechanisms/"):
+                mechanism_key = path.split("/api/admin/predict/mechanisms/", 1)[1].rstrip("/")
+                if mechanism_key and mechanism_key != "status" and not mechanism_key.endswith("/status"):
+                    # PATCH /api/admin/predict/mechanisms/{key}/status
+                    if method == "PATCH":
+                        body = self.read_json()
+                        status_value = int(body.get("status", 1))
+                        set_mechanism_status(self.db_path, mechanism_key, status_value)
+                        user = auth_user_from_token(self.db_path, self.bearer_token())
+                        username = user.get("username", "unknown") if user else "unknown"
+                        get_logger("admin").info(
+                            "mechanism '%s' status changed to %d by user=%s",
+                            mechanism_key,
+                            status_value,
+                            username,
+                        )
+                        self.send_json({"key": mechanism_key, "status": status_value})
+                        return
+                    self.send_error_json(HTTPStatus.METHOD_NOT_ALLOWED, "不支持的操作")
+                    return
+
+            if method == "GET" and path == "/api/admin/predict/mechanisms":
+                self.send_json({"mechanisms": list_prediction_configs(self.db_path)})
+                return
 
             if method == "GET" and path == "/api/admin/lottery-types":
                 self.send_json({"lottery_types": list_lottery_types(self.db_path)})
@@ -603,29 +725,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                         results[_label] = _fn(self.db_path)
                     except Exception as e:
                         errors.append(f"{_label}: {e}")
-                # Also import Taiwan JSON if available
-                _taiwan_json = BACKEND_ROOT / str(
-                    get_config(self.db_path, "draw.taiwan_import_file", "data/lottery_data/lottery_page_1_20260506_194209.json")
-                )
-                if _taiwan_json.exists():
-                    try:
-                        results["taiwan"] = import_taiwan_json(self.db_path, _taiwan_json)
-                    except Exception as e:
-                        errors.append(f"taiwan: {e}")
+                # 台湾彩数据由管理后台手工录入，不再通过爬虫自动导入
+                results["taiwan"] = {"message": "台湾彩数据需在管理后台手工录入"}
                 self.send_json({"results": results, "errors": errors if errors else None})
-                return
-            if method == "POST" and path == "/api/admin/crawler/import-taiwan":
-                _taiwan_json = BACKEND_ROOT / str(
-                    get_config(self.db_path, "draw.taiwan_import_file", "data/lottery_data/lottery_page_1_20260506_194209.json")
-                )
-                if not _taiwan_json.exists():
-                    self.send_error_json(HTTPStatus.NOT_FOUND, "台湾彩 JSON 数据文件不存在")
-                    return
-                try:
-                    result = import_taiwan_json(self.db_path, _taiwan_json)
-                    self.send_json(result)
-                except Exception as e:
-                    self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
                 return
 
             if method == "GET" and path == "/api/admin/numbers":
@@ -707,6 +809,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
 
             # ── 日志管理 API ──────────────────────────────────
+            if path == "/api/admin/logs/modules" and method == "GET":
+                self.send_json({"modules": get_log_modules(self.db_path)})
+                return
+            if path == "/api/admin/logs/levels" and method == "GET":
+                self.send_json({"levels": get_log_levels(self.db_path)})
+                return
             if path == "/api/admin/logs/stats" and method == "GET":
                 self.send_json(get_log_stats(self.db_path))
                 return
@@ -746,6 +854,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                     keyword=qs.get("keyword", [""])[0],
                     date_from=qs.get("date_from", [""])[0],
                     date_to=qs.get("date_to", [""])[0],
+                    user_id=qs.get("user_id", [""])[0],
+                    site_id=qs.get("site_id", [""])[0],
+                    web_id=qs.get("web_id", [""])[0],
+                    lottery_type_id=qs.get("lottery_type_id", [""])[0],
+                    year=qs.get("year", [""])[0],
+                    term=qs.get("term", [""])[0],
+                    task_type=qs.get("task_type", [""])[0],
+                    task_key=qs.get("task_key", [""])[0],
+                    path=qs.get("path", [""])[0],
                 )
                 self.send_json(result)
                 return
@@ -1062,6 +1179,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 def run_server(host: str, port: int, db_path: str | Path) -> None:
+    if detect_database_engine(db_path) != "postgres":
+        raise RuntimeError(
+            "后端正式运行仅支持 PostgreSQL。"
+            " 如需使用 SQLite，请只在明确的 legacy/test/migration 脚本中显式传入。"
+        )
     ensure_prediction_configs_loaded(db_path)
     ensure_admin_tables(db_path)
     init_logging(str(db_path))
@@ -1069,7 +1191,7 @@ def run_server(host: str, port: int, db_path: str | Path) -> None:
     server.db_path = db_path  # type: ignore[attr-defined]
     print(f"Backend API running at http://{host}:{port}")
     print(f"CMS admin page: http://{host}:{port}/admin")
-    print(f"Database engine: {detect_database_engine(db_path)}")
+    print(f"Database engine: {detect_database_engine(db_path)} (formal runtime requires PostgreSQL)")
     print(f"Database target: {db_path}")
     # Start background task scheduler (auto-open draws + auto-prediction timers)
     _scheduler = CrawlerScheduler(db_path)
@@ -1086,10 +1208,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db-path",
         default=default_db_target(),
-        help="Database target. Accepts a SQLite path or PostgreSQL DSN.",
+        help="PostgreSQL database target for formal runtime.",
     )
     return parser
 
 if __name__ == "__main__":
     args = build_parser().parse_args()
+    if args.db_path and not is_postgres_target(args.db_path):
+        raise RuntimeError(
+            "后端服务启动只接受 PostgreSQL DSN。"
+            " 如需使用 SQLite，请改用明确的迁移或测试脚本。"
+        )
     run_server(args.host, args.port, args.db_path)

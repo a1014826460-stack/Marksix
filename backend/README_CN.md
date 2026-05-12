@@ -26,7 +26,7 @@ backend/src/app.py
 
 启动顺序：
 
-1. 从 `LOTTERY_DB_PATH`、`DATABASE_URL`、配置中的 PostgreSQL DSN，或本地 SQLite fallback 中解析数据库目标。
+1. 从 `DATABASE_URL` 或配置中的 PostgreSQL DSN 解析正式运行数据库目标。
 2. 调用 `ensure_admin_tables()` 创建核心表并初始化基础数据。
 3. 调用 `init_logging()` 启用结构化文件日志和基于数据库的错误日志。
 4. 启动 HTTP 服务。
@@ -264,6 +264,7 @@ backend/src/crawler/crawler_service.py
 - 精准调度台湾每日开奖。
 - 自动采集香港和澳门开奖数据。
 - 开奖数据采集后，延迟自动生成预测。
+- 精确调度 HK/Macau 开奖前 1 秒期号检查（含重试和告警）。
 
 当前调度器模型：
 
@@ -287,7 +288,7 @@ backend/src/crawler/crawler_service.py
 
 - 香港数据源 URL 来自 `lottery_types.collect_url`，启动默认值为 `draw.hk_default_collect_url`。
 - 澳门数据源 URL 来自 `lottery_types.collect_url`，启动默认值为 `draw.macau_default_collect_url`。
-- 台湾数据只支持导入，使用 `draw.taiwan_import_file`。
+- **台湾彩数据由管理后台手工录入，不再使用爬虫自动导入。**
 
 爬虫 HTTP 容错配置：
 
@@ -300,6 +301,31 @@ backend/src/crawler/crawler_service.py
 - `backend/src/crawler/HK_history_crawler.py`
 - `backend/src/crawler/Macau_history_crawler.py`
 - `backend/src/crawler/crawler_service.py`
+
+### 精确开奖期号检查（HK / Macau）
+
+- 调度器在每次 `next_time` 同步后，从 `system_config` 读取 `lottery.hk_next_time` 和 `lottery.macau_next_time`。
+- 在距离该时间点 **前 1 秒**，自动向对应彩票的开奖号码查询接口发送 HTTP 请求。
+- 检查返回的期号是否等于 `system_config` 中该彩种的 `current_period` + 1（即预期下一期期号）。
+- 期号匹配：记录日志，不做额外操作。
+- 期号不匹配：每 2 秒重试一次，最多重试 3 次（共 4 次请求）。每次重试前重新读取 `next_time` 以应对时间变动。
+- 全部重试失败后触发告警，写入 `error_logs` 表，可在日志管理页面查看。
+- 检查完毕或 next_time 更新后，自动重新调度下一次检查。
+
+### `current_period` / `current_year` 字段
+
+每个彩种在 `system_config` 中维护以下字段，由调度器自动同步：
+
+| 配置项 | 说明 |
+|--------|------|
+| `lottery.hk_current_period` | 香港彩当前期号（如 2026001） |
+| `lottery.hk_current_year` | 香港彩当前年份 |
+| `lottery.macau_current_period` | 澳门彩当前期号 |
+| `lottery.macau_current_year` | 澳门彩当前年份 |
+| `lottery.taiwan_current_period` | 台湾彩当前期号（由管理后台手工录入） |
+| `lottery.taiwan_current_year` | 台湾彩当前年份（由管理后台手工录入） |
+
+这些字段在爬虫成功写入新开奖数据后自动更新，确保始终反映最新已开奖期号。
 
 ### 开奖时间与 `next_time` 同步规则
 
@@ -469,6 +495,123 @@ backend/src/runtime_config.py
 
 ---
 
+## 日志管理
+
+页面入口：后台侧边栏 → "日志管理"（`/logs`）
+
+### 功能概述
+
+日志管理板块用于统一查看和分析系统运行日志，帮助快速定位问题。
+
+### 数据来源
+
+- **error_logs 表**：ERROR 及以上级别日志自动入库（由 `DatabaseLogHandler` 实现）
+- **文件日志**：`backend/data/logs/app.log`（JSON 格式，带轮转）
+- **日志统计**：`GET /api/admin/logs/stats`
+
+### 筛选能力
+
+| 筛选维度 | 说明 |
+|---------|------|
+| 日志等级 | ERROR / WARNING / INFO / DEBUG / CRITICAL |
+| 模块 | 支持模糊匹配，下拉列表由实际数据动态填充 |
+| 关键词 | 匹配消息内容、异常类型、异常消息、堆栈跟踪 |
+| 时间范围 | 支持 datetime-local 精确到分钟 |
+| 用户ID | 精确匹配 |
+| 站点ID | 精确匹配 |
+| 彩种 | 香港彩(1) / 澳门彩(2) / 台湾彩(3) |
+
+### API 接口
+
+```
+GET  /api/admin/logs           → 日志列表（分页 + 多维筛选）
+GET  /api/admin/logs/{id}      → 日志详情（含完整堆栈）
+GET  /api/admin/logs/modules   → 已记录的模块名列表
+GET  /api/admin/logs/levels    → 已记录的日志等级列表
+GET  /api/admin/logs/stats     → 日志统计（总数、24h 新增、文件大小）
+GET  /api/admin/logs/export    → 导出 CSV
+POST /api/admin/logs/cleanup   → 手动触发日志清理
+```
+
+### 日志表结构
+
+`error_logs` 表包含以下业务上下文字段（部分为扩展字段）：
+
+```
+site_id, web_id, lottery_type_id, year, term,
+task_key, task_type, request_path, request_method,
+user_id, duration_ms, request_params, stack_trace
+```
+
+---
+
+## 配置信息管理
+
+页面入口：后台侧边栏 → "配置管理"（`/configs`）
+
+### 功能概述
+
+配置信息管理板块用于统一查看和修改系统运行配置，所有修改操作自动记录变更历史。
+
+### 配置来源与优先级
+
+1. **环境变量**（最高优先级）— 主要用于数据库连接等敏感部署配置
+2. **数据库 system_config 表** — 管理员通过后台页面可修改的运行配置
+3. **config.yaml** — 默认值和初始化兜底
+
+运行时优先级：先读数据库 `system_config`，缺失时回退到 `config.yaml` 默认值。
+
+### 配置分组
+
+| 分组 | 前缀 | 说明 |
+|------|------|------|
+| 彩种配置 | `draw.*` | 各彩种开奖时间、数据源URL |
+| 调度器配置 | `crawler.*` | 自动开奖/抓取/预测延迟等调度参数 |
+| 预测资料配置 | `prediction.*` | 预测生成参数 |
+| 站点配置 | `site.*` | 站点默认URL、Token、请求参数 |
+| 日志配置 | `logging.*` | 日志保留天数、轮转大小、清理间隔 |
+| 认证配置 | `auth.*` | Session过期时间、密码迭代次数 |
+| 系统配置 | `admin.*` | 管理员默认账号、显示名称 |
+
+### API 接口
+
+```
+GET  /api/admin/system-config            → 列出 system_config 表原始数据
+PUT  /api/admin/system-config/{key}      → 更新单个配置（含类型校验 + 自动记录历史）
+GET  /api/admin/configs/groups           → 配置分组列表
+GET  /api/admin/configs/effective        → 配置生效值列表（合并数据库 + 默认值，标注来源）
+GET  /api/admin/configs/effective/{key}  → 单个配置生效值
+POST /api/admin/configs/batch-update     → 批量更新配置
+POST /api/admin/configs/{key}/reset      → 恢复配置为默认值
+GET  /api/admin/configs/history          → 配置变更历史（可按 key 筛选）
+```
+
+### 配置变更历史
+
+每次通过后台修改 `system_config` 时，系统自动在 `system_config_history` 表中记录：
+
+- 修改前后的值
+- 操作人（从当前登录 session 获取）
+- 修改时间
+- 修改原因（可选）
+
+可在配置管理页面点击"历史"按钮查看每个配置项的完整变更记录。
+
+### 配置值校验
+
+修改配置时自动校验类型和业务约束：
+
+| 类型 | 校验规则 |
+|------|---------|
+| int | 必须是整数；部分配置项要求非负 |
+| float | 必须是浮点数 |
+| bool | 仅接受 true/false |
+| string | 不做校验 |
+| json | 必须是合法 JSON |
+| time | 必须是 HH:mm 或 HH:mm:ss 格式 |
+
+---
+
 ## 已知运行风险
 
 当前剩余风险：
@@ -481,8 +624,10 @@ backend/src/runtime_config.py
 
 ## 推荐部署实践
 
-1. 在生产环境中明确设置 `DATABASE_URL` 或 `LOTTERY_DB_PATH`。
+1. 在生产环境中明确设置 `DATABASE_URL`，或在 `config.yaml` 中提供 PostgreSQL DSN。
 2. 对外暴露前，修改启动默认管理员密码。
 3. 首次启动后，检查 `system_config` 中的配置值。
-4. 监控 `/api/health` 和 `error_logs`。
-5. 使用受监管的进程管理方式运行服务，以便服务崩溃后可以自动重启恢复。
+4. 使用日志管理页面定期检查错误日志，关注 ERROR 和 WARNING 级别日志。
+5. 通过配置管理页面统一管理运行参数，避免直接修改 config.yaml。
+6. 监控 `/api/health` 和 `error_logs`。
+7. 使用受监管的进程管理方式运行服务，以便服务崩溃后可以自动重启恢复。

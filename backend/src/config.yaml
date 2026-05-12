@@ -10,7 +10,7 @@
 # -----------------------------------------------------------
 database:
   # 默认 PostgreSQL 连接字符串
-  # 可通过环境变量 LOTTERY_DB_PATH 或 DATABASE_URL 覆盖
+  # 正式运行请通过 DATABASE_URL 或此处配置提供 PostgreSQL DSN
   default_postgres_dsn: "postgresql://postgres:2225427@localhost:5432/liuhecai"
 
 # -----------------------------------------------------------
@@ -105,6 +105,13 @@ draw:
 prediction:
   default_target_hit_rate: 0.65
   max_terms_per_year: 365
+
+# -----------------------------------------------------------
+# 调度器固定触发时间配置
+# -----------------------------------------------------------
+scheduler:
+  # 每日自动预测固定触发时间（北京时间），支持运行时修改
+  auto_prediction_time: "12:00"
 
 logging:
   max_file_size_mb: 10

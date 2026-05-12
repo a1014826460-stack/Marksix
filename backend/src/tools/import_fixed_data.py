@@ -21,12 +21,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from db import connect
+from db import connect, default_postgres_target
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXED_DATA_PATH = BACKEND_ROOT / "data" / "fixed_data.json"
-DEFAULT_DB_PATH = BACKEND_ROOT / "data" / "lottery_modes.sqlite3"
+DEFAULT_DB_TARGET = default_postgres_target()
 FIXED_TABLE_NAME = "fixed_data"
 
 
@@ -223,7 +223,7 @@ def ensure_columns_match(conn: Any, rows: list[dict[str, Any]]) -> list[str]:
 
 def import_fixed_data(
     fixed_data_path: str | Path = DEFAULT_FIXED_DATA_PATH,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    db_path: str | Path = DEFAULT_DB_TARGET,
     append: bool = False,
 ) -> None:
     """将 fixed_data JSON 文件导入数据库。
@@ -277,8 +277,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--db-path",
-        default=str(DEFAULT_DB_PATH),
-        help="数据库目标路径（SQLite 文件路径或 PostgreSQL DSN）。",
+        default=str(DEFAULT_DB_TARGET),
+        help="数据库目标。默认使用 PostgreSQL；如需 SQLite，请显式传入 SQLite 路径。",
     )
     parser.add_argument(
         "--append",

@@ -983,7 +983,7 @@ def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str,
 
         # 构建可用机制列表（title 优先使用 mode_payload_tables 的）
         available_mechanisms: list[dict[str, Any]] = []
-        for item in list_prediction_configs():
+        for item in list_prediction_configs(db_path):
             key = str(item["key"])
             mid = item["default_modes_id"]
             available_mechanisms.append({
@@ -1063,10 +1063,20 @@ def update_site_prediction_module(
         if not existing:
             raise KeyError(f"module_id={module_id} 在 site_id={site_id} 下不存在")
 
-        mechanism_key = str(payload.get("mechanism_key") or existing["mechanism_key"]).strip()
-        config = get_prediction_config(mechanism_key)
+        raw_existing_key = str(existing["mechanism_key"] or "").strip()
+        raw_payload_key = payload.get("mechanism_key")
+        mechanism_key = (
+            str(raw_payload_key).strip()
+            if raw_payload_key is not None
+            else raw_existing_key
+        )
+
+        config = None
+        if raw_payload_key is not None or payload.get("mode_id") is not None:
+            config = get_prediction_config(mechanism_key)
+
         mode_id = int(payload.get("mode_id") or existing.get("mode_id") or 0)
-        if mode_id <= 0:
+        if mode_id <= 0 and config is not None:
             mode_id = int(config.default_modes_id or 0)
         status = 1 if parse_bool(payload.get("status"), bool(existing.get("status"))) else 0
         sort_order = int(payload.get("sort_order") or existing.get("sort_order") or 0)

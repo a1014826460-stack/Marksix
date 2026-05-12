@@ -73,10 +73,14 @@ class JsonFormatter(logging.Formatter):
             payload["exc_type"] = type(record.exc_info[1]).__name__
             payload["exc_msg"] = str(record.exc_info[1])
             payload["stack"] = traceback.format_exception(*record.exc_info)
-        for attr in ("duration_ms", "user_id", "module", "req_params", "result"):
+        for attr in (
+            "duration_ms", "user_id", "module", "req_params", "result",
+            "site_id", "web_id", "lottery_type_id", "year", "term",
+            "task_key", "task_type", "request_path", "request_method",
+        ):
             if hasattr(record, attr):
                 value = getattr(record, attr)
-                if value is not None:
+                if value is not None and value != "" and value != 0:
                     payload[attr] = value
         return json.dumps(payload, ensure_ascii=False, default=str)
 
@@ -120,8 +124,10 @@ class DatabaseLogHandler(logging.Handler):
                     INSERT INTO error_logs (
                         created_at, level, logger_name, module, func_name,
                         file_path, line_number, message, exc_type, exc_message,
-                        stack_trace, user_id, request_params, duration_ms, extra_data
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        stack_trace, user_id, request_params, duration_ms, extra_data,
+                        site_id, web_id, lottery_type_id, year, term,
+                        task_key, task_type, request_path, request_method
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         utc_now(),
@@ -143,6 +149,16 @@ class DatabaseLogHandler(logging.Handler):
                         json.dumps(getattr(record, "result", None), ensure_ascii=False, default=str)
                         if getattr(record, "result", None) is not None
                         else None,
+                        # 业务上下文字段 — 从 logging.LogRecord extra 中读取
+                        int(getattr(record, "site_id", 0)) if getattr(record, "site_id", None) is not None else None,
+                        int(getattr(record, "web_id", 0)) if getattr(record, "web_id", None) is not None else None,
+                        int(getattr(record, "lottery_type_id", 0)) if getattr(record, "lottery_type_id", None) is not None else None,
+                        int(getattr(record, "year", 0)) if getattr(record, "year", None) is not None else None,
+                        int(getattr(record, "term", 0)) if getattr(record, "term", None) is not None else None,
+                        str(getattr(record, "task_key", "") or ""),
+                        str(getattr(record, "task_type", "") or ""),
+                        str(getattr(record, "request_path", "") or ""),
+                        str(getattr(record, "request_method", "") or ""),
                     ),
                 )
         except Exception:
@@ -307,7 +323,17 @@ def query_error_logs(
     keyword: str = "",
     date_from: str = "",
     date_to: str = "",
+    user_id: str = "",
+    site_id: str = "",
+    web_id: str = "",
+    lottery_type_id: str = "",
+    year: str = "",
+    term: str = "",
+    task_type: str = "",
+    task_key: str = "",
+    path: str = "",
 ) -> dict[str, Any]:
+    """查询错误日志，支持按业务维度（站点、彩种、期号、任务等）筛选。"""
     filters: list[str] = []
     params: list[Any] = []
     engine = ""
@@ -335,6 +361,37 @@ def query_error_logs(
         if date_to:
             filters.append("created_at <= ?")
             params.append(date_to)
+        # ── 业务维度筛选 ──
+        if user_id:
+            filters.append("user_id = ?")
+            params.append(user_id)
+        if site_id:
+            filters.append("site_id = ?")
+            params.append(int(site_id))
+        if web_id:
+            filters.append("web_id = ?")
+            params.append(int(web_id))
+        if lottery_type_id:
+            filters.append("lottery_type_id = ?")
+            params.append(int(lottery_type_id))
+        if year:
+            filters.append("year = ?")
+            params.append(int(year))
+        if term:
+            filters.append("term = ?")
+            params.append(int(term))
+        if task_type:
+            clause = "task_type ILIKE ?" if engine == "postgres" else "LOWER(task_type) LIKE LOWER(?)"
+            filters.append(clause)
+            params.append(f"%{task_type}%")
+        if task_key:
+            clause = "task_key ILIKE ?" if engine == "postgres" else "LOWER(task_key) LIKE LOWER(?)"
+            filters.append(clause)
+            params.append(f"%{task_key}%")
+        if path:
+            clause = "request_path ILIKE ?" if engine == "postgres" else "LOWER(request_path) LIKE LOWER(?)"
+            filters.append(clause)
+            params.append(f"%{path}%")
 
         where = (" WHERE " + " AND ".join(filters)) if filters else ""
         offset = max(0, page - 1) * page_size
@@ -344,19 +401,34 @@ def query_error_logs(
             params + [page_size, offset],
         ).fetchall()
 
+    # 获取可用的 level 和 module 列表（用于前端下拉筛选）
+    available_levels: list[str] = []
+    available_modules: list[str] = []
+    try:
+        with connect(db_path) as conn:
+            lv_rows = conn.execute("SELECT DISTINCT level FROM error_logs ORDER BY level").fetchall()
+            available_levels = [str(r["level"]) for r in lv_rows]
+            mod_rows = conn.execute("SELECT DISTINCT module FROM error_logs WHERE module != '' ORDER BY module").fetchall()
+            available_modules = [str(r["module"]) for r in mod_rows]
+    except Exception:
+        pass
+
     return {
-        "rows": [dict(row) for row in rows],
+        "items": [_serialize_row(row) for row in rows],
+        "rows": [_serialize_row(row) for row in rows],  # 向后兼容旧字段名
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": max(1, (total + page_size - 1) // page_size),
+        "available_levels": available_levels,
+        "available_modules": available_modules,
     }
 
 
 def get_error_log_detail(db_path: str, log_id: int) -> dict[str, Any] | None:
     with connect(db_path) as conn:
         row = conn.execute("SELECT * FROM error_logs WHERE id = ?", (log_id,)).fetchone()
-        return dict(row) if row else None
+        return _serialize_row(row) if row else None
 
 
 def export_error_logs(db_path: str, **filters: Any) -> list[dict[str, Any]]:
@@ -391,7 +463,44 @@ def export_error_logs(db_path: str, **filters: Any) -> list[dict[str, Any]]:
             f"SELECT * FROM error_logs{where} ORDER BY created_at DESC LIMIT 5000",
             params,
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [_serialize_row(row) for row in rows]
+
+
+def _serialize_row(row: Any) -> dict[str, Any]:
+    """将数据库行转为 JSON 可序列化的字典，处理 datetime 等非标准类型。"""
+    result: dict[str, Any] = {}
+    for key, value in dict(row).items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        elif isinstance(value, bytes):
+            result[key] = value.decode("utf-8", errors="replace")
+        else:
+            result[key] = value
+    return result
+
+
+def get_log_modules(db_path: str) -> list[str]:
+    """返回 error_logs 表中所有已记录的模块名，供前端下拉筛选使用。"""
+    try:
+        with connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT module FROM error_logs WHERE module != '' ORDER BY module"
+            ).fetchall()
+            return [str(r["module"]) for r in rows]
+    except Exception:
+        return []
+
+
+def get_log_levels(db_path: str) -> list[str]:
+    """返回 error_logs 表中所有已记录的日志等级，供前端下拉筛选使用。"""
+    try:
+        with connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT level FROM error_logs ORDER BY level"
+            ).fetchall()
+            return [str(r["level"]) for r in rows]
+    except Exception:
+        return []
 
 
 def get_log_stats(db_path: str) -> dict[str, Any]:

@@ -86,6 +86,7 @@ export type Mechanism = {
   default_modes_id: number
   default_table: string
   configured?: boolean
+  status?: number
 }
 
 export type SitePredictionModule = {
@@ -112,6 +113,93 @@ export function getSitePredictionModuleName(
     module.title ||
     module.mechanism_key
   )
+}
+
+export type LogEntry = {
+  id: number
+  created_at: string
+  level: string
+  logger_name: string
+  module: string
+  func_name: string
+  file_path: string
+  line_number: number
+  message: string
+  exc_type?: string
+  exc_message?: string
+  stack_trace?: string
+  user_id?: string
+  site_id?: number
+  web_id?: number
+  lottery_type_id?: number
+  year?: number
+  term?: number
+  task_key?: string
+  task_type?: string
+  request_path?: string
+  request_method?: string
+  duration_ms?: number
+  request_params?: string
+  extra_data?: string
+}
+
+export function formatLogTime(ts: string) {
+  if (!ts) return ""
+  try { return ts.replace("T", " ").slice(0, 19) } catch { return ts }
+}
+
+export function levelBadgeClass(level: string) {
+  const map: Record<string, string> = {
+    ERROR: "bg-red-100 text-red-800 border-red-300",
+    WARNING: "bg-yellow-100 text-yellow-800 border-yellow-300",
+    INFO: "bg-blue-100 text-blue-800 border-blue-300",
+    DEBUG: "bg-gray-100 text-gray-600 border-gray-300",
+    CRITICAL: "bg-purple-100 text-purple-800 border-purple-300",
+  }
+  return map[level] || "bg-gray-100 text-gray-600 border-gray-300"
+}
+
+export type ConfigEntry = {
+  key: string
+  value: any
+  raw_value?: any
+  default_value: any
+  effective_value: any
+  value_type: string
+  group: string
+  source: string
+  description: string
+  editable: boolean
+  requires_restart: boolean
+  sensitive: boolean
+  updated_at: string
+}
+
+export type ConfigGroup = {
+  key: string
+  label: string
+  prefix: string
+  description: string
+}
+
+export type ConfigHistoryEntry = {
+  id: number
+  config_key: string
+  old_value: string
+  new_value: string
+  changed_by: string
+  changed_at: string
+  change_reason: string
+}
+
+export function configSourceBadgeClass(source: string) {
+  const map: Record<string, string> = {
+    database: "bg-green-100 text-green-800",
+    "config.yaml": "bg-blue-100 text-blue-800",
+    environment: "bg-purple-100 text-purple-800",
+    computed: "bg-gray-100 text-gray-600",
+  }
+  return map[source] || "bg-gray-100 text-gray-600"
 }
 
 export type BulkGenerateResult = {

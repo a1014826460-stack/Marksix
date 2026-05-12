@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -25,12 +26,23 @@ from helpers import (
 from runtime_config import get_config, get_config_from_conn
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
+_draw_mismatch_logger = logging.getLogger("draw.mismatch")
 HK_NAMES = ("香港彩", "六肖彩")
 MACAU_NAME = "澳门彩"
 TAIWAN_NAME = "台湾彩"
 TASK_TABLE_NAME = "scheduler_tasks"
 TASK_TYPE_AUTO_PREDICTION = "auto_prediction"
 TASK_TYPE_TAIWAN_PRECISE_OPEN = "taiwan_precise_open"
+TASK_TYPE_DAILY_PREDICTION = "daily_prediction"
+
+# lottery_type_id → system_config 前缀映射
+_LT_CFG_PREFIX: dict[int, str] = {1: "lottery.hk", 2: "lottery.macau", 3: "lottery.taiwan"}
+
+# HK/Macau 的 collector URL（优先读 lottery_types.collect_url，回退到此默认值）
+_PRECISE_DRAW_COLLECT_URLS: dict[int, str] = {
+    1: "https://www.lnlllt.com/api.php",
+    2: "https://www.lnlllt.com/api.php",
+}
 
 
 def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
@@ -67,6 +79,8 @@ def _task_key(task_type: str, payload: dict[str, Any]) -> str:
     if task_type == TASK_TYPE_AUTO_PREDICTION:
         return f"{task_type}:{payload.get('lottery_type_id')}"
     if task_type == TASK_TYPE_TAIWAN_PRECISE_OPEN:
+        return f"{task_type}:{payload.get('schedule_date')}"
+    if task_type == TASK_TYPE_DAILY_PREDICTION:
         return f"{task_type}:{payload.get('schedule_date')}"
     return f"{task_type}:{_json_dumps(payload)}"
 
@@ -214,6 +228,36 @@ def _ensure_taiwan_precise_open_task(db_path: str | Path) -> None:
     )
 
 
+def _ensure_daily_prediction_task(db_path: str | Path) -> None:
+    """每日固定时间自动预测任务，默认北京时间 12:00。
+
+    由 system_config 的 scheduler.auto_prediction_time 控制触发时间，
+    支持运行时通过配置管理页面修改，下次调度自动生效。
+    """
+    time_str = str(_cfg(db_path, "scheduler.auto_prediction_time", "12:00")).strip()
+    try:
+        parts = time_str.split(":")
+        target_hour = int(parts[0])
+        target_minute = int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        target_hour = 12
+        target_minute = 0
+
+    now_utc = datetime.now(timezone.utc)
+    beijing_now = now_utc + timedelta(hours=8)
+    target_beijing = beijing_now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+    if beijing_now >= target_beijing:
+        target_beijing += timedelta(days=1)
+    target_utc = target_beijing - timedelta(hours=8)
+    _upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_DAILY_PREDICTION,
+        payload={"schedule_date": target_beijing.strftime("%Y-%m-%d")},
+        run_at=target_utc.isoformat(),
+        max_attempts=3,
+    )
+
+
 def _get_lottery_meta(db_path: str | Path) -> dict[str, dict[str, Any]]:
     """
     从数据库 lottery_types 表中读取所有彩种的配置信息。
@@ -341,7 +385,7 @@ def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:
                              next_time=str(item.get("next_time") or ""))
                 saved += 1
             except (ValueError, KeyError) as e:
-                print(f"  SKIP: {item.get('issue', '?')} - {e}")
+                _crawler_logger.warning("SKIP: %s - %s", item.get('issue', '?'), e)
     return {"source": "hk", "fetched": len(records), "saved": saved}
 
 
@@ -394,48 +438,8 @@ def run_macau_crawler(db_path: str | Path) -> dict[str, Any]:
                              next_time=str(item.get("next_time") or ""))
                 saved += 1
             except (ValueError, KeyError) as e:
-                print(f"  SKIP: {item.get('issue', '?')} - {e}")
+                _crawler_logger.warning("SKIP: %s - %s", item.get('issue', '?'), e)
     return {"source": "macau", "fetched": len(records), "saved": saved}
-
-
-def import_taiwan_json(db_path: str | Path, json_path: str | Path) -> dict[str, Any]:
-    """
-    从 JSON 文件导入台湾彩历史开奖数据。
-
-    台湾彩数据来源于本地 JSON 文件，不需要线上采集地址（collect_url），
-    因此该函数不涉及爬虫调用，直接从文件读取并存入数据库。
-    """
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    records = data.get("data", [])
-    total_in_file = data.get("total", len(records))
-
-    # ── 台湾彩不需要采集地址，直接从数据库获取彩种ID即可 ──
-    meta_map = _get_lottery_meta(db_path)
-    taiwan_meta = meta_map.get(TAIWAN_NAME)
-    if taiwan_meta is None:
-        raise ValueError("台湾彩 lottery type not found")
-
-    now = datetime.now(timezone.utc).isoformat()
-    saved = 0
-    with db_connect(db_path) as conn:
-        for item in records:
-            try:
-                year = int(item["year"])
-                term_num = int(item["term"])
-                numbers = str(item.get("code") or item.get("pre_code", "")).strip()
-                draw_time = item.get("open_time", "")
-                is_opened = 1 if item.get("is_kj") == 1 else 0
-                if not numbers:
-                    continue
-                _upsert_draw(conn, taiwan_meta["id"], year, term_num, numbers,
-                             draw_time, is_opened, now,
-                             next_time=str(item.get("next_time") or ""))
-                saved += 1
-            except (ValueError, KeyError) as e:
-                print(f"  SKIP: {item.get('term', '?')} - {e}")
-    return {"source": "taiwan", "total_in_file": total_in_file,
-            "parsed": len(records), "saved": saved}
 
 
 def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
@@ -540,16 +544,191 @@ def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> di
     }
 
 
+def _trigger_draw_mismatch_alert(
+    db_path: str | Path,
+    lottery_type_id: int,
+    expected_period: str,
+    actual_period: str,
+    attempt_count: int,
+) -> None:
+    """开奖期号不匹配告警：写入日志和 error_logs 表，供管理后台查看。
+
+    当精确调度检查发现实际返回的期号与预期不匹配（经过全部重试后仍失败），
+    触发此告警通知管理员。
+    """
+    lt_name = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}.get(lottery_type_id, str(lottery_type_id))
+    ts = datetime.now(timezone.utc).isoformat()
+    alert_msg = (
+        f"[期号不匹配告警] 彩种={lt_name} 预期期号={expected_period} "
+        f"实际期号={actual_period} 重试次数={attempt_count} 时间戳={ts}"
+    )
+    _draw_mismatch_logger.warning(alert_msg)
+    # 写入 error_logs 表，日志管理页面可查看
+    try:
+        with db_connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO error_logs (
+                    created_at, level, logger_name, module, func_name,
+                    file_path, line_number, message, lottery_type_id, task_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ts, "WARNING", "draw.mismatch", "crawler.precise_draw",
+                    "_trigger_draw_mismatch_alert", __file__, 0, alert_msg,
+                    lottery_type_id, "precise_draw_check",
+                ),
+            )
+    except Exception:
+        pass
+
+
+def _fetch_current_draw_period(lottery_type_id: int, db_path: str | Path) -> tuple[str | None, str | None]:
+    """向开奖号码查询接口发送 HTTP 请求，获取当前期号。
+
+    :return: (period, error_message)，成功时 error_message 为 None
+    """
+    try:
+        from result_crawler import fetch_current_term_data, transform_standard_list
+
+        # 获取该彩种的采集地址
+        meta_map = _get_lottery_meta(db_path)
+        lt_name = {1: "香港彩", 2: "澳门彩"}.get(lottery_type_id, "")
+        lt_meta = meta_map.get(lt_name or "")
+        collect_url = str(lt_meta.get("collect_url", "") or "") if lt_meta else ""
+        if not collect_url:
+            collect_url = _PRECISE_DRAW_COLLECT_URLS.get(lottery_type_id, "")
+
+        crawler_type = 1 if lottery_type_id == 1 else 2
+        raw, status_code = fetch_current_term_data(type=crawler_type, collect_url=collect_url)
+
+        if status_code != 200:
+            return None, f"HTTP {status_code}"
+
+        import json as _json
+        parsed = _json.loads(raw) if isinstance(raw, str) else raw
+        records = transform_standard_list(parsed, crawler_type=crawler_type)
+        if not records:
+            return None, "no records returned"
+
+        # 从第一条记录提取期号
+        issue = str(records[0].get("issue", "")).strip()
+        if not issue:
+            return None, "empty issue in record"
+
+        # issue 格式可能是 "2026001" 或 "001"，统一转为完整期号
+        year_val = records[0].get("open_time", "")[:4]
+        try:
+            term_num = int(issue)
+            if term_num < 1000 and year_val:
+                period = f"{year_val}{term_num:03d}"
+            else:
+                period = str(term_num)
+        except ValueError:
+            period = issue
+
+        return period, None
+    except Exception as e:
+        return None, str(e)
+
+
+def _compute_next_period(current_period: str) -> str:
+    """根据当前期号计算下一期期号。
+
+    例如 current_period="2026001" → "2026002"，
+    current_period="2026365" → "2027001"。
+    """
+    if not current_period or len(current_period) < 4:
+        return ""
+    try:
+        year = int(current_period[:4])
+        term = int(current_period[4:])
+        max_terms = 365
+        if term >= max_terms:
+            return f"{year + 1}001"
+        return f"{year}{term + 1:03d}"
+    except (ValueError, IndexError):
+        return ""
+
+
+def _do_precise_draw_check(lottery_type_id: int, db_path: str) -> None:
+    """精确开奖期号检查：发送 HTTP 请求获取最新期号，与预期下一期比对。
+
+    如果期号不匹配，每 2 秒重试一次（最多 3 次，共 4 次请求），
+    每次重试前重新读取 system_config 中的 next_time 以应对时间变动。
+    全部重试失败后触发告警通知管理员。
+    """
+    cfg_prefix = _LT_CFG_PREFIX.get(lottery_type_id)
+    if not cfg_prefix:
+        return
+
+    lt_name = {1: "香港彩", 2: "澳门彩"}.get(lottery_type_id, str(lottery_type_id))
+    current_period = str(_cfg(db_path, f"{cfg_prefix}_current_period", ""))
+    expected_period = _compute_next_period(current_period)
+
+    if not expected_period:
+        _crawler_logger.warning("Precise check lt=%s: cannot compute next period from current=%s", lottery_type_id, current_period)
+        return
+
+    for attempt in range(4):  # 首次 + 3 次重试
+        if attempt > 0:
+            time.sleep(2)
+            # 每次重试前重新读取 next_time，适应时间变动
+            _next = str(_cfg(db_path, f"{cfg_prefix}_next_time", ""))
+            if _next:
+                try:
+                    _next_dt = datetime.fromtimestamp(int(_next) / 1000, tz=timezone.utc)
+                    _now_dt = datetime.now(timezone.utc)
+                    if _next_dt > _now_dt + timedelta(seconds=10):
+                        _crawler_logger.info(
+                            "Precise check lt=%s: next_time updated to %s, deferring check",
+                            lottery_type_id, _next_dt.isoformat(),
+                        )
+                        # next_time 已被更新（可能是另一轮爬虫已更新），停止本次检查
+                        return
+                except (ValueError, OSError):
+                    pass
+
+        period, error = _fetch_current_draw_period(lottery_type_id, db_path)
+
+        if period and period == expected_period:
+            _crawler_logger.info(
+                "Precise check lt=%s: period matched expected=%s actual=%s (attempt=%d)",
+                lottery_type_id, expected_period, period, attempt + 1,
+            )
+            return
+
+        _crawler_logger.warning(
+            "Precise check lt=%s: MISMATCH expected=%s actual=%s error=%s (attempt=%d/%d)",
+            lottery_type_id, expected_period, period or "N/A", error or "N/A",
+            attempt + 1, 4,
+        )
+
+    # 全部重试失败，触发告警
+    final_period, final_error = _fetch_current_draw_period(lottery_type_id, db_path)
+    _trigger_draw_mismatch_alert(
+        db_path, lottery_type_id, expected_period,
+        final_period or f"error: {final_error}", 4,
+    )
+    _crawler_logger.error(
+        "Precise check lt=%s: ALL ATTEMPTS FAILED expected=%s final_actual=%s",
+        lottery_type_id, expected_period, final_period or f"error: {final_error}",
+    )
+
+
 class CrawlerScheduler:
     """后台定时任务调度器。
 
     职责：
     - 每 60 秒检查到达开奖时间的记录并自动标记 is_opened=1
     - 每日北京时间 22:30:00 精准执行台湾彩开奖 + next_time 更新
-    - 管理 run_crawl_only 触发的 6 小时延迟自动预测定时器
+    - 管理 run_crawl_only 触发的延迟自动预测定时器
+    - 精确调度 HK/Macau 开奖前 1 秒期号检查
 
     注意：历史开奖数据爬取不再由调度器自动执行，
     应由管理员通过后台"更新开奖"按钮手动触发。
+
+    台湾彩数据由管理后台手工录入，不再通过爬虫自动导入。
     """
 
     def __init__(self, db_path: str | Path):
@@ -558,6 +737,7 @@ class CrawlerScheduler:
         self._auto_open_timer: threading.Timer | None = None
         self._auto_crawl_timer: threading.Timer | None = None
         self._task_timer: threading.Timer | None = None
+        self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
         self._worker_id = f"crawler:{id(self)}"
 
     def _auto_open_interval_seconds(self) -> int:
@@ -585,6 +765,65 @@ class CrawlerScheduler:
     def _taiwan_max_retries(self) -> int:
         return max(1, int(_cfg(self.db_path, "crawler.taiwan_max_retries", 3)))
 
+    def _reschedule_precise_checks(self) -> None:
+        """为 HK(1) 和 Macau(2) 分别安排精确开奖期号检查任务。
+
+        从 system_config 读取 lottery.{hk,macau}_next_time（毫秒时间戳），
+        计算在距离该时间点前 1 秒触发检查。
+        如果该时间点已过，跳过（由自动爬虫兜底）。
+        """
+        for lt_id in [1, 2]:
+            # 取消旧的定时器
+            if lt_id in self._precise_timers:
+                self._precise_timers[lt_id].cancel()
+                del self._precise_timers[lt_id]
+
+            cfg_prefix = _LT_CFG_PREFIX.get(lt_id)
+            if not cfg_prefix:
+                continue
+
+            next_time_ms_str = str(_cfg(self.db_path, f"{cfg_prefix}_next_time", ""))
+            if not next_time_ms_str:
+                continue
+
+            try:
+                next_ms = int(next_time_ms_str)
+                if next_ms <= 0:
+                    continue
+                target_dt = datetime.fromtimestamp(next_ms / 1000, tz=timezone.utc)
+                fire_at = target_dt - timedelta(seconds=1)
+                now_dt = datetime.now(timezone.utc)
+                delay = (fire_at - now_dt).total_seconds()
+
+                if delay <= 0:
+                    _crawler_logger.debug(
+                        "Precise check lt=%s: target %s already passed, skipping",
+                        lt_id, fire_at.isoformat(),
+                    )
+                    continue
+
+                def _fire(_lt_id=lt_id, _db=self.db_path):
+                    try:
+                        _do_precise_draw_check(_lt_id, _db)
+                    except Exception as exc:
+                        _crawler_logger.error("Precise check lt=%s unhandled error: %s", _lt_id, exc)
+                    finally:
+                        # 检查完毕后，重新调度下一次检查
+                        if self._running:
+                            self._reschedule_precise_checks()
+
+                timer = threading.Timer(delay, _fire)
+                timer.daemon = True
+                timer.start()
+                self._precise_timers[lt_id] = timer
+
+                _crawler_logger.info(
+                    "Precise check lt=%s scheduled at %s (delay=%.0fs)",
+                    lt_id, fire_at.isoformat(), delay,
+                )
+            except (ValueError, OSError) as e:
+                _crawler_logger.warning("Precise check lt=%s scheduling failed: %s", lt_id, e)
+
     def start(self) -> None:
         if self._running:
             return
@@ -610,6 +849,10 @@ class CrawlerScheduler:
         self._schedule_auto_crawl()
         self._schedule_task_loop()
         _ensure_taiwan_precise_open_task(self.db_path)
+        # 每日固定时间自动预测任务
+        _ensure_daily_prediction_task(self.db_path)
+        # 精确开奖期号检查（HK/Macau 开奖前 1 秒触发）
+        self._reschedule_precise_checks()
 
     def stop(self) -> None:
         _crawler_logger.info("Scheduler stopping")
@@ -623,6 +866,9 @@ class CrawlerScheduler:
         if self._task_timer:
             self._task_timer.cancel()
             self._task_timer = None
+        for lt_id, timer in list(self._precise_timers.items()):
+            timer.cancel()
+        self._precise_timers.clear()
 
     def _auto_open_draws(self) -> None:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
@@ -650,7 +896,7 @@ class CrawlerScheduler:
                         f"WHERE id IN ({placeholders})",
                         [now_utc] + ids,
                     )
-                    print(f"[AutoOpen] Set is_opened=1 for {len(pending)} draw(s)")
+                    _crawler_logger.info("AutoOpen: Set is_opened=1 for %d draw(s)", len(pending))
 
                     # 为刚打开的 type=3 记录更新 next_time
                     taiwan_opened = [r for r in pending if r["lottery_type_id"] == 3]
@@ -659,7 +905,7 @@ class CrawlerScheduler:
                     if taiwan_opened:
                         conn.commit()
         except Exception as e:
-            print(f"[AutoOpen] Error: {e}")
+            _crawler_logger.error("AutoOpen error: %s", e)
 
     def _schedule_auto_open(self) -> None:
         """每 60 秒检查一次是否有到达开奖时间的记录。"""
@@ -739,6 +985,8 @@ class CrawlerScheduler:
                     self.db_path,
                     source="crawler.periodic_sync",
                 )
+                # 同步完成后，刷新精确开奖检查定时器
+                self._reschedule_precise_checks()
             except Exception as exc:
                 _crawler_logger.warning("Periodic next_time sync failed: %s", exc)
 
@@ -771,6 +1019,15 @@ class CrawlerScheduler:
             _ensure_taiwan_precise_open_task(self.db_path)
             _trigger_taiwan_prediction_generation(self.db_path)
             return
+        if task_type == TASK_TYPE_DAILY_PREDICTION:
+            # 对所有活跃彩种执行预测生成，然后调度次日任务
+            for lt_id in [1, 2, 3]:
+                try:
+                    _run_auto_prediction(self.db_path, lt_id)
+                except Exception as exc:
+                    _crawler_logger.error("DailyPrediction lt=%s failed: %s", lt_id, exc)
+            _ensure_daily_prediction_task(self.db_path)
+            return
         raise ValueError(f"Unsupported scheduler task type: {task_type}")
 
     def _open_taiwan_draws_and_update_next_time(self) -> None:
@@ -794,9 +1051,9 @@ class CrawlerScheduler:
             )
             opened_count = cur.rowcount
             if opened_count > 0:
-                print(f"[TaiwanOpen] 22:30 Beijing — opened {opened_count} Taiwan draw(s)")
+                _crawler_logger.info("TaiwanOpen 22:30 Beijing — opened %d Taiwan draw(s)", opened_count)
             else:
-                print(f"[TaiwanOpen] 22:30 Beijing — no Taiwan draws to open")
+                _crawler_logger.debug("TaiwanOpen 22:30 Beijing — no Taiwan draws to open")
 
             rows = conn.execute(
                 """SELECT id, year, term, draw_time FROM lottery_draws
@@ -831,8 +1088,7 @@ class CrawlerScheduler:
             "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = 3",
             (payload.get("next_time") or "", now_str),
         )
-        print(f"[TaiwanOpen] Term {row['term']}: next_time={unix_ms} "
-              f"({next_dt.strftime('%Y-%m-%d %H:%M:%S')} Beijing)")
+        _crawler_logger.info("TaiwanOpen Term %s: next_time=%s (%s Beijing)", row['term'], unix_ms, next_dt.strftime('%Y-%m-%d %H:%M:%S'))
 
 
 # ─────────────────────────────────────────────────────────
@@ -868,11 +1124,11 @@ def _trigger_taiwan_prediction_generation(db_path: str | Path) -> None:
     """
     def _run():
         try:
-            print("[TaiwanPredGen] Starting prediction generation after Taiwan draw open...")
+            _crawler_logger.info("TaiwanPredGen starting prediction generation after Taiwan draw open...")
             _run_auto_prediction(db_path, 3)
-            print("[TaiwanPredGen] Prediction generation completed")
+            _crawler_logger.info("TaiwanPredGen prediction generation completed")
         except Exception as exc:
-            print(f"[TaiwanPredGen] Prediction generation failed: {exc}")
+            _crawler_logger.error("TaiwanPredGen prediction generation failed: %s", exc)
             _log_taiwan_task_error(f"Prediction generation failed: {exc}")
 
     t = threading.Thread(target=_run, daemon=True)
@@ -892,7 +1148,7 @@ def _update_auto_task_status(
                 (value, ts, lottery_type_id),
             )
     except Exception as e:
-        print(f"[AutoPred] Failed to update status for lt={lottery_type_id}: {e}")
+        _crawler_logger.warning("AutoPred failed to update status for lt=%s: %s", lottery_type_id, e)
 
 
 def sync_all_lottery_type_next_times(
@@ -960,13 +1216,13 @@ def _backfill_draw_to_predictions(
                     continue  # 表可能缺少列，跳过
             conn.commit()
     except Exception as e:
-        print(f"[AutoPred] Backfill error: {e}")
+        _crawler_logger.error("AutoPred backfill error: %s", e)
     return total_updated
 
 
 def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
     """6 小时延迟后自动执行：回填开奖 + 生成下一期预测。"""
-    print(f"[AutoPred] Starting for lt={lottery_type_id}...")
+    _crawler_logger.info("AutoPred starting for lt=%s...", lottery_type_id)
     try:
         # 1. 读取最新开奖结果
         with db_connect(db_path) as conn:
@@ -984,7 +1240,7 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
 
         # 2. 回填开奖结果到预测记录
         backfilled = _backfill_draw_to_predictions(db_path, lottery_type_id, year, term, numbers_str)
-        print(f"[AutoPred] Backfilled {backfilled} prediction records for lt={lottery_type_id} year={year} term={term}")
+        _crawler_logger.info("AutoPred backfilled %d prediction records for lt=%s year=%s term=%s", backfilled, lottery_type_id, year, term)
 
         # 3. 生成未来下一期预测（遍历所有启用站点）
         from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
@@ -1012,17 +1268,17 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
                     total_pred_errors += gen.get("errors", 0)
                 except Exception as e:
                     total_pred_errors += 1
-                    print(f"[AutoPred] site={site_id} error: {e}")
+                    _crawler_logger.error("AutoPred site=%s error: %s", site_id, e)
 
         _update_auto_task_status(db_path, lottery_type_id, "ok",
                                  f"backfilled={backfilled} inserted={total_inserted} errors={total_pred_errors}")
-        print(f"[AutoPred] Done lt={lottery_type_id}: backfilled={backfilled} inserted={total_inserted} errors={total_pred_errors}")
+        _crawler_logger.info("AutoPred done lt=%s: backfilled=%d inserted=%d errors=%d", lottery_type_id, backfilled, total_inserted, total_pred_errors)
 
     except Exception as e:
         err_msg = f"{type(e).__name__}: {e}"
         _log_auto_task_error(f"lt_id={lottery_type_id} {err_msg}")
         _update_auto_task_status(db_path, lottery_type_id, "error", err_msg)
-        print(f"[AutoPred] FAILED lt={lottery_type_id}: {err_msg}")
+        _crawler_logger.error("AutoPred FAILED lt=%s: %s", lottery_type_id, err_msg)
 def _schedule_auto_prediction(
     db_path: str | Path, lottery_type_id: int, draw_time_str: str
 ) -> float:
@@ -1053,7 +1309,7 @@ def _schedule_auto_prediction(
         run_at=target_iso,
         max_attempts=max(1, int(_cfg(db_path, "crawler.taiwan_max_retries", 3))),
     )
-    print(f"[AutoPred] Scheduled for lt={lottery_type_id} at {target_iso} (delay={delay:.0f}s)")
+    _crawler_logger.info("AutoPred scheduled for lt=%s at %s (delay=%.0fs)", lottery_type_id, target_iso, delay)
     return delay
 
 
@@ -1126,7 +1382,7 @@ def run_crawl_only(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
                 if saved == 1:
                     draw_info = {"year": year, "term": term_num, "issue": issue, "open_time": open_time}
             except (ValueError, KeyError) as e:
-                print(f"  [CrawlOnly] SKIP: {item.get('issue', '?')} - {e}")
+                _crawler_logger.warning("CrawlOnly SKIP: %s - %s", item.get('issue', '?'), e)
 
     # 爬取成功后安排 6 小时后自动预测
     auto_delay = 0.0

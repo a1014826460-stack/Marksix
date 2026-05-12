@@ -1,5 +1,3 @@
-import { LoginPageClient } from "@/components/admin/management-pages"
+import { LoginPage } from "@/features/auth/LoginPage"
 
-export default function LoginPage() {
-  return <LoginPageClient />
-}
+export default LoginPage

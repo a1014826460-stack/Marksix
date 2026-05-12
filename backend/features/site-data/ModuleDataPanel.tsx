@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { Card } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { adminApi } from "@/lib/admin-api"
+import { Switch } from "@/components/ui/switch"
+import { adminApi, jsonBody } from "@/lib/admin-api"
 import { AdminNotice } from "@/features/shared/AdminNotice"
 import { RowEditDialog } from "@/features/site-data/RowEditDialog"
 import { RegenerateDialog } from "@/features/site-data/RegenerateDialog"
@@ -58,6 +58,12 @@ export function ModuleDataPanel({
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<AnyRecord | null>(null)
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [toggling, setToggling] = useState(false)
+  const [moduleStatus, setModuleStatus] = useState(module.status)
+
+  useEffect(() => {
+    setModuleStatus(module.status)
+  }, [module.status])
 
   const typeFilterRef = useRef(typeFilter)
   typeFilterRef.current = typeFilter
@@ -111,6 +117,23 @@ export function ModuleDataPanel({
   }, [typeFilter, webFilter, sourceFilter, reloadToken, pageSize])
 
   const totalPages = payload ? Math.ceil(payload.total / pageSize) : 0
+
+  async function handleToggleStatus() {
+    const newStatus = !moduleStatus
+    setToggling(true)
+    try {
+      await adminApi(
+        `/admin/sites/${siteId}/prediction-modules/${module.id}`,
+        { method: "PATCH", body: jsonBody({ status: newStatus }) },
+      )
+      setModuleStatus(newStatus)
+      setMsg(`模块已${newStatus ? "启用" : "停用"}`)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "操作失败")
+    } finally {
+      setToggling(false)
+    }
+  }
 
   async function deleteRow(row: AnyRecord) {
     setConfirmDeleteRow(row)
@@ -198,12 +221,16 @@ export function ModuleDataPanel({
           <span className="text-xs text-muted-foreground">{tableName}</span>
         </div>
         <div className="flex items-center gap-2">
-          <Badge
-            variant={module.status ? "default" : "secondary"}
-            className="text-[10px]"
-          >
-            {module.status ? "启用" : "停用"}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] font-medium ${moduleStatus ? "text-green-600" : "text-gray-400"}`}>
+              {moduleStatus ? "启用" : "停用"}
+            </span>
+            <Switch
+              checked={moduleStatus}
+              disabled={toggling}
+              onCheckedChange={handleToggleStatus}
+            />
+          </div>
           <Button
             variant="ghost"
             size="sm"

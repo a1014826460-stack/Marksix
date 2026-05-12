@@ -34,7 +34,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 import config as app_config
-from db import connect
+from db import connect, default_postgres_target
 
 _db_cfg = app_config.section("database")
 _site_cfg = app_config.section("site")
@@ -57,24 +57,13 @@ DEFAULT_USER_AGENT = _fetch_cfg.get(
         "Chrome/91.0.4472.124 Safari/537.36"
     ),
 )
-DEFAULT_POSTGRES_DSN = str(
-    _db_cfg.get("default_postgres_dsn", "postgresql://postgres:2225427@localhost:5432/liuhecai")
-)
-
-
 def default_db_target() -> str:
     """返回默认数据库目标，优先使用 PostgreSQL 配置。
 
     Returns:
-        str: 优先级依次为 `LOTTERY_DB_PATH`、`DATABASE_URL`、配置文件中的
-        `default_postgres_dsn`，最后退回内置 PostgreSQL DSN。
+        str: 正式运行统一读取 `DATABASE_URL` 或 `config.yaml` 中的 PostgreSQL DSN。
     """
-
-    return (
-        str(os.environ.get("LOTTERY_DB_PATH") or "").strip()
-        or str(os.environ.get("DATABASE_URL") or "").strip()
-        or DEFAULT_POSTGRES_DSN
-    )
+    return default_postgres_target()
 
 
 DEFAULT_DB_TARGET = default_db_target()

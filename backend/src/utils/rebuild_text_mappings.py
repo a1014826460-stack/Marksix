@@ -24,10 +24,9 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from db import auto_increment_primary_key  # pyright: ignore[reportMissingImports]
-from db import connect  # pyright: ignore[reportMissingImports]
+from db import connect, default_postgres_target  # pyright: ignore[reportMissingImports]
 
-
-DEFAULT_DB_PATH = "postgresql://postgres:2225427@localhost:5432/liuhecai"
+DEFAULT_DB_PATH = default_postgres_target()
 MAPPING_TABLE = "text_history_mappings"
 TEXT_COLUMNS = ("content", "jiexi", "title")
 
