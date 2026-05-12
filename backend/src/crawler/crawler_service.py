@@ -1017,7 +1017,7 @@ class CrawlerScheduler:
         if task_type == TASK_TYPE_TAIWAN_PRECISE_OPEN:
             self._open_taiwan_draws_and_update_next_time()
             _ensure_taiwan_precise_open_task(self.db_path)
-            _trigger_taiwan_prediction_generation(self.db_path)
+            _backfill_latest_opened_prediction_results(self.db_path, 3)
             return
         if task_type == TASK_TYPE_DAILY_PREDICTION:
             # 对所有活跃彩种执行预测生成，然后调度次日任务
@@ -1115,25 +1115,50 @@ def _log_taiwan_task_error(message: str) -> None:
         f.write(f"[{ts}] TAIWAN_OPEN_FAIL {message}\n")
 
 
-def _trigger_taiwan_prediction_generation(db_path: str | Path) -> None:
-    """台湾彩开奖后异步触发预测数据生成。
+def _backfill_latest_opened_prediction_results(
+    db_path: str | Path,
+    lottery_type_id: int,
+) -> None:
+    """开奖后只回填最近一期已开奖结果，不立即生成下一期预测。"""
+    try:
+        with db_connect(db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT year, term, numbers
+                FROM lottery_draws
+                WHERE lottery_type_id = ? AND is_opened = 1
+                ORDER BY year DESC, term DESC, id DESC
+                LIMIT 1
+                """,
+                (int(lottery_type_id),),
+            ).fetchone()
+            if not row:
+                _crawler_logger.warning(
+                    "TaiwanOpen backfill skipped: no opened draw found for lt=%s",
+                    lottery_type_id,
+                )
+                return
+            year = int(row["year"] or 0)
+            term = int(row["term"] or 0)
+            numbers_str = str(row["numbers"] or "")
 
-    后台线程执行：回填开奖结果到 mode_payload_* 表 →
-    生成下一期预测数据。这样前端 JS 模块查询 mode_payload_*
-    表时就能拿到最新预测内容，保证前端显示随数据库更新。
-    """
-    def _run():
-        try:
-            _crawler_logger.info("TaiwanPredGen starting prediction generation after Taiwan draw open...")
-            _run_auto_prediction(db_path, 3)
-            _crawler_logger.info("TaiwanPredGen prediction generation completed")
-        except Exception as exc:
-            _crawler_logger.error("TaiwanPredGen prediction generation failed: %s", exc)
-            _log_taiwan_task_error(f"Prediction generation failed: {exc}")
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-
+        backfilled = _backfill_draw_to_predictions(
+            db_path,
+            int(lottery_type_id),
+            year,
+            term,
+            numbers_str,
+        )
+        _crawler_logger.info(
+            "TaiwanOpen backfilled latest opened draw only: lt=%s year=%s term=%s updated=%s",
+            lottery_type_id,
+            year,
+            term,
+            backfilled,
+        )
+    except Exception as exc:
+        _crawler_logger.error("TaiwanOpen backfill failed: %s", exc)
+        _log_taiwan_task_error(f"Backfill latest opened draw failed: {exc}")
 
 def _update_auto_task_status(
     db_path: str | Path, lottery_type_id: int, status: str, message: str
