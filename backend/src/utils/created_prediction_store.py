@@ -163,6 +163,12 @@ def normalize_color_label(label: Any) -> str:
     lowered = raw_text.lower()
     if lowered in {"red", "blue", "green"}:
         return lowered
+    if any(token in raw_text for token in ("红", "紅")):
+        return "red"
+    if any(token in raw_text for token in ("蓝", "藍")):
+        return "blue"
+    if any(token in raw_text for token in ("绿", "綠")):
+        return "green"
     if "红" in raw_text:
         return "red"
     if "蓝" in raw_text:
