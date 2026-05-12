@@ -287,6 +287,7 @@ def _upsert_draw(
         conn,
         lottery_type_id,
         updated_at=now,
+        source="crawler.upsert_draw",
     )
 
 
@@ -589,7 +590,10 @@ class CrawlerScheduler:
             return
         self._running = True
         try:
-            sync_result = sync_all_lottery_type_next_times(self.db_path)
+            sync_result = sync_all_lottery_type_next_times(
+                self.db_path,
+                source="crawler.startup_sync",
+            )
             _crawler_logger.info(
                 "Startup next_time sync completed (checked=%s, updated=%s)",
                 sync_result["checked"],
@@ -731,7 +735,10 @@ class CrawlerScheduler:
             _crawler_logger.error("Auto-crawl scheduler error: %s", e)
         finally:
             try:
-                sync_all_lottery_type_next_times(self.db_path)
+                sync_all_lottery_type_next_times(
+                    self.db_path,
+                    source="crawler.periodic_sync",
+                )
             except Exception as exc:
                 _crawler_logger.warning("Periodic next_time sync failed: %s", exc)
 
@@ -888,7 +895,11 @@ def _update_auto_task_status(
         print(f"[AutoPred] Failed to update status for lt={lottery_type_id}: {e}")
 
 
-def sync_all_lottery_type_next_times(db_path: str | Path) -> dict[str, int]:
+def sync_all_lottery_type_next_times(
+    db_path: str | Path,
+    *,
+    source: str = "crawler.sync_all",
+) -> dict[str, int]:
     """Align lottery_types.next_time from latest opened draws for all active types."""
     updated = 0
     checked = 0
@@ -902,6 +913,7 @@ def sync_all_lottery_type_next_times(db_path: str | Path) -> dict[str, int]:
                 conn,
                 int(row["id"]),
                 updated_at=now,
+                source=source,
             )
             if next_value != current_value:
                 updated += 1
@@ -993,6 +1005,7 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int) -> None:
                             "start_issue": issue_str,
                             "end_issue": issue_str,
                             "future_periods": 1,
+                            "future_only": True,
                         },
                     )
                     total_inserted += gen.get("inserted", 0)

@@ -30,6 +30,7 @@ export function BulkGenerateDialog({
   )
   const [bulkStartIssue, setBulkStartIssue] = useState("")
   const [bulkEndIssue, setBulkEndIssue] = useState("")
+  const [bulkFutureOnly, setBulkFutureOnly] = useState(true)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkSelectedKeys, setBulkSelectedKeys] = useState<Set<string>>(
     new Set(),
@@ -65,6 +66,7 @@ export function BulkGenerateDialog({
             end_issue: bulkEndIssue.trim(),
             mechanism_keys: selectedList,
             future_periods: 1,
+            future_only: bulkFutureOnly,
           }),
         },
       )
@@ -114,7 +116,7 @@ export function BulkGenerateDialog({
         `/admin/lottery-draws/latest-term?lottery_type_id=${lt}`,
       )
       if (info.term > 0) {
-        const endTerm = info.term + 1
+        const endTerm = bulkFutureOnly ? info.term : info.term + 1
         const startTerm = Math.max(1, endTerm - n + 1)
         setBulkStartIssue(
           `${info.year}${String(startTerm).padStart(3, "0")}`,
@@ -230,6 +232,20 @@ export function BulkGenerateDialog({
               ))}
             </div>
           </div>
+          <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+            <input
+              type="checkbox"
+              checked={bulkFutureOnly}
+              onChange={(e) => setBulkFutureOnly(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5"
+            />
+            <span>
+              只生成未来期
+              <span className="ml-1 text-muted-foreground">
+                勾选后会保留范围内原有资料，只生成基准期之后的未来期预测。
+              </span>
+            </span>
+          </label>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium">
