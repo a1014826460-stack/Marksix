@@ -29,7 +29,7 @@ from common import predict  # noqa: E402
 from db import connect, quote_identifier, utc_now
 from helpers import (
     apply_lottery_draw_overlay, load_fixed_data_maps, normalize_issue_part,
-    parse_issue_int, REQUIRED_SITE_PREDICTION_MODE_IDS, split_csv,
+    parse_bool, parse_issue_int, REQUIRED_SITE_PREDICTION_MODE_IDS, split_csv,
 )
 from mechanisms import get_prediction_config, list_prediction_configs  # noqa: E402
 from prediction_generation.service import generate_prediction_batch
@@ -717,6 +717,7 @@ def bulk_generate_site_prediction_data(
         end_issue=end_issue,
         mechanism_keys=list(requested_keys),
         future_periods=int(payload.get("future_periods") or 0),
+        future_only=parse_bool(payload.get("future_only"), False),
         trigger="admin_generate_all",
         sync_site_modules=sync_site_prediction_modules,
         resolve_prediction_table_for_mode=resolve_prediction_table_for_mode,

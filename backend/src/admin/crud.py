@@ -101,6 +101,7 @@ def _sync_lottery_type_next_time(conn: Any, lottery_type_id: int, updated_at: st
         conn,
         lottery_type_id,
         updated_at=updated_at,
+        source="admin.crud",
     )
 
 

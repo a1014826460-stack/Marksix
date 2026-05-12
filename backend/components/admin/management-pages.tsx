@@ -1408,6 +1408,20 @@ function ModuleDataPanel({
             <p className="mb-4 text-xs text-muted-foreground">模块: {getSitePredictionModuleName(module)} ({tableName})</p>
             <div className="space-y-3">
               <div><label className="mb-1 block text-xs font-medium">开奖号码（逗号分隔）</label><Input placeholder="01,05,12,23,34,45,49" value={regenNumbers} onChange={(e) => setRegenNumbers(e.target.value)} className="h-9 text-sm" /></div>
+              <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={bulkFutureOnly}
+                  onChange={(e) => setBulkFutureOnly(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5"
+                />
+                <span>
+                  只生成未来期
+                  <span className="ml-1 text-muted-foreground">
+                    勾选后会保留范围内原有资料，只生成基准期之后的未来期预测。
+                  </span>
+                </span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-xs font-medium">年份</label><Input placeholder={new Date().getFullYear().toString()} value={regenYear} onChange={(e) => setRegenYear(e.target.value)} className="h-9 text-sm" /></div>
                 <div><label className="mb-1 block text-xs font-medium">期数</label><Input placeholder="如 001" value={regenTerm} onChange={(e) => setRegenTerm(e.target.value)} className="h-9 text-sm" /></div>
@@ -1475,6 +1489,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
   const [bulkLotteryType, setBulkLotteryType] = useState("")
   const [bulkStartIssue, setBulkStartIssue] = useState("")
   const [bulkEndIssue, setBulkEndIssue] = useState("")
+  const [bulkFutureOnly, setBulkFutureOnly] = useState(true)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkSelectedKeys, setBulkSelectedKeys] = useState<Set<string>>(new Set())
   const configuredKeys = useMemo(() => new Set(modules.map((item) => item.mechanism_key)), [modules])
@@ -1537,6 +1552,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
           end_issue: bulkEndIssue.trim(),
           mechanism_keys: selectedList,
           future_periods: 1, // 生成范围内最后一期已开奖的下一期预测（T+1）
+          future_only: bulkFutureOnly,
         }),
       })
       // 轮询任务状态，最多等待 10 分钟
@@ -1644,7 +1660,7 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                         const info = await adminApi<{ year: number; term: number }>(`/admin/lottery-draws/latest-term?lottery_type_id=${lt}`)
                         if (info.term > 0) {
                           // 结束期号 = 当前已开奖最新期号 + 1，确保范围包含下一期预测
-                          const endTerm = info.term + 1
+                          const endTerm = bulkFutureOnly ? info.term : info.term + 1
                           const startTerm = Math.max(1, endTerm - n + 1)
                           setBulkStartIssue(`${info.year}${String(startTerm).padStart(3, '0')}`)
                           setBulkEndIssue(`${info.year}${String(endTerm).padStart(3, '0')}`)
@@ -1656,6 +1672,20 @@ export function SiteDataPageClient({ siteId }: { siteId: number }) {
                   ))}
                 </div>
               </div>
+              <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={bulkFutureOnly}
+                  onChange={(e) => setBulkFutureOnly(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5"
+                />
+                <span>
+                  ??????
+                  <span className="ml-1 text-muted-foreground">
+                    ?????????????????????????????
+                  </span>
+                </span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium">起始期号</label>

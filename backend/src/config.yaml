@@ -87,7 +87,7 @@ crawler:
   taiwan_precise_open_hour: 22
   taiwan_precise_open_minute: 30
   # 台湾彩精准开盘失败重试计划（秒）
-  taiwan_retry_delays_seconds: [60, 300, 900]
+  taiwan_retry_delays_seconds: [1, 5, 10]
   taiwan_max_retries: 3
   # 运营提示文案
   message_hk_empty_data: "API 返回空数据，将在下一周期自动重试"

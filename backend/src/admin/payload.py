@@ -250,20 +250,23 @@ def fetch_mode_payload_source_rows(
     return [dict(row) for row in rows], list(columns)
 
 
-def normalize_mode_payload_row_id(row_id: Any) -> Any:
-    """兼容 public 的整数 id 与 created 的 ``c123`` 字符串 id。
+def normalize_mode_payload_row_id(row_id: Any, source: str = "public") -> Any:
+    """兼容 public 的整数 id 与 created 的字符串 id。
 
-    自动判断 row_id 类型并返回对应的 id 值：
-    - 纯数字字符串或整数 → 返回 int
-    - 非纯数字字符串 → 原样返回
+    - ``public``: 纯数字字符串仍归一化为 int，保持与原始表整数主键兼容
+    - ``created``: 始终保留为 str，避免 PostgreSQL 在 text 主键上出现 ``text = smallint``
 
     :param row_id: 行 ID（整数或字符串）
+    :param source: 数据源（``public`` / ``created``）
     :return: 归一化后的 ID（int 或 str）
     :raises ValueError: 当 row_id 为空时抛出
     """
     text = str(row_id or "").strip()
     if not text:
         raise ValueError("row_id 不能为空。")
+    normalized_source = normalize_mode_payload_source(source)
+    if normalized_source == "created":
+        return text
     return int(text) if text.isdigit() else text
 
 
@@ -391,7 +394,7 @@ def update_mode_payload_row(
         if normalized_source == "created"
         else quote_identifier(table_name)
     )
-    normalized_row_id = normalize_mode_payload_row_id(row_id)
+    normalized_row_id = normalize_mode_payload_row_id(row_id, normalized_source)
 
     with connect(db_path) as conn:
         if not mode_payload_table_exists(conn, table_name, normalized_source):
@@ -451,7 +454,7 @@ def delete_mode_payload_row(
         if normalized_source == "created"
         else quote_identifier(table_name)
     )
-    normalized_row_id = normalize_mode_payload_row_id(row_id)
+    normalized_row_id = normalize_mode_payload_row_id(row_id, normalized_source)
 
     with connect(db_path) as conn:
         if not mode_payload_table_exists(conn, table_name, normalized_source):

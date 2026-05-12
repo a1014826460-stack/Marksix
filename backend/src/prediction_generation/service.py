@@ -15,7 +15,11 @@ from prediction_generation.diversity import enforce_prediction_diversity
 from runtime_config import get_config_from_conn
 
 _logger = logging.getLogger("prediction.service")
-from utils.created_prediction_store import upsert_created_prediction_row
+from utils.created_prediction_store import (
+    CREATED_SCHEMA_NAME,
+    table_column_names,
+    upsert_created_prediction_row,
+)
 
 
 def _default_target_hit_rate(conn: Any) -> float:
@@ -108,6 +112,48 @@ def list_opened_draws_in_issue_range(
     return draws
 
 
+def find_latest_opened_draw_before_issue(
+    conn: Any,
+    lottery_type_id: int,
+    target_issue: tuple[int, int],
+) -> dict[str, Any] | None:
+    rows = conn.execute(
+        """
+        SELECT year, term, numbers
+        FROM lottery_draws
+        WHERE lottery_type_id = ?
+          AND is_opened = 1
+        ORDER BY year DESC, term DESC, id DESC
+        """,
+        (int(lottery_type_id),),
+    ).fetchall()
+
+    for row in rows:
+        year = int(row["year"] or 0)
+        term = int(row["term"] or 0)
+        if (year, term) >= target_issue:
+            continue
+
+        normalized_numbers: list[str] = []
+        for raw_number in str(row["numbers"] or "").split(","):
+            text = raw_number.strip()
+            if not text:
+                continue
+            try:
+                normalized_numbers.append(f"{int(text):02d}")
+            except (TypeError, ValueError):
+                continue
+        if len(normalized_numbers) < 7:
+            continue
+
+        return {
+            "year": year,
+            "term": term,
+            "numbers_str": ",".join(normalized_numbers),
+        }
+    return None
+
+
 def generate_prediction_batch(
     db_path: str | Path,
     *,
@@ -117,6 +163,7 @@ def generate_prediction_batch(
     end_issue: tuple[int, int],
     mechanism_keys: list[str] | None,
     future_periods: int,
+    future_only: bool,
     trigger: str,
     sync_site_modules: Any,
     resolve_prediction_table_for_mode: Any,
@@ -152,9 +199,9 @@ def generate_prediction_batch(
     requested_keys = list(mechanism_keys or [])
 
     _logger.info(
-        "Batch generation started: site_id=%d, keys=%s, range=%s-%s, future=%d, trigger=%s",
+        "Batch generation started: site_id=%d, keys=%s, range=%s-%s, future=%d, future_only=%s, trigger=%s",
         site_id, requested_keys or ["all"], f"{start_issue[0]}{start_issue[1]:03d}",
-        f"{end_issue[0]}{end_issue[1]:03d}", future_periods, trigger,
+        f"{end_issue[0]}{end_issue[1]:03d}", future_periods, bool(future_only), trigger,
     )
 
     with connect(db_path) as conn:
@@ -178,12 +225,17 @@ def generate_prediction_batch(
 
         module_rows = conn.execute(query, params).fetchall()
         draws = list_opened_draws_in_issue_range(conn, lottery_type, start_issue, end_issue)
+        if not draws and future_only and int(future_periods or 0) > 0:
+            fallback_draw = find_latest_opened_draw_before_issue(conn, lottery_type, start_issue)
+            if fallback_draw:
+                draws = [fallback_draw]
         if not draws:
             raise ValueError("指定期号范围内没有可用的已开奖数据。")
 
         future_draws: list[dict[str, Any]] = []
         if int(future_periods or 0) > 0:
             latest = draws[-1]
+            generated_future_draws: list[dict[str, Any]] = []
             for offset in range(1, int(future_periods) + 1):
                 next_year, next_term = compute_next_issue(
                     latest["year"],
@@ -191,7 +243,7 @@ def generate_prediction_batch(
                     offset,
                     max_terms_per_year=max_terms_per_year,
                 )
-                future_draws.append(
+                generated_future_draws.append(
                     {
                         "year": next_year,
                         "term": next_term,
@@ -199,6 +251,10 @@ def generate_prediction_batch(
                         "_future": True,
                     }
                 )
+            future_draws = [
+                draw for draw in generated_future_draws
+                if start_issue <= (draw["year"], draw["term"]) <= end_issue
+            ] if future_only else generated_future_draws
 
         safety_draw_map: dict[tuple[int, int], bool] = {}
         if int(lottery_type) == 3:
@@ -240,18 +296,21 @@ def generate_prediction_batch(
             # 查询该模块最近已持久化的行，用于跨期多样性校验
             recent_rows: list[dict[str, Any]] = []
             try:
-                created_table = f"created.{table_name}"
-                existing = conn.execute(
-                    f"SELECT content FROM {created_table} "
-                    f"WHERE type = ? AND web = ? AND modes_id = ? "
-                    f"ORDER BY year DESC, term DESC LIMIT 10",
-                    (str(lottery_type), "4", mode_id),
-                ).fetchall()
-                recent_rows = [{"content": row["content"]} for row in existing]
+                created_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+                if "content" in created_columns:
+                    created_table = f"{CREATED_SCHEMA_NAME}.{table_name}"
+                    existing = conn.execute(
+                        f"SELECT content FROM {created_table} "
+                        f"WHERE type = ? AND web = ? AND modes_id = ? "
+                        f"ORDER BY year DESC, term DESC LIMIT 10",
+                        (str(lottery_type), "4", mode_id),
+                    ).fetchall()
+                    recent_rows = [{"content": row["content"]} for row in existing]
             except Exception:
+                conn.rollback()
                 recent_rows = []
 
-            all_target_draws = list(draws) + list(future_draws)
+            all_target_draws = list(future_draws) if future_only else list(draws) + list(future_draws)
             for draw in all_target_draws:
                 try:
                     is_future = bool(draw.get("_future"))
@@ -448,6 +507,7 @@ def generate_prediction_batch(
             "end_issue": f"{end_issue[0]}{end_issue[1]}",
             "web_id": 4,
             "future_periods": int(future_periods or 0),
+            "future_only": bool(future_only),
             "total_modules": len(module_reports),
             "draw_count": len(draws),
             "inserted": total_inserted,

@@ -301,6 +301,24 @@ backend/src/crawler/crawler_service.py
 - `backend/src/crawler/Macau_history_crawler.py`
 - `backend/src/crawler/crawler_service.py`
 
+### 开奖时间与 `next_time` 同步规则
+
+- 香港彩与澳门彩（`lottery_type_id IN (1, 2)`）的下一次开奖时间，唯一权威来源是爬虫落库到 `lottery_draws.next_time` 的值。
+- 后端不再对香港彩、澳门彩使用 `draw_time + 固定天数` 的方式推导 `next_time`。
+- `lottery_types.next_time` 在香港彩、澳门彩场景下只是同步缓存字段，真实基准始终是“最新已开奖期”的 `lottery_draws.next_time`。
+- 台湾彩（`lottery_type_id = 3`）继续保留现有推导逻辑，用最近已开奖期的 `draw_time` 派生下一期开奖时间。
+
+同步与修复时机：
+
+- 爬虫每次成功写入香港彩或澳门彩当期数据后，会立即把该彩种在 `lottery_types.next_time` 中的值同步为最新已开奖期的 `lottery_draws.next_time`。
+- `CrawlerScheduler.start()` 启动时会执行一次全量同步检查，修复服务停机期间可能遗留的 `lottery_types.next_time` 漂移问题。
+- 自动采集调度 `_auto_crawl()` 每轮结束后还会执行一次低频同步，作为运行期自愈机制，避免缓存值与最新开奖记录脱节。
+
+告警日志：
+
+- 如果系统发现 `lottery_types.next_time` 与“最新已开奖期”对应的权威 `next_time` 不一致，会通过 `next_time.sync` logger 记录 `warning` 日志。
+- 日志会带上 `source`、`lottery_type_id`、`stored`、`effective`、`current_issue`、`next_issue`，用于定位是启动同步、爬虫写入还是后台 CRUD 场景触发了修正。
+
 ---
 
 ## 预测生成

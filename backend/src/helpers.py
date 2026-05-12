@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -105,10 +106,26 @@ def sync_lottery_type_next_time_from_latest_draw(
     lottery_type_id: int,
     *,
     updated_at: str,
+    source: str = "sync",
 ) -> str:
     """Sync lottery_types.next_time from the canonical effective payload."""
+    current_row = conn.execute(
+        "SELECT next_time FROM lottery_types WHERE id = ?",
+        (int(lottery_type_id),),
+    ).fetchone()
+    current_next_time = str(current_row["next_time"] or "") if current_row else ""
     payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
     next_time = str(payload.get("next_time") or "")
+    if current_next_time != next_time:
+        logging.getLogger("next_time.sync").warning(
+            "lottery_types.next_time mismatch detected: source=%s lottery_type_id=%s stored=%s effective=%s current_issue=%s next_issue=%s",
+            source,
+            int(lottery_type_id),
+            current_next_time,
+            next_time,
+            payload.get("current_issue") or "",
+            payload.get("next_issue") or "",
+        )
     conn.execute(
         "UPDATE lottery_types SET next_time = ?, updated_at = ? WHERE id = ?",
         (next_time, updated_at, int(lottery_type_id)),
