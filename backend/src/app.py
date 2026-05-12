@@ -792,7 +792,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 lt_id = int(query.get("lottery_type_id", ["1"])[0])
                 with connect(self.db_path) as conn:
                     row = conn.execute(
-                        "SELECT year, term, draw_time FROM lottery_draws WHERE lottery_type_id = ? ORDER BY id DESC LIMIT 1",
+                        """
+                        SELECT year, term, draw_time
+                        FROM lottery_draws
+                        WHERE lottery_type_id = ?
+                          AND is_opened = 1
+                        ORDER BY year DESC, term DESC, id DESC
+                        LIMIT 1
+                        """,
                         (lt_id,),
                     ).fetchone()
                     if row:
