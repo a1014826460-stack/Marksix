@@ -20,16 +20,14 @@ from typing import Any, Iterable, Sequence
 import psycopg
 from psycopg.rows import dict_row
 
-import config as app_config
-
-
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
-DEFAULT_POSTGRES_DSN = str(
-    app_config.section("database").get("default_postgres_dsn", "")
+DEFAULT_POSTGRES_DSN = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:2225427@localhost:5432/liuhecai",
 ).strip()
 POSTGRES_REQUIRED_ERROR = (
-    "未配置 PostgreSQL 数据库连接。请设置 DATABASE_URL "
-    "或 config.yaml 中的 PostgreSQL DSN。"
+    "未配置 PostgreSQL 数据库连接。"
+    "请设置 DATABASE_URL 环境变量或通过 --db-path 参数传入。"
 )
 
 
@@ -75,7 +73,12 @@ def detect_database_engine(target: str | Path | None = None) -> str:
 
 
 def quote_identifier(identifier: str) -> str:
-    """安全引用表名/列名。"""
+    """安全引用表名/列名。
+    arg:
+    - identifier: 表名或列名字符串，例如 lottery_draws、next_time 等。
+    returns:
+    - quoted: 安全引用后的字符串，例如 "lottery_draws"、"next_time" 等，内部的双引号会被转义为 ""。
+    """
     return '"' + str(identifier).replace('"', '""') + '"'
 
 

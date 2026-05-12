@@ -30,7 +30,6 @@ SRC_ROOT = BACKEND_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-import config as app_config  # noqa: E402
 from db import connect, default_postgres_target, detect_database_engine, quote_identifier  # noqa: E402
 
 

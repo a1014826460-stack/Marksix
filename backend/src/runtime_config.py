@@ -1,4 +1,9 @@
-"""Runtime configuration center with database-first lookup and YAML fallback."""
+"""运行时配置中心——数据库优先，作为单一可信配置源。
+
+所有配置均存储在 system_config 数据库表中。下方 CONFIG_DEFAULTS 字典用于在
+配置表尚未初始化时提供启动默认值或回退值。服务运行后，管理后台界面或 API
+是读取和更新配置的标准入口。
+"""
 
 from __future__ import annotations
 
@@ -6,287 +11,201 @@ import json
 from pathlib import Path
 from typing import Any
 
-import config as app_config
 from db import connect, utc_now
 
 CONFIG_TABLE_NAME = "system_config"
 
-
-def _bootstrap_section(name: str) -> dict[str, Any]:
-    return app_config.section(name) or {}
-
-
-def _bootstrap_value(section: str, key: str, fallback: Any = None) -> Any:
-    return _bootstrap_section(section).get(key, fallback)
-
-
 CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
     "database.default_postgres_dsn": {
-        "value": _bootstrap_value("database", "default_postgres_dsn", ""),
+        "value": "",
         "value_type": "string",
-        "description": "Bootstrap PostgreSQL DSN for initial startup.",
+        "description": "初始启动用 PostgreSQL DSN。",
         "is_secret": 1,
     },
     "admin.username": {
-        "value": _bootstrap_value("admin", "username", "admin"),
+        "value": "admin",
         "value_type": "string",
-        "description": "Bootstrap admin username.",
+        "description": "初始管理员用户名。",
         "is_secret": 0,
     },
     "admin.password": {
-        "value": _bootstrap_value("admin", "password", "admin123"),
+        "value": "admin123",
         "value_type": "string",
-        "description": "Bootstrap admin password.",
+        "description": "初始管理员密码。",
         "is_secret": 1,
     },
     "admin.display_name": {
-        "value": _bootstrap_value("admin", "display_name", "系统管理员"),
+        "value": "系统管理员",
         "value_type": "string",
-        "description": "Bootstrap admin display name.",
+        "description": "初始管理员显示名称。",
         "is_secret": 0,
     },
     "admin.role": {
-        "value": _bootstrap_value("admin", "role", "super_admin"),
+        "value": "super_admin",
         "value_type": "string",
-        "description": "Bootstrap admin role.",
+        "description": "初始管理员角色。",
         "is_secret": 0,
     },
     "auth.session_ttl_seconds": {
-        "value": _bootstrap_value("auth", "session_ttl_seconds", 86400),
+        "value": 86400,
         "value_type": "int",
-        "description": "Admin session expiration time in seconds.",
+        "description": "管理员会话过期秒数。",
         "is_secret": 0,
     },
     "auth.password_iterations": {
-        "value": _bootstrap_value("auth", "password_iterations", 260000),
+        "value": 260000,
         "value_type": "int",
-        "description": "PBKDF2 password hash iteration count.",
-        "is_secret": 0,
-    },
-    "site.manage_url_template": {
-        "value": _bootstrap_value("site", "manage_url_template", ""),
-        "value_type": "string",
-        "description": "Managed site backend URL template.",
-        "is_secret": 0,
-    },
-    "site.modes_data_url": {
-        "value": _bootstrap_value("site", "modes_data_url", ""),
-        "value_type": "string",
-        "description": "Managed site data API URL.",
-        "is_secret": 0,
-    },
-    "site.default_token": {
-        "value": _bootstrap_value("site", "default_token", ""),
-        "value_type": "string",
-        "description": "Bootstrap managed site token.",
-        "is_secret": 1,
-    },
-    "site.default_site_name": {
-        "value": _bootstrap_value("site", "default_site_name", "默认盛世站点"),
-        "value_type": "string",
-        "description": "Bootstrap managed site name.",
-        "is_secret": 0,
-    },
-    "site.default_domain": {
-        "value": _bootstrap_value("site", "default_domain", "admin.shengshi8800.com"),
-        "value_type": "string",
-        "description": "Bootstrap managed site domain.",
-        "is_secret": 0,
-    },
-    "site.start_web_id": {
-        "value": _bootstrap_value("site", "start_web_id", 1),
-        "value_type": "int",
-        "description": "Bootstrap start web id.",
-        "is_secret": 0,
-    },
-    "site.end_web_id": {
-        "value": _bootstrap_value("site", "end_web_id", 10),
-        "value_type": "int",
-        "description": "Bootstrap end web id.",
-        "is_secret": 0,
-    },
-    "site.request_limit": {
-        "value": _bootstrap_value("site", "request_limit", 250),
-        "value_type": "int",
-        "description": "Default managed site request page size.",
-        "is_secret": 0,
-    },
-    "site.request_delay": {
-        "value": _bootstrap_value("site", "request_delay", 0.5),
-        "value_type": "float",
-        "description": "Default managed site request delay in seconds.",
-        "is_secret": 0,
-    },
-    "site.default_announcement": {
-        "value": _bootstrap_value("site", "default_announcement", ""),
-        "value_type": "string",
-        "description": "Bootstrap managed site announcement.",
-        "is_secret": 0,
-    },
-    "site.default_notes": {
-        "value": _bootstrap_value("site", "default_notes", ""),
-        "value_type": "string",
-        "description": "Bootstrap managed site notes.",
-        "is_secret": 0,
-    },
-    "fetch.user_agent": {
-        "value": _bootstrap_value(
-            "fetch",
-            "user_agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        ),
-        "value_type": "string",
-        "description": "Default outbound User-Agent.",
+        "description": "PBKDF2 密码哈希迭代次数。",
         "is_secret": 0,
     },
     "crawler.interval_seconds": {
-        "value": _bootstrap_value("crawler", "interval_seconds", 3600),
+        "value": 3600,
         "value_type": "int",
-        "description": "Legacy crawler interval.",
+        "description": "旧版爬虫间隔。",
         "is_secret": 0,
     },
     "crawler.http_timeout_seconds": {
-        "value": _bootstrap_value("crawler", "http_timeout_seconds", 30),
+        "value": 30,
         "value_type": "int",
-        "description": "Crawler HTTP timeout in seconds.",
+        "description": "爬虫 HTTP 超时秒数。",
         "is_secret": 0,
     },
     "crawler.http_retry_count": {
-        "value": _bootstrap_value("crawler", "http_retry_count", 2),
+        "value": 2,
         "value_type": "int",
-        "description": "Crawler HTTP retry count.",
+        "description": "爬虫 HTTP 重试次数。",
         "is_secret": 0,
     },
     "crawler.http_retry_delay_seconds": {
-        "value": _bootstrap_value("crawler", "http_retry_delay_seconds", 1.0),
+        "value": 1.0,
         "value_type": "float",
-        "description": "Crawler HTTP retry delay in seconds.",
+        "description": "爬虫 HTTP 重试延迟秒数。",
         "is_secret": 0,
     },
     "crawler.auto_open_interval_seconds": {
-        "value": _bootstrap_value("crawler", "auto_open_interval_seconds", 60),
+        "value": 60,
         "value_type": "int",
-        "description": "Scheduler auto-open polling interval.",
+        "description": "调度器自动开奖轮询间隔。",
         "is_secret": 0,
     },
     "crawler.auto_crawl_interval_seconds": {
-        "value": _bootstrap_value("crawler", "auto_crawl_interval_seconds", 600),
+        "value": 600,
         "value_type": "int",
-        "description": "Scheduler auto-crawl polling interval.",
+        "description": "调度器自动抓取轮询间隔。",
         "is_secret": 0,
     },
     "crawler.auto_crawl_recent_minutes": {
-        "value": _bootstrap_value("crawler", "auto_crawl_recent_minutes", 30),
+        "value": 30,
         "value_type": "int",
-        "description": "Recent successful crawl window in minutes.",
+        "description": "最近成功抓取判定窗口分钟数。",
         "is_secret": 0,
     },
     "crawler.auto_prediction_delay_hours": {
-        "value": _bootstrap_value("crawler", "auto_prediction_delay_hours", 6),
+        "value": 6,
         "value_type": "int",
         "description": "开奖后自动预测延迟小时数（仅作为回退值，实际由 scheduler.auto_prediction_time 控制）。",
         "is_secret": 0,
     },
     "scheduler.auto_prediction_time": {
-        "value": _bootstrap_value("scheduler", "auto_prediction_time", "12:00"),
+        "value": "12:00",
         "value_type": "time",
         "description": "每日自动预测固定触发时间（北京时间），格式 HH:mm。",
         "is_secret": 0,
     },
     "crawler.task_poll_interval_seconds": {
-        "value": _bootstrap_value("crawler", "task_poll_interval_seconds", 30),
+        "value": 30,
         "value_type": "int",
-        "description": "Polling interval for DB-backed scheduler tasks.",
+        "description": "数据库调度任务轮询间隔。",
         "is_secret": 0,
     },
     "crawler.task_lock_timeout_seconds": {
-        "value": _bootstrap_value("crawler", "task_lock_timeout_seconds", 300),
+        "value": 300,
         "value_type": "int",
-        "description": "Stale task lock timeout in seconds.",
+        "description": "过期任务锁超时秒数。",
         "is_secret": 0,
     },
     "crawler.task_retry_delay_seconds": {
-        "value": _bootstrap_value("crawler", "task_retry_delay_seconds", 60),
+        "value": 60,
         "value_type": "int",
-        "description": "Default retry delay for failed scheduler tasks.",
+        "description": "失败调度任务默认重试延迟。",
         "is_secret": 0,
     },
     "crawler.taiwan_precise_open_hour": {
-        "value": _bootstrap_value("crawler", "taiwan_precise_open_hour", 22),
+        "value": 22,
         "value_type": "int",
-        "description": "Taiwan precise-open Beijing hour.",
+        "description": "台湾彩精准开奖北京时间小时。",
         "is_secret": 0,
     },
     "crawler.taiwan_precise_open_minute": {
-        "value": _bootstrap_value("crawler", "taiwan_precise_open_minute", 30),
+        "value": 30,
         "value_type": "int",
-        "description": "Taiwan precise-open Beijing minute.",
+        "description": "台湾彩精准开奖北京时间分钟。",
         "is_secret": 0,
     },
     "crawler.taiwan_retry_delays_seconds": {
-        "value": _bootstrap_value("crawler", "taiwan_retry_delays_seconds", [60, 300, 900]),
+        "value": [60, 300, 900],
         "value_type": "json",
-        "description": "Taiwan precise-open retry delays.",
+        "description": "台湾彩精准开奖重试延迟列表。",
         "is_secret": 0,
     },
     "crawler.taiwan_max_retries": {
-        "value": _bootstrap_value("crawler", "taiwan_max_retries", 3),
+        "value": 3,
         "value_type": "int",
-        "description": "Taiwan precise-open max retries.",
+        "description": "台湾彩精准开奖最大重试次数。",
         "is_secret": 0,
     },
     "crawler.message.hk_empty_data": {
-        "value": _bootstrap_value("crawler", "message_hk_empty_data", "API returned no Hong Kong draw data."),
+        "value": "API returned no Hong Kong draw data.",
         "value_type": "string",
-        "description": "Message for empty Hong Kong crawler data.",
+        "description": "香港彩抓取数据为空提示。",
         "is_secret": 0,
     },
     "crawler.message.macau_empty_data": {
-        "value": _bootstrap_value("crawler", "message_macau_empty_data", "API returned no Macau draw data."),
+        "value": "API returned no Macau draw data.",
         "value_type": "string",
-        "description": "Message for empty Macau crawler data.",
+        "description": "澳门彩抓取数据为空提示。",
         "is_secret": 0,
     },
     "crawler.message.taiwan_import_only": {
-        "value": _bootstrap_value("crawler", "message_taiwan_import_only", "Taiwan data must be imported from JSON."),
+        "value": "Taiwan data must be imported from JSON.",
         "value_type": "string",
-        "description": "Message for Taiwan import-only data source.",
+        "description": "台湾彩仅支持导入的数据源提示。",
         "is_secret": 0,
     },
     "draw.hk_default_draw_time": {
-        "value": _bootstrap_value("draw", "hk_default_draw_time", "21:30"),
+        "value": "21:30",
         "value_type": "string",
-        "description": "Bootstrap Hong Kong draw time.",
+        "description": "初始香港彩开奖时间。",
         "is_secret": 0,
     },
     "draw.macau_default_draw_time": {
-        "value": _bootstrap_value("draw", "macau_default_draw_time", "21:00"),
+        "value": "21:00",
         "value_type": "string",
-        "description": "Bootstrap Macau draw time.",
+        "description": "初始澳门彩开奖时间。",
         "is_secret": 0,
     },
     "draw.taiwan_default_draw_time": {
-        "value": _bootstrap_value("draw", "taiwan_default_draw_time", "22:30"),
+        "value": "22:30",
         "value_type": "string",
-        "description": "Bootstrap Taiwan draw time.",
+        "description": "初始台湾彩开奖时间。",
         "is_secret": 0,
     },
     "draw.hk_default_collect_url": {
-        "value": _bootstrap_value("draw", "hk_default_collect_url", "https://www.lnlllt.com/api.php"),
+        "value": "https://www.lnlllt.com/api.php",
         "value_type": "string",
-        "description": "Bootstrap Hong Kong collect URL.",
+        "description": "初始香港彩采集 URL。",
         "is_secret": 0,
     },
     "draw.macau_default_collect_url": {
-        "value": _bootstrap_value("draw", "macau_default_collect_url", "https://www.lnlllt.com/api.php"),
+        "value": "https://www.lnlllt.com/api.php",
         "value_type": "string",
-        "description": "Bootstrap Macau collect URL.",
+        "description": "初始澳门彩采集 URL。",
         "is_secret": 0,
     },
     "draw.taiwan_import_file": {
-        "value": _bootstrap_value("draw", "taiwan_import_file", "data/lottery_data/lottery_page_1_20260506_194209.json"),
+        "value": "data/lottery_data/lottery_page_1_20260506_194209.json",
         "value_type": "string",
-        "description": "Bootstrap Taiwan import file path.",
+        "description": "初始台湾彩导入文件路径。",
         "is_secret": 0,
     },
     # ── 彩种下一期开奖时间（由调度器从 lottery_draws.next_time 自动同步） ──
@@ -346,107 +265,141 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "prediction.default_target_hit_rate": {
-        "value": _bootstrap_value("prediction", "default_target_hit_rate", 0.65),
+        "value": 0.65,
         "value_type": "float",
-        "description": "Default prediction target hit rate.",
+        "description": "默认预测目标命中率。",
         "is_secret": 0,
     },
     "prediction.max_terms_per_year": {
-        "value": _bootstrap_value("prediction", "max_terms_per_year", 365),
+        "value": 365,
         "value_type": "int",
-        "description": "Maximum term count per year.",
+        "description": "每年最大期数。",
         "is_secret": 0,
     },
     "logging.max_file_size_mb": {
-        "value": _bootstrap_value("logging", "max_file_size_mb", 10),
+        "value": 10,
         "value_type": "int",
-        "description": "Single log file size cap in MB.",
+        "description": "单个日志文件大小上限 MB。",
         "is_secret": 0,
     },
     "logging.backup_count": {
-        "value": _bootstrap_value("logging", "backup_count", 10),
+        "value": 10,
         "value_type": "int",
-        "description": "Rotated log file count.",
+        "description": "轮转日志文件保留数量。",
         "is_secret": 0,
     },
     "logging.error_retention_days": {
-        "value": _bootstrap_value("logging", "error_retention_days", 30),
+        "value": 30,
         "value_type": "int",
-        "description": "ERROR log retention in days.",
+        "description": "ERROR 日志保留天数。",
         "is_secret": 0,
     },
     "logging.warn_retention_days": {
-        "value": _bootstrap_value("logging", "warn_retention_days", 7),
+        "value": 7,
         "value_type": "int",
-        "description": "WARNING log retention in days.",
+        "description": "WARNING 日志保留天数。",
         "is_secret": 0,
     },
     "logging.info_retention_days": {
-        "value": _bootstrap_value("logging", "info_retention_days", 3),
+        "value": 3,
         "value_type": "int",
-        "description": "INFO/DEBUG log retention in days.",
+        "description": "INFO/DEBUG 日志保留天数。",
         "is_secret": 0,
     },
     "logging.max_total_log_size_mb": {
-        "value": _bootstrap_value("logging", "max_total_log_size_mb", 500),
+        "value": 500,
         "value_type": "int",
-        "description": "Total log directory size cap in MB.",
+        "description": "日志目录总大小上限 MB。",
         "is_secret": 0,
     },
     "logging.cleanup_interval_seconds": {
-        "value": _bootstrap_value("logging", "cleanup_interval_seconds", 3600),
+        "value": 3600,
         "value_type": "int",
-        "description": "Background log cleanup interval.",
+        "description": "后台日志清理间隔。",
         "is_secret": 0,
     },
     "logging.slow_call_warning_ms": {
-        "value": _bootstrap_value("logging", "slow_call_warning_ms", 5000),
+        "value": 5000,
         "value_type": "int",
-        "description": "Slow-call warning threshold in milliseconds.",
+        "description": "慢调用告警阈值毫秒数。",
         "is_secret": 0,
     },
     "legacy.images_dir": {
-        "value": _bootstrap_value("legacy", "images_dir", "data/Images"),
+        "value": "data/Images",
         "value_type": "string",
-        "description": "Legacy image directory.",
+        "description": "旧版图片目录。",
         "is_secret": 0,
     },
     "legacy.images_upload_bucket": {
-        "value": _bootstrap_value("legacy", "images_upload_bucket", "20250322"),
+        "value": "20250322",
         "value_type": "string",
-        "description": "Legacy image upload bucket segment.",
+        "description": "旧版图片上传桶分段。",
         "is_secret": 0,
     },
     "legacy.post_list_pc": {
-        "value": _bootstrap_value("legacy", "post_list_pc", 305),
+        "value": 305,
         "value_type": "int",
-        "description": "Legacy post-list pc identifier.",
+        "description": "旧版 post-list pc 标识。",
         "is_secret": 0,
     },
     "legacy.post_list_web": {
-        "value": _bootstrap_value("legacy", "post_list_web", 4),
+        "value": 4,
         "value_type": "int",
-        "description": "Legacy post-list web identifier.",
+        "description": "旧版 post-list web 标识。",
         "is_secret": 0,
     },
     "legacy.post_list_type": {
-        "value": _bootstrap_value("legacy", "post_list_type", 3),
+        "value": 3,
         "value_type": "int",
-        "description": "Legacy post-list type identifier.",
+        "description": "旧版 post-list type 标识。",
         "is_secret": 0,
     },
 }
 
-
 def _serialize_value(value: Any, value_type: str) -> str:
+    """将配置值序列化为数据库可存储的字符串。
+
+    根据配置项声明的 value_type 对原始 Python 值进行转换。JSON 类型会使用
+    ``json.dumps`` 保留中文字符，其余类型统一转换为字符串；空值会写入空字符串，
+    以适配 system_config.value_text 字段的非空约束。
+
+    Args:
+        value (Any): 待序列化的原始配置值，可以是字符串、数字、布尔值、列表、字典
+            或 ``None``。
+        value_type (str): 配置值类型标识，例如 ``string``、``int``、``float``、
+            ``bool``、``json`` 或 ``time``。
+
+    Returns:
+        str: 可写入数据库 ``value_text`` 字段的字符串表示。
+
+    Raises:
+        TypeError: 当 ``value_type`` 为 ``json`` 且 ``value`` 无法被 JSON 序列化时抛出。
+    """
     if value_type == "json":
         return json.dumps(value, ensure_ascii=False)
     if value is None:
         return ""
     return str(value)
 
-
 def _deserialize_value(value_text: str, value_type: str) -> Any:
+    """将数据库中的配置字符串反序列化为对应的 Python 值。
+
+    按 ``value_type`` 将 ``system_config.value_text`` 中的字符串恢复为整数、浮点数、
+    布尔值、JSON 对象或普通字符串。空整数与空浮点数会分别按 ``0`` 和 ``0.0`` 处理，
+    空 JSON 字符串会返回 ``None``。
+
+    Args:
+        value_text (str): 数据库中读取到的配置文本值。
+        value_type (str): 配置值类型标识，例如 ``string``、``int``、``float``、
+            ``bool``、``json`` 或 ``time``。
+
+    Returns:
+        Any: 反序列化后的配置值，具体类型由 ``value_type`` 决定。
+
+    Raises:
+        ValueError: 当整数、浮点数或 JSON 文本格式非法时抛出。
+        json.JSONDecodeError: 当 ``value_type`` 为 ``json`` 且文本不是合法 JSON 时抛出。
+    """
     if value_type == "int":
         return int(str(value_text).strip() or "0")
     if value_type == "float":
@@ -458,8 +411,22 @@ def _deserialize_value(value_text: str, value_type: str) -> Any:
         return json.loads(text) if text else None
     return str(value_text or "")
 
-
 def ensure_system_config_table(conn: Any) -> None:
+    """确保系统配置表存在。
+
+    根据当前连接的数据库引擎创建 ``system_config`` 表。SQLite 使用
+    ``AUTOINCREMENT`` 主键，PostgreSQL 使用 ``BIGSERIAL`` 主键，其他字段保持一致。
+    如果表已存在，则不会修改已有表结构。
+
+    Args:
+        conn (Any): 数据库连接对象，需提供 ``engine`` 属性和 ``execute`` 方法。
+
+    Returns:
+        None: 该函数仅执行建表语句，不返回业务数据。
+
+    Raises:
+        Exception: 当数据库连接不可用、SQL 执行失败或权限不足时由底层数据库驱动抛出。
+    """
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {CONFIG_TABLE_NAME} (
@@ -475,8 +442,23 @@ def ensure_system_config_table(conn: Any) -> None:
         """
     )
 
-
 def seed_system_config_defaults(conn: Any, *, now: str) -> None:
+    """将默认配置种子数据写入系统配置表。
+
+    遍历 ``CONFIG_DEFAULTS`` 中的所有配置项，仅在数据库中不存在对应 key 时插入默认值。
+    已存在的配置不会被覆盖，避免覆盖管理员在后台或 API 中做出的修改。
+
+    Args:
+        conn (Any): 数据库连接对象，需支持 ``execute``、``fetchone`` 等数据库操作。
+        now (str): 当前时间字符串，用于填充 ``created_at`` 和 ``updated_at`` 字段。
+
+    Returns:
+        None: 该函数仅负责初始化缺失配置，不返回业务数据。
+
+    Raises:
+        TypeError: 当默认配置中的 JSON 值无法序列化时抛出。
+        Exception: 当建表、查询或插入配置失败时由底层数据库驱动抛出。
+    """
     ensure_system_config_table(conn)
     for key, meta in CONFIG_DEFAULTS.items():
         existing = conn.execute(
@@ -503,16 +485,46 @@ def seed_system_config_defaults(conn: Any, *, now: str) -> None:
             ),
         )
 
-
 def get_bootstrap_config_value(key: str, fallback: Any = None) -> Any:
+    """读取启动阶段使用的默认配置值。
+
+    仅从 ``CONFIG_DEFAULTS`` 中读取配置，不访问数据库。该函数适合在数据库连接尚未
+    建立或系统初始化早期使用，用于获取启动所需的回退配置。
+
+    Args:
+        key (str): 配置项 key。
+        fallback (Any, optional): 当 key 不存在或默认值为 ``None`` 时返回的回退值。
+            默认为 ``None``。
+
+    Returns:
+        Any: 配置项默认值；如果配置不存在或默认值为空，则返回 ``fallback``。
+    """
     meta = CONFIG_DEFAULTS.get(key)
     if meta is None:
         return fallback
     value = meta.get("value", fallback)
     return fallback if value is None else value
 
-
 def get_config_from_conn(conn: Any, key: str, fallback: Any = None) -> Any:
+    """基于已有数据库连接读取单个配置值。
+
+    优先从 ``system_config`` 表读取指定 key 的配置并按其 ``value_type`` 转换类型；
+    如果配置表不存在或没有对应记录，则返回 ``CONFIG_DEFAULTS`` 中的默认值或传入的
+    ``fallback``。该函数不会主动创建或初始化配置表。
+
+    Args:
+        conn (Any): 已打开的数据库连接对象，需提供 ``table_exists`` 和 ``execute`` 方法。
+        key (str): 需要读取的配置项 key。
+        fallback (Any, optional): 当默认配置和数据库配置均不存在时返回的回退值。
+            默认为 ``None``。
+
+    Returns:
+        Any: 实际读取到的配置值，类型由数据库中的 ``value_type`` 或默认配置类型决定。
+
+    Raises:
+        ValueError: 当数据库中的配置值无法按目标类型转换时抛出。
+        Exception: 当数据库查询失败时由底层数据库驱动抛出。
+    """
     meta = CONFIG_DEFAULTS.get(key, {})
     default_value = meta.get("value", fallback)
     default_type = str(meta.get("value_type") or "string")
@@ -530,11 +542,27 @@ def get_config_from_conn(conn: Any, key: str, fallback: Any = None) -> Any:
             )
     return default_value
 
-
 def get_config(db_path: str | Path, key: str, fallback: Any = None) -> Any:
+    """打开数据库连接并读取单个配置值。
+
+    这是 ``get_config_from_conn`` 的便捷封装，用于调用方只持有数据库路径时读取配置。
+    函数会自动建立连接并在读取结束后关闭连接。
+
+    Args:
+        db_path (str | Path): 数据库路径或数据库连接配置路径，具体格式由 ``connect`` 实现决定。
+        key (str): 需要读取的配置项 key。
+        fallback (Any, optional): 当数据库和默认配置中均没有该 key 时返回的回退值。
+            默认为 ``None``。
+
+    Returns:
+        Any: 实际生效的配置值。
+
+    Raises:
+        ValueError: 当配置值无法按声明类型反序列化时抛出。
+        Exception: 当数据库连接或查询失败时由底层实现抛出。
+    """
     with connect(db_path) as conn:
         return get_config_from_conn(conn, key, fallback)
-
 
 def list_system_configs(
     db_path: str | Path,
@@ -542,6 +570,26 @@ def list_system_configs(
     prefix: str = "",
     include_secrets: bool = False,
 ) -> list[dict[str, Any]]:
+    """列出系统配置表中的配置记录。
+
+    函数会确保 ``system_config`` 表存在，并将 ``CONFIG_DEFAULTS`` 中缺失的默认配置
+    写入数据库。支持按 key 前缀筛选；对于敏感配置，默认会隐藏 ``value_text``，避免
+    将密钥、密码等内容直接返回给前端。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        prefix (str, optional): 配置 key 前缀筛选条件。空字符串表示不筛选。
+            默认为空字符串。
+        include_secrets (bool, optional): 是否返回敏感配置的真实值。为 ``False`` 时，
+            敏感配置的 ``value_text`` 会被置为空字符串。默认为 ``False``。
+
+    Returns:
+        list[dict[str, Any]]: 配置记录列表，每项包含 ``key``、``value_text``、
+        ``value_type``、``description``、``is_secret`` 和 ``updated_at``。
+
+    Raises:
+        Exception: 当数据库连接、建表、初始化或查询失败时由底层实现抛出。
+    """
     with connect(db_path) as conn:
         ensure_system_config_table(conn)
         seed_system_config_defaults(conn, now=utc_now())
@@ -562,7 +610,6 @@ def list_system_configs(
             result.append(data)
         return result
 
-
 def upsert_system_config(
     db_path: str | Path,
     *,
@@ -574,10 +621,37 @@ def upsert_system_config(
     changed_by: str = "",
     change_reason: str = "",
 ) -> dict[str, Any]:
-    """更新或插入 system_config 配置项，并自动记录变更历史到 system_config_history。"""
+    """更新或插入系统配置项，并记录配置变更历史。
+
+    该函数会对传入的配置 key 进行标准化处理。如果配置已存在，则更新其值、类型、
+    描述、敏感标记和更新时间；如果不存在，则插入新配置。配置值会根据 ``value_type``
+    序列化后存入 ``value_text``。当值发生变化或新建配置时，会向
+    ``system_config_history`` 写入一条变更记录，便于后台审计。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        key (str): 配置项 key，不能为空。
+        value (Any): 需要写入的配置值。
+        value_type (str | None, optional): 配置值类型。为空时优先使用默认配置中的
+            ``value_type``，仍不存在时使用 ``string``。默认为 ``None``。
+        description (str | None, optional): 配置说明。为空时使用默认配置中的说明。
+            默认为 ``None``。
+        is_secret (bool | None, optional): 是否为敏感配置。为空时使用默认配置中的
+            ``is_secret``。默认为 ``None``。
+        changed_by (str, optional): 变更操作人标识，用于写入历史记录。默认为空字符串。
+        change_reason (str, optional): 变更原因说明，用于写入历史记录。默认为空字符串。
+
+    Returns:
+        dict[str, Any]: 更新或插入后的配置记录；如果写入后未查询到记录，则返回空字典。
+
+    Raises:
+        ValueError: 当 ``key`` 为空时抛出。
+        TypeError: 当配置值无法按指定类型序列化时抛出。
+        Exception: 当数据库连接、写入或历史记录插入失败时由底层实现抛出。
+    """
     normalized_key = str(key or "").strip()
     if not normalized_key:
-        raise ValueError("Configuration key cannot be empty.")
+        raise ValueError("配置项 key 不能为空。")
 
     default_meta = CONFIG_DEFAULTS.get(normalized_key, {})
     resolved_type = str(value_type or default_meta.get("value_type") or "string")
@@ -667,30 +741,46 @@ def upsert_system_config(
         ).fetchone()
         return dict(row) if row else {}
 
-
 # ── 配置分组 ─────────────────────────────────────────
 
 def get_config_groups() -> list[dict[str, Any]]:
-    """返回配置分组列表，用于前端按分组筛选展示。"""
+    """返回前端展示使用的配置分组定义。
+
+    配置分组用于管理后台按业务域筛选和展示配置项。每个分组包含分组 key、
+    展示名称、匹配前缀和简要说明。
+
+    Returns:
+        list[dict[str, Any]]: 配置分组列表，每项包含 ``key``、``label``、``prefix``
+        和 ``description``。
+    """
     return [
-        {"key": "lottery", "label": "彩种配置", "prefix": "draw.", "description": "各彩种开奖时间、数据源URL、下一期开奖时间"},
+        {"key": "lottery", "label": "彩种配置", "prefix": "draw.", "description": "各彩种开奖时间、数据源 URL、下一期开奖时间"},
         {"key": "scheduler", "label": "调度器配置", "prefix": "crawler.", "description": "自动开奖/抓取/预测延迟及固定触发时间等调度参数"},
         {"key": "prediction", "label": "预测资料配置", "prefix": "prediction.", "description": "预测生成目标命中率、最大期数"},
-        {"key": "site", "label": "站点配置", "prefix": "site.", "description": "站点默认URL、Token、请求参数"},
+        {"key": "site", "label": "站点配置", "prefix": "site.", "description": "站点默认 URL、令牌、请求参数"},
         {"key": "logging", "label": "日志配置", "prefix": "logging.", "description": "日志保留天数、轮转大小、清理间隔"},
-        {"key": "auth", "label": "认证配置", "prefix": "auth.", "description": "Session过期时间、密码迭代次数"},
+        {"key": "auth", "label": "认证配置", "prefix": "auth.", "description": "会话过期时间、密码迭代次数"},
         {"key": "system", "label": "系统配置", "prefix": "admin.", "description": "管理员默认账号、显示名称"},
-        {"key": "legacy", "label": "旧版配置", "prefix": "legacy.", "description": "旧站图片路径、post-list参数"},
+        {"key": "legacy", "label": "旧版配置", "prefix": "legacy.", "description": "旧站图片路径、旧版列表参数"},
     ]
-
 
 # ── 配置生效值查询 ──────────────────────────────────
 
 def get_config_effective(db_path: str | Path, key: str) -> dict[str, Any]:
-    """返回单个配置的实际生效值及其来源信息。
+    """查询单个配置项的实际生效值及来源。
 
-    优先级：数据库 system_config > config.yaml 默认值。
-    如果有数据库值则使用数据库值，否则使用 config.yaml 默认值。
+    函数会优先读取数据库 ``system_config`` 表中的配置值；如果数据库不存在、配置项不存在
+    或读取失败，则回退到 ``CONFIG_DEFAULTS`` 中的默认值，并标注配置来源。该接口适合
+    管理后台展示“当前值、默认值、实际生效值、来源”等诊断信息。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        key (str): 需要查询的配置项 key。
+
+    Returns:
+        dict[str, Any]: 配置生效信息，包含 ``key``、``value``、``default_value``、
+        ``effective_value``、``value_type``、``source``、``description``、``is_secret``
+        和 ``updated_at``。
     """
     default_meta = CONFIG_DEFAULTS.get(key, {})
     default_value = default_meta.get("value")
@@ -730,7 +820,6 @@ def get_config_effective(db_path: str | Path, key: str) -> dict[str, Any]:
         "updated_at": updated_at,
     }
 
-
 def list_configs_effective(
     db_path: str | Path,
     *,
@@ -738,23 +827,35 @@ def list_configs_effective(
     keyword: str = "",
     source: str = "",
 ) -> list[dict[str, Any]]:
-    """返回所有配置的实际生效值列表，支持按分组、关键词、来源筛选。
+    """查询所有配置项的实际生效值列表。
 
-    合并数据库 system_config 和 config.yaml 默认值，标注每个配置的实际来源。
-    分组筛选基于 CONFIG_DEFAULTS 中 key 的前缀匹配。
+    函数会合并 ``CONFIG_DEFAULTS`` 与数据库 ``system_config`` 中的配置值，为每个配置项
+    标注实际来源、分组、是否可编辑、是否敏感以及是否通常需要重启服务。支持按分组、
+    关键词和来源筛选，适合后台配置管理页使用。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        group (str, optional): 配置分组 key。为空字符串时不按分组筛选。默认为空字符串。
+        keyword (str, optional): 关键词筛选条件，会匹配配置 key 和描述。默认为空字符串。
+        source (str, optional): 配置来源筛选条件，例如 ``database`` 或 ``config.yaml``。
+            为空字符串时不按来源筛选。默认为空字符串。
+
+    Returns:
+        list[dict[str, Any]]: 配置生效信息列表，每项包含展示值、原始值、默认值、
+        实际生效值、分组、来源、描述、敏感标记、可编辑标记、重启提示和更新时间。
     """
-    # 建立 key → group 的映射
+    # 建立配置键到分组标识的映射
     groups = get_config_groups()
     group_map: dict[str, str] = {}
     for g in groups:
         for key in CONFIG_DEFAULTS:
             if key.startswith(g["prefix"]):
                 group_map[key] = g["key"]
-    # lottery.* 前缀的 key 也归入 lottery 组
+    # 以 lottery.* 开头的配置项也归入 lottery 组
     for key in CONFIG_DEFAULTS:
         if key.startswith("lottery."):
             group_map[key] = "lottery"
-    # scheduler.* 前缀的 key 也归入 scheduler 组
+    # 以 scheduler.* 开头的配置项也归入 scheduler 组
     for key in CONFIG_DEFAULTS:
         if key.startswith("scheduler."):
             group_map[key] = "scheduler"
@@ -785,7 +886,7 @@ def list_configs_effective(
         if group and config_group != group:
             continue
 
-        # 关键词筛选（匹配 key 或 description）
+        # 关键词筛选（匹配配置键或说明）
         if keyword and keyword.lower() not in key.lower() and keyword.lower() not in desc.lower():
             continue
 
@@ -838,11 +939,27 @@ def list_configs_effective(
 
     return results
 
-
 # ── 配置操作 ─────────────────────────────────────────
 
 def reset_config(db_path: str | Path, key: str, changed_by: str = "") -> dict[str, Any]:
-    """将指定配置恢复为 config.yaml 默认值，并记录变更历史。"""
+    """将指定配置项恢复为默认值，并记录变更历史。
+
+    根据 ``CONFIG_DEFAULTS`` 中的定义读取默认值、类型、描述和敏感标记，将对应数据库
+    配置恢复为默认状态，同时向 ``system_config_history`` 写入“恢复默认值”的审计记录。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        key (str): 需要恢复默认值的配置项 key。
+        changed_by (str, optional): 执行恢复操作的用户或系统标识。默认为空字符串。
+
+    Returns:
+        dict[str, Any]: 恢复后的配置记录；如果恢复后未查询到记录，则返回空字典。
+
+    Raises:
+        ValueError: 当配置项不存在于 ``CONFIG_DEFAULTS`` 中，无法确定默认值时抛出。
+        TypeError: 当默认值无法按默认类型序列化时抛出。
+        Exception: 当数据库连接、更新或历史记录写入失败时由底层实现抛出。
+    """
     default_meta = CONFIG_DEFAULTS.get(key)
     if default_meta is None:
         raise ValueError(f"配置项 '{key}' 不存在默认值，无法恢复")
@@ -894,15 +1011,25 @@ def reset_config(db_path: str | Path, key: str, changed_by: str = "") -> dict[st
         ).fetchone()
         return dict(row) if row else {}
 
-
 def batch_update_configs(
     db_path: str | Path,
     updates: list[dict[str, Any]],
     changed_by: str = "",
 ) -> dict[str, Any]:
-    """批量更新配置。updates 格式: [{"key": "...", "value": ..., "value_type": "..."}, ...]
+    """批量更新多个系统配置项。
 
-    逐项执行 upsert，返回成功/失败统计。
+    逐项调用 ``upsert_system_config`` 执行配置写入，并统计成功数量和失败条目。单个配置
+    更新失败不会中断后续配置处理，失败信息会记录在返回结果的 ``failed_items`` 中。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        updates (list[dict[str, Any]]): 待更新配置列表。每项通常包含 ``key``、``value``
+            和可选的 ``value_type``。
+        changed_by (str, optional): 批量变更操作人标识，用于写入历史记录。默认为空字符串。
+
+    Returns:
+        dict[str, Any]: 批量更新结果，包含 ``success`` 成功数量、``failed`` 失败数量
+        和 ``failed_items`` 失败明细列表。
     """
     success = 0
     failed: list[dict[str, str]] = []
@@ -923,7 +1050,6 @@ def batch_update_configs(
             failed.append({"key": key, "error": str(e)})
     return {"success": success, "failed": len(failed), "failed_items": failed}
 
-
 # ── 配置变更历史 ────────────────────────────────────
 
 def get_config_history(
@@ -933,7 +1059,25 @@ def get_config_history(
     page: int = 1,
     page_size: int = 30,
 ) -> dict[str, Any]:
-    """查询 system_config_history 变更记录，支持按 config_key 筛选。"""
+    """分页查询系统配置变更历史。
+
+    从 ``system_config_history`` 表读取配置变更记录，支持按配置 key 筛选，并返回分页
+    元数据，供后台配置审计页面展示。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        key (str, optional): 配置项 key 筛选条件。为空字符串时查询全部配置历史。
+            默认为空字符串。
+        page (int, optional): 页码，从 1 开始。小于 1 时会按第一页处理偏移量。默认为 1。
+        page_size (int, optional): 每页记录数。默认为 30。
+
+    Returns:
+        dict[str, Any]: 分页结果，包含 ``items``、``total``、``page``、``page_size``
+        和 ``total_pages``。
+
+    Raises:
+        Exception: 当历史表不存在、数据库连接失败或查询失败时由底层实现抛出。
+    """
     filters: list[str] = []
     params: list[Any] = []
     if key:
@@ -961,14 +1105,23 @@ def get_config_history(
         "total_pages": max(1, (total + page_size - 1) // page_size),
     }
 
-
 # ── 配置值校验 ──────────────────────────────────────
 
 def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, str]:
-    """校验配置值的类型和业务约束。返回 (is_valid, error_message)。
+    """校验配置值类型及基础业务约束。
 
-    支持的 value_type: int, float, bool, string, json, time
-    部分 int 类型配置有正整数的业务约束。
+    根据传入的 ``value_type`` 对配置值进行类型校验，支持 ``int``、``float``、``bool``、
+    ``string``、``json`` 和 ``time``。部分整数配置项会额外校验不能为负数。函数不会抛出
+    校验异常，而是通过布尔值和错误消息返回校验结果。
+
+    Args:
+        key (str): 配置项 key，用于定位配置并生成错误提示。
+        value (Any): 待校验的配置值。
+        value_type (str): 配置值类型标识。
+
+    Returns:
+        tuple[bool, str]: 二元组 ``(is_valid, error_message)``。``is_valid`` 表示是否
+        校验通过；``error_message`` 在校验失败时包含具体原因，校验成功时为空字符串。
     """
     if value_type == "int":
         try:
@@ -999,9 +1152,6 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
                 "logging.slow_call_warning_ms",
                 "auth.session_ttl_seconds",
                 "auth.password_iterations",
-                "site.start_web_id",
-                "site.end_web_id",
-                "site.request_limit",
             }
             if key in positive_int_keys and v < 0:
                 return False, f"'{key}' 不能为负数，当前值: {v}"
@@ -1038,13 +1188,12 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
             return True, ""
         return False, f"'{key}' 需要 HH:mm 或 HH:mm:ss 时间格式，当前值: {value}"
 
-    # string 类型不做校验
+    # 字符串类型不做校验
     return True, ""
 
+# ── 彩种下一期开奖时间映射 ────────────────────────────
 
-# ── 彩种 next_time 映射 ──────────────────────────────
-
-# lottery_type_id → system_config key 的映射，
+# 彩种 ID 到 system_config 配置键的映射，
 # 供调度器在爬虫更新 lottery_draws.next_time 后同步写入 system_config。
 LOTTERY_NEXT_TIME_CONFIG_KEYS: dict[int, str] = {
     1: "lottery.hk_next_time",
@@ -1052,16 +1201,24 @@ LOTTERY_NEXT_TIME_CONFIG_KEYS: dict[int, str] = {
     3: "lottery.taiwan_next_time",
 }
 
-
 def sync_lottery_next_time_to_system_config(
     db_path: str | Path,
     lottery_type_id: int,
     next_time: str,
 ) -> None:
-    """将彩种下一期开奖时间同步写入 system_config 表。
+    """同步彩种下一期开奖时间到系统配置表。
 
-    由调度器在爬虫更新 lottery_draws.next_time 后调用，
-    确保 system_config 中存储的值为最新。
+    根据 ``lottery_type_id`` 查找对应的 ``lottery.*_next_time`` 配置 key，并将爬虫或调度器
+    计算出的下一期开奖时间写入 ``system_config``。写入失败会被静默忽略，避免调度器主流程
+    因配置同步失败而中断。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        lottery_type_id (int): 彩种 ID，当前约定 1 为香港彩、2 为澳门彩、3 为台湾彩。
+        next_time (str): 下一期开奖时间，通常为毫秒时间戳字符串或外部源提供的时间字符串。
+
+    Returns:
+        None: 该函数只执行同步写入，不返回业务数据。
     """
     config_key = LOTTERY_NEXT_TIME_CONFIG_KEYS.get(lottery_type_id)
     if not config_key:
@@ -1078,12 +1235,22 @@ def sync_lottery_next_time_to_system_config(
     except Exception:
         pass
 
-
 def get_lottery_next_time_from_config(
     db_path: str | Path,
     lottery_type_id: int,
 ) -> str:
-    """从 system_config 读取彩种下一期开奖时间。"""
+    """从系统配置表读取指定彩种的下一期开奖时间。
+
+    根据 ``lottery_type_id`` 映射到对应的 ``lottery.*_next_time`` 配置项，并通过统一配置
+    读取函数获取其值。未找到映射、读取失败或配置不存在时返回空字符串。
+
+    Args:
+        db_path (str | Path): 数据库路径或连接配置路径。
+        lottery_type_id (int): 彩种 ID，当前约定 1 为香港彩、2 为澳门彩、3 为台湾彩。
+
+    Returns:
+        str: 彩种下一期开奖时间字符串；读取失败或不存在时返回空字符串。
+    """
     config_key = LOTTERY_NEXT_TIME_CONFIG_KEYS.get(lottery_type_id)
     if not config_key:
         return ""

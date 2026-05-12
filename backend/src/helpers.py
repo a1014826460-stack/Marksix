@@ -29,7 +29,12 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
 
 
 def draw_time_to_unix_ms(draw_time: str) -> str:
-    """Convert a Beijing-time draw timestamp to a UTC unix-ms string."""
+    """Convert a Beijing-time draw timestamp to a UTC unix-ms string.
+    args:
+        - draw_time: A string in the format "YYYY-MM-DD HH:MM:SS", representing the draw time in Beijing time (UTC+8).
+    return:
+        - A string representing the corresponding UTC unix timestamp in milliseconds.
+    """
     from calendar import timegm
 
     draw_dt = datetime.strptime(str(draw_time).strip(), "%Y-%m-%d %H:%M:%S")
@@ -38,17 +43,22 @@ def draw_time_to_unix_ms(draw_time: str) -> str:
 
 
 def next_draw_time_from_current_draw(draw_time: str) -> str:
-    """Return the next Beijing draw timestamp by advancing one day."""
+    """将北京时间的下一个抽奖时间戳提前一天返回。
+    args：
+    - draw_time: 一个字符串，格式为 "YYYY-MM-DD HH:MM:SS"，表示当前抽奖的北京时间。
+    return:
+    - 一个字符串，格式为 "YYYY-MM-DD HH:MM:SS"，表示下一个抽奖的北京时间，通常是当前抽奖时间加一天。
+    """
     draw_dt = datetime.strptime(str(draw_time).strip(), "%Y-%m-%d %H:%M:%S")
     return (draw_dt + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str, Any]:
-    """Return the canonical next-draw payload for the lottery type.
+    """返回该彩票类型的标准下一期抽奖的有效载荷。
 
-    For Hong Kong/Macau (type 1/2), the only source of truth is the crawler-
-    persisted `lottery_draws.next_time` on the latest opened issue.
-    For Taiwan (type 3), keep the existing derived fallback behavior.
+    对于香港/澳门（type 1/2），唯一的真实信息来源是爬虫程序
+    在最新打开的期数上保留了`lottery_draws.next_time`。
+    对于台湾（type3），保持现有的派生回退行为。
     """
     row = conn.execute(
         """
@@ -63,6 +73,7 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
         (int(lottery_type_id),),
     ).fetchone()
 
+    # 优先使用最新已开奖数据的 next_time，如果是台湾彩则用 draw_time 推算下一期开奖时间
     if row:
         data = dict(row)
         current_term = int(data.get("term") or 0)
@@ -70,14 +81,17 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
         stored_next_time = str(data.get("next_time") or "").strip()
         next_draw_time = ""
         effective_next_time = stored_next_time
-
+        # 如果是台湾彩且 draw_time 可用，则用 draw_time 推算下一期开奖时间，并覆盖掉 stored_next_time（因为历史数据里 next_time 可能不可靠）
         if int(lottery_type_id) == 3:
             draw_time = str(data.get("draw_time") or "").strip()
             if draw_time:
+                # 如果 draw_time 可用，则先用 draw_time 推算下一期开奖时间
                 next_draw_time = next_draw_time_from_current_draw(draw_time)
             if next_draw_time:
                 try:
+                    # 把推算的下一期开奖时间转换成 unix-ms
                     expected_next_time = draw_time_to_unix_ms(next_draw_time)
+                    # 如果推算的下一期开奖时间与 stored_next_time 不一致，则以推算的为准覆盖掉 stored_next_time
                     if not effective_next_time or effective_next_time != expected_next_time:
                         effective_next_time = expected_next_time
                 except ValueError:
@@ -89,6 +103,7 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
             "next_time": effective_next_time or None,
         }
 
+    # 没有已开奖数据时，fallback 到 lottery_types.next_time（通常是 crawler 预设的下一期开奖时间，或管理员手动设置的值）
     lt_row = conn.execute(
         "SELECT next_time FROM lottery_types WHERE id = ?",
         (int(lottery_type_id),),
@@ -108,7 +123,17 @@ def sync_lottery_type_next_time_from_latest_draw(
     updated_at: str,
     source: str = "sync",
 ) -> str:
-    """Sync lottery_types.next_time from the canonical effective payload."""
+    """从lottery_draws中同步lottery_types.next_time。
+        并且记录到 system_config 中，供前台页面直接读取，避免每次都要 join lottery_draws 来获取下一期开奖时间。
+
+    args:
+    - conn: 数据库连接对象，必须具有 execute 方法。
+    - lottery_type_id: 彩票类型ID。
+    - updated_at: 用于记录更新时间的字符串，格式为 "YYYY-MM-DD HH:MM:SS"。
+    - source: 可选的字符串，表示同步来源，用于日志记录，默认为 "sync"。
+    return:
+    - 同步后的 next_time 字符串。
+    """
     current_row = conn.execute(
         "SELECT next_time FROM lottery_types WHERE id = ?",
         (int(lottery_type_id),),
@@ -133,6 +158,7 @@ def sync_lottery_type_next_time_from_latest_draw(
     # 同步写入 system_config，使前台页面可直接从配置中心读取
     _lt_cfg_prefix = {1: "lottery.hk", 2: "lottery.macau", 3: "lottery.taiwan"}
     _cfg_prefix = _lt_cfg_prefix.get(int(lottery_type_id))
+    # 只有在有明确配置前缀的彩种（即香港/澳门/台湾）才同步到 system_config，其他彩种不处理
     if _cfg_prefix:
         # 获取最新已开奖记录的期号和年份
         _latest = conn.execute(
@@ -551,7 +577,19 @@ def load_mode_payload_rows_from_source(
     web_exact: int | None = None,
     require_result_consistency: bool = False,
 ) -> list[dict[str, Any]]:
-    """按来源 schema 读取 mode_payload 历史记录。"""
+    """按来源 schema 读取 mode_payload 历史记录。
+    
+    args:
+    - conn: 数据库连接对象，必须具有 table_exists 和 execute 方法。
+    - table_name: 表名，通常是 "mode_payload_created" 或 "mode_payload
+    - limit: 读取记录的最大数量。
+    - schema_name: 可选的模式名，如果提供则从 "schema_name.table_name"
+    - lottery_type_id:
+    - web_start: 站点ID范围起始值，配合 web_end 使用
+    - web_end: 站点ID范围结束值，配合 web_start 使用
+    - web_exact: 站点ID精确匹配值，优先级高于 web_start/web_end
+    - require_result_consistency: 是否只读取结果与 lottery_draws 一致的记录
+    """
     if schema_name:
         if getattr(conn, "engine", "") != "postgres" or not schema_table_exists(conn, schema_name, table_name):
             return []

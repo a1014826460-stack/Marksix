@@ -16,6 +16,128 @@
 
 ---
 
+## src/ 分层架构
+
+重构后的 `backend/src/` 采用清晰的分层架构，各层职责明确：
+
+```
+backend/src/
+├── app.py                          # 主入口（兼容，逐步变薄）
+├── tables.py                       # 兼容导出 → database/
+├── db.py                           # 数据库适配器（SQLite/PostgreSQL 双引擎）
+│
+├── core/                           # 基础设施层
+│   ├── errors.py                   # 统一异常类型 (AppError/NotFoundError/...)
+│   ├── time_utils.py               # UTC/北京时间/开奖时间处理
+│   └── constants.py                # 全局常量
+│
+├── database/                       # 数据库层（避免与 db.py 冲突）
+│   ├── connection.py               # 连接管理
+│   ├── bootstrap.py                # ensure_admin_tables 总入口
+│   ├── seed.py                     # 默认数据播种
+│   ├── migrations.py               # 轻量列迁移
+│   ├── summary.py                  # 数据库内容摘要
+│   └── schema/                     # 按领域拆分的建表文件
+│       ├── auth.py                 # admin_users / admin_sessions
+│       ├── lottery.py              # lottery_types / lottery_draws
+│       ├── sites.py                # managed_sites / site_fetch_runs
+│       ├── prediction.py           # site_prediction_modules
+│       ├── scheduler.py            # scheduler_tasks
+│       ├── logs.py                 # error_logs
+│       ├── config.py               # system_config_history
+│       ├── legacy.py               # legacy_image_assets
+│       └── indexes.py              # 性能索引
+│
+├── http/                           # HTTP 框架层
+│   ├── request_context.py          # 请求上下文（含 request_id、body 缓存）
+│   ├── router.py                   # 轻量 URL 路由 + 分发
+│   ├── auth.py                     # HTTP 层鉴权（require_admin 等）
+│   ├── site_context.py             # 多站点上下文解析（SiteContext）
+│   └── response.py                 # 响应写入（JSON/HTML/文件）
+│
+├── routes/                         # 路由适配层（薄层）
+│   ├── auth_routes.py              # /api/auth/*
+│   ├── public_routes.py            # /api/public/*
+│   ├── admin_site_routes.py        # /api/admin/sites/*
+│   ├── admin_lottery_routes.py     # /api/admin/lottery-types/*
+│   ├── admin_payload_routes.py     # /api/admin/sites/{id}/mode-payload/*
+│   ├── admin_prediction_routes.py  # /api/predict/*
+│   └── ... (其他路由模块)
+│
+├── domains/                        # 业务领域层
+│   ├── sites/                      # 站点领域
+│   │   ├── models.py               # ManagedSite 领域模型
+│   │   ├── repository.py           # 站点 SQL 查询
+│   │   ├── service.py              # 站点业务逻辑（直接实现）
+│   │   └── permissions.py          # 角色权限（5级角色体系）
+│   ├── lottery/                    # 彩种领域
+│   │   ├── models.py               # LotteryType/LotteryDraw 模型
+│   │   ├── repository.py           # 彩种/开奖 SQL 查询
+│   │   ├── service.py              # 彩种业务逻辑
+│   │   └── draw_time.py            # 开奖时间计算工具
+│   ├── prediction/                 # 预测领域
+│   │   ├── models.py               # PredictionModule/GenerationContext
+│   │   ├── repository.py           # 预测模块 SQL 查询
+│   │   └── service.py              # 预测业务逻辑
+│   ├── configs/                    # 配置领域
+│   │   ├── repository.py           # system_config SQL 查询
+│   │   └── service.py              # 配置管理业务逻辑
+│   ├── logs/                       # 日志领域
+│   │   ├── repository.py           # error_logs SQL 查询
+│   │   └── service.py              # 日志业务逻辑
+│   └── legacy/                     # 旧站兼容领域
+│       └── service.py              # 旧版 API 业务逻辑
+│
+├── predict_engine/                 # 预测引擎层（纯算法）
+│   ├── __init__.py                 # 从 predict/ 重导出
+│   ├── registry.py                 # 机制注册表
+│   ├── runner.py                   # 预测运行器
+│   └── mechanisms/                 # 机制子模块（待拆分）
+│
+├── predict/                        # 预测算法（原有实现，逐步迁移到 predict_engine/）
+│   ├── common.py                   # 核心预测算法
+│   ├── mechanisms.py               # 所有机制定义
+│   └── run_prediction.py           # CLI 入口
+│
+├── jobs/                           # 后台任务层
+│   ├── task_types.py               # 任务类型/状态常量
+│   └── handlers.py                 # 内存任务管理 + 抓取运行记录
+│
+└── tests/                          # 测试目录
+    ├── unit/                       # 单元测试（无需数据库，47 个）
+    └── integration/                # 集成测试（需要 PostgreSQL）
+```
+
+### 各层职责边界
+
+| 层级 | 职责 | 禁止 |
+|------|------|------|
+| **core/** | 统一异常、时间工具、全局常量 | 不感知业务/HTTP/数据库 |
+| **database/** | 连接管理、Schema 定义、播种、迁移 | 不写业务逻辑 |
+| **http/** | HTTP 适配、路由分发、鉴权、SiteContext | 不写 SQL |
+| **routes/** | 参数解析、鉴权调用、JSON 返回 | 不写复杂 SQL/业务细节 |
+| **domains/** | 业务逻辑（service）、数据访问（repository） | repository 写 SQL，service 不写 |
+| **predict_engine/** | 预测算法 | 不感知 HTTP/用户/站点权限 |
+| **jobs/** | 后台任务调度、运行记录 | 不处理 HTTP |
+
+### web_id 与 site_id 的关系
+
+- `web_id` 是站点业务 ID（对应旧资料表中的 `web` 字段）
+- `managed_sites.id` 是后台内部主键
+- `managed_sites.web_id` 是多站点隔离的核心标识
+- **禁止硬编码 `web=4`**
+- 所有站点相关接口必须先解析 `SiteContext`
+- 禁止通过 query/body 中的 `web` 参数跨站点读取或写入资料
+
+### 新增代码规范
+
+- **SQL 只能写在**: `domains/*/repository.py`、`database/`、`utils/created_prediction_store.py`
+- **业务逻辑放在**: `domains/*/service.py`
+- **新接口路由放在**: `routes/` 对应模块
+- **数据库 schema 变更放在**: `database/schema/` 对应文件
+
+---
+
 ## 启动流程
 
 主入口：
@@ -35,6 +157,41 @@ backend/src/app.py
 重要限制：
 
 当前调度器仍然是基于 `threading.Timer` 的进程内定时调度器。它会在进程重启后通过扫描数据库状态恢复任务，但它不是分布式调度器，也不是持久化调度器。
+
+---
+
+## 测试
+
+### 单元测试（无需数据库）
+
+```powershell
+cd backend/src
+python -m pytest tests/unit/ -v
+```
+
+测试覆盖：
+- `test_errors.py` — 统一异常类型（9 tests）
+- `test_site_context.py` — 站点上下文解析和权限校验（15 tests）
+- `test_router.py` — 路由注册、匹配和分发（9 tests）
+- `test_time_utils.py` — 时间工具函数（5 tests）
+- `test_predict_common.py` — 预测引擎纯函数（8 tests）
+
+### 集成测试（需要 PostgreSQL）
+
+```powershell
+# 使用专用测试数据库
+$env:TEST_DATABASE_URL = "postgresql://postgres:password@localhost:5432/liuhecai_test"
+cd backend/src
+python -m pytest tests/integration/ -v
+
+# 如在正式数据库上测试（需明确授权）
+$env:ALLOW_TEST_ON_PROD_DB = "1"
+python -m pytest tests/integration/ -v
+```
+
+测试覆盖：
+- `test_tables_bootstrap.py` — 表初始化幂等、web_id 回填、索引存在、上下文字段
+- `test_prediction_generation.py` — 站点 web_id 隔离、SiteContext 解析正确性
 
 ---
 
@@ -173,25 +330,27 @@ backend/src/auth.py
 
 ## CRUD 数据流程
 
-主 HTTP 路由：
+路由层（routes/）只负责 HTTP 适配，业务逻辑在 domains/ 层。
 
-```txt
-backend/src/app.py
-```
+文件：
 
-CRUD 模块：
-
-- `backend/src/admin/crud.py`
-- `backend/src/admin/payload.py`
-- `backend/src/admin/prediction.py`
+- `backend/src/routes/` — HTTP 路由处理器（薄层）
+- `backend/src/domains/sites/service.py` — 站点业务逻辑
+- `backend/src/domains/lottery/service.py` — 彩种业务逻辑
+- `backend/src/domains/prediction/service.py` — 预测业务逻辑
+- `backend/src/admin/crud.py` — 兼容导出（委托给 domains/）
+- `backend/src/admin/payload.py` — mode_payload 管理
+- `backend/src/admin/prediction.py` — 预测生成与安全
 
 典型流程：
 
-1. HTTP 请求进入 `ApiHandler.dispatch()`。
-2. 路由根据需要执行认证。
-3. 请求体由 `read_json()` 解析。
-4. `admin/*` 模块中的业务函数校验 payload 并执行 SQL。
-5. 数据以 JSON 形式返回。
+1. HTTP 请求进入 `ApiHandler.dispatch()` → `Router.dispatch()`
+2. 路由根据需要执行认证（`http/auth.py`）
+3. 站点相关接口解析 `SiteContext`（`http/site_context.py`）
+4. 请求体由 `RequestContext.read_json()` 解析
+5. routes 调用 `domains/*/service.py` 中的业务函数
+6. service 通过 `domains/*/repository.py` 执行 SQL
+7. 数据以 JSON 形式返回
 
 站点管理 CRUD：
 
@@ -234,6 +393,17 @@ CRUD 模块：
 
 校验逻辑主要在业务层函数中实现，而不是只放在 HTTP handler 中。
 
+统一异常类型（`core/errors.py`）：
+
+| 异常类型 | HTTP 状态码 | 使用场景 |
+|---------|------------|---------|
+| `AppError` | 400 | 通用业务异常基类 |
+| `NotFoundError` | 404 | 资源不存在 |
+| `UnauthorizedError` | 401 | 未认证 |
+| `ForbiddenError` | 403 | 无权限 |
+| `ValidationError` | 400 | 参数校验失败 |
+| `ConflictError` | 409 | 资源冲突/重复创建 |
+
 示例：
 
 - `save_site()` 会校验名称、web id 范围，以及 URL 模板占位符。
@@ -243,8 +413,9 @@ CRUD 模块：
 
 错误处理策略：
 
-- 业务函数抛出 `ValueError`、`KeyError` 或 `PermissionError`。
-- `ApiHandler.dispatch()` 捕获异常，并映射成 JSON 响应。
+- 业务函数优先抛出 `core.errors` 中的统一异常类型。
+- `Router.dispatch()` 捕获 `AppError` 及其子类，自动映射为对应 HTTP 状态码的 JSON 响应。
+- `KeyError` 和 `PermissionError` 也有兼容映射（→ 404 / 403）。
 - 请求异常会通过 `logger.exception(...)` 记录。
 - 数据库日志持久化失败不会中断主要业务流程。
 
@@ -349,12 +520,18 @@ backend/src/crawler/crawler_service.py
 
 ## 预测生成
 
+预测链路涉及三个层：
+
+1. **算法层**（`predict/` 和 `predict_engine/`）— 纯算法，不感知 HTTP/用户/站点
+2. **业务层**（`domains/prediction/`）— 站点、期号、模块、created 表写入
+3. **生成层**（`prediction_generation/`）— 批量生成编排
+
 入口：
 
-- 公共预测 API：`ApiHandler.handle_prediction()`
-- 批量生成：`backend/src/admin/prediction.py::bulk_generate_site_prediction_data`
-- 共享生成器：`backend/src/prediction_generation/service.py::generate_prediction_batch`
-- 延迟自动化：`backend/src/crawler/crawler_service.py::_run_auto_prediction`
+- 公共预测 API：`routes/admin_prediction_routes.py`
+- 批量生成：`domains/prediction/service.py::bulk_generate_site_predictions`
+- 共享生成器：`prediction_generation/service.py::generate_prediction_batch`
+- 延迟自动化：`crawler/crawler_service.py::_run_auto_prediction`
 
 预测安全机制：
 
@@ -380,6 +557,8 @@ backend/src/admin/prediction.py
 
 - 已开奖的历史数据从 `lottery_draws` 读取。
 - 未来期数由 `future_periods` 创建。
+- 历史回填可以使用 `res_code`（已开奖期数）
+- **未来预测资料生成不能注入真实开奖结果**
 - 延迟自动化流程会先把真实开奖结果回填到已创建的预测行中，然后再生成下一期预测。
 
 重要运行配置：

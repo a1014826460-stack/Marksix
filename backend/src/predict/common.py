@@ -75,7 +75,12 @@ class PredictionConfig:
     selection_widths: tuple[int, ...] | None = None
 
 def parse_res_code(res_code: str) -> list[str]:
-    """解析逗号分隔的开奖结果，并统一补齐 01-09。"""
+    """解析逗号分隔的开奖结果，并统一补齐 01-09。
+    arg:
+    - res_code: 逗号分隔的开奖结果字符串，例如 "1, 12, 23, 34, 45, 06"，其中最后一个号码是特码。
+    returns:
+    - codes: 解析后的号码列表，格式为 ["01", "12", "23", "34", "45", "06"]。
+    """
     codes: list[str] = []
     for raw_code in res_code.split(","):
         raw_code = raw_code.strip()
@@ -483,6 +488,13 @@ def _ensure_outcome_included(
 
     若 outcome 已在 labels 中，直接返回；否则替换末尾标签。
     outcome 可能是复合值（如 "红单"），按 `|` 拆分后逐一检查。
+
+    args:
+        - labels: 当前预测标签列表。
+        - outcome: 真实开奖结果，可能包含多个用 `|` 分隔的值。
+        - label_count: 预测标签总数限制。
+    returns:
+        - 调整后的预测标签列表，确保包含 outcome 中的至少一个值。
     """
     outcome_parts = [p for p in str(outcome).split("|") if p]
     result = list(labels)

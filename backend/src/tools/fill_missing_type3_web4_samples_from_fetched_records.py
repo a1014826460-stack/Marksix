@@ -32,7 +32,6 @@ for path_item in (PREDICT_ROOT, SRC_ROOT):
     if str(path_item) not in sys.path:
         sys.path.insert(0, str(path_item))
 
-import config as app_config  # noqa: E402
 from db import connect, default_postgres_target, detect_database_engine, quote_identifier  # noqa: E402
 from mechanisms import PREDICTION_CONFIGS, build_title_prediction_configs  # noqa: E402
 

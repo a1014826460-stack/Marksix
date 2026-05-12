@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from db import connect as db_connect, utc_now
+from db import ConnectionAdapter, connect as db_connect, utc_now
 
 from common import (
     DEFAULT_DB_TARGET,
@@ -2115,7 +2115,7 @@ def _make_pipe_config(
     )
 
 
-def _sample_content(conn: sqlite3.Connection, table_name: str) -> str:
+def _sample_content(conn: ConnectionAdapter, table_name: str) -> str:
     if not table_exists(conn, table_name):
         return ""
     columns = _table_columns(conn, table_name)
@@ -2154,20 +2154,20 @@ COMMON_PAYLOAD_COLUMNS = {
 }
 
 
-def _table_column_list(conn: sqlite3.Connection, table_name: str) -> tuple[str, ...]:
+def _table_column_list(conn: ConnectionAdapter, table_name: str) -> tuple[str, ...]:
     return tuple(conn.table_columns(table_name))
 
 
-def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+def _table_columns(conn: ConnectionAdapter, table_name: str) -> set[str]:
     return set(_table_column_list(conn, table_name))
 
 
-def _business_columns(conn: sqlite3.Connection, table_name: str) -> tuple[str, ...]:
+def _business_columns(conn: ConnectionAdapter, table_name: str) -> tuple[str, ...]:
     """返回去掉公共开奖字段后的业务列，并保持 SQLite 原始列顺序。"""
     return tuple(column for column in _table_column_list(conn, table_name) if column not in COMMON_PAYLOAD_COLUMNS)
 
 
-def _sample_column_value(conn: sqlite3.Connection, table_name: str, column: str) -> str:
+def _sample_column_value(conn: ConnectionAdapter, table_name: str, column: str) -> str:
     if column not in _table_columns(conn, table_name):
         return ""
     row = conn.execute(
@@ -2956,7 +2956,7 @@ def _make_mixed_xiao_tail_config(
 
 
 def _classify_second_stage_config(
-    conn: sqlite3.Connection,
+    conn: ConnectionAdapter,
     title: str,
     table_name: str,
     modes_id: int,
@@ -3523,7 +3523,7 @@ def _classify_title_config(
     return None
 
 
-def build_title_prediction_configs(db_path=DEFAULT_DB_TARGET) -> dict[str, PredictionConfig]:
+def build_title_prediction_configs(db_path: str | Path = DEFAULT_DB_TARGET) -> dict[str, PredictionConfig]:
     """从当前数据库的 mode_payload_tables.title 自动建立预测机制。
 
     - 已经在 PREDICTION_CONFIGS 中手写维护的 modes_id/title 会跳过，避免重复机制。
@@ -3594,7 +3594,11 @@ def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_TARGET) ->
     dynamic = build_title_prediction_configs(db_path)
     PREDICTION_CONFIGS.update(dynamic)
     _title_configs_loaded = True
-    print(f"[init] Loaded {len(dynamic)} dynamic prediction configs from {db_path}, total: {len(PREDICTION_CONFIGS)}")
+    import logging
+    logging.getLogger("predict.init").info(
+        "Loaded %d dynamic prediction configs from %s, total: %d",
+        len(dynamic), db_path, len(PREDICTION_CONFIGS),
+    )
 
 
 def supported_prediction_keys() -> tuple[str, ...]:

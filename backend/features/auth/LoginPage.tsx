@@ -69,88 +69,86 @@ export function LoginPage() {
         <Card className="w-full max-w-sm p-6">
           <h1 className="text-xl font-semibold">彩票软件后台登录</h1>
 
-          {/* 诗句特效区域 */}
-          <div className="relative mt-1 overflow-hidden rounded-lg px-1 py-2 group">
-            {/* 背景光晕 */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(ellipse 200px 150px at 30% 40%, rgba(148,163,184,0.08) 0%, transparent 70%), " +
-                  "radial-gradient(ellipse 100px 75px at 70% 60%, rgba(203,213,225,0.06) 0%, transparent 70%)",
-                animation: "floatGlow 8s ease-in-out infinite",
-              }}
-            />
-            {/* 流星装饰 */}
-            <div
-              className="pointer-events-none absolute left-0 top-1/3 h-px w-16"
-              style={{
-                background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)",
-                animation: "meteor 4s ease-in-out infinite",
-                animationDelay: "3s",
-              }}
-            />
+      {/* 诗句特效区域 */}
+      <div className="relative mt-1 overflow-hidden rounded-lg px-1 py-2 group">
+        {/* 背景光晕 */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 200px 150px at 30% 40%, rgba(148,163,184,0.08) 0%, transparent 70%), " +
+              "radial-gradient(ellipse 100px 75px at 70% 60%, rgba(203,213,225,0.06) 0%, transparent 70%)",
+            animation: "floatGlow 8s ease-in-out infinite",
+          }}
+        />
+        {/* 流星装饰 */}
+        <div
+          className="pointer-events-none absolute left-0 top-1/3 h-px w-16"
+          style={{
+            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)",
+            animation: "meteor 4s ease-in-out infinite",
+            animationDelay: "3s",
+          }}
+        />
 
-            {/* 诗句逐行 */}
-            <div className="relative space-y-0.5">
-              {verseLines.map((line, index) => {
-                const isLastLine = index === verseLines.length - 1
+        {/* 诗句逐行 – 增加了 text-center */}
+        <div className="relative space-y-0.5 text-center">
+          {verseLines.map((line, index) => {
+            const isLastLine = index === verseLines.length - 1
 
-                return (
-                  <p
-                    key={index}
-                    className="text-sm leading-relaxed tracking-wider select-none"
-                    style={{
-                      // 文字透明，渐变背景裁剪到文字
-                      backgroundImage: `
-                        linear-gradient(
-                          90deg,
-                          transparent 0%,
-                          rgba(255,255,255,0.12) 45%,
-                          rgba(255,255,255,0.45) 50%,
-                          rgba(255,255,255,0.12) 55%,
-                          transparent 100%
-                        ),
-                        linear-gradient(
-                          to right,
-                          #94a3b8,
-                          #cbd5e1,
-                          #e2e8f0,
-                          #cbd5e1,
-                          #94a3b8
-                        )
-                      `,
-                      backgroundSize: "200% 100%, 100% 100%",
-                      backgroundClip: "text",
-                      WebkitBackgroundClip: "text",
-                      color: "transparent",
-                      // 入场动画 + 扫光动画
-                      animation: `
-                        fadeInUp 0.6s ease-out ${index * 0.35}s both,
-                        shimmer ${3 + index * 0.2}s ease-in-out ${2 + index * 0.3}s infinite
-                      `,
-                      // 最后一行特殊处理
-                      ...(isLastLine && {
-                        opacity: 0.4,
-                        filter: "blur(1.5px)",
-                        transition: "opacity 0.8s ease, filter 0.8s ease",
-                      }),
-                    }}
-                  >
-                    {line}
-                  </p>
-                )
-              })}
-            </div>
+            return (
+              <p
+                key={index}
+                className="text-sm leading-relaxed tracking-wider select-none"
+                style={{
+                  // 扫光层 + 更深的文字基底渐变
+                  backgroundImage: `
+                    linear-gradient(
+                      90deg,
+                      transparent 0%,
+                      rgba(255,255,255,0.15) 45%,
+                      rgba(255,255,255,0.55) 50%,
+                      rgba(255,255,255,0.15) 55%,
+                      transparent 100%
+                    ),
+                    linear-gradient(
+                      to right,
+                      #64748b,
+                      #334155,
+                      #0f172a,
+                      #334155,
+                      #64748b
+                    )
+                  `,
+                  backgroundSize: "200% 100%, 100% 100%",
+                  backgroundClip: "text",
+                  WebkitBackgroundClip: "text",
+                  color: "transparent",
+                  animation: `
+                    fadeInUp 0.6s ease-out ${index * 0.35}s both,
+                    shimmer ${3 + index * 0.2}s ease-in-out ${2 + index * 0.3}s infinite
+                  `,
+                  ...(isLastLine && {
+                    opacity: 0.4,
+                    filter: "blur(1.5px)",
+                    transition: "opacity 0.8s ease, filter 0.8s ease",
+                  }),
+                }}
+              >
+                {line}
+              </p>
+            )
+          })}
+        </div>
 
-            {/* 最后一行 hover 显现控制 */}
-            <style>{`
-              .group:hover p:last-child {
-                opacity: 1 !important;
-                filter: blur(0) !important;
-              }
-            `}</style>
-          </div>
+        {/* 最后一行 hover 显现控制 */}
+        <style>{`
+          .group:hover p:last-child {
+            opacity: 1 !important;
+            filter: blur(0) !important;
+          }
+        `}</style>
+      </div>
 
           <form className="mt-5 space-y-3" onSubmit={submit}>
             <Field label="用户名">

@@ -31,7 +31,7 @@ export function DashboardPage() {
   return (
     <AdminShell
       title="控制台"
-      description="查看本地 SQLite 数据、预测机制和文本历史映射的运行概况。"
+      description="查看本地 PostgreSQL 数据、预测机制和文本历史映射的运行概况。"
       actions={
         <ToolbarButton onClick={load}>
           <RefreshCw className="mr-1 h-4 w-4" />
