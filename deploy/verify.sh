@@ -68,8 +68,8 @@ check "前端主页 /" \
     "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/" \
     "200"
 
-check "后台管理 /admin" \
-    "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/admin" \
+check "后台管理 /fackyou/login" \
+    "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/fackyou/login" \
     "200"
 
 check "前端兼容 API /api/latest-draw" \

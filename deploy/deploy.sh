@@ -157,7 +157,7 @@ show_deploy_info() {
     echo ""
     echo "  对外访问:"
     echo "    前端站点:        http://${host_ip}/"
-    echo "    后台管理:        http://${host_ip}/admin"
+    echo "    后台管理:        http://${host_ip}/fackyou/login"
     echo "    前端兼容 API:    http://${host_ip}/api/..."
     echo ""
     echo "  服务器本机访问:"
