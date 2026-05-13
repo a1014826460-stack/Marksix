@@ -173,7 +173,7 @@ Next.js Frontend (port 3000)
 
 ## 配置
 
-`backend/src/config.yaml` 提供默认配置；正式环境应优先通过数据库配置和环境变量覆盖敏感项。
+后端默认配置主要由 `backend/src/runtime_config.py` 中的启动默认值和数据库 `system_config` 表共同提供；正式环境应优先通过数据库配置和环境变量覆盖敏感项。
 
 典型配置项包括：
 

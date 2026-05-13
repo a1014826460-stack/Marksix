@@ -27,9 +27,6 @@ COPY backend/src/ /app/src/
 # 复制数据目录（SQLite、图片等）
 COPY backend/data/ /app/data/
 
-# 复制配置文件（由 docker-compose volumes 覆盖）
-COPY backend/src/config.yaml /app/config.yaml.example
-
 # 确保数据目录存在
 RUN mkdir -p /app/data/Images /app/data/lottery_data
 

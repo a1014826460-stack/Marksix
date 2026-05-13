@@ -55,6 +55,7 @@ cd Marksix
 ### 2. 配置环境变量
 
 ```bash
+apt update && apt install nano -y
 cp .env.example .env
 nano .env
 ```

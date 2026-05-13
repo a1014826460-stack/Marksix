@@ -133,7 +133,7 @@ If you refer to browser usage, prefer the Next.js admin entry and its `/admin/ap
 
 ## Configuration System
 
-Defaults live in `backend/src/config.yaml`, but production-sensitive configuration should be overridden by environment variables or managed configuration where appropriate.
+Bootstrap defaults primarily live in `backend/src/runtime_config.py`, with runtime overrides coming from the database-backed `system_config` table and environment variables where appropriate.
 
 ## API Notes
 
