@@ -22,7 +22,8 @@ COPY . .
 RUN if [ -f pnpm-lock.yaml ]; then \
       pnpm build; \
     else \
-      npm run build; \
+      [ -x ./node_modules/.bin/next ]; \
+      NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/next build; \
     fi
 
 # ---- 运行阶段 ----

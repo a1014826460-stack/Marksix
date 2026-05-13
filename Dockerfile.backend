@@ -22,7 +22,7 @@ COPY . .
 RUN if [ -f pnpm-lock.yaml ]; then \
       pnpm build; \
     else \
-      npm run build; \
+      ./node_modules/.bin/next build; \
     fi
 
 # ---- 运行阶段 ----
