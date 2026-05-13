@@ -44,8 +44,20 @@ def ensure_indexes(conn: Any) -> None:
            ON scheduler_tasks (status, run_at)"""
     )
     conn.execute(
+        f"""{_idx_sql} idx_scheduler_tasks_scope_status_run_at
+           ON scheduler_tasks (schedule_scope, status, run_at)"""
+    )
+    conn.execute(
         f"""{_idx_sql} idx_scheduler_tasks_business_ctx
            ON scheduler_tasks (site_id, web_id, lottery_type_id, year, term)"""
+    )
+    conn.execute(
+        f"""{_idx_sql} idx_scheduler_task_runs_task_id
+           ON scheduler_task_runs (task_id, id DESC)"""
+    )
+    conn.execute(
+        f"""{_idx_sql} idx_scheduler_task_runs_type_status_started
+           ON scheduler_task_runs (task_type, status, started_at DESC)"""
     )
 
     # ── 错误日志 ──

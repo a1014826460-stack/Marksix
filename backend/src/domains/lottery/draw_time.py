@@ -20,7 +20,7 @@ def get_default_draw_time(lottery_type_id: int) -> str:
     Returns:
         默认开奖时间字符串。
     """
-    defaults = {1: "21:30", 2: "21:00", 3: "22:30"}
+    defaults = {1: "21:30", 2: "21:30", 3: "22:30"}
     return defaults.get(lottery_type_id, "21:30")
 
 

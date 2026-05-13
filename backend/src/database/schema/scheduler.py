@@ -16,6 +16,7 @@ def ensure_scheduler_tables(conn: Any, pk_sql: str) -> None:
             task_key TEXT NOT NULL UNIQUE,
             task_type TEXT NOT NULL,
             payload_json TEXT NOT NULL DEFAULT '{{}}',
+            schedule_scope TEXT NOT NULL DEFAULT 'auto',
             status TEXT NOT NULL DEFAULT 'pending',
             run_at TEXT NOT NULL,
             locked_at TEXT,
@@ -36,6 +37,29 @@ def ensure_scheduler_tables(conn: Any, pk_sql: str) -> None:
         )
         """
     )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS scheduler_task_runs (
+            {pk_sql},
+            task_id INTEGER,
+            task_key TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            schedule_scope TEXT NOT NULL DEFAULT 'auto',
+            worker_id TEXT,
+            attempt_no INTEGER NOT NULL DEFAULT 0,
+            scheduled_run_at TEXT,
+            acquired_at TEXT,
+            started_at TEXT,
+            finished_at TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            error_message TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{{}}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    add_column_if_missing(conn, "scheduler_tasks", "schedule_scope", "TEXT NOT NULL DEFAULT 'auto'")
     add_column_if_missing(conn, "scheduler_tasks", "site_id", "INTEGER")
     add_column_if_missing(conn, "scheduler_tasks", "web_id", "INTEGER")
     add_column_if_missing(conn, "scheduler_tasks", "lottery_type_id", "INTEGER")

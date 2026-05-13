@@ -19,6 +19,7 @@ from database.schema.prediction import ensure_prediction_tables
 from database.schema.scheduler import ensure_scheduler_tables
 from database.schema.logs import ensure_log_tables
 from database.schema.config import ensure_config_history_tables
+from database.schema.audit import ensure_audit_tables
 from database.schema.legacy import ensure_legacy_asset_tables
 from database.schema.indexes import ensure_indexes
 from runtime_config import ensure_system_config_table, seed_system_config_defaults
@@ -175,6 +176,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
         ensure_scheduler_tables(conn, pk_sql)
         ensure_prediction_tables(conn, pk_sql)
         ensure_legacy_asset_tables(conn, pk_sql)
+        ensure_audit_tables(conn, pk_sql)
         ensure_log_tables(conn, pk_sql)
         ensure_config_history_tables(conn, pk_sql)
 

@@ -191,6 +191,203 @@
           });
         }
 
+        const INFRA_SCRIPTS = [
+          "jquery.js", "ajax_interceptor.js", "util.js", "handleSelect.js",
+          "url_zlz_yuming_ht.js", "vue.js", "axios.min.js", "djck.js", "kj.js"
+        ];
+
+        function isModuleScript(src) {
+          if (!src) return false;
+          var name = src.split("/").pop() || "";
+          if (INFRA_SCRIPTS.indexOf(name) !== -1) return false;
+          return /\.js$/.test(src) && src.indexOf("static/js/") !== -1;
+        }
+
+        // 视口优先级：0=首屏关键, 1=近屏, 2=远屏
+        var VIEWPORT_PRIORITY = {
+          "027ptw.js":0,"023sqzt.js":0,"012sbzt.js":0,"001qxqm.js":0,
+          "tu1.js":0,"035hblx.js":0,"028sj.js":0,"kj.js":0,
+          "007lxzt.js":1,"026sssx.js":1,"6w.js":1,"9xiao.js":1,
+          "cxqd.js":1,"ds4x.js":1,"crc.js":1,"tp5.js":1,"5xiao.js":1,
+          "wxbm.js":1,"1.js":1,"014sixiaobama.js":1,"008jxym.js":1,
+          "006ptyw.js":1,"dx.js":1
+        };
+
+        function getViewportPriority(src) {
+          var name = src.split("/").pop() || "";
+          return VIEWPORT_PRIORITY[name] !== undefined ? VIEWPORT_PRIORITY[name] : 2;
+        }
+
+        var _moduleScriptSrcs = [];
+        var _firstLoadDone = false;
+
+        function collectModuleScripts() {
+          _moduleScriptSrcs = [];
+          var scripts = document.querySelectorAll('script[src]');
+          for (var i = 0; i < scripts.length; i++) {
+            var src = scripts[i].getAttribute('src');
+            if (isModuleScript(src)) {
+              _moduleScriptSrcs.push(src);
+            }
+          }
+        }
+
+        var _transitionOverlay = null;
+
+        function ensureTransitionOverlay() {
+          if (_transitionOverlay) return;
+          _transitionOverlay = document.createElement("div");
+          _transitionOverlay.id = "__type_switch_overlay";
+          _transitionOverlay.style.cssText =
+            "position:fixed;top:0;left:0;width:100%;height:100%;" +
+            "background:rgba(255,255,255,0.6);z-index:99999;" +
+            "display:none;pointer-events:none;";
+          _transitionOverlay.innerHTML =
+            '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+            'font-size:14px;color:#333;">正在切换...</div>';
+          document.body.appendChild(_transitionOverlay);
+        }
+
+        function showTransition() {
+          ensureTransitionOverlay();
+          _transitionOverlay.style.display = "block";
+        }
+
+        function hideTransition() {
+          if (_transitionOverlay) _transitionOverlay.style.display = "none";
+        }
+
+        var MODULE_CONTAINER_SELECTORS = [
+          "#3t1","#sqbzBox","#sbztBox","#7x1m","#hb3t","#zhenyan",
+          ".lxztBox","._3ssx","#6wbox","#jxztBox1","#sjsxBox",
+          ".ds4xbox","#crcbox",".tp5","#wxztBox",".wxbmBox",
+          "#yyptjBox",".sxbmBox","#szxj","#jsyw",".sxzt",
+          ".ptywBox",".dssxBox","#qqshBox",
+          ".stzt",".tmds",".ptyx",".dxzt",".jsbb",".djym",
+          "#msks",".jxztBox",".cxqd",".jssx",
+          ".yqjt",".yqjt2",".jd24",".rcc",".jyzt",".fslx",
+          ".nn6x",".5wzt",".js3x","#xlnxjImg","#yxym","#fhdb"
+        ];
+
+        function clearModuleContainers() {
+          for (var i = 0; i < MODULE_CONTAINER_SELECTORS.length; i++) {
+            try {
+              var el = document.querySelector(MODULE_CONTAINER_SELECTORS[i]);
+              if (el) el.innerHTML = "";
+            } catch (_) {}
+          }
+        }
+
+        function reloadModulesByPriority() {
+          return new Promise(function(resolve) {
+            var batches = [[], [], []]; // priority 0, 1, 2
+            for (var i = 0; i < _moduleScriptSrcs.length; i++) {
+              var src = _moduleScriptSrcs[i];
+              var prio = getViewportPriority(src);
+              batches[prio].push(src);
+            }
+
+            var completed = 0;
+            var totalModules = _moduleScriptSrcs.length;
+            var batchDelays = [0, 80, 200]; // ms delay before each batch
+
+            function loadBatch(batchIndex) {
+              if (batchIndex >= batches.length) {
+                // All batches launched — wait for pending AJAX
+                waitForPendingRequests().then(resolve);
+                return;
+              }
+
+              var batch = batches[batchIndex];
+              if (batch.length === 0) {
+                loadBatch(batchIndex + 1);
+                return;
+              }
+
+              for (var j = 0; j < batch.length; j++) {
+                injectModuleScript(batch[j]);
+              }
+
+              if (batchIndex < batches.length - 1) {
+                setTimeout(function() { loadBatch(batchIndex + 1); }, batchDelays[batchIndex + 1]);
+              } else {
+                loadBatch(batchIndex + 1);
+              }
+            }
+
+            loadBatch(0);
+          });
+        }
+
+        function injectModuleScript(src) {
+          var script = document.createElement("script");
+          script.src = src;
+          script.type = "text/javascript";
+          script.async = false;
+          script.dataset.moduleReload = "1";
+          document.body.appendChild(script);
+        }
+
+        function waitForPendingRequests() {
+          return new Promise(function(resolve) {
+            var maxWait = 4000;
+            var start = Date.now();
+            function check() {
+              var pending = window.__moduleXHRs ? window.__moduleXHRs.filter(function(xhr) {
+                return xhr.readyState !== 4;
+              }) : [];
+              if (pending.length === 0 || Date.now() - start > maxWait) {
+                resolve();
+              } else {
+                setTimeout(check, 50);
+              }
+            }
+            check();
+          });
+        }
+
+        function abortModuleRequests() {
+          if (window.__moduleXHRs) {
+            for (var i = 0; i < window.__moduleXHRs.length; i++) {
+              try { window.__moduleXHRs[i].abort(); } catch (_) {}
+            }
+          }
+          window.__moduleXHRs = [];
+        }
+
+        async function reloadModulesForTypeSwitch() {
+          // Safety: fall back to full reload if module list not collected yet
+          if (!_moduleScriptSrcs.length) {
+            collectModuleScripts();
+            if (!_moduleScriptSrcs.length) {
+              await loadLegacyPage();
+              return;
+            }
+          }
+          showTransition();
+          abortModuleRequests();
+          if (window.__moduleRequestCache) window.__moduleRequestCache.clear();
+          // Sync global type/web for module scripts that read them at exec time
+          var cfgType = window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.type;
+          if (cfgType !== undefined) {
+            window.type = cfgType;
+            window.web = cfgType === 2 ? 2 : cfgType === 1 ? 1 : 4;
+          }
+          clearModuleContainers();
+          var oldScripts = document.querySelectorAll("script[data-module-reload]");
+          for (var i = 0; i < oldScripts.length; i++) {
+            oldScripts[i].parentNode.removeChild(oldScripts[i]);
+          }
+          await reloadModulesByPriority();
+          refreshAllStaticContent();
+          hideTransition();
+        }
+
+        function refreshAllStaticContent() {
+          enforceStaticBrandText();
+          applyDynamicBoardTitles();
+        }
+
         function enforceStaticBrandText() {
           const forumTitleNodes = document.querySelectorAll(
             '[data-legacy-brand-static="forum-title"]'
@@ -445,11 +642,21 @@
                 host.updateLegacyConfigType(nextType);
                 host.setIsReloadingLegacyPage(true);
 
+                // Update global type/web variables so module scripts use new values
+                window.type = nextType;
+                window.web = nextType === 2 ? 2 : nextType === 1 ? 1 : 4;
+
                 if(window.history && typeof window.history.replaceState === 'function'){
                   window.history.replaceState(null, '', nextUrl);
                 }
 
-                host.loadLegacyPage().finally(function(){
+                // Plan A: after first load, use lightweight module remount
+                var useLightReload = host.isFirstLoadDone && host.isFirstLoadDone();
+                var reloadTask = useLightReload
+                  ? host.reloadModulesForTypeSwitch()
+                  : host.loadLegacyPage();
+
+                reloadTask.finally(function(){
                   host.setIsReloadingLegacyPage(false);
                   host.restoreScrollPosition();
                 });
@@ -511,8 +718,16 @@
               }
 
               if(window.MutationObserver && document.body){
+                var _mutationDebounceTimer = null;
+                var _mutationDebounceMs = 150; // Plan D: 150ms debounce
                 var mutationObserver = new MutationObserver(function(){
-                  window.requestAnimationFrame(refreshBridgeState);
+                  if(_mutationDebounceTimer !== null){
+                    window.clearTimeout(_mutationDebounceTimer);
+                  }
+                  _mutationDebounceTimer = window.setTimeout(function(){
+                    _mutationDebounceTimer = null;
+                    window.requestAnimationFrame(refreshBridgeState);
+                  }, _mutationDebounceMs);
                 });
                 mutationObserver.observe(document.body, {
                   childList: true,
@@ -543,6 +758,12 @@
             enforceStaticBrandText();
             applyDynamicBoardTitles();
             restoreScrollPosition();
+
+            // Plan A: mark first load complete and collect module scripts
+            _firstLoadDone = true;
+            window.setTimeout(function() {
+              collectModuleScripts();
+            }, 500);
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             document.body.innerHTML =
@@ -564,6 +785,8 @@
           getCanonicalUrlForType: (type) => getCanonicalUrlForType(type),
           enforceStaticBrandText,
           applyDynamicBoardTitles,
+          isFirstLoadDone: () => _firstLoadDone,
+          reloadModulesForTypeSwitch: () => reloadModulesForTypeSwitch(),
         };
 
         window.addEventListener("DOMContentLoaded", loadLegacyPage);
