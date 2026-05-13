@@ -15,7 +15,7 @@
 这意味着：
 
 - 外部用户直接访问：`http://服务器IP/`
-- 外部后台入口：`http://服务器IP/admin`
+- 外部后台入口：`http://服务器IP/fackyou/login`
 - 外部 `/api/*` 是前端兼容 API，不是裸 Python API
 - Python 原生 API 主要供容器内部和服务器本机使用：`http://127.0.0.1:8000/api/*`
 
@@ -91,7 +91,7 @@ chmod +x deploy/deploy.sh
 默认访问地址：
 
 - 前端站点：`http://服务器IP/`
-- 后台管理：`http://服务器IP/admin`
+- 后台管理：`http://服务器IP/fackyou/login`
 - 前端兼容 API：`http://服务器IP/api/...`
 
 服务器本机可直接访问：
@@ -170,7 +170,7 @@ docker compose exec python-api python /app/src/utils/build_text_history_mappings
 
 - `http://服务器IP/`
   - 前台站点
-- `http://服务器IP/admin`
+- `http://服务器IP/fackyou/login`
   - 后台管理
 - `http://服务器IP/api/latest-draw`
   - 前端兼容 API 示例
@@ -186,14 +186,14 @@ docker compose exec python-api python /app/src/utils/build_text_history_mappings
 
 - `/` -> `frontend:3000`
 - `/api/*` -> `frontend:3000`
-- `/admin*` -> `backend-admin:3002`（内部重写为 `/fackyou/admin*`，适配 Next.js `basePath`）
+- `/fackyou*` -> `backend-admin:3002`（直接匹配 Next.js `basePath=/fackyou`）
 - `/uploads/*` -> `python-api:8000`
 - `/health` -> `python-api:8000/api/health`
 
 注意：
 
 - 当前外部 `/api/*` 不是直接转发到 Python，而是先走前端 Next.js 的兼容层
-- 后台里调用 Python API 的入口是 `/admin/api/python/*`
+- 后台里调用 Python API 的入口是 `/fackyou/api/python/*`
 - backend-admin 的 Next.js `basePath` 设置为 `/fackyou`，健康检查和 nginx 代理均已适配
 
 ## 数据迁移

@@ -43,7 +43,7 @@
 
 调用关系：
 
-- 浏览器管理端请求 `/admin/api/python/...`
+- 浏览器管理端请求 `/fackyou/api/python/...`
 - Next.js 代理将其转发到 Python `/api/...`
 - Python 后端路由 → 领域服务 → 数据访问层
 - `domains/` 不依赖 `admin/`；`admin/` 作为兼容包装调用 `domains/`
@@ -71,12 +71,12 @@ npm run dev -- --hostname 127.0.0.1 --port 3002
 默认访问地址：
 
 - Python API：`http://127.0.0.1:8000`
-- 管理后台：`http://127.0.0.1:3002/admin/login`
+- 管理后台：`http://127.0.0.1:3002/fackyou/login`
 
 如果你是通过 Docker + Nginx 部署整站，而不是本机直接启动 Python：
 
 - 对外前台入口通常是 `http://服务器IP/` 或你的站点域名
-- 对外后台入口通常是 `http://服务器IP/admin`
+- 对外后台入口通常是 `http://服务器IP/fackyou/login`
 - Python 原生接口一般只在服务器本机或容器内网访问，例如 `http://127.0.0.1:8000/api/health`
 
 ## 4. 数据库配置
@@ -262,13 +262,13 @@ Python 后端真实路由统一是：
 管理前端实际通过 `backend/app/api/python/[...path]/route.ts` 转发，请求浏览器路径为：
 
 ```text
-/admin/api/python/...
+/fackyou/api/python/...
 ```
 
 示例：
 
 - Python 原生：`/api/admin/lottery-types`
-- 管理端代理：`/admin/api/python/admin/lottery-types`
+- 管理端代理：`/fackyou/api/python/admin/lottery-types`
 
 代理目标地址由以下环境变量控制：
 
@@ -300,9 +300,9 @@ PYTHON_API_BASE_URL=http://127.0.0.1:8000
 ### 9.4 注意
 
 - 本文默认写 Python 原生路径，除非特别注明“管理端代理”或“前台兼容层”
-- 如果你在管理后台页面里调试，请把路径换成 `/admin/api/python/...`
+- 如果你在管理后台页面里调试，请把路径换成 `/fackyou/api/python/...`
 - 如果你在站点域名下调试前台接口，请确认自己访问的是前台兼容 API，还是 Python 原生 `/api/...`
-- 不要把 Python 原生路径 `/api/...`、管理端代理路径 `/admin/api/python/...`、以及前台对外 `/api/*` 兼容层混为一谈
+- 不要把 Python 原生路径 `/api/...`、管理端代理路径 `/fackyou/api/python/...`、以及前台对外 `/api/*` 兼容层混为一谈
 
 ## 10. 健康检查接口
 
@@ -831,7 +831,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/auth/login", {
+const res = await fetch("/fackyou/api/python/auth/login", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ username: "admin", password: "admin123" }),
@@ -983,7 +983,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/admin/lottery-types", {
+const res = await fetch("/fackyou/api/python/admin/lottery-types", {
   headers: { Authorization: `Bearer ${token}` },
 })
 const data = await res.json()
@@ -1022,7 +1022,7 @@ const data = await res.json()
 前端调用示例：
 
 ```ts
-await fetch("/admin/api/python/admin/lottery-types/3", {
+await fetch("/fackyou/api/python/admin/lottery-types/3", {
   method: "PUT",
   headers: {
     "Content-Type": "application/json",
@@ -1110,7 +1110,7 @@ curl -X GET "http://127.0.0.1:8000/api/admin/draws?limit=50" \
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/admin/draws?limit=50", {
+const res = await fetch("/fackyou/api/python/admin/draws?limit=50", {
   headers: { Authorization: `Bearer ${token}` },
 })
 ```
@@ -1236,7 +1236,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/admin/sites", {
+const res = await fetch("/fackyou/api/python/admin/sites", {
   headers: { Authorization: `Bearer ${token}` },
 })
 ```
@@ -1365,7 +1365,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-await fetch("/admin/api/python/admin/sites/4/fetch", {
+await fetch("/fackyou/api/python/admin/sites/4/fetch", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -1550,7 +1550,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/predict/mechanisms")
+const res = await fetch("/fackyou/api/python/predict/mechanisms")
 const data = await res.json()
 ```
 
@@ -1678,7 +1678,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/predict/pt2xiao", {
+const res = await fetch("/fackyou/api/python/predict/pt2xiao", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -1785,7 +1785,7 @@ curl -X GET "http://127.0.0.1:8000/api/admin/sites/4/prediction-modules" \
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/admin/sites/4/prediction-modules", {
+const res = await fetch("/fackyou/api/python/admin/sites/4/prediction-modules", {
   headers: { Authorization: `Bearer ${token}` },
 })
 ```
@@ -1822,7 +1822,7 @@ curl -X POST "http://127.0.0.1:8000/api/admin/sites/4/prediction-modules/run" \
 前端调用示例：
 
 ```ts
-await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
+await fetch("/fackyou/api/python/admin/sites/4/prediction-modules/run", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -2045,7 +2045,7 @@ Invoke-RestMethod `
 前端调用示例：
 
 ```ts
-const res = await fetch("/admin/api/python/admin/backfill-predictions", {
+const res = await fetch("/fackyou/api/python/admin/backfill-predictions", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -2394,7 +2394,7 @@ curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
 
 1. Python API 是否启动在 `127.0.0.1:8000`
 2. 请求路径是否带了 `/api`
-3. 是否把 `/api/...` 与 `/admin/api/python/...` 混用了
+3. 是否把 `/api/...` 与 `/fackyou/api/python/...` 混用了
 4. 对应路由是否真的在 `backend/src/app.py` 注册
 5. 请求方法是否正确
 
@@ -2437,8 +2437,8 @@ curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
 检查：
 
 1. `PYTHON_API_BASE_URL` 是否正确
-2. 浏览器访问的是 `/admin/api/python/...`、站点对外 `/api/*` 兼容层，还是 Python 原生 `/api/...`
-3. Next.js `basePath=/admin` 是否被正确考虑
+2. 浏览器访问的是 `/fackyou/api/python/...`、站点对外 `/api/*` 兼容层，还是 Python 原生 `/api/...`
+3. Next.js `basePath=/fackyou` 是否被正确考虑
 4. 浏览器 Network 面板里的真实请求 URL
 5. Python 后端日志
 

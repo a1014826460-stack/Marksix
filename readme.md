@@ -5,7 +5,7 @@
 当前仓库由三部分组成：
 
 - `python-api`：Python 原生 HTTP API，负责抓取、数据处理、预测和后台业务接口
-- `backend-admin`：Next.js 管理后台，浏览器通过 `/admin/api/python/*` 代理访问 Python API
+- `backend-admin`：Next.js 管理后台，浏览器通过 `/fackyou/api/python/*` 代理访问 Python API
 - `frontend`：Next.js 前台站点，浏览器对外看到的 `/api/*` 多数是前台兼容层，不是 Python 原生接口
 
 ## 本地启动
@@ -57,11 +57,11 @@ npm run dev -- --hostname 127.0.0.1 --port 3002
 
 登录地址：
 
-- `http://127.0.0.1:3002/admin/login`
+- `http://127.0.0.1:3002/fackyou/login`
 
 管理端通过：
 
-- `/admin/api/python/*`
+- `/fackyou/api/python/*`
 
 代理到 Python 原生：
 
@@ -110,7 +110,7 @@ Ubuntu 服务器部署请直接看：
 当前默认部署方式是：
 
 - `http://服务器IP/` -> 前端站点
-- `http://服务器IP/admin` -> 管理后台
+- `http://服务器IP/fackyou/login` -> 管理后台
 - `http://服务器IP/api/*` -> 前台兼容 API
 - Python 原生 `http://127.0.0.1:8000/api/*` 主要供服务器本机和容器内访问
 
@@ -154,8 +154,8 @@ Python API (port 8000)
   -> health /health, /api/health
 
 Next.js Admin UI (port 3002)
-  -> /admin
-  -> /admin/api/python/* -> proxy to Python API
+  -> /fackyou
+  -> /fackyou/api/python/* -> proxy to Python API
 
 Next.js Frontend (port 3000)
   -> /?t=1|2|3
