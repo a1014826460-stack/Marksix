@@ -186,7 +186,7 @@ docker compose exec python-api python /app/src/utils/build_text_history_mappings
 
 - `/` -> `frontend:3000`
 - `/api/*` -> `frontend:3000`
-- `/admin*` -> `backend-admin:3002`
+- `/admin*` -> `backend-admin:3002`（内部重写为 `/fackyou/admin*`，适配 Next.js `basePath`）
 - `/uploads/*` -> `python-api:8000`
 - `/health` -> `python-api:8000/api/health`
 
@@ -194,6 +194,7 @@ docker compose exec python-api python /app/src/utils/build_text_history_mappings
 
 - 当前外部 `/api/*` 不是直接转发到 Python，而是先走前端 Next.js 的兼容层
 - 后台里调用 Python API 的入口是 `/admin/api/python/*`
+- backend-admin 的 Next.js `basePath` 设置为 `/fackyou`，健康检查和 nginx 代理均已适配
 
 ## 数据迁移
 
@@ -310,13 +311,25 @@ cp /etc/letsencrypt/live/example.com/privkey.pem deploy/ssl/privkey.pem
 
 ### 3. 使用 HTTPS Nginx 配置
 
-仓库里提供了一个通用示例：
+仓库里提供了两个 SSL 配置示例：
 
-```text
-deploy/nginx.domain.ssl.conf.example
+| 文件 | 适用场景 |
+|------|---------|
+| `deploy/nginx.domain.ssl.conf.example` | 通用域名模板，需自行替换域名 |
+| `deploy/nginx.www.shengshi8800.ssl.conf.example` | 已预配 `www.shengshi8800.com`，直接可用 |
+
+**如果使用 `www.shengshi8800.com` 域名**：
+
+```bash
+cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf
 ```
 
-使用方式：
+配置中已包含：
+- `shengshi8800.com` -> `www.shengshi8800.com` 重定向（HTTP + HTTPS）
+- `/` 默认重定向到 `/?t=3`
+- `/?type=N` 自动转换为 `/?t=N`
+
+**如果使用其他域名**：
 
 ```bash
 cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf
