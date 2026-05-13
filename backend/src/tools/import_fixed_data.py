@@ -26,7 +26,12 @@ from db import connect, default_postgres_target
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXED_DATA_PATH = BACKEND_ROOT / "data" / "fixed_data.json"
-DEFAULT_DB_TARGET = default_postgres_target()
+def _get_default_db_target():
+    try:
+        return default_postgres_target()
+    except RuntimeError:
+        return ""
+DEFAULT_DB_TARGET = _get_default_db_target()
 FIXED_TABLE_NAME = "fixed_data"
 
 

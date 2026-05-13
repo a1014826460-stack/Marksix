@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from crawler.crawler_service import run_hk_crawler, run_macau_crawler
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:

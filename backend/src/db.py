@@ -21,10 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
-DEFAULT_POSTGRES_DSN = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:2225427@localhost:5432/liuhecai",
-).strip()
+DEFAULT_POSTGRES_DSN = os.getenv("DATABASE_URL", "").strip()
 POSTGRES_REQUIRED_ERROR = (
     "未配置 PostgreSQL 数据库连接。"
     "请设置 DATABASE_URL 环境变量或通过 --db-path 参数传入。"

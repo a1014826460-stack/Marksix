@@ -72,7 +72,12 @@ if str(SRC_ROOT) not in sys.path:
 from db import connect, default_postgres_target
 
 
-DEFAULT_DB_TARGET = default_postgres_target()
+def _get_default_db_target():
+    try:
+        return default_postgres_target()
+    except RuntimeError:
+        return ""
+DEFAULT_DB_TARGET = _get_default_db_target()
 
 
 def quote_identifier(identifier: str) -> str:

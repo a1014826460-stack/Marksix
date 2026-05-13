@@ -4,8 +4,8 @@ from http import HTTPStatus
 
 from admin.crud import create_number, delete_number, list_numbers, update_number
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:
@@ -17,7 +17,8 @@ def register(router: Router) -> None:
 def list_number_routes(ctx: RequestContext) -> None:
     limit = int(ctx.query_value("limit", "300") or 300)
     keyword = ctx.query_value("keyword", "") or ""
-    ctx.send_json({"numbers": list_numbers(ctx.db_path, limit, keyword)})
+    sign = ctx.query_value("sign", "") or ""
+    ctx.send_json({"numbers": list_numbers(ctx.db_path, limit, keyword, sign)})
 
 
 def create_number_route(ctx: RequestContext) -> None:

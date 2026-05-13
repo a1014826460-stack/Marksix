@@ -1,97 +1,51 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { RefreshCw } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
-import { Card } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { adminApi, jsonBody } from "@/lib/admin-api"
-import type { Mechanism } from "@/features/shared/types"
+import { Button } from "@/components/ui/button"
+import { AdminNotice } from "@/features/shared/AdminNotice"
+import { PredictionModulesTable } from "@/features/prediction-modules/PredictionModulesTable"
+import { usePredictionModules } from "@/features/prediction-modules/usePredictionModules"
 
 export function PredictionModulesPage() {
-  const [rows, setRows] = useState<Mechanism[]>([])
-  const [toggling, setToggling] = useState<Set<string>>(new Set())
+  const [message, setMessage] = useState("")
+  const {
+    rows,
+    loading,
+    error,
+    toggling,
+    load,
+    toggleStatus,
+  } = usePredictionModules()
 
-  useEffect(() => {
-    adminApi<{ mechanisms: Mechanism[] }>("/predict/mechanisms").then(
-      (data) => setRows(data.mechanisms),
-    )
-  }, [])
-
-  const handleToggle = async (mechanismKey: string, currentStatus: number) => {
-    const newStatus = currentStatus === 1 ? 0 : 1
-    setToggling((prev) => new Set(prev).add(mechanismKey))
+  async function handleToggle(mechanismKey: string, currentStatus: number) {
     try {
-      await adminApi(
-        `/admin/predict/mechanisms/${encodeURIComponent(mechanismKey)}/status`,
-        { method: "PATCH", body: jsonBody({ status: newStatus }) },
-      )
-      setRows((prev) =>
-        prev.map((r) => (r.key === mechanismKey ? { ...r, status: newStatus } : r)),
-      )
-    } catch {
-      // 操作失败时不更新 UI 状态
-    } finally {
-      setToggling((prev) => {
-        const next = new Set(prev)
-        next.delete(mechanismKey)
-        return next
-      })
+      await toggleStatus(mechanismKey, currentStatus)
+      setMessage("")
+    } catch (toggleError) {
+      setMessage(toggleError instanceof Error ? toggleError.message : "更新模块状态失败")
     }
   }
 
   return (
     <AdminShell
       title="预测模块"
-      description="由 mechanisms.py 自动提供的预测模块与本地 SQLite 数据源。"
+      description="管理机制启用状态。批量生成和批量删除入口已放到对应站点的数据管理页。"
+      actions={
+        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw className="mr-1 h-4 w-4" />
+          刷新
+        </Button>
+      }
     >
-      <Card className="p-4">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>key</TableHead>
-              <TableHead>标题</TableHead>
-              <TableHead>modes_id</TableHead>
-              <TableHead>数据表</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => {
-              const status = row.status ?? 1
-              const isToggling = toggling.has(row.key)
-              return (
-                <TableRow key={row.key}>
-                  <TableCell>{row.key}</TableCell>
-                  <TableCell>{row.title}</TableCell>
-                  <TableCell>{row.default_modes_id}</TableCell>
-                  <TableCell>{row.default_table}</TableCell>
-                  <TableCell>
-                    <span className={status === 1 ? "text-green-600" : "text-gray-400"}>
-                      {status === 1 ? "启用" : "禁用"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={status === 1}
-                      disabled={isToggling}
-                      onCheckedChange={() => handleToggle(row.key, status)}
-                    />
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </Card>
+      <AdminNotice message={message || error} />
+      <PredictionModulesTable
+        rows={rows}
+        toggling={toggling}
+        loading={loading}
+        onToggle={handleToggle}
+      />
     </AdminShell>
   )
 }

@@ -13,10 +13,10 @@ from admin.prediction import (
 )
 from db import connect
 from http import HTTPStatus
-from http.auth import require_generation_access
-from http.request_context import RequestContext
-from http.router import Router
-from http.site_context import (
+from app_http.auth import require_generation_access
+from app_http.request_context import RequestContext
+from app_http.router import Router
+from app_http.site_context import (
     extract_site_web_value,
     resolve_site_context,
     validate_web_matches_site,

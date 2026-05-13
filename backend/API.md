@@ -17,18 +17,27 @@
 
 当前后端调用链路分为四层：
 
-1. Python HTTP 入口：`backend/src/app.py`
-2. 业务模块：
-   - `backend/src/public/api.py`
-   - `backend/src/legacy/api.py`
-   - `backend/src/admin/`
-   - `backend/src/predict/`
-   - `backend/src/runtime_config.py`
-   - `backend/src/logger.py`
-3. 数据访问与建表：
-   - `backend/src/db.py`
-   - `backend/src/tables.py`
-4. 管理端代理与前端调用：
+1. Python HTTP 入口：`backend/src/main.py`（正式入口）、`backend/src/app.py`（兼容入口）
+2. HTTP 传输层：`backend/src/app_http/`（路由、鉴权、请求上下文、响应写入）
+3. 路由层：`backend/src/routes/`（注册路由、解析 HTTP 参数、调用领域服务）
+4. 领域层：`backend/src/domains/`（核心业务逻辑，不依赖 HTTP 层）
+   - `domains/prediction/` — 预测模块管理、安全控制、重新生成
+   - `domains/sites/` — 站点业务逻辑
+   - `domains/lottery/` — 彩种业务
+   - `domains/configs/` — 配置管理
+   - `domains/logs/` — 日志查询
+   - `domains/legacy/` — 旧站兼容
+5. 数据访问与建表：
+   - `backend/src/db.py` — PostgreSQL 连接适配
+   - `backend/src/tables.py` — 表结构初始化
+6. 采集与调度：
+   - `backend/src/crawler/collectors.py` — HK/Macau 数据采集
+   - `backend/src/crawler/tasks.py` — 调度器任务管理
+   - `backend/src/crawler/scheduler.py` — CrawlerScheduler + 自动预测
+7. 预测引擎：
+   - `backend/src/predict/mechanisms.py` — 预测算法注册与实现
+   - `backend/src/prediction_generation/service.py` — 批量生成编排
+8. 管理端代理与前端调用：
    - `backend/app/api/python/[...path]/route.ts`
    - `backend/lib/admin-api.ts`
 
@@ -36,14 +45,19 @@
 
 - 浏览器管理端请求 `/admin/api/python/...`
 - Next.js 代理将其转发到 Python `/api/...`
-- Python 后端再进入 `public`、`legacy`、`admin`、`predict` 模块
+- Python 后端路由 → 领域服务 → 数据访问层
+- `domains/` 不依赖 `admin/`；`admin/` 作为兼容包装调用 `domains/`
 - 所有正式业务数据统一读写 PostgreSQL
 
 ## 3. 启动方式
 
-Python 后端：
+Python 后端（两种方式等效，推荐 `main.py`）：
 
 ```powershell
+# 正式入口（推荐）
+python backend/src/main.py --host 127.0.0.1 --port 8000
+
+# 兼容入口
 python backend/src/app.py --host 127.0.0.1 --port 8000
 ```
 
@@ -71,12 +85,17 @@ npm run dev -- --hostname 127.0.0.1 --port 3002
 DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 ```
 
-当前代码的正式运行解析顺序：
+首次启动前确保：
 
-1. `DATABASE_URL`
-2. `config.yaml` 中 `database.default_postgres_dsn`
+1. PostgreSQL 服务已启动
+2. 数据库 `liuhecai` 已创建
+3. 环境变量 `DATABASE_URL` 已设置
 
-如果两者都没有配置，后端应直接失败，不再回退到 SQLite。
+注意：
+
+- 代码中不再硬编码数据库密码
+- 正式运行只接受 PostgreSQL DSN
+- 如果未配置 `DATABASE_URL`，启动会立即失败并提示
 
 ### 4.2 SQLite 说明
 
@@ -153,10 +172,32 @@ Authorization: Bearer <token>
 ```json
 {
   "ok": false,
-  "error": "错误说明",
-  "detail": "可选，调试细节或 traceback"
+  "error": "错误说明"
 }
 ```
+
+如果是业务异常（AppError 子类），额外返回 `code` 字段：
+
+```json
+{
+  "ok": false,
+  "error": "未登录或登录已失效",
+  "code": "UNAUTHORIZED"
+}
+```
+
+常见 `code` 值：
+
+| code | HTTP 状态 | 说明 |
+|------|-----------|------|
+| `UNAUTHORIZED` | 401 | 未登录或登录已失效 |
+| `FORBIDDEN` | 403 | 已登录但权限不足 |
+| `NOT_FOUND` | 404 | 资源不存在或路由不匹配 |
+| `VALIDATION_ERROR` | 400 | 参数校验失败 |
+| `CONFLICT` | 409 | 资源冲突 |
+| `APP_ERROR` | 400 | 通用业务异常 |
+
+生产环境下 **不返回** traceback、文件路径、SQL、内部模块名。设置 `LOTTERY_DEBUG=1` 环境变量后会在 `detail` 字段返回调试信息。
 
 ### 7.2 推荐的新接口成功结构
 
@@ -533,6 +574,79 @@ const data = await res.json()
 - `sort`
 - `years`
 - `items`
+
+### GET `/api/public/current-period`
+
+接口说明：返回指定彩种当前已开奖期号与年份。
+
+鉴权要求：
+
+- 是否需要登录：否
+- Header：无
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---:|---|
+| `lottery_type` | int | 否 | `3` | 彩种 ID（1=香港, 2=澳门, 3=台湾） |
+
+请求体：
+
+```json
+{}
+```
+
+成功响应：
+
+```json
+{
+  "lottery_type_id": 3,
+  "lottery_name": "台湾彩",
+  "current_period": "2026125",
+  "current_year": 2026,
+  "current_term": 125
+}
+```
+
+无已开奖记录时返回：
+
+```json
+{
+  "lottery_type_id": 3,
+  "lottery_name": "台湾彩",
+  "current_period": "",
+  "current_year": 0,
+  "current_term": 0
+}
+```
+
+curl 示例：
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/public/current-period?lottery_type=3"
+```
+
+PowerShell 示例：
+
+```powershell
+Invoke-RestMethod `
+  -Method GET `
+  -Uri "http://127.0.0.1:8000/api/public/current-period?lottery_type=3"
+```
+
+前端调用示例：
+
+```ts
+const res = await fetch(
+  "http://127.0.0.1:8000/api/public/current-period?lottery_type=3",
+)
+const data = await res.json()
+```
+
+调试提示：
+
+- 数据来源是 `lottery_draws` 表中最新的 `is_opened=1` 记录
+- 若彩种从未录入过已开奖数据，四个返回值均为空/0
 
 ## 12. 旧站兼容接口
 
@@ -1584,6 +1698,8 @@ const res = await fetch("/admin/api/python/predict/pt2xiao", {
 - `DELETE /api/admin/sites/{site_id}/prediction-modules/{module_id}`
 - `POST /api/admin/sites/{site_id}/prediction-modules/run`
 - `POST /api/admin/sites/{site_id}/prediction-modules/generate-all`
+- `POST /api/admin/sites/{site_id}/prediction-modules/bulk-delete-estimate`
+- `DELETE /api/admin/sites/{site_id}/prediction-modules/bulk-delete`
 
 字段说明：
 
@@ -1716,6 +1832,71 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 }
 ```
 
+### POST `/api/admin/sites/{site_id}/prediction-modules/bulk-delete-estimate`
+
+接口说明：按当前站点、已选预测模块和期数范围，预估 `created.mode_payload_*` 中将删除的记录数。
+
+请求体示例：
+
+```json
+{
+  "moduleIds": ["pt2xiao", "tema12"],
+  "periodRange": {
+    "start": 2026001,
+    "end": 2026010
+  }
+}
+```
+
+成功响应：
+
+```json
+{
+  "moduleCount": 2,
+  "periodCount": 10,
+  "estimatedRows": 20,
+  "limitExceeded": false
+}
+```
+
+说明：
+- 仅允许删除当前 `site_id` 下已启用的模块
+- 删除范围会自动按当前站点的 `lottery_type_id` 与 `web_id` 过滤
+- 若预计删除量超过前端约定的 1000 条，会返回 `limitExceeded=true`
+
+### DELETE `/api/admin/sites/{site_id}/prediction-modules/bulk-delete`
+
+接口说明：按当前站点、预测模块与期数范围，批量删除测试生成的预测资料。
+
+请求体示例：
+
+```json
+{
+  "moduleIds": ["pt2xiao", "tema12"],
+  "periodRange": {
+    "start": 2026001,
+    "end": 2026010
+  }
+}
+```
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "deleted": 20,
+  "estimated": 20,
+  "modules": [
+    {
+      "moduleId": "pt2xiao",
+      "tableName": "mode_payload_43",
+      "deleted": 10
+    }
+  ]
+}
+```
+
 ### 站点数据表管理接口
 
 这组接口已实现，但它们操作的是 `mode_payload_*` 明细表，适合站点数据维护。
@@ -1734,7 +1915,288 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 - 列表查询支持 `type`、`web`、`page`、`page_size`、`search`、`source=public|created|all`
 - 更新/删除时 `source` 只能是 `public` 或 `created`
 
-## 21. 日志管理接口
+### 预测资料回填接口
+
+接口说明：批量回填预测资料的 `res_code` / `res_sx` / `res_color` 字段。遍历指定期号范围内的所有已开奖记录，将开奖号码对应的结果信息写入所有 `created.mode_payload_*` 表中匹配的记录。
+
+### POST `/api/admin/backfill-predictions`
+
+接口说明：按彩种和期号范围，将已开奖记录的号码、生肖、波色回填到预测资料中。
+
+鉴权要求：
+
+- 是否需要登录：是
+- Header：
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---:|---|
+| 无 | - | - | - | 所有参数通过请求体传递 |
+
+请求体：
+
+```json
+{
+  "lottery_type_id": 3,
+  "start_issue": "2026001",
+  "end_issue": "2026010",
+  "table_names": ["mode_payload_43", "mode_payload_65"]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---:|---|
+| `lottery_type_id` | int | 否 | 彩种 ID，默认 `3` |
+| `start_issue` | string | 是 | 起始期号，例如 `2026001` |
+| `end_issue` | string | 是 | 结束期号，例如 `2026010` |
+| `table_names` | string[] | 否 | 指定仅回填这些 `mode_payload_*` 表；不传则回填所有 created 预测表 |
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "lottery_type_id": 3,
+    "start_issue": "2026001",
+    "end_issue": "2026010",
+    "draw_count": 10,
+    "total_affected": 420,
+    "draws": [
+      {
+        "year": 2026,
+        "term": 1,
+        "issue": "2026001",
+        "numbers": "04,27,38,11,45,08,40",
+        "res_sx": "兔,豬,牛,狗,龍,蛇,猴",
+        "res_color": "蓝,红,绿,蓝,红,蓝,红",
+        "updated_tables": [
+          {"table": "mode_payload_43", "affected": 1},
+          {"table": "mode_payload_65", "affected": 1}
+        ],
+        "total_affected": 42
+      }
+    ]
+  }
+}
+```
+
+失败响应：
+
+```json
+{
+  "ok": false,
+  "error": "期号范围 2026001-2026010 内没有已开奖记录"
+}
+```
+
+curl 示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/admin/backfill-predictions" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"lottery_type_id":3,"start_issue":"2026001","end_issue":"2026010"}'
+```
+
+PowerShell 示例：
+
+```powershell
+Invoke-RestMethod `
+  -Method POST `
+  -Uri "http://127.0.0.1:8000/api/admin/backfill-predictions" `
+  -Headers @{ Authorization = "Bearer <token>" } `
+  -ContentType "application/json" `
+  -Body '{"lottery_type_id":3,"start_issue":"2026001","end_issue":"2026010"}'
+```
+
+前端调用示例：
+
+```ts
+const res = await fetch("/admin/api/python/admin/backfill-predictions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    lottery_type_id: 3,
+    start_issue: "2026001",
+    end_issue: "2026010",
+  }),
+})
+const data = await res.json()
+```
+
+调试提示：
+
+- 只会操作 `is_opened=1` 且已录入号码的已开奖记录
+- 回填仅更新 `res_code`、`res_sx`、`res_color` 三者均为空的记录，已有回填数据的记录不会被覆盖
+- 不传 `start_issue`/`end_issue` 时，自动按 `prediction.recent_period_count`（默认 10）追溯近期期数
+- 遍历 `created` schema 下所有 `mode_payload_*` 表，按 `type` + `year` + `term` 匹配更新
+
+### GET `/api/admin/backfill-predictions/logs`
+
+接口说明：查询回补检查与生成事件的执行日志。
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `lottery_type_id` | int | 否 | - | 彩种 ID |
+| `period` | string | 否 | - | 期号模糊匹配（如 `2026133`） |
+| `action` | string | 否 | - | 动作筛选：`skipped`/`generated`/`error` |
+| `date_from` | string | 否 | - | 起始时间 |
+| `date_to` | string | 否 | - | 结束时间 |
+| `page` | int | 否 | `1` | 页码 |
+| `page_size` | int | 否 | `30` | 每页数量（最大 200） |
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "created_at": "2026-05-13T04:04:23Z",
+        "level": "INFO",
+        "message": "[回补] 期号=2026133 动作=generated 详情=inserted=3 updated=0",
+        "lottery_type_id": 3
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 30,
+    "total_pages": 1
+  }
+}
+```
+
+curl 示例：
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/admin/backfill-predictions/logs?lottery_type_id=3&period=2026133&page_size=30" \
+  -H "Authorization: Bearer <token>"
+```
+
+## 21. 邮件报警接口
+
+状态：已实现
+
+### 概述
+
+邮件报警系统用于在以下场景自动发送告警邮件：
+
+1. **爬虫连续失败** ─ 爬虫连续重试 N 次无法获取数据后触发（阈值由 `alert.crawler_retry_threshold` 控制，默认 3）
+2. **预测数据断层** ─ `daily_prediction_cron_time` 触发后，若启用站点的 `created` 预测数据未覆盖到目标期号（当前期+1），触发报警
+3. **开奖数据滞后** ─ 最新已开奖记录的 `next_time` 已过当前北京时间，但无新数据入库
+4. **精确期号不匹配** ─ 调度器精确开奖检查全部重试失败后触发
+
+### 配置说明
+
+邮件报警依赖以下 `system_config` 配置项（可在后台配置管理页面修改）：
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `alert.email_enabled` | bool | true | 是否启用邮件报警 |
+| `alert.email_recipients` | json | `["1014826460@qq.com"]` | 报警邮件收件人列表 |
+| `alert.smtp_host` | string | `smtp.qq.com` | SMTP 服务器地址 |
+| `alert.smtp_port` | int | `587` | SMTP 端口（587=TLS） |
+| `alert.smtp_username` | string | `""` | SMTP 登录用户名（通常为邮箱地址） |
+| `alert.smtp_password` | string | `""` | SMTP 密码或授权码（敏感） |
+| `alert.smtp_from_name` | string | `Liuhecai 报警系统` | 发件人显示名称 |
+| `alert.crawler_retry_threshold` | int | `3` | 爬虫连续失败报警阈值 |
+
+### GET `/api/admin/alert/recipients`
+
+接口说明：获取当前配置的报警邮件收件人列表。
+
+鉴权要求：
+
+- 是否需要登录：是
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "recipients": ["1014826460@qq.com", "admin@example.com"]
+  }
+}
+```
+
+### PUT `/api/admin/alert/recipients`
+
+接口说明：更新报警邮件收件人列表。
+
+请求体：
+
+```json
+{
+  "recipients": ["1014826460@qq.com", "admin@example.com"]
+}
+```
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "recipients": ["1014826460@qq.com", "admin@example.com"]
+  }
+}
+```
+
+失败响应：
+
+```json
+{
+  "ok": false,
+  "error": "无效邮箱地址: not-an-email"
+}
+```
+
+### POST `/api/admin/alert/test-email`
+
+接口说明：发送一封测试邮件到当前配置的收件人，用于验证 SMTP 配置是否正确。
+
+请求体：
+
+```json
+{}
+```
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "message": "测试邮件已发送（异步），请稍后检查收件箱"
+}
+```
+
+curl 示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
+  -H "Authorization: Bearer <token>"
+```
+
+调试提示：
+
+- 使用前必须先在后台配置管理页面设置 `alert.smtp_username` 和 `alert.smtp_password`
+- QQ 邮箱需使用授权码而非登录密码（QQ 邮箱设置 → 账户 → POP3/SMTP 服务 → 生成授权码）
+- 邮件发送为异步，不会阻塞主流程
+- 若 `alert.email_enabled` 设为 `false`，所有报警只写日志不发送邮件
+
+## 22. 日志管理接口
 
 状态：已实现
 
@@ -1795,7 +2257,7 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 - `GET /api/admin/logs/export`：当前只支持 `level/module/keyword/date_from/date_to`
 - `POST /api/admin/logs/cleanup`：触发一次清理，返回 `{ ok, db_deleted, db_remaining }`
 
-## 22. 配置管理接口
+## 23. 配置管理接口
 
 状态：已实现
 
@@ -1895,7 +2357,7 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 - `POST /api/admin/configs/{key}/reset`
   - 恢复到 `config.yaml` 默认值
 
-## 23. 调试与排错指南
+## 24. 调试与排错指南
 
 ### 23.1 接口 404
 
@@ -1962,21 +2424,21 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 5. `lottery_draws` 是否存在对应期号
 6. 是否误把未开奖期的真实结果当作可见结果
 
-## 24. 新增 API 开发规范
+## 25. 新增 API 开发规范
 
 ### 24.1 后端新增接口流程
 
 1. 在合适模块中新增处理逻辑：
-   - `public`
-   - `legacy`
-   - `admin`
-   - `predict`
-2. 在 `backend/src/app.py` 注册路由
-3. 统一解析 query 与 JSON body
+   - `domains/` — 核心业务逻辑
+   - `routes/` — HTTP 路由注册
+   - `public/` — 公开接口
+   - `legacy/` — 旧站兼容
+2. 在 `backend/src/app_http/server.py` 的 `build_router()` 中注册路由
+3. 统一解析 query 与 JSON body（通过 RequestContext）
 4. 做参数校验
-5. 做鉴权校验
-6. 使用统一数据库连接
-7. 返回 JSON
+5. 做鉴权校验（通过 app_http/auth.py 中间件）
+6. 使用统一数据库连接（db.py → PostgreSQL）
+7. 返回 JSON（通过 ResponseWriter）
 8. 记录关键日志
 9. 更新本文档
 
@@ -2012,6 +2474,16 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 }
 ```
 
+业务异常错误（推荐）：
+
+```json
+{
+  "ok": false,
+  "error": "错误说明",
+  "code": "ERROR_CODE"
+}
+```
+
 ### 24.3 日志规范
 
 关键接口建议记录：
@@ -2031,10 +2503,104 @@ await fetch("/admin/api/python/admin/sites/4/prediction-modules/run", {
 
 - 正式运行不得默认依赖 SQLite
 - 正式运行必须走 PostgreSQL
+- 数据库密码不得硬编码在代码中，只通过 `DATABASE_URL` 环境变量传入
 - 建表与字段变更应集中在 `backend/src/tables.py`
 - 不要把 SQL 分散写在前端页面或临时脚本里
+- 路由层和 HTTP 层不写 SQL；SQL 集中在 repository 和 db 层
 
-## 25. 常见问题
+### 24.5 目录结构规范
+
+- `app_http/` — HTTP 传输层（路由、鉴权、请求响应），不写业务逻辑
+- `routes/` — 注册路由、解析参数、调用领域服务、返回 JSON，不写复杂 SQL
+- `domains/` — 核心业务逻辑、数据访问（repository），**不依赖 `admin/`**
+- `admin/` — 兼容包装层，调用 `domains/` 并导出，不实现新业务逻辑
+- `crawler/` — 数据采集（collectors）、任务管理（tasks）、调度器（scheduler）
+- `predict/` — 预测算法和配置管理
+- `prediction_generation/` — 批量预测生成编排
+
+## 26. 测试与验证
+
+### 25.1 测试命令
+
+```powershell
+# 编译检查
+cd backend/src
+python -m compileall .
+
+# 单元测试（不需要数据库）
+python -m pytest tests/unit/ -v
+
+# 集成测试（需要测试数据库）
+$env:TEST_DATABASE_URL = "postgresql://postgres:password@host:5432/liuhecai_test"
+python -m pytest tests/integration/ -v
+
+# 全部测试
+python -m pytest tests/ -v
+```
+
+### 25.2 已验证的 API 端点（2026-05-13 测试通过）
+
+| 端点 | 方法 | 鉴权 | 状态 | 说明 |
+|------|------|------|------|------|
+| `/api/health` | GET | 否 | ✅ | 返回 29 机制, 894 期, 337 表 |
+| `/api/auth/login` | POST | 否 | ✅ | 返回 token, expires_at, user |
+| `/api/auth/me` | GET | 是 | ✅ | 返回当前用户信息 |
+| `/api/auth/logout` | POST | 是 | ✅ | 删除 session |
+| `/api/admin/sites` | GET | 是 | ✅ | 返回站点列表 |
+| `/api/admin/sites` (未登录) | GET | — | ✅ | 返回 401 + `{"ok":false,"error":"未登录或登录已失效"}` |
+| `/api/admin/users` | GET | 是 | ✅ | 返回用户列表 |
+| `/api/admin/lottery-types` | GET | 是 | ✅ | 返回彩种列表 |
+| `/api/admin/draws` | GET | 是 | ✅ | 返回开奖记录 |
+| `/api/admin/numbers` | GET | 是 | ✅ | 返回号码映射 |
+| `/api/admin/system-config` | GET | 是 | ✅ | 返回 69 个配置项 |
+| `/api/admin/logs` | GET | 是 | ✅ | 返回 496 条日志 |
+| `/api/admin/logs/stats` | GET | 是 | ✅ | 返回日志统计 |
+| `/api/admin/configs/groups` | GET | 是 | ✅ | 返回配置分组 |
+| `/api/admin/configs/effective/{key}` | GET | 是 | ✅ | 返回配置有效值 |
+| `/api/admin/fetch-runs` | GET | 是 | ✅ | 返回抓取运行记录 |
+| `/api/admin/jobs/{job_id}` | GET | 是 | ✅ | 返回后台任务状态 |
+| `/api/admin/sites/{id}/prediction-modules` | GET | 是 | ✅ | 返回 42 个模块 |
+| `/api/admin/sites/{id}/prediction-modules/generate-all` | POST | 是 | ✅ | 提交批量生成任务 |
+| `/api/admin/sites/{id}/prediction-modules/run` | POST | 是 | ✅ | 执行单次预测 |
+| `/api/admin/sites/{id}/mode-payload/{table}` | GET | 是 | ✅ | 返回模式数据 (205 行) |
+| `/api/public/site-page` | GET | 否 | ✅ | 返回站点首页数据 |
+| `/api/public/latest-draw` | GET | 否 | ✅ | 返回最新开奖 (issue=132) |
+| `/api/predict/mechanisms` | GET | 否 | ✅ | 返回 335 个机制 |
+| `/api/predict/{mechanism}` | POST | 是 | ✅ | 返回预测结果 (labels=鸡 猴) |
+| `/api/legacy/current-term` | GET | 否 | ✅ | 返回当前期号 |
+| `/api/legacy/post-list` | GET | 否 | ✅ | 返回图片列表 |
+| `/api/legacy/module-rows` | GET | 否 | ✅ | 返回模块历史行 |
+| `/api/public/current-period` | GET | 否 | ✅ | 返回彩种当前期号 |
+| `/api/admin/backfill-predictions` | POST | 是 | ✅ | 回填 res_code/res_sx/res_color；支持自动追溯 |
+| `/api/admin/backfill-predictions/logs` | GET | 是 | ✅ | 查询回补事件日志 |
+| `/api/admin/alert/recipients` | GET | 是 | ✅ | 获取报警收件人列表 |
+| `/api/admin/alert/recipients` | PUT | 是 | ✅ | 更新报警收件人列表 |
+| `/api/admin/alert/test-email` | POST | 是 | ✅ | 发送测试报警邮件 |
+
+### 25.3 自动化测试结果
+
+```
+python -m compileall .  →  通过
+python -m pytest tests/ →  94 collected: 88 passed, 8 skipped (0 failed)
+
+单元测试 (88 passed):
+  test_admin_auth_error.py          5 passed
+  test_alert_service.py             9 passed
+  test_entrypoint_no_duplicate.py   10 passed
+  test_error_response.py            4 passed
+  test_errors.py                    8 passed
+  test_predict_common.py            8 passed
+  test_router.py                    7 passed
+  test_routes_common_compat.py      9 passed
+  test_site_context.py              15 passed
+  test_time_utils.py                4 passed
+
+集成测试 (8 passed with TEST_DATABASE_URL):
+  test_prediction_generation.py     3 passed (web_id 隔离)
+  test_tables_bootstrap.py          5 passed (表初始化幂等)
+```
+
+## 27. 常见问题
 
 ### 25.1 为什么文档不再写 SQLite 默认数据库
 

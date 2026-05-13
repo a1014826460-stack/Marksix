@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from http.site_context import (
+from app_http.site_context import (
     SiteContext,
     validate_web_matches_site,
     extract_site_web_value,

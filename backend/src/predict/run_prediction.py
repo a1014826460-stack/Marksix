@@ -1,7 +1,7 @@
 import argparse
 
-from common import build_common_parser, predict, print_json_result
-from mechanisms import get_prediction_config, list_prediction_configs
+from predict.common import build_common_parser, predict, print_json_result
+from predict.mechanisms import get_prediction_config, list_prediction_configs
 
 
 def build_parser() -> argparse.ArgumentParser:

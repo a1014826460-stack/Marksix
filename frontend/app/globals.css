@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --bg: #f3efe5;
   --surface: rgba(255, 250, 242, 0.92);
@@ -288,18 +288,18 @@ a {
 }
 
 /* ============================================================
-   旧站兼容样式
-   以下类名在旧站 TSX 组件中被引用，但在旧 CSS 文件中未定义。
-   此处统一补齐，使 React 组件使用旧 CSS 类名时能正确渲染。
+   鏃х珯鍏煎鏍峰紡
+   浠ヤ笅绫诲悕鍦ㄦ棫绔?TSX 缁勪欢涓寮曠敤锛屼絾鍦ㄦ棫 CSS 鏂囦欢涓湭瀹氫箟銆?
+   姝ゅ缁熶竴琛ラ綈锛屼娇 React 缁勪欢浣跨敤鏃?CSS 绫诲悕鏃惰兘姝ｇ‘娓叉煋銆?
    ============================================================ */
 
-/* ---- 文字颜色类 ---- */
+/* ---- 鏂囧瓧棰滆壊绫?---- */
 .blue-text { color: #0000FF; }
 .black-text { color: #000000; }
 .sky-text { color: #87CEEB; }
 .legacy-red { color: #FF0000; }
 
-/* ---- 旧站导航栏 nav2（原定义在 index.html 内联 <style> 中） ---- */
+/* ---- 鏃х珯瀵艰埅鏍?nav2锛堝師瀹氫箟鍦?index.html 鍐呰仈 <style> 涓級 ---- */
 .nav2 {
   width: 100%;
   max-width: 720px;
@@ -350,8 +350,8 @@ a {
   .nav2 ul li a { padding: 5px 0; cursor: pointer; }
 }
 
-/* ---- 旧站参考资料表格 djck（原定义在 djck.js 中注入） ---- */
-.djck { font-family: "微软雅黑"; background: #000; }
+/* ---- 鏃х珯鍙傝€冭祫鏂欒〃鏍?djck锛堝師瀹氫箟鍦?djck.js 涓敞鍏ワ級 ---- */
+.djck { font-family: "寰蒋闆呴粦"; background: #000; }
 .djck td { height: 50px; text-align: center; background: #000; }
 .djck td a { text-decoration: none; color: #fff; }
 .djck td h2 { font-size: 20px !important; font-weight: bold; margin: 0 !important; padding: 0 !important; }
@@ -362,7 +362,7 @@ a {
 .djck td.djck2 h2 { color: #0FF; }
 .djck td.djck2 p span { color: #0FF; }
 
-/* ---- 开奖结果标签 KJ-TabBox（原定义在 kj.js 中注入） ---- */
+/* ---- 寮€濂栫粨鏋滄爣绛?KJ-TabBox锛堝師瀹氫箟鍦?kj.js 涓敞鍏ワ級 ---- */
 .KJ-TabBox {
   height: auto;
   overflow: hidden;
@@ -400,7 +400,7 @@ a {
 .KJ-TabBox li:nth-child(2).cur { background: #E71607; }
 .KJ-TabBox li:nth-child(3).cur { background: #2389E9; }
 
-/* ---- 开奖号码展示 ---- */
+/* ---- 寮€濂栧彿鐮佸睍绀?---- */
 .react-kj-box { padding: 4px; }
 .react-kj-content { padding: 8px 4px; }
 .kj-title { font-size: 16px; font-weight: bold; padding: 4px 0; }
@@ -424,7 +424,7 @@ a {
 .kj-ball-green { background: linear-gradient(180deg, #5cc78e, #2e9b62); }
 .kj-plus { font-size: 24px; font-weight: bold; margin: 0 4px; }
 
-/* ---- 旧站开奖 iframe（对应 kj.js 中的 .KJ-IFRAME） ---- */
+/* ---- 鏃х珯寮€濂?iframe锛堝搴?kj.js 涓殑 .KJ-IFRAME锛?---- */
 .KJ-IFRAME {
   display: block;
   height: 160px;
@@ -449,11 +449,11 @@ a {
 }
 
 /* ============================================================
-   旧站表格样式补全（来自 style.css 和 JS 注入的样式）
-   以下类名在旧站独立 JS 文件中被使用，需在新站中提供定义。
+   鏃х珯琛ㄦ牸鏍峰紡琛ュ叏锛堟潵鑷?style.css 鍜?JS 娉ㄥ叆鐨勬牱寮忥級
+   浠ヤ笅绫诲悕鍦ㄦ棫绔欑嫭绔?JS 鏂囦欢涓浣跨敤锛岄渶鍦ㄦ柊绔欎腑鎻愪緵瀹氫箟銆?
    ============================================================ */
 
-/* ---- duilianpt1（旧站标准预测表格，18pt 红字，匹配 style.css） ---- */
+/* ---- duilianpt1锛堟棫绔欐爣鍑嗛娴嬭〃鏍硷紝18pt 绾㈠瓧锛屽尮閰?style.css锛?---- */
 .duilianpt1 {
   table-layout: auto;
   color: #FF0000;
@@ -485,7 +485,7 @@ a {
   .duilianpt1 th { font-size: 13pt; }
 }
 
-/* ---- duilianpt（与 duilianpt1 类似，但字体略小） ---- */
+/* ---- duilianpt锛堜笌 duilianpt1 绫讳技锛屼絾瀛椾綋鐣ュ皬锛?---- */
 .duilianpt {
   table-layout: auto;
   color: #FF0000;
@@ -517,7 +517,7 @@ a {
   .duilianpt th { font-size: 13pt; }
 }
 
-/* ---- qxtable（九肖一码等模块使用） ---- */
+/* ---- qxtable锛堜節鑲栦竴鐮佺瓑妯″潡浣跨敤锛?---- */
 .qxtable {
   color: #000;
   background: #fff;
@@ -571,7 +571,7 @@ a {
   .qxtable.yxym td { font-size: 12pt; }
 }
 
-/* ---- bzlx（六尾中特等模块使用） ---- */
+/* ---- bzlx锛堝叚灏句腑鐗圭瓑妯″潡浣跨敤锛?---- */
 .bzlx { text-align: center; font-size: 18px; font-weight: bold; background: #fff; }
 .bzlx th { color: #fff; border: solid 1px #4292EF; background: #84BAF7; }
 .bzlx td { border: solid 1px #4292EF; }
@@ -579,7 +579,7 @@ a {
 .bzlx td.td2 { color: #00f; font-size: 20px; }
 .bzlx td.td3 { color: #f00; }
 
-/* ---- sqbk（部分模块使用） ---- */
+/* ---- sqbk锛堥儴鍒嗘ā鍧椾娇鐢級 ---- */
 .sqbk { text-align: center; font-weight: bold; background: #fff; }
 .sqbk th { color: #fff; font-size: 18px; border: solid 1px #4292EF; background: #84BAF7; }
 .sqbk td { line-height: 1.3; font-size: 16px; border: solid 1px #4292EF; }
@@ -587,7 +587,7 @@ a {
 .sqbk td.td2 { color: #00f; font-size: 26px; }
 .sqbk td.td3 { width: 30%; }
 
-/* ==================== 开奖历史页 ==================== */
+/* ==================== 寮€濂栧巻鍙查〉 ==================== */
 .history-page {
   min-height: 100dvh;
   background: #f4f4f4;
@@ -713,7 +713,7 @@ a {
   cursor: not-allowed;
 }
 
-/* ==================== 旧 JS 隔离壳页面 ==================== */
+/* ==================== 鏃?JS 闅旂澹抽〉闈?==================== */
 .legacy-shell-page {
   max-width: 1080px;
   margin: 0 auto;
@@ -847,21 +847,21 @@ a {
   }
 }
 
-/* ---- ptyx11（部分模块使用） ---- */
+/* ---- ptyx11锛堥儴鍒嗘ā鍧椾娇鐢級 ---- */
 .ptyx11 { font-size: 16px; font-weight: bold; background: #fff; }
 .ptyx11 th { font-size: 18px; color: #00f; border: solid 1px #4292EF; background: #84BAF7; }
 .ptyx11 td { height: 32px; padding: 0 5px; color: #333; border: solid 1px #4292EF; }
 
-/* ---- 开/不开 结果状态颜色类 ----
-   开（命中）→ red-text
-   不开（未命中）→ blue-text
-   待开奖 → grey-text
-   与旧站 red-text / blue-text / black-text 类名统一 */
+/* ---- 寮€/涓嶅紑 缁撴灉鐘舵€侀鑹茬被 ----
+   寮€锛堝懡涓級鈫?red-text
+   涓嶅紑锛堟湭鍛戒腑锛夆啋 blue-text
+   寰呭紑濂?鈫?grey-text
+   涓庢棫绔?red-text / blue-text / black-text 绫诲悕缁熶竴 */
 .result-hit { color: #FF0000; }
 .result-miss { color: #0000FF; }
 .result-pending { color: #999; }
 
-/* ---- JSON 数组内容展示（六尾中特、九肖一码等） ---- */
+/* ---- JSON 鏁扮粍鍐呭灞曠ず锛堝叚灏句腑鐗广€佷節鑲栦竴鐮佺瓑锛?---- */
 .legacy-json-content {
   display: inline-flex;
   flex-wrap: wrap;
@@ -874,10 +874,10 @@ a {
   white-space: nowrap;
 }
 
-/* ---- 备用网址表格 ---- */
+/* ---- 澶囩敤缃戝潃琛ㄦ牸 ---- */
 .ymgg {
   background: #ff0;
-  font-family: '微软雅黑';
+  font-family: '寰蒋闆呴粦';
   font-size: 13pt;
   color: #00f;
   font-weight: 700;
@@ -889,11 +889,11 @@ a {
 .ymgg-tit1 { color: #fff; background: #f00; }
 .ymgg-tit2 { color: #ff0; background: #00f; }
 
-/* ---- 页面底部 ---- */
+/* ---- 椤甸潰搴曢儴 ---- */
 .foot-img { text-align: center; padding: 10px; }
-.back-top-text { font-weight: 700; font-size: 36px; font-family: '微软雅黑'; }
+.back-top-text { font-weight: 700; font-size: 36px; font-family: '寰蒋闆呴粦'; }
 
-/* ---- 高频中特公告 ---- */
+/* ---- 楂橀涓壒鍏憡 ---- */
 .news-box .haoju {
   font-size: 20pt;
   text-align: center;
@@ -902,13 +902,13 @@ a {
 }
 
 /* ============================================================
-   旧站预测模块兼容样式
-   解决 PredictionModules 中不同模块数据格式不兼容的问题
+   鏃х珯棰勬祴妯″潡鍏煎鏍峰紡
+   瑙ｅ喅 legacy module renderer 涓笉鍚屾ā鍧楁暟鎹牸寮忎笉鍏煎鐨勯棶棰?
    ============================================================ */
 
 /**
- * 长文本内容类（诗句、句子、欲钱买特码等）：
- * 覆盖 duilianpt1 的居中红字大号，改为左对齐黑色可读字号
+ * 闀挎枃鏈唴瀹圭被锛堣瘲鍙ャ€佸彞瀛愩€佹閽变拱鐗圭爜绛夛級锛?
+ * 瑕嗙洊 duilianpt1 鐨勫眳涓孩瀛楀ぇ鍙凤紝鏀逛负宸﹀榻愰粦鑹插彲璇诲瓧鍙?
  */
 .legacy-module-text {
   text-align: left !important;
@@ -922,12 +922,12 @@ a {
   line-height: 1.5;
 }
 
-/* ---- 预测命中黄色高亮（旧站通用 #FFFF00 背景） ---- */
+/* ---- 棰勬祴鍛戒腑榛勮壊楂樹寒锛堟棫绔欓€氱敤 #FFFF00 鑳屾櫙锛?---- */
 .highlight {
   background-color: #FFFF00;
 }
 
-/* ---- ptyx11 表格 - 五肖中特、九肖中特等模块 ---- */
+/* ---- ptyx11 琛ㄦ牸 - 浜旇倴涓壒銆佷節鑲栦腑鐗圭瓑妯″潡 ---- */
 .ptyx11 {
   font-size: 16px;
   font-weight: bold;
@@ -946,7 +946,7 @@ a {
   border: solid 1px #4292EF;
 }
 
-/* ---- sqbk 表格 - 单双各四肖等模块 ---- */
+/* ---- sqbk 琛ㄦ牸 - 鍗曞弻鍚勫洓鑲栫瓑妯″潡 ---- */
 .sqbk {
   text-align: center;
   font-weight: bold;
@@ -966,3 +966,4 @@ a {
 .sqbk td.td1 { width: 30%; }
 .sqbk td.td2 { color: #00f; font-size: 26px; }
 .sqbk td.td3 { width: 30%; }
+

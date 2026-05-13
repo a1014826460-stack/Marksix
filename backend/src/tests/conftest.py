@@ -1,13 +1,24 @@
 """测试配置和共享 fixtures。
 
 集成测试需要 PostgreSQL 连接；无数据库时自动跳过。
+
+导入路径：pytest 运行时会优先把 backend/src/ 加入 sys.path，
+确保所有模块（core, app_http, routes, domains 等）能正常导入，
+不依赖 app.py 的副作用。
 """
 
 from __future__ import annotations
 
 import os
-import pytest
+import sys
 from pathlib import Path
+
+# 确保 backend/src/ 在 sys.path 中，所有测试模块可直接导入
+_SRC_ROOT = Path(__file__).resolve().parents[1]
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+import pytest
 
 from db import connect, is_postgres_target, resolve_database_target
 

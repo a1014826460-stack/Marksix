@@ -1,10 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { adminApi } from "@/lib/admin-api"
 
 type DrawNumbersInputProps = {
   name: string
   defaultValue: string
+}
+
+type NumberMapping = {
+  id: number
+  name: string
+  code: string
 }
 
 export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) {
@@ -28,7 +35,56 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
   }, [defaultValue])
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const allNumbers = Array.from({ length: 49 }, (_, i) => i + 1)
+
+  const [zodiacData, setZodiacData] = useState<NumberMapping[]>([])
+  const [colorData, setColorData] = useState<NumberMapping[]>([])
+  const [dataLoading, setDataLoading] = useState(true)
+  const [dataError, setDataError] = useState("")
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const [zodiacRes, colorRes] = await Promise.all([
+          adminApi<{ numbers: NumberMapping[] }>("/admin/numbers?sign=生肖"),
+          adminApi<{ numbers: NumberMapping[] }>("/admin/numbers?sign=波色"),
+        ])
+        if (!cancelled) {
+          setZodiacData(zodiacRes.numbers)
+          setColorData(colorRes.numbers)
+          setDataLoading(false)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDataError(err instanceof Error ? err.message : "加载失败")
+          setDataLoading(false)
+        }
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const colorMap = new Map<number, string>()
+  for (const item of colorData) {
+    const nums = item.code
+      .split(",")
+      .map(Number)
+      .filter((n) => n >= 1 && n <= 49)
+    for (const n of nums) {
+      colorMap.set(n, item.name)
+    }
+  }
+
+  function getColorClass(n: number): string {
+    const color = colorMap.get(n)
+    if (color === "红波") return "bg-red-500 text-white hover:bg-red-600"
+    if (color === "蓝波") return "bg-blue-500 text-white hover:bg-blue-600"
+    if (color === "绿波") return "bg-green-500 text-white hover:bg-green-600"
+    return "bg-muted text-muted-foreground hover:bg-muted/70"
+  }
 
   function addNumber(n: number) {
     setSelected((prev) => {
@@ -116,28 +172,57 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-0.5 max-h-[140px] overflow-y-auto">
-        {allNumbers.map((n) => {
-          const isSelected = selected.includes(n)
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() =>
-                isSelected ? removeNumber(n) : addNumber(n)
-              }
-              disabled={!isSelected && selected.length >= 7}
-              className={`h-7 w-7 rounded text-xs font-medium transition-colors ${
-                isSelected
-                  ? "bg-primary text-primary-foreground hover:bg-primary/80"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70 disabled:opacity-30"
-              }`}
-            >
-              {String(n).padStart(2, "0")}
-            </button>
-          )
-        })}
-      </div>
+
+      {dataLoading && (
+        <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+          加载号码映射...
+        </div>
+      )}
+      {dataError && (
+        <div className="flex items-center justify-center py-4 text-xs text-red-500">
+          加载失败: {dataError}
+        </div>
+      )}
+      {!dataLoading && !dataError && (
+        <div className="overflow-x-auto overflow-y-hidden max-h-[260px] md:max-h-[220px] -mx-1 px-1">
+          <div className="flex gap-0.5 min-w-max">
+            {zodiacData.map((item) => {
+              const nums = item.code
+                .split(",")
+                .map(Number)
+                .filter((n) => n >= 1 && n <= 49)
+                .sort((a, b) => a - b)
+              return (
+                <div key={item.id} className="flex flex-col gap-0.5 w-9 md:w-auto md:flex-1 md:min-w-0">
+                  <div className="text-center text-[10px] font-medium text-muted-foreground py-0.5 select-none">
+                    {item.name}
+                  </div>
+                  {nums.map((n) => {
+                    const isSelected = selected.includes(n)
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() =>
+                          isSelected ? removeNumber(n) : addNumber(n)
+                        }
+                        disabled={!isSelected && selected.length >= 7}
+                        className={`h-8 w-8 md:h-6 md:w-full rounded text-xs font-medium transition-colors ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground hover:bg-primary/80"
+                            : `${getColorClass(n)} disabled:opacity-30`
+                        }`}
+                      >
+                        {String(n).padStart(2, "0")}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

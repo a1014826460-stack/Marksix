@@ -4,8 +4,8 @@ from http import HTTPStatus
 
 from admin.crud import delete_user, list_users, save_user
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:

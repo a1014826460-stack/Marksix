@@ -1,5 +1,5 @@
-import { SitesPageClient } from "@/components/admin/management-pages"
+import { SitesPage } from "@/features/sites/SitesPage"
 
-export default function SitesPage() {
-  return <SitesPageClient />
+export default function SitesRoutePage() {
+  return <SitesPage />
 }

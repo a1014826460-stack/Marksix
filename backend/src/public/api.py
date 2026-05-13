@@ -4,24 +4,18 @@
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 
-_PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
-if str(_PREDICT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PREDICT_ROOT))
-
-from db import connect  # noqa: E402
-from helpers import (  # noqa: E402
+from db import connect
+from helpers import (
     apply_lottery_draw_overlay, build_draw_result_payload, color_name_to_key,
     get_effective_next_draw_payload,
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
     merge_preferred_mode_payload_rows, split_csv,
 )
-from mechanisms import get_prediction_config  # noqa: E402
-from admin.prediction import resolve_prediction_table_for_mode  # noqa: E402
-from utils.created_prediction_store import (  # noqa: E402
+from predict.mechanisms import get_prediction_config
+from admin.prediction import resolve_prediction_table_for_mode
+from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
 )
 
@@ -167,7 +161,7 @@ def load_public_module_history(
 
 
 def resolve_public_site(db_path: str | Path, site_id: int | None = None, domain: str | None = None) -> dict[str, Any]:
-    from admin.crud import get_site as _get_site, public_site as _public_site
+    from domains.sites.service import get_site as _get_site, public_site as _public_site
     from tables import ensure_admin_tables as _ensure_tables
     _ensure_tables(db_path)
     if site_id is not None:
@@ -560,4 +554,48 @@ def _build_zodiac_category_map(conn: Any) -> dict[str, str]:
                 if zodiac:
                     result.setdefault(zodiac, category)
     return result
+
+
+# ── /api/public/current-period ──────────────────────────────
+
+
+def get_current_period(
+    db_path: str | Path,
+    lottery_type_id: int = 3,
+) -> dict[str, Any]:
+    """返回指定彩种的当前已开奖期号与年份。
+
+    数据来源：lottery_draws 表中最新的 is_opened=1 记录。
+    """
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT year, term
+            FROM lottery_draws
+            WHERE lottery_type_id = ?
+              AND is_opened = 1
+            ORDER BY year DESC, term DESC
+            LIMIT 1
+            """,
+            (int(lottery_type_id),),
+        ).fetchone()
+
+        if not row:
+            return {
+                "lottery_type_id": int(lottery_type_id),
+                "lottery_name": LOTTERY_NAMES.get(int(lottery_type_id), str(lottery_type_id)),
+                "current_period": "",
+                "current_year": 0,
+                "current_term": 0,
+            }
+
+        year = int(row["year"] or 0)
+        term = int(row["term"] or 0)
+        return {
+            "lottery_type_id": int(lottery_type_id),
+            "lottery_name": LOTTERY_NAMES.get(int(lottery_type_id), str(lottery_type_id)),
+            "current_period": f"{year}{term:03d}",
+            "current_year": year,
+            "current_term": term,
+        }
 

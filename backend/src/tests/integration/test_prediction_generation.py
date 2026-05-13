@@ -24,7 +24,10 @@ def _connect_for_test():
         return connect(test_target)
 
     if os.getenv("ALLOW_TEST_ON_PROD_DB", "").strip().lower() in ("1", "true", "yes"):
-        default = default_postgres_target()
+        try:
+            default = default_postgres_target()
+        except RuntimeError:
+            default = ""
         if default and is_postgres_target(default):
             return connect(default)
 
@@ -38,7 +41,7 @@ def test_site_context_web_id_isolation():
 
     这是一个健康检查测试：确保常见的 web_id 不是 4。
     """
-    from http.site_context import resolve_site_context
+    from app_http.site_context import resolve_site_context
 
     conn = _connect_for_test()
     from tables import ensure_admin_tables
@@ -61,7 +64,7 @@ def test_site_context_web_id_isolation():
 
 def test_resolve_site_context_returns_correct_web_id():
     """验证 resolve_site_context 返回正确的 web_id。"""
-    from http.site_context import resolve_site_context
+    from app_http.site_context import resolve_site_context
 
     conn = _connect_for_test()
     from tables import ensure_admin_tables
@@ -87,7 +90,7 @@ def test_resolve_site_context_returns_correct_web_id():
 
 def test_validate_web_matches_site_rejects_mismatch():
     """验证 web 不匹配时 validate_web_matches_site 抛出异常。"""
-    from http.site_context import (
+    from app_http.site_context import (
         resolve_site_context,
         validate_web_matches_site,
     )

@@ -165,7 +165,7 @@ function HistoryPageContent() {
         <div className="main">
           <div className="head">
             <span style={{ position: "absolute", left: 12 }}>
-              <a href={`/legacy-shell?t=${lotteryType}`} style={{ color: "white" }}>
+              <a href={`/?t=${lotteryType}`} style={{ color: "white" }}>
                 返回上级
               </a>
             </span>
@@ -175,7 +175,7 @@ function HistoryPageContent() {
             <div className="menu fixed-top history-fixed-menu">
               <div className="inner main">
                 <span style={{ position: "absolute", top: 12, left: 12 }}>
-                  <a href={`/legacy-shell?t=${lotteryType}`} style={{ color: "#fff" }}>
+                  <a href={`/?t=${lotteryType}`} style={{ color: "#fff" }}>
                     返回上级
                   </a>
                 </span>

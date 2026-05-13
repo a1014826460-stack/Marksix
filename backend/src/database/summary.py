@@ -29,7 +29,7 @@ def database_summary(db_path: str | Path) -> dict[str, Any]:
 
         # prediction_mechanisms: 从 PREDICTION_CONFIGS 获取机制数量
         try:
-            from mechanisms import list_prediction_configs
+            from predict.mechanisms import list_prediction_configs
             prediction_count = len(list_prediction_configs())
         except Exception:
             prediction_count = 0

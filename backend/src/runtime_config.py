@@ -103,13 +103,25 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
     "crawler.auto_prediction_delay_hours": {
         "value": 6,
         "value_type": "int",
-        "description": "开奖后自动预测延迟小时数（仅作为回退值，实际由 scheduler.auto_prediction_time 控制）。",
+        "description": "开奖后自动预测延迟小时数（已废弃，由 daily_prediction_cron_time 替代，当前功能已暂停）。",
         "is_secret": 0,
     },
     "scheduler.auto_prediction_time": {
         "value": "12:00",
         "value_type": "time",
-        "description": "每日自动预测固定触发时间（北京时间），格式 HH:mm。",
+        "description": "每日自动预测固定触发时间（北京时间），格式 HH:mm（已废弃，由 daily_prediction_cron_time 替代）。",
+        "is_secret": 0,
+    },
+    "daily_prediction_cron_time": {
+        "value": "12:00",
+        "value_type": "time",
+        "description": "每日自动预测触发时间（北京时间），格式 HH:mm。管理员可在后台修改。",
+        "is_secret": 0,
+    },
+    "history_backfill_delay_after_draw": {
+        "value": 5,
+        "value_type": "int",
+        "description": "开奖后延迟执行历史回填任务的分钟数。默认 5 分钟。",
         "is_secret": 0,
     },
     "crawler.task_poll_interval_seconds": {
@@ -276,6 +288,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "每年最大期数。",
         "is_secret": 0,
     },
+    "prediction.recent_period_count": {
+        "value": 10,
+        "value_type": "int",
+        "description": "回补检查时向前追溯的期数。自动预测和回填API均据此决定检查范围。",
+        "is_secret": 0,
+    },
     "logging.max_file_size_mb": {
         "value": 10,
         "value_type": "int",
@@ -322,6 +340,55 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "value": 5000,
         "value_type": "int",
         "description": "慢调用告警阈值毫秒数。",
+        "is_secret": 0,
+    },
+    # ── 邮件报警基础配置 ──
+    "alert.email_enabled": {
+        "value": True,
+        "value_type": "bool",
+        "description": "是否启用邮件报警。关闭后所有报警只记日志不发邮件。",
+        "is_secret": 0,
+    },
+    "alert.email_recipients": {
+        "value": ["1014826460@qq.com"],
+        "value_type": "json",
+        "description": "报警邮件收件人列表。",
+        "is_secret": 0,
+    },
+    "alert.smtp_host": {
+        "value": "smtp.qq.com",
+        "value_type": "string",
+        "description": "SMTP 服务器地址。",
+        "is_secret": 0,
+    },
+    "alert.smtp_port": {
+        "value": 587,
+        "value_type": "int",
+        "description": "SMTP 服务器端口（587=TLS, 465=SSL）。",
+        "is_secret": 0,
+    },
+    "alert.smtp_username": {
+        "value": "",
+        "value_type": "string",
+        "description": "SMTP 登录用户名（通常为邮箱地址）。",
+        "is_secret": 0,
+    },
+    "alert.smtp_password": {
+        "value": "",
+        "value_type": "string",
+        "description": "SMTP 登录密码或授权码。",
+        "is_secret": 0,
+    },
+    "alert.smtp_from_name": {
+        "value": "Liuhecai 报警系统",
+        "value_type": "string",
+        "description": "报警邮件发件人显示名称。",
+        "is_secret": 0,
+    },
+    "alert.crawler_retry_threshold": {
+        "value": 3,
+        "value_type": "int",
+        "description": "爬虫连续失败次数达到此阈值后触发报警。",
         "is_secret": 0,
     },
     "legacy.images_dir": {
@@ -757,6 +824,7 @@ def get_config_groups() -> list[dict[str, Any]]:
         {"key": "lottery", "label": "彩种配置", "prefix": "draw.", "description": "各彩种开奖时间、数据源 URL、下一期开奖时间"},
         {"key": "scheduler", "label": "调度器配置", "prefix": "crawler.", "description": "自动开奖/抓取/预测延迟及固定触发时间等调度参数"},
         {"key": "prediction", "label": "预测资料配置", "prefix": "prediction.", "description": "预测生成目标命中率、最大期数"},
+        {"key": "alert", "label": "报警配置", "prefix": "alert.", "description": "邮件报警开关、SMTP 服务参数、报警阈值"},
         {"key": "site", "label": "站点配置", "prefix": "site.", "description": "站点默认 URL、令牌、请求参数"},
         {"key": "logging", "label": "日志配置", "prefix": "logging.", "description": "日志保留天数、轮转大小、清理间隔"},
         {"key": "auth", "label": "认证配置", "prefix": "auth.", "description": "会话过期时间、密码迭代次数"},

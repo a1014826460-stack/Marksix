@@ -151,7 +151,7 @@ export function NumbersPage() {
           </Card>
         </div>
 
-        <Card className="p-4">
+        <Card className="overflow-auto p-4">
           <div className="mb-3 flex gap-2">
             <Input
               value={keyword}
@@ -179,7 +179,7 @@ export function NumbersPage() {
                 <TableRow key={row.id}>
                   <TableCell>{row.id}</TableCell>
                   <TableCell>{row.name}</TableCell>
-                  <TableCell className="max-w-[360px] whitespace-normal">
+                  <TableCell className="max-w-[200px] md:max-w-[360px] whitespace-normal">
                     {row.code}
                   </TableCell>
                   <TableCell>{row.category_key}</TableCell>
@@ -187,7 +187,7 @@ export function NumbersPage() {
                   <TableCell>
                     <StatusBadge value={row.status} />
                   </TableCell>
-                  <TableCell className="space-x-2">
+                  <TableCell className="flex gap-1 flex-wrap">
                     <Button
                       variant="outline"
                       size="sm"

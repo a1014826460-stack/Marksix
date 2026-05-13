@@ -1,7 +1,7 @@
 # ============================================================
 # Example Nginx config for:
 #   https://www.shengshi8800.com/
-#     -> /legacy-shell?t=3
+#     -> /?t=3
 #
 # Usage:
 # 1. Put your certificates into deploy/ssl/
@@ -71,11 +71,6 @@ server {
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
 
-    # Direct root visits to the legacy shell entry.
-    location = / {
-        return 302 /legacy-shell?t=3;
-    }
-
     # ---- Real health check: proxy to Python API ----
     location /health {
         set $python_api python-api:8000;
@@ -109,6 +104,14 @@ server {
 
     # ---- Main frontend ----
     location / {
+        if ($arg_type ~ "^(1|2|3)$") {
+            return 301 https://www.shengshi8800.com/?t=$arg_type;
+        }
+
+        if ($arg_t = "") {
+            return 301 https://www.shengshi8800.com/?t=3;
+        }
+
         set $frontend_web frontend:3000;
         proxy_pass http://$frontend_web;
         proxy_set_header Host $host;

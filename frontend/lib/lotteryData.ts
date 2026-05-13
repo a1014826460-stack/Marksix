@@ -95,11 +95,11 @@ export type LotteryPageData = {
   infoSections: InfoSection[] // 其他信息区块（如"一肖中特"）
 
   // ---- 原始后端模块数据（供通用渲染器使用） ----
-  /** 后端返回的完整模块列表，由 PredictionModules 组件消费 */
+  /** 后端返回的完整模块列表，供旧站兼容显示链路消费 */
   rawModules: PublicModule[]
 
   // ---- 按游戏类型分组的预测模块数据 ----
-  /** 三种彩种各自的完整模块列表，由 HomePageClient 根据 activeGame 切换 */
+  /** 三种彩种各自的完整模块列表，供前台按彩种切换使用 */
   modulesByGame: Record<LotteryGame, PublicModule[]>
 }
 
@@ -347,7 +347,7 @@ export function transformSitePageData(
     infoSections: [],       // 其他信息区块（后续从 modules 中提取）
 
     /* ---- 原始模块数据（供通用渲染器使用） ---- */
-    /** 保留后端返回的完整模块列表，供 PredictionModules 组件消费 */
+    /** 保留后端返回的完整模块列表，供旧站兼容显示链路消费 */
     rawModules: apiData.modules,
 
     /* ---- 按游戏类型分组的预测模块数据 ---- */
@@ -357,7 +357,7 @@ export function transformSitePageData(
 
 /**
  * 将模块历史行转换为通用表格行格式
- * 用于 PredictionModules 组件中的通用渲染
+ * 用于旧站兼容显示链路中的通用渲染
  *
  * @param module - 后端返回的单个模块
  * @returns PlainRow 数组

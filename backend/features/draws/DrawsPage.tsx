@@ -41,6 +41,34 @@ function buildNextTerm(term: string) {
   return String(next + 1)
 }
 
+function getLatestTaiwanDraw(draws: Draw[]) {
+  return draws
+    .filter((row) => row.lottery_type_id === TAIWAN_LOTTERY_ID)
+    .reduce<Draw | null>((latest, row) => {
+      if (!latest) return row
+      if (row.year !== latest.year) return row.year > latest.year ? row : latest
+      if (row.term !== latest.term) return row.term > latest.term ? row : latest
+      return row.id > latest.id ? row : latest
+    }, null)
+}
+
+function resolveNextTerm(row: Draw) {
+  const nextTerm = Number(row.next_term)
+  if (Number.isFinite(nextTerm) && nextTerm > 0) {
+    return String(nextTerm)
+  }
+  return buildNextTerm(String(row.term || ""))
+}
+
+function buildNextDrawDate(drawTime: string) {
+  let nextDate = drawTime ? parseBeijingDateTime(drawTime) : new Date()
+  if (Number.isNaN(nextDate.getTime())) {
+    nextDate = new Date()
+  }
+  nextDate.setDate(nextDate.getDate() + 1)
+  return formatDateInput(nextDate)
+}
+
 export function DrawsPage() {
   const [rows, setRows] = useState<Draw[]>([])
   const [lotteries, setLotteries] = useState<LotteryType[]>([])
@@ -79,7 +107,7 @@ export function DrawsPage() {
   function applyEditingDraft(row: Draw) {
     setDraftYear(String(row.year || new Date().getFullYear()))
     setDraftTerm(String(row.term || ""))
-    setDraftNextTerm(String(row.next_term || Number(row.term || 0) + 1 || ""))
+    setDraftNextTerm(resolveNextTerm(row))
     setDraftDrawDate(row.draw_time?.slice(0, 10) || "")
     setDraftNumbers(row.numbers || "")
     setDraftStatus(row.status ? "1" : "0")
@@ -87,35 +115,9 @@ export function DrawsPage() {
     setNumbersInputKey((value) => value + 1)
   }
 
-  async function populateCreateDrafts() {
-    try {
-      const info = await adminApi<{
-        year: number
-        term: number
-        draw_time: string
-      }>(`/admin/lottery-draws/latest-term?lottery_type_id=${TAIWAN_LOTTERY_ID}`)
-
-      const currentYear = new Date().getFullYear()
-      const baseTerm = info.term > 0 ? info.term + 1 : 1
-      const nextTerm = baseTerm + 1
-      let baseDate = info.draw_time
-        ? parseBeijingDateTime(info.draw_time)
-        : new Date()
-
-      if (Number.isNaN(baseDate.getTime())) {
-        baseDate = new Date()
-      }
-      baseDate.setDate(baseDate.getDate() + 1)
-
-      setDraftYear(String(info.year || currentYear))
-      setDraftTerm(String(baseTerm))
-      setDraftNextTerm(String(nextTerm))
-      setDraftDrawDate(formatDateInput(baseDate))
-      setDraftNumbers("")
-      setDraftStatus("1")
-      setDraftIsOpened("0")
-      setNumbersInputKey((value) => value + 1)
-    } catch {
+  function populateCreateDrafts(draws: Draw[]) {
+    const latestDraw = getLatestTaiwanDraw(draws)
+    if (!latestDraw) {
       const today = new Date()
       setDraftYear(String(today.getFullYear()))
       setDraftTerm("1")
@@ -125,7 +127,20 @@ export function DrawsPage() {
       setDraftStatus("1")
       setDraftIsOpened("0")
       setNumbersInputKey((value) => value + 1)
+      return
     }
+
+    const currentTerm = buildNextTerm(String(latestDraw.term || "")) || "1"
+    const nextTerm = buildNextTerm(currentTerm)
+
+    setDraftYear(String(latestDraw.year || new Date().getFullYear()))
+    setDraftTerm(currentTerm)
+    setDraftNextTerm(nextTerm)
+    setDraftDrawDate(buildNextDrawDate(latestDraw.draw_time || ""))
+    setDraftNumbers("")
+    setDraftStatus("1")
+    setDraftIsOpened("0")
+    setNumbersInputKey((value) => value + 1)
   }
 
   useEffect(() => {
@@ -138,8 +153,8 @@ export function DrawsPage() {
       applyEditingDraft(editing)
       return
     }
-    void populateCreateDrafts()
-  }, [editing, formOpen])
+    populateCreateDrafts(rows)
+  }, [editing, formOpen, rows])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -218,7 +233,12 @@ export function DrawsPage() {
       return
     }
 
-    await load()
+    const [drawData, lotteryData] = await Promise.all([
+      adminApi<{ draws: Draw[] }>("/admin/draws?limit=500"),
+      adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
+    ])
+    setRows(drawData.draws)
+    setLotteries(lotteryData.lottery_types)
 
     if (editing) {
       toast.success("保存成功")
@@ -230,7 +250,7 @@ export function DrawsPage() {
     setDraftNumbers("")
     setNumbersInputKey((value) => value + 1)
     toast.success("保存成功，可直接录入下一期开奖号码")
-    await populateCreateDrafts()
+    populateCreateDrafts(drawData.draws)
   }
 
   async function remove(id: number) {
@@ -273,7 +293,7 @@ export function DrawsPage() {
               {editing ? "修改开奖记录" : "新增开奖记录"}
             </h2>
             <form
-              className="grid grid-cols-2 gap-3"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-3"
               onSubmit={submit}
               ref={formRef}
             >
@@ -375,7 +395,7 @@ export function DrawsPage() {
           </Card>
         </div>
 
-        <Card className="p-4">
+        <Card className="overflow-auto p-4">
           <Table>
             <TableHeader>
               <TableRow>
@@ -405,7 +425,7 @@ export function DrawsPage() {
                   </TableCell>
                   <TableCell>{row.is_opened ? "是" : "否"}</TableCell>
                   <TableCell>{row.next_term}</TableCell>
-                  <TableCell className="space-x-2">
+                  <TableCell className="flex gap-1 flex-wrap">
                     <Button
                       variant="outline"
                       size="sm"

@@ -3,15 +3,16 @@ from __future__ import annotations
 import time
 
 from public.api import (
+    get_current_period,
     get_draw_history,
     get_public_latest_draw,
     get_public_next_draw_deadline,
     get_public_site_page_data,
 )
 
-from http.site_context import resolve_site_context
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.site_context import resolve_site_context
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:
@@ -19,6 +20,7 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/latest-draw", latest_draw)
     router.add("GET", "/api/public/next-draw-deadline", next_draw_deadline)
     router.add("GET", "/api/public/draw-history", draw_history)
+    router.add("GET", "/api/public/current-period", current_period)
 
 
 def site_page(ctx: RequestContext) -> None:
@@ -66,3 +68,8 @@ def draw_history(ctx: RequestContext) -> None:
     year = int(ctx.query_value("year", "0") or 0) or None
     sort = ctx.query_value("sort", "l") or "l"
     ctx.send_json(get_draw_history(ctx.db_path, lottery_type, year, sort))
+
+
+def current_period(ctx: RequestContext) -> None:
+    lottery_type = int(ctx.query_value("lottery_type", "3") or 3)
+    ctx.send_json(get_current_period(ctx.db_path, lottery_type))

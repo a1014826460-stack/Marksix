@@ -63,6 +63,17 @@ def resolve_site_context(
     body: dict[str, Any] | None = None,
     host: str | None = None,
 ) -> SiteContext:
+    """解析站点上下文。
+
+    解析优先级：path_site_id > query/body 中的 site_id > domain/host 匹配。
+
+    不会静默回退到"第一个站点"。如果没有明确的 site_id 且无法通过
+    domain/host 匹配，将抛出 ValidationError。
+
+    Raises:
+        ValidationError: 无法确定站点上下文（无 site_id 且无匹配 domain）
+        NotFoundError: 指定的 site_id 对应的站点不存在
+    """
     resolved_site_id = _coalesce_site_id(path_site_id, query, body)
     normalized_host = str(host or "").strip().lower()
 
@@ -90,17 +101,42 @@ def resolve_site_context(
                 (normalized_host,),
             ).fetchone()
         else:
-            row = conn.execute(
-                """
-                SELECT id, web_id, name, domain, lottery_type_id, enabled
-                FROM managed_sites
-                ORDER BY id
-                LIMIT 1
-                """
-            ).fetchone()
+            raise ValidationError(
+                "无法确定站点上下文：缺少 site_id 且无法通过 domain/host 匹配站点。"
+                "请显式传入 site_id 参数。"
+            )
 
         if not row:
             raise NotFoundError("未找到站点配置")
+        if row["web_id"] in (None, ""):
+            raise ValidationError(f"site_id={row['id']} 缺少 web_id 配置")
+        return SiteContext(
+            site_id=int(row["id"]),
+            web_id=int(row["web_id"]),
+            name=str(row["name"] or ""),
+            domain=str(row["domain"] or None) if row["domain"] else None,
+            lottery_type_id=int(row["lottery_type_id"]) if row["lottery_type_id"] else None,
+            enabled=bool(row["enabled"]),
+        )
+
+
+def resolve_first_site_context(db_path: str | Path) -> SiteContext:
+    """显式回退到第一个启用站点（仅限少数明确允许的兼容场景）。
+
+    高风险接口（管理接口、站点相关接口）必须使用 resolve_site_context
+    并显式传入 site_id，不得依赖此函数。
+    """
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id, web_id, name, domain, lottery_type_id, enabled
+            FROM managed_sites
+            ORDER BY id
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            raise NotFoundError("未找到任何站点配置")
         if row["web_id"] in (None, ""):
             raise ValidationError(f"site_id={row['id']} 缺少 web_id 配置")
         return SiteContext(

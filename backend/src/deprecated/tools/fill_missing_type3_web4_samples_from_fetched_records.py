@@ -19,21 +19,11 @@ import argparse
 import json
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
-
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = BACKEND_ROOT / "src"
-PREDICT_ROOT = SRC_ROOT / "predict"
-
-for path_item in (PREDICT_ROOT, SRC_ROOT):
-    if str(path_item) not in sys.path:
-        sys.path.insert(0, str(path_item))
-
-from db import connect, default_postgres_target, detect_database_engine, quote_identifier  # noqa: E402
-from mechanisms import PREDICTION_CONFIGS, build_title_prediction_configs  # noqa: E402
+from db import connect, default_postgres_target, detect_database_engine, quote_identifier
+from predict.mechanisms import PREDICTION_CONFIGS, build_title_prediction_configs
 
 
 SCHEMA_NAME = "public"

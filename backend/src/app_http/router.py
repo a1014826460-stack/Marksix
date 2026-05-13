@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import traceback
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from http import HTTPStatus
 from core.errors import AppError, UnauthorizedError, ForbiddenError, NotFoundError
 from .auth import get_current_user
 from .request_context import RequestContext
+
+_DEBUG = os.environ.get("LOTTERY_DEBUG", "").strip() in ("1", "true", "yes", "on")
 
 
 RouteHandler = Callable[[RequestContext], None]
@@ -23,6 +26,77 @@ class Route:
     matcher: Callable[[RequestContext], bool]
     handler: RouteHandler
     guard: RouteGuard | None = None
+
+
+def _as_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _query_snapshot(ctx: RequestContext) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {}
+    for key, values in ctx.query.items():
+        if not values:
+            snapshot[key] = ""
+        elif len(values) == 1:
+            snapshot[key] = values[0]
+        else:
+            snapshot[key] = values
+    return snapshot
+
+
+def _build_request_log_extra(ctx: RequestContext) -> dict[str, Any]:
+    current_user = get_current_user(ctx) or {}
+    cached_body = getattr(ctx, "_body", None)
+    req_params: dict[str, Any] = {
+        "path": ctx.path,
+        "raw_path": ctx.raw_path,
+        "query": _query_snapshot(ctx),
+    }
+    if cached_body is not None:
+        req_params["body"] = cached_body
+
+    query_or_body = cached_body if isinstance(cached_body, dict) else {}
+    site_id = _as_int((query_or_body.get("site_id") if isinstance(query_or_body, dict) else None) or ctx.query_value("site_id"))
+    web_id = _as_int(
+        (query_or_body.get("web_id") if isinstance(query_or_body, dict) else None)
+        or (query_or_body.get("web") if isinstance(query_or_body, dict) else None)
+        or ctx.query_value("web_id")
+        or ctx.query_value("web")
+    )
+    lottery_type_id = _as_int(
+        (query_or_body.get("lottery_type_id") if isinstance(query_or_body, dict) else None)
+        or (query_or_body.get("lottery_type") if isinstance(query_or_body, dict) else None)
+        or (query_or_body.get("type") if isinstance(query_or_body, dict) else None)
+        or ctx.query_value("lottery_type_id")
+        or ctx.query_value("lottery_type")
+        or ctx.query_value("type")
+    )
+    year = _as_int(
+        (query_or_body.get("year") if isinstance(query_or_body, dict) else None)
+        or ctx.query_value("year")
+    )
+    term = _as_int(
+        (query_or_body.get("term") if isinstance(query_or_body, dict) else None)
+        or ctx.query_value("term")
+        or ctx.query_value("issue")
+    )
+
+    return {
+        "user_id": current_user.get("id", ""),
+        "request_path": ctx.path,
+        "request_method": ctx.method,
+        "req_params": req_params,
+        "site_id": site_id,
+        "web_id": web_id,
+        "lottery_type_id": lottery_type_id,
+        "year": year,
+        "term": term,
+    }
 
 
 class Router:
@@ -100,16 +174,22 @@ class Router:
                 ctx.command,
                 ctx.raw_path,
                 exc,
-                extra={
-                    "user_id": (get_current_user(ctx) or {}).get("id", ""),
-                },
+                extra=_build_request_log_extra(ctx),
             )
             if isinstance(exc, AppError):
                 status = HTTPStatus(exc.status_code)
+                payload: dict[str, Any] = {"ok": False, "error": str(exc), "code": exc.code}
+                if _DEBUG:
+                    payload["detail"] = traceback.format_exc()
+                ctx.response.send_json(payload, status)
             elif isinstance(exc, KeyError):
-                status = HTTPStatus.NOT_FOUND
+                ctx.send_error_json(HTTPStatus.NOT_FOUND, str(exc))
             elif isinstance(exc, PermissionError):
-                status = HTTPStatus.FORBIDDEN
+                ctx.send_error_json(HTTPStatus.FORBIDDEN, str(exc))
+            elif isinstance(exc, ValueError):
+                ctx.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
             else:
-                status = HTTPStatus.BAD_REQUEST
-            ctx.send_error_json(status, str(exc), traceback.format_exc())
+                payload = {"ok": False, "error": "服务器内部错误"}
+                if _DEBUG:
+                    payload["detail"] = traceback.format_exc()
+                ctx.response.send_json(payload, HTTPStatus.INTERNAL_SERVER_ERROR)

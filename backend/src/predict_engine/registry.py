@@ -24,7 +24,7 @@ def get_mechanism(key: str) -> dict[str, Any]:
 
 def set_status(key: str, status: int) -> None:
     """设置机制启用/停用状态。"""
-    from predict.mechanisms import set_mechanism_status as _impl
+    from predict.mechanism_status import set_mechanism_status as _impl
     _impl(key, status)
 
 

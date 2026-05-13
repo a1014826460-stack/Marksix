@@ -1,5 +1,5 @@
-import { NumbersPageClient } from "@/components/admin/management-pages"
+import { NumbersPage } from "@/features/numbers/NumbersPage"
 
-export default function NumbersPage() {
-  return <NumbersPageClient />
+export default function NumbersRoutePage() {
+  return <NumbersPage />
 }

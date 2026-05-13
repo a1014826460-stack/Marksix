@@ -1,5 +1,5 @@
-import { DashboardPageClient } from "@/components/admin/management-pages"
+import { DashboardPage } from "@/features/dashboard/DashboardPage"
 
-export default function DashboardPage() {
-  return <DashboardPageClient />
+export default function DashboardRoutePage() {
+  return <DashboardPage />
 }

@@ -26,7 +26,12 @@ if str(SRC_ROOT) not in sys.path:
 from db import auto_increment_primary_key  # pyright: ignore[reportMissingImports]
 from db import connect, default_postgres_target  # pyright: ignore[reportMissingImports]
 
-DEFAULT_DB_PATH = default_postgres_target()
+def _get_default_db_path():
+    try:
+        return default_postgres_target()
+    except RuntimeError:
+        return ""
+DEFAULT_DB_PATH = _get_default_db_path()
 MAPPING_TABLE = "text_history_mappings"
 TEXT_COLUMNS = ("content", "jiexi", "title")
 
