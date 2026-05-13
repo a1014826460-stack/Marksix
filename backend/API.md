@@ -11,7 +11,7 @@
 - 旧接口兼容维护
 - 数据库问题定位
 
-本文只描述 Python 后端原生接口，即 `http://127.0.0.1:8000/api/*`。如果管理后台通过 Next.js 代理访问，会在第 9 节单独说明代理路径。
+本文主要描述 Python 后端原生接口，即 `http://127.0.0.1:8000/api/*`。如果管理后台通过 Next.js 代理访问，或前台通过 Next.js 兼容层对外暴露接口，会在第 9 节单独说明。
 
 ## 2. 系统架构与调用链路
 
@@ -73,6 +73,12 @@ npm run dev -- --hostname 127.0.0.1 --port 3002
 - Python API：`http://127.0.0.1:8000`
 - 管理后台：`http://127.0.0.1:3002/admin/login`
 
+如果你是通过 Docker + Nginx 部署整站，而不是本机直接启动 Python：
+
+- 对外前台入口通常是 `http://服务器IP/` 或你的站点域名
+- 对外后台入口通常是 `http://服务器IP/admin`
+- Python 原生接口一般只在服务器本机或容器内网访问，例如 `http://127.0.0.1:8000/api/health`
+
 ## 4. 数据库配置
 
 ### 4.1 正式数据库
@@ -105,13 +111,15 @@ DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 
 ### 4.3 旧 SQLite 数据迁移
 
-项目仍保留历史迁移脚本，但它不参与正式运行：
+当前这版重构后的仓库，已经不再内置可直接执行的 SQLite → PostgreSQL 迁移脚本。
 
-```bash
-python backend/src/deprecated/tools/migrate_sqlite_to_postgres.py \
-  --source-sqlite /path/to/old.sqlite3 \
-  --target-dsn "$DATABASE_URL"
-```
+如果你手里仍然只有历史 SQLite 数据，建议：
+
+1. 在旧工具或旧分支中先完成 SQLite → PostgreSQL 迁移；
+2. 再把 PostgreSQL 数据导入当前正式环境；
+3. 或者为当前仓库单独补一份新的迁移脚本后再执行迁移。
+
+也就是说，本文档中不再给出可直接运行的 `migrate_sqlite_to_postgres.py` 路径示例，以免误导。
 
 ## 5. 鉴权方式
 
@@ -270,11 +278,31 @@ PYTHON_API_BASE_URL=http://127.0.0.1:8000
 
 默认值也是 `http://127.0.0.1:8000`。
 
-### 9.3 注意
+### 9.3 前台对外 `/api/*` 兼容层
 
-- 本文默认写 Python 原生路径
+当前前台站点不是把浏览器请求直接打到 Python 原生 `/api/*`，而是先走前台 Next.js 提供的兼容层。
+
+典型链路是：
+
+```text
+浏览器
+  -> http://站点域名/api/*
+  -> frontend/app/api/**/route.ts
+  -> Python 原生 /api/*
+```
+
+这意味着：
+
+- 对外站点上的 `/api/latest-draw`、`/api/draw-history`、`/api/kaijiang/*` 等路径，属于前台兼容 API
+- 它们不等同于 Python 原生的 `/api/public/*`、`/api/legacy/*`
+- 部署到 Ubuntu + Docker + Nginx 后，外部用户访问站点域名下的 `/api/*`，默认先命中前台 Next.js
+
+### 9.4 注意
+
+- 本文默认写 Python 原生路径，除非特别注明“管理端代理”或“前台兼容层”
 - 如果你在管理后台页面里调试，请把路径换成 `/admin/api/python/...`
-- 不要把 Python 原生路径 `/api/...` 和管理端代理路径 `/admin/api/python/...` 混用
+- 如果你在站点域名下调试前台接口，请确认自己访问的是前台兼容 API，还是 Python 原生 `/api/...`
+- 不要把 Python 原生路径 `/api/...`、管理端代理路径 `/admin/api/python/...`、以及前台对外 `/api/*` 兼容层混为一谈
 
 ## 10. 健康检查接口
 
@@ -356,6 +384,7 @@ const data = await res.json()
 
 - `db_engine` 正式运行应为 `postgres`
 - `/health` 也是已实现的健康别名，但返回结构不同：`{ status, engine }`
+- 如果你是在整站部署环境里从浏览器调试，通常不会直接访问 `http://127.0.0.1:8000`，而是从服务器本机或容器内去访问这个地址
 
 ## 11. 公开前台接口
 
@@ -2408,7 +2437,7 @@ curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
 检查：
 
 1. `PYTHON_API_BASE_URL` 是否正确
-2. 浏览器访问的是 `/admin/api/python/...` 还是 Python 原生 `/api/...`
+2. 浏览器访问的是 `/admin/api/python/...`、站点对外 `/api/*` 兼容层，还是 Python 原生 `/api/...`
 3. Next.js `basePath=/admin` 是否被正确考虑
 4. 浏览器 Network 面板里的真实请求 URL
 5. Python 后端日志
