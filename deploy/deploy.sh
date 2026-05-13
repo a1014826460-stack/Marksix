@@ -56,10 +56,6 @@ prepare_env() {
         log_info ".env 文件已存在"
     fi
 
-    set -a
-    source .env
-    set +a
-
     if grep -q "POSTGRES_PASSWORD=change_me_in_production" .env 2>/dev/null; then
         log_warn "检测到数据库密码仍为默认值，强烈建议修改"
     fi
@@ -124,9 +120,6 @@ import_fixed_data() {
     log_info "导入 fixed_data 到数据库..."
     cd "$PROJECT_DIR"
 
-    local db_pass="${POSTGRES_PASSWORD:-change_me_in_production}"
-    local pg_dsn="postgresql://postgres:${db_pass}@postgres:5432/liuhecai"
-
     if docker compose ps | grep -q "python-api.*Up"; then
         if [ -f backend/data/fixed_data.json ]; then
             local fixed_exists
@@ -142,9 +135,9 @@ import_fixed_data() {
             if [ "$fixed_exists" = "t" ]; then
                 log_info "fixed_data 表已存在，跳过初始化导入"
             else
-                docker compose exec -T python-api python /app/src/tools/import_fixed_data.py \
-                    --fixed-data-path /app/data/fixed_data.json \
-                    --db-path "${pg_dsn}" 2>&1 || \
+                docker compose exec -T python-api sh -lc \
+                    'python /app/src/tools/import_fixed_data.py --fixed-data-path /app/data/fixed_data.json --db-path "$DATABASE_URL"' \
+                    2>&1 || \
                     log_warn "fixed_data 导入失败，请检查日志"
             fi
         else
