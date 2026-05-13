@@ -1,15 +1,55 @@
 # ============================================================
-# Default Nginx reverse proxy config
-# - HTTP only
-# - Works with server IP out of the box
-# - HTTPS/domain binding is configured separately
+# HTTPS/domain Nginx example
+# 1. Replace example.com / www.example.com with your domain
+# 2. Put certificates into deploy/ssl/
+# 3. Copy this file over deploy/nginx.conf
 # ============================================================
 
 resolver 127.0.0.11 valid=10s ipv6=off;
 
 server {
-    listen 80 default_server;
-    server_name _;
+    listen 80;
+    server_name example.com;
+    return 301 https://www.example.com$request_uri;
+}
+
+server {
+    listen 80;
+    server_name www.example.com;
+    return 301 https://www.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name example.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    return 301 https://www.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.example.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # Enable after HTTPS has been verified in production.
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     server_tokens off;
     add_header X-Content-Type-Options "nosniff" always;
@@ -30,7 +70,6 @@ server {
         access_log off;
     }
 
-    # Public frontend API compatibility layer served by Next.js.
     location /api/ {
         set $frontend_web frontend:3000;
         proxy_pass http://$frontend_web;
