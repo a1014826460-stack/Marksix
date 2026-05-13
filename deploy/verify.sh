@@ -41,7 +41,6 @@ echo "  六合彩部署验证"
 echo "========================================"
 echo ""
 
-# ── 容器状态 ──
 echo "[容器状态]"
 check_service_running "postgres"
 check_service_running "python-api"
@@ -51,34 +50,32 @@ check_service_running "nginx"
 
 echo ""
 echo "[健康检查端点]"
-# python-api /health
 check "python-api /health" \
     "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health" \
     "200"
 
-# python-api /api/health (带数据库摘要)
 check "python-api /api/health" \
-    "curl -s http://localhost:8000/api/health | grep -o '\"ok\": true'" \
+    "curl -s http://localhost:8000/api/health | grep -o '\"ok\":true\\|\"ok\": true'" \
     "ok"
 
-# nginx /health → python-api
 check "nginx /health" \
     "curl -s -o /dev/null -w '%{http_code}' http://localhost/health" \
     "200"
 
 echo ""
 echo "[核心路由]"
-# 前端主页
 check "前端主页 /" \
-    "curl -s -o /dev/null -w '%{http_code}' http://localhost/" \
+    "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/" \
     "200"
 
-# 后台管理 /admin
 check "后台管理 /admin" \
-    "curl -s -o /dev/null -w '%{http_code}' http://localhost/admin" \
+    "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/admin" \
     "200"
 
-# 数据库连接
+check "前端兼容 API /api/latest-draw" \
+    "curl -s -o /dev/null -w '%{http_code}' http://localhost/api/latest-draw" \
+    "200"
+
 check "PostgreSQL 连接" \
     "docker compose exec postgres pg_isready -U postgres -d liuhecai 2>&1" \
     "accepting"
@@ -90,7 +87,7 @@ if grep -q "listen 443" deploy/nginx.conf 2>/dev/null; then
         "curl -k -s -o /dev/null -w '%{http_code}' https://localhost/health" \
         "200"
 else
-    echo -e "  ${YELLOW}SKIP${NC} HTTPS 未在当前 nginx.conf 中启用"
+    echo -e "  ${YELLOW}SKIP${NC} 当前 nginx.conf 未启用 HTTPS"
 fi
 
 echo ""
