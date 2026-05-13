@@ -47,4 +47,5 @@ data/api_data/
 
 # Python 缓存
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/

@@ -7,12 +7,12 @@ import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
 import { getCalConvTitle } from "@/lib/calconv"
 
 const VALID_GAMES: LotteryGame[] = ["taiwan", "macau", "hongkong"]
-const GAME_TYPE_PARAM_MAP: Record<LotteryGame, string> = {
+const GAME_T_PARAM_MAP: Record<LotteryGame, string> = {
   taiwan: "3",
   macau: "2",
   hongkong: "1",
 }
-const PARAM_TYPE_GAME_MAP: Record<string, LotteryGame> = {
+const T_PARAM_GAME_MAP: Record<string, LotteryGame> = {
   "3": "taiwan",
   "2": "macau",
   "1": "hongkong",
@@ -38,10 +38,22 @@ function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
 }
 
+function buildLegacyShellParams(
+  searchParams: URLSearchParams,
+  game: LotteryGame
+) {
+  const nextParams = new URLSearchParams(searchParams.toString())
+  nextParams.set("t", GAME_T_PARAM_MAP[game])
+  nextParams.delete("type")
+  nextParams.delete("web")
+  nextParams.delete("game")
+  return nextParams
+}
+
 function resolveGameFromRouteParams(searchParams: URLSearchParams): LotteryGame {
-  const rawType = searchParams.get("t")
-  if (rawType && PARAM_TYPE_GAME_MAP[rawType]) {
-    return PARAM_TYPE_GAME_MAP[rawType]
+  const rawType = searchParams.get("type") || searchParams.get("t")
+  if (rawType && T_PARAM_GAME_MAP[rawType]) {
+    return T_PARAM_GAME_MAP[rawType]
   }
 
   const rawGame = searchParams.get("game")
@@ -75,13 +87,33 @@ function LegacyShellContent() {
     setActiveGame(initialGame)
   }, [initialGame])
 
+  useEffect(() => {
+    const nextParams = buildLegacyShellParams(
+      new URLSearchParams(searchParams.toString()),
+      initialGame
+    )
+    const currentParams = searchParams.toString()
+    const canonicalParams = nextParams.toString()
+
+    if (canonicalParams !== currentParams) {
+      router.replace(
+        canonicalParams ? `${pathname}?${canonicalParams}` : pathname,
+        { scroll: false }
+      )
+    }
+  }, [initialGame, pathname, router, searchParams])
+
   function handleGameChange(game: LotteryGame) {
     setActiveGame(game)
 
-    const nextParams = new URLSearchParams(searchParams.toString())
-    nextParams.set("t", GAME_TYPE_PARAM_MAP[game])
-    nextParams.delete("game")
-    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false })
+    const nextParams = buildLegacyShellParams(
+      new URLSearchParams(searchParams.toString()),
+      game
+    )
+    const nextQuery = nextParams.toString()
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    })
   }
 
   function handleJump(anchorId: string) {

@@ -19,7 +19,14 @@ if str(SRC_ROOT) not in sys.path:
 from db import connect as db_connect, default_postgres_target
 from runtime_config import get_bootstrap_config_value
 
-DEFAULT_DB_TARGET = default_postgres_target()
+# 惰性获取默认数据库目标，避免 import 时因缺少 DATABASE_URL 而崩溃
+# 当未设置环境变量时返回空字符串，由调用方决定如何处理
+def _get_default_db_target() -> str:
+    try:
+        return default_postgres_target()
+    except RuntimeError:
+        return ""
+DEFAULT_DB_TARGET = _get_default_db_target()
 DEFAULT_TARGET_HIT_RATE = float(get_bootstrap_config_value("prediction.default_target_hit_rate", 0.65))
 
 # 固定顺序用于稳定输出，避免同分策略在不同 Python 版本或数据库顺序下产生不同结果。

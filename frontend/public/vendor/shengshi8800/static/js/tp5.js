@@ -91,9 +91,9 @@ $.ajax({
         }
         htmlBoxList = `
 <!--div class="tit"><a href="https://t2.xn--odc6dra3b5a7f.xn--hdc6bwac9bsvfl0m6eh.xn--gecrj9c:8443/#pm49dh"><font size="2">点击提前查看跑马解图</font></a></div-->
-         <tr>
-<th>台湾梦影逍遥『跑马图』</th>
-</tr>
+        //  <tr>
+<!-- <th>台湾梦影逍遥『跑马图』</th> -->
+// </tr>
 ${htmlBoxList}
             
         `;

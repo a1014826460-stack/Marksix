@@ -1,7 +1,7 @@
 """routes 共享工具 —— 兼容导出入口。
 
 后台任务管理、抓取运行逻辑已迁移到 jobs/ 包。
-本文件保留向后兼容的导出。
+本文件只做兼容导入和薄包装，不再复制实现。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from admin.crud import get_site
+from domains.sites.service import get_site
 from crawler.crawler_service import crawl_and_generate_for_type
 from db import connect, utc_now
 from jobs.handlers import (  # noqa: F401 - 兼容导出
@@ -26,43 +26,8 @@ from utils.normalize_payload_tables import normalize_payload_tables
 
 
 def crawl_and_generate(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
+    """兼容包装：调用 crawler_service 中的统一实现。"""
     return crawl_and_generate_for_type(db_path, lottery_type_id)
-
-
-def create_fetch_run(db_path: str | Path, site_id: int) -> int:
-    with connect(db_path) as conn:
-        row = conn.execute(
-            """
-            INSERT INTO site_fetch_runs (site_id, status, message, started_at)
-            VALUES (?, 'running', '', ?)
-            RETURNING id
-            """,
-            (site_id, utc_now()),
-        ).fetchone()
-        return int(row["id"])
-
-
-def finish_fetch_run(
-    db_path: str | Path,
-    run_id: int,
-    status: str,
-    message: str,
-    modes_count: int,
-    records_count: int,
-) -> None:
-    with connect(db_path) as conn:
-        conn.execute(
-            """
-            UPDATE site_fetch_runs
-            SET status = ?,
-                message = ?,
-                modes_count = ?,
-                records_count = ?,
-                finished_at = ?
-            WHERE id = ?
-            """,
-            (status, message, modes_count, records_count, utc_now(), run_id),
-        )
 
 
 def _load_data_fetch_exports() -> tuple[Any, Any, Any, Any]:
@@ -87,6 +52,7 @@ def fetch_site_data(
     normalize_after: bool = True,
     build_text_mappings_after: bool = True,
 ) -> dict[str, Any]:
+    """站点抓取业务逻辑（薄包装，委托 jobs/handlers 中的 fetch run 记录函数）。"""
     ensure_admin_tables(db_path)
     site = get_site(db_path, site_id, include_secret=True)
     if not site["enabled"]:
@@ -141,19 +107,3 @@ def fetch_site_data(
         message = f"{type(exc).__name__}: {exc}"
         finish_fetch_run(db_path, run_id, "failed", message, modes_count, records_count)
         raise
-
-
-def list_fetch_runs(db_path: str | Path, limit: int = 20) -> list[dict[str, Any]]:
-    ensure_admin_tables(db_path)
-    with connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT r.*, s.name AS site_name
-            FROM site_fetch_runs r
-            LEFT JOIN managed_sites s ON s.id = r.site_id
-            ORDER BY r.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-        return [dict(row) for row in rows]

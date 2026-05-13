@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from http.request_context import RequestContext
-from http.router import Router, Route
+from app_http.request_context import RequestContext
+from app_http.router import Router, Route
 
 
 def _make_ctx(path: str, method: str = "GET") -> RequestContext:

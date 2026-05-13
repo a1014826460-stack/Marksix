@@ -612,29 +612,34 @@ def delete_draw(db_path: str | Path, draw_id: int) -> None:
 #  Number CRUD (operates on fixed_data)
 # ─────────────────────────────────────────────────────────────────
 
-def list_numbers(db_path: str | Path, limit: int = 300, keyword: str = "") -> list[dict[str, Any]]:
+def list_numbers(db_path: str | Path, limit: int = 300, keyword: str = "", sign: str = "") -> list[dict[str, Any]]:
     """获取号码列表，直接读取 fixed_data 表，保持与预测映射同源。
 
-    支持按关键字模糊搜索（匹配 name、sign、code 字段）。
+    支持按关键字模糊搜索（匹配 name、sign、code 字段），以及按 sign 精确过滤。
 
     :param db_path: SQLite 数据库文件路径
     :param limit: 返回记录的最大条数，默认 300
     :param keyword: 可选，搜索关键字，用于模糊匹配 name、sign 或 code 字段
+    :param sign: 可选，按 sign 列精确匹配（如 "生肖"、"波色"）
     :return: 号码字典列表，其中 ``status`` 字段已转换为布尔值
     """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
         params: list[Any] = []
-        where = ""
+        conditions: list[str] = []
+        if sign:
+            conditions.append("sign = ?")
+            params.append(sign)
         if keyword:
-            where = "WHERE name LIKE ? OR sign LIKE ? OR code LIKE ?"
+            conditions.append("(name LIKE ? OR sign LIKE ? OR code LIKE ?)")
             params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = conn.execute(
             f"""
             SELECT id, name, code, sign AS category_key, year, status, type, xu
             FROM fixed_data
             {where}
-            ORDER BY id DESC
+            ORDER BY xu ASC, id ASC
             LIMIT ?
             """,
             (*params, limit),
@@ -724,6 +729,9 @@ def delete_number(db_path: str | Path, number_id: int) -> None:
 
 # ─────────────────────────────────────────────────────────────────
 #  站点预测模块 CRUD / Site prediction module CRUD
+#  DEPRECATED: 已迁移到 domains/prediction/service.py。
+#  以下函数不再被新代码调用，保留仅供向后兼容。
+#  新代码请使用 domains.prediction.service 中的对应函数。
 # ─────────────────────────────────────────────────────────────────
 
 def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str, Any]:

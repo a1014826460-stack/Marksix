@@ -4,8 +4,8 @@ from legacy.api import list_legacy_post_images
 from utils.build_text_history_mappings import build_text_history_mappings
 from utils.normalize_payload_tables import normalize_payload_tables
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 from .common import list_fetch_runs
 

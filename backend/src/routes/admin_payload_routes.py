@@ -12,10 +12,10 @@ from admin.payload import (
 )
 from admin.prediction import regenerate_payload_data
 from core.errors import ForbiddenError, NotFoundError, ValidationError
-from http.auth import require_generation_access
-from http.request_context import RequestContext
-from http.router import Router
-from http.site_context import (
+from app_http.auth import require_generation_access
+from app_http.request_context import RequestContext
+from app_http.router import Router
+from app_http.site_context import (
     extract_site_web_value,
     parse_site_route_context,
     resolve_site_context,

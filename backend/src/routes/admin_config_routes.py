@@ -14,8 +14,8 @@ from runtime_config import (
     validate_config_value,
 )
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:

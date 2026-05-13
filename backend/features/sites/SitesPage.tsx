@@ -123,7 +123,7 @@ export function SitesPage() {
             <h2 className="mb-3 text-base font-semibold">
               {editing ? "修改站点" : "新增站点"}
             </h2>
-            <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
+            <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={submit}>
               <Field label="站点名称" className="col-span-2">
                 <Input
                   name="name"

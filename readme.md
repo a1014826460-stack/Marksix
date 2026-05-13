@@ -9,6 +9,9 @@
 ```powershell
 cd d:\pythonProject\outsource\Liuhecai
 python backend/src/app.py
+
+cd d:\pythonProject\outsource\Liuhecai
+powershell -ExecutionPolicy Bypass -File .\backend\scripts\restart-backend.ps1
 ```
 
 正式运行必须配置 PostgreSQL 数据库连接。推荐使用环境变量 `DATABASE_URL`，

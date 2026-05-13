@@ -40,5 +40,5 @@ LOTTERY_TYPE_TAIWAN = 3  # 台湾彩
 
 # ── 默认开奖时间 ────────────────────────────────────
 DEFAULT_HK_DRAW_TIME = "21:30"
-DEFAULT_MACAU_DRAW_TIME = "21:00"
+DEFAULT_MACAU_DRAW_TIME = "21:30"
 DEFAULT_TAIWAN_DRAW_TIME = "22:30"

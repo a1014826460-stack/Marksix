@@ -2,23 +2,22 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from admin.crud import (
+from domains.prediction.service import (
+    bulk_generate_site_predictions,
     add_site_prediction_module,
-    delete_site,
+    bulk_delete_site_prediction_modules,
     delete_site_prediction_module,
-    get_site,
+    estimate_site_prediction_modules_bulk_delete,
     list_site_prediction_modules,
-    list_sites,
-    run_site_prediction_module,
-    save_site,
+    run_prediction as run_site_prediction_module,
     update_site_prediction_module,
 )
-from admin.prediction import bulk_generate_site_prediction_data
+from domains.sites.service import get_site, list_sites, save_site, delete_site
 from helpers import parse_bool
-from http.auth import require_generation_access
-from http.request_context import RequestContext
-from http.router import Router
-from http.site_context import (
+from app_http.auth import require_generation_access
+from app_http.request_context import RequestContext
+from app_http.router import Router
+from app_http.site_context import (
     extract_site_web_value,
     parse_site_route_context,
     resolve_site_context,
@@ -92,7 +91,7 @@ def site_detail(ctx: RequestContext) -> None:
             body = ctx.read_json()
             validate_web_matches_site(current_site, extract_site_web_value(ctx.query, body))
             job_id = start_background_job(
-                bulk_generate_site_prediction_data,
+                bulk_generate_site_predictions,
                 ctx.db_path,
                 site_id,
                 body,
@@ -110,6 +109,20 @@ def site_detail(ctx: RequestContext) -> None:
                     "job_id": job_id,
                     "message": "批量生成已放入后台执行，可通过 /api/admin/jobs/{job_id} 查询进度",
                 }
+            )
+            return
+        if parts[6] == "bulk-delete-estimate" and ctx.method == "POST":
+            require_generation_access(ctx)
+            body = ctx.read_json()
+            ctx.send_json(
+                estimate_site_prediction_modules_bulk_delete(ctx.db_path, site_id, body)
+            )
+            return
+        if parts[6] == "bulk-delete" and ctx.method == "DELETE":
+            require_generation_access(ctx)
+            body = ctx.read_json()
+            ctx.send_json(
+                bulk_delete_site_prediction_modules(ctx.db_path, site_id, body)
             )
             return
         if parts[6] == "run" and ctx.method == "POST":

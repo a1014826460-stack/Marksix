@@ -1,8 +1,23 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
-
 ;(function () {
   var currentScript = document.currentScript
   if (!currentScript || !currentScript.parentNode) return
+
+  function appendText(parent, text) {
+    parent.appendChild(document.createTextNode(text))
+  }
+
+  function createElement(tagName, attrs, text) {
+    var element = document.createElement(tagName)
+    if (attrs) {
+      Object.keys(attrs).forEach(function (key) {
+        element.setAttribute(key, attrs[key])
+      })
+    }
+    if (typeof text === "string") {
+      appendText(element, text)
+    }
+    return element
+  }
 
   var style = document.createElement("style")
   style.textContent = [
@@ -17,27 +32,36 @@
     ".djck td.djck2 p span { color: #0FF; }",
   ].join("\n")
 
-  var wrapper = document.createElement("div")
-  wrapper.innerHTML = replaceLegacySiteText([
-    '<table class="djck" width="100%" border="0">',
-    "  <tr>",
-    '    <td class="djck1"><a href="http://shengshi8800.com/">',
-    "      <h2>台湾论坛</h2>",
-    '      <p>一码中特 <span>点击查看&gt;</span></p>',
-    "    </a></td>",
-    '    <td class="djck2"><a href="http://shengshi8800.com">',
-    "      <h2>台湾资料网</h2>",
-    '      <p>三期必开 <span>点击查看&gt;</span></p>',
-    "    </a></td>",
-    "  </tr>",
-    "</table>",
-  ].join(""))
+  var table = createElement("table", {
+    class: "djck",
+    "data-legacy-brand-static": "djck-static",
+    width: "100%",
+    border: "0",
+  })
+  var row = document.createElement("tr")
+
+  function buildCell(className, href, titleText, titleStaticKey, descriptionText) {
+    var cell = createElement("td", { class: className })
+    var link = createElement("a", { href: href })
+    var heading = createElement("h2", { "data-legacy-brand-static": titleStaticKey }, titleText)
+    var paragraph = document.createElement("p")
+    var span = document.createElement("span")
+
+    appendText(paragraph, descriptionText + " ")
+    appendText(span, "点击查看>")
+    paragraph.appendChild(span)
+    link.appendChild(heading)
+    link.appendChild(paragraph)
+    cell.appendChild(link)
+    return cell
+  }
+
+  row.appendChild(buildCell("djck1", "/?t=3", "台湾论坛", "forum-short", "一码中特"))
+  row.appendChild(buildCell("djck2", "/?t=3", "台湾资料网", "data-site", "三期必开"))
+  table.appendChild(row)
 
   var parent = currentScript.parentNode
   parent.insertBefore(style, currentScript)
-  while (wrapper.firstChild) {
-    parent.insertBefore(wrapper.firstChild, currentScript)
-  }
+  parent.insertBefore(table, currentScript)
   parent.removeChild(currentScript)
 })()
-

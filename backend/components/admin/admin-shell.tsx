@@ -15,8 +15,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Ticket,
   Trophy,
@@ -86,14 +84,18 @@ export function AdminShell({ title, description, children, actions }: AdminShell
     <div className="flex min-h-screen bg-background">
       {/* 移动端遮罩 */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setMobileOpen(false)} />
+        <div
+          className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
       )}
 
       {/* 侧边栏 */}
       <aside
         className={cn(
           "fixed left-0 top-0 z-50 h-screen border-r border-border bg-card p-3 transition-all duration-200",
-          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
         style={{ width: sidebarW }}
       >
@@ -121,7 +123,7 @@ export function AdminShell({ title, description, children, actions }: AdminShell
                 onClick={() => setMobileOpen(false)}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors min-h-[44px]",
                   collapsed && "justify-center px-2",
                   active
                     ? "bg-primary text-primary-foreground"
@@ -135,10 +137,11 @@ export function AdminShell({ title, description, children, actions }: AdminShell
           })}
         </nav>
 
-        {/* 折叠按钮 */}
+        {/* 折叠按钮 — 仅桌面端显示 */}
         <button
           onClick={() => setCollapsed((v) => !v)}
-          className="absolute -right-3 top-10 hidden h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground lg:flex"
+          className="absolute -right-3 top-10 hidden h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground md:flex"
+          aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
         >
           {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
         </button>
@@ -146,25 +149,35 @@ export function AdminShell({ title, description, children, actions }: AdminShell
 
       {/* 主区域 */}
       <main
-        className="min-w-0 flex-1 p-4 lg:p-6 transition-all duration-200"
+        className="min-w-0 flex-1 p-3 md:p-6 transition-all duration-200"
         style={{ marginLeft: sidebarW }}
       >
-        {/* 移动端汉堡菜单 */}
-        <button
-          className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"
-          onClick={() => setMobileOpen(true)}
-        >
-          <Menu className="h-4 w-4" /> 菜单
-        </button>
+        {/* 移动端顶栏：汉堡菜单 + 用户信息 */}
+        <div className="mb-3 flex items-center gap-2 md:hidden">
+          <button
+            className="flex h-11 w-11 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-foreground active:bg-secondary"
+            onClick={() => setMobileOpen(true)}
+            aria-label="打开菜单"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate">{user?.display_name || "管理员"}</div>
+            <div className="text-xs text-muted-foreground truncate">{user?.username || "admin"}</div>
+          </div>
+          <Button variant="outline" size="sm" onClick={logout} className="shrink-0">
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
 
         <header className="mb-5 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-normal">{title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-normal break-words">{title}</h1>
+            <p className="mt-1 text-xs md:text-sm text-muted-foreground">{description}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2 shrink-0">
             {actions}
-            <div className="hidden text-right text-xs md:block">
+            <div className="text-right text-xs">
               <div className="font-medium">{user?.display_name || "管理员"}</div>
               <div className="text-muted-foreground">{user?.username || "admin"}</div>
             </div>

@@ -208,3 +208,86 @@
 .animate-fade-in {
   animation: fade-in 0.2s ease-out forwards;
 }
+
+/* ── 移动端适配 ───────────────────────────────────────────────── */
+
+/* 触控热区：移动端所有可交互元素最小 44x44px */
+@media (max-width: 767px) {
+  button,
+  a,
+  [role="button"],
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"],
+  select {
+    min-height: 44px;
+  }
+
+  /* 行内按钮/链接保持流式尺寸，避免撑破布局 */
+  .inline-flex button,
+  .inline-flex a,
+  td button,
+  td a,
+  .space-x-2 button,
+  .space-x-2 a,
+  .gap-2 button,
+  .gap-2 a,
+  button[class*=" size-"],
+  button[size] {
+    min-height: auto;
+  }
+
+  /* 表格操作列按钮保持紧凑 */
+  [data-slot="table-cell"] button {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 0.25rem 0.5rem;
+  }
+
+  /* 侧边栏关闭按钮 */
+  aside button.absolute {
+    min-height: auto;
+    min-width: auto;
+  }
+}
+
+/* 移动端文字防溢出 */
+@media (max-width: 767px) {
+  table {
+    font-size: 0.75rem;
+  }
+
+  [data-slot="table-cell"],
+  [data-slot="table-head"] {
+    white-space: normal;
+    word-break: break-word;
+    max-width: 120px;
+  }
+
+  /* 长数字/代码串在表格中可换行 */
+  [data-slot="table-cell"] {
+    overflow-wrap: anywhere;
+  }
+
+  /* 卡片内边距收紧 */
+  [data-slot="card"] {
+    padding: 0.75rem;
+  }
+
+  /* 表单网格在移动端强制单列 */
+  form.grid-cols-2,
+  [data-slot="card"] .grid.grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* col-span-2 在单列布局中不需要跨列 */
+  form.grid-cols-2 .col-span-2,
+  [data-slot="card"] .grid.grid-cols-2 .col-span-2 {
+    grid-column: span 1;
+  }
+
+  /* 表格容器横向滚动 */
+  [data-slot="table-container"] {
+    -webkit-overflow-scrolling: touch;
+  }
+}

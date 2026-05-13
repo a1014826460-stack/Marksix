@@ -19,7 +19,7 @@ SRC_ROOT = BACKEND_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from rebuild_text_mappings import (
+from utils.rebuild_text_mappings import (
     DEFAULT_DB_PATH,
     rebuild_text_history_mappings as _rebuild_text_history_mappings,
 )

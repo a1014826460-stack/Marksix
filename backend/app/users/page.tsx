@@ -1,5 +1,5 @@
-import { UsersPageClient } from "@/components/admin/management-pages"
+import { UsersPage } from "@/features/users/UsersPage"
 
-export default function UsersPage() {
-  return <UsersPageClient />
+export default function UsersRoutePage() {
+  return <UsersPage />
 }

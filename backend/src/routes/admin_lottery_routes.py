@@ -6,9 +6,9 @@ from http import HTTPStatus
 
 from admin.crud import delete_lottery_type, list_lottery_types, save_lottery_type
 from crawler.crawler_service import run_crawl_only
-from http.auth import require_generation_access
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.auth import require_generation_access
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 from .common import crawl_and_generate, start_background_job
 

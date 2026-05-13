@@ -8,7 +8,7 @@ from typing import Any
 
 from db import ConnectionAdapter, connect as db_connect, utc_now
 
-from common import (
+from predict.common import (
     DEFAULT_DB_TARGET,
     ELEMENT_ORDER,
     ZODIAC_ORDER,
@@ -34,49 +34,26 @@ from common import (
     title_content_from_row,
     xiao_pair_content_from_row,
 )
+from predict._db_helpers import (
+    COMMON_PAYLOAD_COLUMNS,
+    _business_columns,
+    _is_first_stage_supported_table,
+    _sample_column_value,
+    _sample_content,
+    _table_column_list,
+    _table_columns,
+)
 
 
-HEAD_NUMBER_MAP: dict[str, list[str]] = {
-    "0头": [f"{number:02d}" for number in range(1, 10)],
-    "1头": [str(number) for number in range(10, 20)],
-    "2头": [str(number) for number in range(20, 30)],
-    "3头": [str(number) for number in range(30, 40)],
-    "4头": [str(number) for number in range(40, 50)],
-}
-
-TAIL_NUMBER_MAP: dict[str, list[str]] = {
-    f"{tail}尾": [
-        f"{number:02d}"
-        for number in range(1, 50)
-        if number % 10 == tail
-    ]
-    for tail in range(10)
-}
-
-PARITY_NUMBER_MAP: dict[str, list[str]] = {
-    "单": [f"{number:02d}" for number in range(1, 50) if number % 2 == 1],
-    "双": [f"{number:02d}" for number in range(1, 50) if number % 2 == 0],
-}
-
-WAVE_COLOR_NUMBER_MAP: dict[str, list[str]] = {
-    "红波": ["01", "02", "07", "08", "12", "13", "18", "19", "23", "24", "29", "30", "34", "35", "40", "45", "46"],
-    "蓝波": ["03", "04", "09", "10", "14", "15", "20", "25", "26", "31", "36", "37", "41", "42", "47", "48"],
-    "绿波": ["05", "06", "11", "16", "17", "21", "22", "27", "28", "32", "33", "38", "39", "43", "44", "49"],
-}
-
-HALF_WAVE_NUMBER_MAP: dict[str, list[str]] = {
-    "红单": ["01", "07", "13", "19", "23", "29", "35", "45"],
-    "红双": ["02", "08", "12", "18", "24", "30", "34", "40", "46"],
-    "蓝单": ["03", "09", "15", "25", "31", "37", "41", "47"],
-    "蓝双": ["04", "10", "14", "20", "26", "36", "42", "48"],
-    "绿单": ["05", "11", "17", "21", "27", "33", "39", "43", "49"],
-    "绿双": ["06", "16", "22", "28", "32", "38", "44"],
-}
-
-SIZE_NUMBER_MAP: dict[str, list[str]] = {
-    "小": [f"{number:02d}" for number in range(1, 25)],
-    "大": [str(number) for number in range(25, 50)],
-}
+# 数字映射常量已迁移至 predict/number_maps.py，此处兼容导入
+from predict.number_maps import (  # noqa: F401 - 兼容导出
+    HALF_WAVE_NUMBER_MAP,
+    HEAD_NUMBER_MAP,
+    PARITY_NUMBER_MAP,
+    SIZE_NUMBER_MAP,
+    TAIL_NUMBER_MAP,
+    WAVE_COLOR_NUMBER_MAP,
+)
 
 
 TABLE_FIXED_MAPPING_KEYS: dict[str, str] = {
@@ -2115,71 +2092,8 @@ def _make_pipe_config(
     )
 
 
-def _sample_content(conn: ConnectionAdapter, table_name: str) -> str:
-    if not table_exists(conn, table_name):
-        return ""
-    columns = _table_columns(conn, table_name)
-    if "content" not in columns:
-        return ""
-    row = conn.execute(
-        f"""
-        SELECT content
-        FROM {quote_identifier(table_name)}
-        WHERE content IS NOT NULL AND content != ''
-        LIMIT 1
-        """
-    ).fetchone()
-    return str(row["content"] or "") if row else ""
-
-
-COMMON_PAYLOAD_COLUMNS = {
-    "id",
-    "web",
-    "type",
-    "year",
-    "term",
-    "res_code",
-    "res_sx",
-    "res_color",
-    "status",
-    "content",
-    "image_url",
-    "video_url",
-    "web_id",
-    "modes_id",
-    "source_record_id",
-    "fetched_at",
-    "month",
-    "m_tema",
-}
-
-
-def _table_column_list(conn: ConnectionAdapter, table_name: str) -> tuple[str, ...]:
-    return tuple(conn.table_columns(table_name))
-
-
-def _table_columns(conn: ConnectionAdapter, table_name: str) -> set[str]:
-    return set(_table_column_list(conn, table_name))
-
-
-def _business_columns(conn: ConnectionAdapter, table_name: str) -> tuple[str, ...]:
-    """返回去掉公共开奖字段后的业务列，并保持 SQLite 原始列顺序。"""
-    return tuple(column for column in _table_column_list(conn, table_name) if column not in COMMON_PAYLOAD_COLUMNS)
-
-
-def _sample_column_value(conn: ConnectionAdapter, table_name: str, column: str) -> str:
-    if column not in _table_columns(conn, table_name):
-        return ""
-    row = conn.execute(
-        f"""
-        SELECT {quote_identifier(column)}
-        FROM {quote_identifier(table_name)}
-        WHERE {quote_identifier(column)} IS NOT NULL
-          AND {quote_identifier(column)} != ''
-        LIMIT 1
-        """
-    ).fetchone()
-    return str(row[column] or "") if row else ""
+# _sample_content, COMMON_PAYLOAD_COLUMNS, _table_column_list, _table_columns,
+# _business_columns, _sample_column_value 已迁移至 predict._db_helpers
 
 
 def _infer_group_widths(
@@ -2287,14 +2201,7 @@ def _infer_group_selection_groups(
     return tuple(groups)
 
 
-def _is_first_stage_supported_table(columns: set[str]) -> bool:
-    """第一阶段只自动处理 content 单字段玩法。
-
-    很多 title 在 fetched_mode_records 中带有 xiao/code/jiexi/nan/nv/zu1 等复合字段，
-    这些字段通常代表多个命中维度或前端输出结构。为了避免“按 title 猜规则”造成
-    错误命中口径，本阶段只让 content 单字段表进入自动机制。
-    """
-    return "content" in columns and not (columns - COMMON_PAYLOAD_COLUMNS)
+# _is_first_stage_supported_table 已迁移至 predict._db_helpers
 
 
 def _make_grouped_zodiac_config(
@@ -3623,26 +3530,11 @@ def list_prediction_configs(db_path: str | Path | None = None) -> list[dict[str,
     ]
 
 
-def get_mechanism_statuses(db_path: str | Path) -> dict[str, int]:
-    """获取所有预测机制的启用/禁用状态映射。"""
-    from db import connect
-    with connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT mechanism_key, status FROM mechanism_status"
-        ).fetchall()
-    return {str(row["mechanism_key"]): int(row["status"]) for row in rows}
-
-
-def set_mechanism_status(db_path: str | Path, key: str, status: int) -> None:
-    """设置预测机制的启用/禁用状态（status: 1=启用, 0=禁用）。"""
-    now = utc_now()
-    with db_connect(db_path) as conn:
-        conn.execute(
-            """INSERT INTO mechanism_status (mechanism_key, status, updated_at)
-               VALUES (?, ?, ?)
-               ON CONFLICT(mechanism_key) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at""",
-            (key, status, now),
-        )
+# get_mechanism_statuses, set_mechanism_status 已迁移至 predict.mechanism_status
+from predict.mechanism_status import (  # noqa: F401 - 兼容导出
+    get_mechanism_statuses,
+    set_mechanism_status,
+)
 
 
 def get_prediction_config(key: str) -> PredictionConfig:

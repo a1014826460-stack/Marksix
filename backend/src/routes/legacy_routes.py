@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from legacy.api import get_legacy_current_term, list_legacy_post_images, load_legacy_mode_rows
 
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router, *, default_pc: int, default_web: int, default_type: int) -> None:

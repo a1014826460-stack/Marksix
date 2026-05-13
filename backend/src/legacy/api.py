@@ -4,13 +4,7 @@
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
-
-_PREDICT_ROOT = Path(__file__).resolve().parents[1] / "predict"
-if str(_PREDICT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PREDICT_ROOT))
 
 from db import connect, quote_identifier
 from helpers import (
@@ -19,8 +13,8 @@ from helpers import (
     merge_preferred_mode_payload_rows, load_mode_payload_rows_from_source,
     normalize_issue_part, parse_issue_int, split_csv,
 )
-from mechanisms import get_prediction_config  # noqa: E402
-from utils.created_prediction_store import (  # noqa: E402
+from predict.mechanisms import get_prediction_config
+from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
     quote_qualified_identifier as quote_schema_table, schema_table_exists,
     table_column_names,
@@ -171,7 +165,14 @@ def load_legacy_mode_rows(
     web: int | None = None,
     type_value: int | None = None,
 ) -> dict[str, Any]:
-    """给旧前端模块提供原始历史表数据，优先返回 created 预测结果。"""
+    """给旧前端模块提供原始历史表数据，优先返回 created 预测结果。
+    
+    args:
+    - modes_id: 旧前端模块 ID，必填
+    - limit: 返回行数限制，默认 10
+    - web: 站点ID，默认为 None 表示不区分
+    - type_value: 彩种ID，默认为 None 表示不区分
+    """
     with connect(db_path) as conn:
         meta = conn.execute(
             """

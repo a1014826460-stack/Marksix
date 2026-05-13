@@ -1,5 +1,5 @@
-import { LotteryTypesPageClient } from "@/components/admin/management-pages"
+import { LotteryTypesPage } from "@/features/lottery-types/LotteryTypesPage"
 
-export default function LotteryTypesPage() {
-  return <LotteryTypesPageClient />
+export default function LotteryTypesRoutePage() {
+  return <LotteryTypesPage />
 }

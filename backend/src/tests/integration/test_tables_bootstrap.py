@@ -28,7 +28,10 @@ def _connect_for_test():
         return connect(test_target)
 
     # 回退：使用正式数据库但跳过危险测试
-    default = default_postgres_target()
+    try:
+        default = default_postgres_target()
+    except RuntimeError:
+        default = ""
     if default and is_postgres_target(default):
         # 仅在明确许可时使用正式数据库
         if os.getenv("ALLOW_TEST_ON_PROD_DB", "").strip().lower() in ("1", "true", "yes"):

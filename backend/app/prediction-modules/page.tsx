@@ -1,5 +1,5 @@
-import { PredictionModulesPageClient } from "@/components/admin/management-pages"
+import { PredictionModulesPage } from "@/features/prediction-modules/PredictionModulesPage"
 
-export default function PredictionModulesPage() {
-  return <PredictionModulesPageClient />
+export default function PredictionModulesRoutePage() {
+  return <PredictionModulesPage />
 }

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from auth import login_user, logout_user
-from http.auth import require_authenticated
-from http.request_context import RequestContext
-from http.router import Router
+from app_http.auth import require_authenticated
+from app_http.request_context import RequestContext
+from app_http.router import Router
 
 
 def register(router: Router) -> None:
