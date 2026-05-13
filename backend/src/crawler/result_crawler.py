@@ -1,3 +1,5 @@
+import time as _time
+
 import requests
 import json
 from typing import Union, List, Dict, Any
@@ -16,16 +18,26 @@ from typing import Union, List, Dict, Any
 def fetch_current_term_data(
     type: int = 1,
     collect_url: str = "",
+    backup_url: str = "",
+    retry_count: int = 1,
+    retry_delay: float = 1.0,
+    timeout: int = 30,
     ) -> tuple[str, int]:
-    """
-    获取香港/澳门彩当前期开奖数据的函数，发送GET请求到指定的API端点，并返回响应文本和状态码。
+    """获取香港/澳门彩当前期开奖数据，支持主/备 URL 和重试。
+
+    先尝试主 URL，每次失败后等待 retry_delay 秒重试。
+    主 URL 全部重试耗尽后自动切换备用 URL（若有配置）。
 
     Args:
-        type (int): 需要查询的彩票格式，1为香港；2为澳门。
-        collect_url (str): 数据库配置的采集地址，为空时使用默认地址。
+        type (int): 1=香港, 2=澳门
+        collect_url (str): 主采集 URL，为空时使用默认地址
+        backup_url (str): 备用采集 URL，为空时不使用备用
+        retry_count (int): 每个 URL 的额外重试次数（总尝试 = 1 + retry_count）
+        retry_delay (float): 重试间隔秒数
+        timeout (int): 单次 HTTP 请求超时秒数
 
     Returns:
-        tuple[str, int]: 包含响应文本（JSON字符串）和HTTP状态码的元组。
+        tuple[str, int]: (响应文本, HTTP 状态码)。全部 URL 和重试失败时返回 ("", 0)
     """
     headers = {
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -44,17 +56,37 @@ def fetch_current_term_data(
         "upgrade-insecure-requests": "1",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
     }
-    # 优先使用数据库配置的采集地址，回退到默认地址
-    url = collect_url.strip() if collect_url else "https://www.lnlllt.com/api.php"
-
     params = {
         "lottery_id": "49" if type == 2 else "20",
         "action": "current"
     }
 
-    # 设置 30 秒超时，避免请求无限挂起
-    response = requests.get(url, headers=headers, params=params, timeout=30)
-    return response.text, response.status_code
+    urls: list[str] = []
+    primary = collect_url.strip() if collect_url else "https://www.lnlllt.com/api.php"
+    urls.append(primary)
+    if backup_url and backup_url.strip():
+        urls.append(backup_url.strip())
+
+    last_status = 0
+    for url in urls:
+        for attempt in range(1 + retry_count):
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=timeout)
+                last_status = response.status_code
+                if response.status_code == 200:
+                    return response.text, response.status_code
+                if attempt < retry_count:
+                    _time.sleep(retry_delay)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                last_status = 0
+                if attempt < retry_count:
+                    _time.sleep(retry_delay)
+            except Exception:
+                last_status = 0
+                if attempt < retry_count:
+                    _time.sleep(retry_delay)
+
+    return "", last_status
 
 
 

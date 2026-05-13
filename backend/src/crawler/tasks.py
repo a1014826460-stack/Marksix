@@ -14,9 +14,12 @@ from crawler.collectors import _cfg
 from db import connect as db_connect
 
 TASK_TABLE_NAME = "scheduler_tasks"
+TASK_RUN_TABLE_NAME = "scheduler_task_runs"
 TASK_TYPE_AUTO_PREDICTION = "auto_prediction"
 TASK_TYPE_TAIWAN_PRECISE_OPEN = "taiwan_precise_open"
 TASK_TYPE_DAILY_PREDICTION = "daily_prediction"
+SCHEDULE_SCOPE_AUTO = "auto"
+SCHEDULE_SCOPE_MANUAL = "manual"
 
 
 def _task_poll_interval_seconds(db_path: str | Path) -> int:
@@ -52,36 +55,69 @@ def upsert_scheduler_task(
     payload: dict[str, Any],
     run_at: str,
     max_attempts: int = 3,
+    schedule_scope: str = SCHEDULE_SCOPE_AUTO,
+    force_reschedule: bool = False,
+    task_key_override: str | None = None,
+    created_by: str | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    task_key_str = _task_key(task_type, payload)
+    task_key_str = task_key_override or _task_key(task_type, payload)
     payload_json = _json_dumps(payload)
     with db_connect(db_path) as conn:
         existing = conn.execute(
-            f"SELECT id FROM {TASK_TABLE_NAME} WHERE task_key = ? LIMIT 1",
+            f"""
+            SELECT id, status, attempt_count
+            FROM {TASK_TABLE_NAME}
+            WHERE task_key = ?
+            LIMIT 1
+            """,
             (task_key_str,),
         ).fetchone()
         if existing:
+            existing_status = str(existing["status"] or "pending")
+            if existing_status == "done" and not force_reschedule:
+                conn.execute(
+                    f"""
+                    UPDATE {TASK_TABLE_NAME}
+                    SET task_type = ?, payload_json = ?, max_attempts = ?,
+                        schedule_scope = ?, updated_at = ?
+                    WHERE task_key = ?
+                    """,
+                    (task_type, payload_json, max_attempts, schedule_scope, now, task_key_str),
+                )
+                return
+            if existing_status == "running" and not force_reschedule:
+                conn.execute(
+                    f"""
+                    UPDATE {TASK_TABLE_NAME}
+                    SET task_type = ?, payload_json = ?, max_attempts = ?,
+                        schedule_scope = ?, updated_at = ?
+                    WHERE task_key = ?
+                    """,
+                    (task_type, payload_json, max_attempts, schedule_scope, now, task_key_str),
+                )
+                return
             conn.execute(
                 f"""
                 UPDATE {TASK_TABLE_NAME}
                 SET task_type = ?, payload_json = ?, status = 'pending', run_at = ?,
                     locked_at = NULL, locked_by = NULL, last_error = NULL,
-                    max_attempts = ?, updated_at = ?
+                    max_attempts = ?, attempt_count = 0, schedule_scope = ?,
+                    created_by = COALESCE(?, created_by), updated_at = ?
                 WHERE task_key = ?
                 """,
-                (task_type, payload_json, run_at, max_attempts, now, task_key_str),
+                (task_type, payload_json, run_at, max_attempts, schedule_scope, created_by, now, task_key_str),
             )
         else:
             conn.execute(
                 f"""
                 INSERT INTO {TASK_TABLE_NAME} (
-                    task_key, task_type, payload_json, status, run_at,
-                    attempt_count, max_attempts, created_at, updated_at
+                    task_key, task_type, payload_json, schedule_scope, status, run_at,
+                    attempt_count, max_attempts, created_by, created_at, updated_at
                 )
-                VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, ?)
+                VALUES (?, ?, ?, ?, 'pending', ?, 0, ?, ?, ?, ?)
                 """,
-                (task_key_str, task_type, payload_json, run_at, max_attempts, now, now),
+                (task_key_str, task_type, payload_json, schedule_scope, run_at, max_attempts, created_by, now, now),
             )
 
 
@@ -93,7 +129,7 @@ def acquire_due_scheduler_tasks(db_path: str | Path, *, worker_id: str, limit: i
     with db_connect(db_path) as conn:
         rows = conn.execute(
             f"""
-            SELECT id, task_key, task_type, payload_json, run_at, attempt_count, max_attempts
+            SELECT id, task_key, task_type, payload_json, schedule_scope, run_at, attempt_count, max_attempts
             FROM {TASK_TABLE_NAME}
             WHERE run_at <= ?
               AND (
@@ -123,8 +159,71 @@ def acquire_due_scheduler_tasks(db_path: str | Path, *, worker_id: str, limit: i
                 (now_text, worker_id, now_text, row["id"], stale_before),
             )
             if updated.rowcount:
-                tasks.append(dict(row))
+                task = dict(row)
+                task["attempt_count"] = int(row["attempt_count"] or 0) + 1
+                task["locked_at"] = now_text
+                task["locked_by"] = worker_id
+                tasks.append(task)
     return tasks
+
+
+def create_scheduler_task_run(
+    db_path: str | Path,
+    *,
+    task: dict[str, Any],
+    worker_id: str,
+) -> int | None:
+    now_text = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        row = conn.execute(
+            f"""
+            INSERT INTO {TASK_RUN_TABLE_NAME} (
+                task_id, task_key, task_type, schedule_scope, worker_id,
+                attempt_no, scheduled_run_at, acquired_at, started_at,
+                status, error_message, payload_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', NULL, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                int(task["id"]),
+                str(task.get("task_key") or ""),
+                str(task.get("task_type") or ""),
+                str(task.get("schedule_scope") or SCHEDULE_SCOPE_AUTO),
+                worker_id,
+                int(task.get("attempt_count") or 0),
+                str(task.get("run_at") or ""),
+                str(task.get("locked_at") or now_text),
+                now_text,
+                str(task.get("payload_json") or "{}"),
+                now_text,
+                now_text,
+            ),
+        ).fetchone()
+    if not row:
+        return None
+    return int(row["id"])
+
+
+def finish_scheduler_task_run(
+    db_path: str | Path,
+    *,
+    run_id: int | None,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    if run_id is None:
+        return
+    now_text = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        conn.execute(
+            f"""
+            UPDATE {TASK_RUN_TABLE_NAME}
+            SET status = ?, error_message = ?, finished_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, error_message, now_text, now_text, run_id),
+        )
 
 
 def mark_scheduler_task_done(db_path: str | Path, task_id: int) -> None:
@@ -185,10 +284,17 @@ def ensure_taiwan_precise_open_task(db_path: str | Path) -> None:
         payload={"schedule_date": target_beijing.strftime("%Y-%m-%d")},
         run_at=target_utc.isoformat(),
         max_attempts=max(1, int(_cfg(db_path, "crawler.taiwan_max_retries", 3))),
+        schedule_scope=SCHEDULE_SCOPE_AUTO,
     )
 
 
-def ensure_daily_prediction_task(db_path: str | Path) -> None:
+def ensure_daily_prediction_task(
+    db_path: str | Path,
+    *,
+    schedule_date: str | None = None,
+    run_at: str | None = None,
+    force_reschedule: bool = False,
+) -> None:
     """每日固定时间自动预测任务。
 
     触发时间由 system_config 表 daily_prediction_cron_time 控制（默认 12:00 北京时间）。
@@ -209,10 +315,47 @@ def ensure_daily_prediction_task(db_path: str | Path) -> None:
     if beijing_now >= target_beijing:
         target_beijing += timedelta(days=1)
     target_utc = target_beijing - timedelta(hours=8)
+    effective_schedule_date = schedule_date or target_beijing.strftime("%Y-%m-%d")
+    effective_run_at = run_at or target_utc.isoformat()
     upsert_scheduler_task(
         db_path,
         task_type=TASK_TYPE_DAILY_PREDICTION,
-        payload={"schedule_date": target_beijing.strftime("%Y-%m-%d")},
-        run_at=target_utc.isoformat(),
+        payload={"schedule_date": effective_schedule_date},
+        run_at=effective_run_at,
         max_attempts=3,
+        schedule_scope=SCHEDULE_SCOPE_AUTO,
+        force_reschedule=force_reschedule,
     )
+
+
+def enqueue_manual_daily_prediction_task(
+    db_path: str | Path,
+    *,
+    lottery_type_ids: list[int] | None = None,
+    created_by: str = "unknown",
+) -> dict[str, Any]:
+    now_utc = datetime.now(timezone.utc)
+    beijing_now = now_utc + timedelta(hours=8)
+    schedule_date = beijing_now.strftime("%Y-%m-%d")
+    run_at = now_utc.isoformat()
+    task_key = f"{TASK_TYPE_DAILY_PREDICTION}:manual:{schedule_date}:{now_utc.strftime('%H%M%S%f')}"
+    payload: dict[str, Any] = {
+        "schedule_date": schedule_date,
+        "trigger": "manual",
+        "requested_at": run_at,
+        "requested_by": created_by,
+    }
+    if lottery_type_ids:
+        payload["lottery_type_ids"] = [int(item) for item in lottery_type_ids]
+    upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_DAILY_PREDICTION,
+        payload=payload,
+        run_at=run_at,
+        max_attempts=1,
+        schedule_scope=SCHEDULE_SCOPE_MANUAL,
+        force_reschedule=True,
+        task_key_override=task_key,
+        created_by=created_by,
+    )
+    return {"task_key": task_key, "run_at": run_at, "schedule_date": schedule_date}

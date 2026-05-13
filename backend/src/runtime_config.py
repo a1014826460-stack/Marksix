@@ -166,6 +166,30 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "台湾彩精准开奖最大重试次数。",
         "is_secret": 0,
     },
+    "crawler.crawl_interval_near_draw": {
+        "value": 10,
+        "value_type": "int",
+        "description": "开奖时间窗口内（±5分钟）的抓取轮询间隔秒数。",
+        "is_secret": 0,
+    },
+    "crawler.crawl_interval_far_draw": {
+        "value": 300,
+        "value_type": "int",
+        "description": "开奖时间窗口外的抓取轮询间隔秒数。",
+        "is_secret": 0,
+    },
+    "crawler.crawl_interval_chase": {
+        "value": 5,
+        "value_type": "int",
+        "description": "开奖超时未获数据时的应急加速轮询间隔秒数。",
+        "is_secret": 0,
+    },
+    "crawler.backup_fail_count_threshold": {
+        "value": 2,
+        "value_type": "int",
+        "description": "主采集 URL 连续失败次数达到此值后切换备用 URL。",
+        "is_secret": 0,
+    },
     "crawler.message.hk_empty_data": {
         "value": "API returned no Hong Kong draw data.",
         "value_type": "string",
@@ -191,7 +215,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "draw.macau_default_draw_time": {
-        "value": "21:00",
+        "value": "21:30",
         "value_type": "string",
         "description": "初始澳门彩开奖时间。",
         "is_secret": 0,
@@ -212,6 +236,18 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "value": "https://www.lnlllt.com/api.php",
         "value_type": "string",
         "description": "初始澳门彩采集 URL。",
+        "is_secret": 0,
+    },
+    "draw.hk_backup_collect_url": {
+        "value": "",
+        "value_type": "string",
+        "description": "香港彩备用采集 URL，主 URL 连续失败后自动切换。",
+        "is_secret": 0,
+    },
+    "draw.macau_backup_collect_url": {
+        "value": "",
+        "value_type": "string",
+        "description": "澳门彩备用采集 URL，主 URL 连续失败后自动切换。",
         "is_secret": 0,
     },
     "draw.taiwan_import_file": {
@@ -389,6 +425,24 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "value": 3,
         "value_type": "int",
         "description": "爬虫连续失败次数达到此阈值后触发报警。",
+        "is_secret": 0,
+    },
+    "alert.draw_yellow_timeout_seconds": {
+        "value": 30,
+        "value_type": "int",
+        "description": "开奖后 N 秒数据未入库触发黄色预警（日志 + 加速轮询）。",
+        "is_secret": 0,
+    },
+    "alert.draw_orange_timeout_seconds": {
+        "value": 120,
+        "value_type": "int",
+        "description": "开奖后 N 秒数据未入库触发橙色告警（邮件 + 备用 URL 切换）。",
+        "is_secret": 0,
+    },
+    "alert.draw_red_timeout_seconds": {
+        "value": 300,
+        "value_type": "int",
+        "description": "开奖后 N 秒数据未入库触发红色告警（邮件 + 需人工介入）。",
         "is_secret": 0,
     },
     "legacy.images_dir": {

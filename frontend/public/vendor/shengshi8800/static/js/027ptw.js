@@ -5,70 +5,68 @@ $.ajax({
     type: 'GET',
     dataType: 'json',
     success: function(response) {
-        let htmlBox = '',htmlBoxList = '',term=''
+        let htmlBox = '', htmlBoxList = '', term = '';
 
-        let data = response.data
+        let data = response.data;
 
-        if(data.length>0){
+        if (data.length > 0) {
             data = data.slice(0, 6);
-            for(let i in data){
-                let d = data[i]
-                let codeSplit = (d.res_code||'').split(',');
-                let sxSplit = (d.res_sx||'').split(',');
+            for (let i in data) {
+                let d = data[i];
+                let codeSplit = (d.res_code || '').split(',');
+                let sxSplit = (d.res_sx || '').split(',');
                 let resSx = d.res_sx || '';
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let def = ['猫','猫'];
+                let code = codeSplit[codeSplit.length - 1] || '';
+                let sx = sxSplit[sxSplit.length - 1] || '';
                 let result = [];
                 let xiao = d.content.split(",");
                 let reSx = d.res_sx.split(',');
 
                 let c = [];
-                for (let i = 0; i < xiao.length; i++) {
-                    let index= getZjIndex(xiao[i],sxSplit);
+                for (let j = 0; j < xiao.length; j++) {
+                    let index = getZjIndex(xiao[j], sxSplit);
                     if (index !== undefined) {
-                        result.push(xiao[i]);
-                        c.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        c.push(`${xiao[i]}`)
+                        result.push(xiao[j]);
+                        c.push(`<span>${xiao[j]}</span>`);
+                    } else {
+                        c.push(`${xiao[j]}`);
                     }
                 }
 
-
-                if (result.length === 0 && d.res_sx) {
-                    continue;
-                    // result = def;
-                }else if (result.length === 0) {
-                    result = def;
-                }else if (result.length === 1) {
+                // === 修改点：预测失败时用真实开奖结果 ===
+                if (result.length === 0) {
+                    // 取开奖生肖的最后两位，如果不足则重复最后一个
+                    let lastSx = sxSplit.slice(-2);
+                    if (lastSx.length === 0) {
+                        result = ['猫', '猫'];   // 极端情况无数据才用猫
+                    } else if (lastSx.length === 1) {
+                        result = [lastSx[0], lastSx[0]];
+                    } else {
+                        result = lastSx;
+                    }
+                } else if (result.length === 1) {
                     result[1] = result[0];
                 }
 
                 htmlBoxList = htmlBoxList + ` 
-    
-     <tr>
-        <td>
-            <font color='#000000'>${d.term}期:</font><font color='#3b9aeb'>平特王→<span class='zl'>[${c.join('')}]</span> </font>
-            开:${result.slice(0,2).join('')}准
-        </td>
-    </tr>
-    
-            `}
+                <tr>
+                    <td>
+                        <font color='#000000'>${d.term}期:</font><font color='#3b9aeb'>平特王→<span class='zl'>[${c.join('')}]</span> </font>
+                        开:${result.slice(0,2).join('')}准
+                    </td>
+                </tr>`;
+            }
         }
 
         htmlBox = `
-<div class='box pad' id='yxym'>
-  <div class='list-title' >台湾六合彩→<font color='#FF0000'>【</font>两肖平特王<font color='#FF0000'>】</font>→两肖在手，天下我有</div>
-    <table border='1' width='100%' class='duilianpt1' bgcolor='3ea7d7' cellspacing='0' bordercolor='3ea7d7' bordercolorlight='3ea7d7' bordercolordark='3ea7d7' cellpadding='2'>
-        `+htmlBoxList+` 
- </table>
-</div>
+        <div class='box pad' id='yxym'>
+            <div class='list-title' >台湾六合彩→<font color='#FF0000'>【</font>两肖平特王<font color='#FF0000'>】</font>→两肖在手，天下我有</div>
+            <table border='1' width='100%' class='duilianpt1' bgcolor='3ea7d7' cellspacing='0' bordercolor='3ea7d7' bordercolorlight='3ea7d7' bordercolordark='3ea7d7' cellpadding='2'>
+                `+ htmlBoxList + ` 
+            </table>
+        </div>`;
 
-`
-
-
-        $("#3t1").html(replaceLegacySiteText(htmlBox))
-
+        $("#3t1").html(replaceLegacySiteText(htmlBox));
     },
     error: function(xhr, status, error) {
         console.error('Error:', error);
