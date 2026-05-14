@@ -105,38 +105,49 @@ export function DrawsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const formRef = useRef<HTMLFormElement | null>(null)
 
-  // Column resize
+  // Column resize (mouse + touch)
   const defaultColWidths = [50, 70, 56, 56, 220, 140, 56, 62, 76, 90]
   const [colWidths, setColWidths] = useState<number[]>(defaultColWidths)
   const resizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null)
   const [resizingIdx, setResizingIdx] = useState<number | null>(null)
 
-  const onResizeStart = useCallback((index: number, e: React.MouseEvent) => {
-    e.preventDefault()
-    resizeRef.current = { index, startX: e.clientX, startWidth: colWidths[index] }
+  const beginResize = useCallback((index: number, clientX: number) => {
+    resizeRef.current = { index, startX: clientX, startWidth: colWidths[index] }
     setResizingIdx(index)
   }, [colWidths])
 
   useEffect(() => {
     if (resizingIdx === null) return
-    const onMove = (e: MouseEvent) => {
+
+    function applyDelta(clientX: number) {
       if (!resizeRef.current) return
-      const delta = e.clientX - resizeRef.current.startX
+      const delta = clientX - resizeRef.current.startX
       setColWidths((prev) => {
         const next = [...prev]
         next[resizeRef.current!.index] = Math.max(40, resizeRef.current!.startWidth + delta)
         return next
       })
     }
-    const onUp = () => {
+
+    function endResize() {
       resizeRef.current = null
       setResizingIdx(null)
     }
-    window.addEventListener("mousemove", onMove)
-    window.addEventListener("mouseup", onUp)
+
+    function onMouseMove(e: MouseEvent) { applyDelta(e.clientX) }
+    function onTouchMove(e: TouchEvent) { e.preventDefault(); applyDelta(e.touches[0].clientX) }
+
+    window.addEventListener("mousemove", onMouseMove)
+    window.addEventListener("mouseup", endResize)
+    window.addEventListener("touchmove", onTouchMove, { passive: false })
+    window.addEventListener("touchend", endResize)
+    window.addEventListener("touchcancel", endResize)
     return () => {
-      window.removeEventListener("mousemove", onMove)
-      window.removeEventListener("mouseup", onUp)
+      window.removeEventListener("mousemove", onMouseMove)
+      window.removeEventListener("mouseup", endResize)
+      window.removeEventListener("touchmove", onTouchMove)
+      window.removeEventListener("touchend", endResize)
+      window.removeEventListener("touchcancel", endResize)
     }
   }, [resizingIdx])
 
@@ -476,8 +487,9 @@ export function DrawsPage() {
                         <TableHead key={i} className="relative select-none">
                           <span className="whitespace-nowrap">{label}</span>
                           <div
-                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/20 active:bg-primary/40 z-10"
-                            onMouseDown={(e) => onResizeStart(i, e)}
+                            className="absolute right-0 top-0 h-full w-3 cursor-col-resize hover:bg-primary/20 active:bg-primary/40 z-10"
+                            onMouseDown={(e) => { e.preventDefault(); beginResize(i, e.clientX) }}
+                            onTouchStart={(e) => { e.preventDefault(); beginResize(i, e.touches[0].clientX) }}
                           />
                         </TableHead>
                       ),
