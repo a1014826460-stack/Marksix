@@ -12,8 +12,6 @@ $.ajax({
         
         if(data.length>0){
             
-            data = data.slice(0, 10);
-            
             for(let i in data){
                 
                 

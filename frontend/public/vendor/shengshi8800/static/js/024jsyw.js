@@ -31,17 +31,13 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
                 let c = [];
-                let b = true;
                 for (let i = 0; i < xiao.length; i++) {
                     if (code && xiao[i].split('')[0] !== code.split('')[1]) {
                         c.push(`<span>${xiao[i]}</span>`);
                     }else {
-                        b=false;
                         c.push(`${xiao[i]}`)
                     }
                 }
-
-                if (sx && !b) continue;
 
                 // let wei = parseInt()
                 //console.log(ma)

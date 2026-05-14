@@ -24,6 +24,7 @@ from prediction_generation.diversity import enforce_prediction_diversity
 from runtime_config import get_config_from_conn
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
+    find_existing_created_row,
     normalize_color_label,
     table_column_names,
     upsert_created_prediction_row,
@@ -463,9 +464,23 @@ def _generate_single_draw_row(
 
 
 def _persist_generated_row(
-    conn: Any, table_name: str, row_data: dict[str, Any],
+    conn: Any,
+    table_name: str,
+    row_data: dict[str, Any],
+    *,
+    allow_overwrite: bool,
 ) -> dict[str, Any]:
-    """持久化单行预测结果，返回 {"action": "inserted"|"updated"}。"""
+    """持久化单行预测结果，自动任务默认只插入缺失行。"""
+    if not allow_overwrite:
+        existing = find_existing_created_row(conn, table_name, row_data)
+        if existing:
+            return {
+                "action": "skipped_existing",
+                "schema": CREATED_SCHEMA_NAME,
+                "table": table_name,
+                "id": str(existing["id"]),
+                "created_at": str(existing["created_at"] or ""),
+            }
     return upsert_created_prediction_row(conn, table_name, row_data)
 
 
@@ -543,6 +558,7 @@ def _log_module_result(
         "draw_count": report.get("draw_count", 0),
         "inserted": report.get("inserted", 0),
         "updated": report.get("updated", 0),
+        "skipped_existing": report.get("skipped_existing", 0),
         "errors": report.get("errors", 0),
         "elapsed_ms": elapsed_ms,
         "trigger": trigger,
@@ -561,8 +577,9 @@ def _log_module_result(
                               site_id=site_id, web_id=site_web_id, lottery_type_id=lottery_type)
     else:
         _task_logger.info("Module result: %s", json_msg)
-        _write_task_log_to_db(db_path, "INFO", json_msg,
-                              site_id=site_id, web_id=site_web_id, lottery_type_id=lottery_type)
+        if has_changes:
+            _write_task_log_to_db(db_path, "INFO", json_msg,
+                                  site_id=site_id, web_id=site_web_id, lottery_type_id=lottery_type)
 
 
 # ── 单模块处理 ───────────────────────────────────────────
@@ -582,28 +599,43 @@ def _process_single_module(
     zodiac_map: dict,
     color_map: dict,
     trigger: str,
+    allow_overwrite: bool,
     resolve_prediction_table_for_mode: Any,
     build_generated_prediction_row_data: Any,
 ) -> dict[str, Any]:
     """处理单个模块的所有期号，返回模块报告。"""
     mechanism_key = str(module_row["mechanism_key"] or "")
     mode_id = int(module_row["mode_id"] or 0)
-    config = get_prediction_config(mechanism_key)
-    table_name = resolve_prediction_table_for_mode(conn, mode_id, config.default_table)
 
     module_report: dict[str, Any] = {
         "module_id": int(module_row["id"]),
         "mechanism_key": mechanism_key,
         "mode_id": mode_id,
-        "table_name": table_name,
+        "table_name": f"mode_payload_{mode_id}" if mode_id > 0 else "",
         "draw_count": len(draws),
         "inserted": 0,
         "updated": 0,
+        "skipped_existing": 0,
         "errors": 0,
         "error_message": "",
         "warnings": [],
         "trigger": trigger,
     }
+
+    try:
+        config = get_prediction_config(mechanism_key)
+        table_name = resolve_prediction_table_for_mode(conn, mode_id, config.default_table)
+        module_report["table_name"] = table_name
+    except Exception as exc:
+        conn.rollback()
+        module_report["errors"] += 1
+        module_report["error_message"] = str(exc)
+        module_report["warnings"].append("module skipped because prediction config/table is unavailable")
+        _logger.error(
+            "Module generation skipped: mode_id=%d, key=%s — %s",
+            mode_id, mechanism_key, exc,
+        )
+        return module_report
 
     recent_rows = _load_recent_rows(conn, table_name, lottery_type, site_web_id, mode_id)
     all_target_draws = list(future_draws) if future_only else list(draws) + list(future_draws)
@@ -638,13 +670,20 @@ def _process_single_module(
             if diversity_warning:
                 module_report["warnings"].append(str(diversity_warning))
 
-            stored = _persist_generated_row(conn, table_name, row_data)
+            stored = _persist_generated_row(
+                conn,
+                table_name,
+                row_data,
+                allow_overwrite=allow_overwrite,
+            )
             if stored.get("action") == "inserted":
                 module_report["inserted"] += 1
-            else:
+                recent_rows.insert(0, {"content": row_data.get("content")})
+            elif stored.get("action") == "updated":
                 module_report["updated"] += 1
-
-            recent_rows.insert(0, {"content": row_data.get("content")})
+                recent_rows.insert(0, {"content": row_data.get("content")})
+            else:
+                module_report["skipped_existing"] += 1
         except Exception as exc:
             conn.rollback()
             module_report["errors"] += 1
@@ -673,6 +712,7 @@ def generate_prediction_batch(
     future_periods: int,
     future_only: bool,
     trigger: str,
+    allow_overwrite: bool = True,
     sync_site_modules: Any,
     resolve_prediction_table_for_mode: Any,
     build_generated_prediction_row_data: Any,
@@ -688,6 +728,7 @@ def generate_prediction_batch(
     - future_periods: 未来期号数量。
     - future_only: 是否只生成未来期。
     - trigger: 触发来源标识。
+    - allow_overwrite: 是否允许覆盖既有 created 预测正文。
     - sync_site_modules / resolve_prediction_table_for_mode /
       build_generated_prediction_row_data: 回调函数。
 
@@ -753,6 +794,7 @@ def generate_prediction_batch(
         module_reports: list[dict[str, Any]] = []
         total_inserted = 0
         total_updated = 0
+        total_skipped_existing = 0
         total_errors = 0
 
         for module_row in module_rows:
@@ -767,13 +809,14 @@ def generate_prediction_batch(
                 site_web_id=site_web_id, db_path=db_path,
                 default_target_hit_rate=default_target_hit_rate,
                 zodiac_map=zodiac_map, color_map=color_map,
-                trigger=trigger,
+                trigger=trigger, allow_overwrite=bool(allow_overwrite),
                 resolve_prediction_table_for_mode=resolve_prediction_table_for_mode,
                 build_generated_prediction_row_data=build_generated_prediction_row_data,
             )
             module_reports.append(report)
             total_inserted += report["inserted"]
             total_updated += report["updated"]
+            total_skipped_existing += report["skipped_existing"]
             total_errors += report["errors"]
 
             # 结构化日志：每个模块的处理结果
@@ -788,8 +831,9 @@ def generate_prediction_batch(
 
         elapsed_s = round(time.perf_counter() - _t_start, 2)
         _logger.info(
-            "Batch generation completed: modules=%d, draws=%d, inserted=%d, updated=%d, errors=%d, elapsed=%.1fs",
-            len(module_reports), len(draws), total_inserted, total_updated, total_errors, elapsed_s,
+            "Batch generation completed: modules=%d, draws=%d, inserted=%d, updated=%d, skipped_existing=%d, errors=%d, elapsed=%.1fs",
+            len(module_reports), len(draws), total_inserted, total_updated,
+            total_skipped_existing, total_errors, elapsed_s,
         )
         if total_errors > 0:
             _logger.warning(
@@ -815,9 +859,11 @@ def generate_prediction_batch(
                 "future_only": bool(future_only),
                 "inserted": total_inserted,
                 "updated": total_updated,
+                "skipped_existing": total_skipped_existing,
                 "errors": total_errors,
                 "elapsed_s": elapsed_s,
                 "trigger": trigger,
+                "allow_overwrite": bool(allow_overwrite),
             }, ensure_ascii=False),
         )
 
@@ -834,7 +880,9 @@ def generate_prediction_batch(
             "draw_count": len(draws),
             "inserted": total_inserted,
             "updated": total_updated,
+            "skipped_existing": total_skipped_existing,
             "errors": total_errors,
             "trigger": trigger,
+            "allow_overwrite": bool(allow_overwrite),
             "modules": module_reports,
         }

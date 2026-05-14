@@ -36,37 +36,125 @@
         const FIXED_FORUM_SHORT = "台湾论坛";
         const FIXED_DATA_SITE = "台湾资料网";
 
+        const ROOT_GAME_STORAGE_KEY = "legacy-root-active-game";
+        const ROOT_TYPE_STORAGE_KEY = "legacy-root-active-type";
+        const ROOT_SCROLL_STORAGE_KEY = "legacy-root-scroll-position";
         const params = new URLSearchParams(window.location.search);
-        const legacyType = Number(params.get("type") || params.get("t") || "3");
-        const legacyWeb = Number(params.get("web") || "4");
+        const storedType = Number(window.localStorage.getItem(ROOT_TYPE_STORAGE_KEY) || "");
+        const queryType = Number(params.get("type") || params.get("t") || "");
+        const legacyType = Number.isFinite(queryType) && queryType >= 1 && queryType <= 3
+          ? queryType
+          : Number.isFinite(storedType) && storedType >= 1 && storedType <= 3
+            ? storedType
+            : 3;
+
+        function normalizeLegacyType(value) {
+          const numericType = Number(value);
+          if (numericType === 2) return 2;
+          if (numericType === 1) return 1;
+          return 3;
+        }
+
+        function resolveWebByType(type) {
+          const normalizedType = normalizeLegacyType(type);
+          return normalizedType === 2 ? 2 : normalizedType === 1 ? 1 : 4;
+        }
+
+        function persistLegacyType(type) {
+          const normalizedType = normalizeLegacyType(type);
+          try {
+            window.localStorage.setItem(ROOT_TYPE_STORAGE_KEY, String(normalizedType));
+            window.localStorage.setItem(
+              ROOT_GAME_STORAGE_KEY,
+              resolveGameByType(normalizedType)
+            );
+          } catch (_) {}
+          return normalizedType;
+        }
+
+        var legacyGameState = {
+          _type: persistLegacyType(legacyType),
+          getType: function() {
+            return this._type;
+          },
+          getWeb: function() {
+            return resolveWebByType(this._type);
+          },
+          getGame: function() {
+            return resolveGameByType(this._type);
+          },
+          setType: function(nextType) {
+            this._type = persistLegacyType(nextType);
+            return this._type;
+          },
+        };
+
+        function getLegacyType() {
+          return legacyGameState && typeof legacyGameState.getType === "function"
+            ? Number(legacyGameState.getType()) || 3
+            : 3;
+        }
+
+        function getLegacyWeb() {
+          return legacyGameState && typeof legacyGameState.getWeb === "function"
+            ? Number(legacyGameState.getWeb()) || 4
+            : 4;
+        }
+
+        function legacySwitchDebugLog(eventName, payload) {
+          if (!(window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.debug)) return;
+          if (typeof console === "undefined" || typeof console.log !== "function") return;
+          console.log("[legacy-switch]", eventName, payload || {});
+        }
+
+        window.__LEGACY_GAME_STATE__ = legacyGameState;
 
         let pendingScrollPosition = null;
         let isReloadingLegacyPage = false;
 
         window.__LEGACY_EMBED_CONFIG__ = {
-          type: Number.isFinite(legacyType) ? legacyType : 3,
-          web: Number.isFinite(legacyWeb) ? legacyWeb : 4,
+          get type() {
+            return legacyGameState.getType();
+          },
+          set type(nextType) {
+            legacyGameState.setType(nextType);
+          },
+          get web() {
+            return legacyGameState.getWeb();
+          },
+          set web(nextWeb) {
+            legacyGameState.setType(Number(nextWeb) === 2 ? 2 : Number(nextWeb) === 1 ? 1 : 3);
+          },
           debug: params.get("debug") === "1",
           pageSwitch: params.get("page_switch") === "1",
           shellHeader: params.get("shell_header") === "1",
         };
+        Object.defineProperty(window, "type", {
+          configurable: true,
+          get() {
+            return legacyGameState.getType();
+          },
+          set(nextType) {
+            legacyGameState.setType(nextType);
+          },
+        });
+        Object.defineProperty(window, "web", {
+          configurable: true,
+          get() {
+            return legacyGameState.getWeb();
+          },
+          set(nextWeb) {
+            legacyGameState.setType(Number(nextWeb) === 2 ? 2 : Number(nextWeb) === 1 ? 1 : 3);
+          },
+        });
 
         function updateLegacyConfigType(nextType) {
-          const numericType = Number(nextType);
-          window.__LEGACY_EMBED_CONFIG__.type = Number.isFinite(numericType)
-            ? numericType
-            : 3;
+          return window.__LEGACY_GAME_STATE__.setType(nextType);
         }
 
         function getCanonicalUrlForType(type) {
-          const nextUrl = new URL(window.location.href);
-          nextUrl.pathname = "/";
-          nextUrl.searchParams.set("t", String(type));
-          nextUrl.searchParams.delete("type");
-          nextUrl.searchParams.delete("web");
-          nextUrl.searchParams.delete("page_switch");
-          nextUrl.searchParams.delete("shell_header");
-          return nextUrl.toString();
+          void type;
+          return window.location.origin + "/";
         }
 
         function resolveGameByType(type) {
@@ -125,10 +213,33 @@
         }
 
         function rememberScrollPosition() {
-          const anchorIds = ["nav2", "7x1m", "4x8m", "gsb", "gsb3", "msks", "9x1m", "yqjt", "6x", "3t", "lx"];
+          const anchorIds = ["legacy-result-anchor", "nav2", "7x1m", "4x8m", "gsb", "gsb3", "msks", "9x1m", "yqjt", "6x", "3t", "lx", "legacy-attribute-anchor", "legacy-hero-banner"];
           let anchorId = "";
           let anchorDelta = 0;
           let smallestDistance = Number.POSITIVE_INFINITY;
+          const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+          const resultAnchor = document.getElementById("legacy-result-anchor");
+
+          if (resultAnchor) {
+            const resultRect = resultAnchor.getBoundingClientRect();
+            const resultVisible = resultRect.bottom > 0 && resultRect.top < viewportHeight;
+            const resultNearby = Math.abs(resultRect.top) <= 220;
+            if (resultVisible || resultNearby) {
+              pendingScrollPosition = {
+                x: window.scrollX || window.pageXOffset || 0,
+                y: window.scrollY || window.pageYOffset || 0,
+                anchorId: "legacy-result-anchor",
+                anchorDelta: resultRect.top,
+              };
+              try {
+                window.sessionStorage.setItem(
+                  ROOT_SCROLL_STORAGE_KEY,
+                  JSON.stringify(pendingScrollPosition)
+                );
+              } catch (_) {}
+              return;
+            }
+          }
 
           for (const id of anchorIds) {
             const element = document.getElementById(id);
@@ -148,12 +259,29 @@
             anchorId,
             anchorDelta,
           };
+          try {
+            window.sessionStorage.setItem(
+              ROOT_SCROLL_STORAGE_KEY,
+              JSON.stringify(pendingScrollPosition)
+            );
+          } catch (_) {}
         }
 
         function restoreScrollPosition() {
+          if (!pendingScrollPosition) {
+            try {
+              const saved = window.sessionStorage.getItem(ROOT_SCROLL_STORAGE_KEY);
+              if (saved) {
+                pendingScrollPosition = JSON.parse(saved);
+              }
+            } catch (_) {}
+          }
           if (!pendingScrollPosition) return;
           const nextPosition = pendingScrollPosition;
           pendingScrollPosition = null;
+          try {
+            window.sessionStorage.removeItem(ROOT_SCROLL_STORAGE_KEY);
+          } catch (_) {}
           const rootStyle = document.documentElement?.style;
           const previousScrollBehavior = rootStyle?.scrollBehavior ?? "";
 
@@ -220,6 +348,63 @@
 
         var _moduleScriptSrcs = [];
         var _firstLoadDone = false;
+        var _activeSwitchSeq = 0;
+        var _pendingGameSwitch = "";
+        var _moduleBatchTimers = [];
+
+        function getActiveSwitchSeq() {
+          return _activeSwitchSeq;
+        }
+
+        function beginLegacyTypeSwitch(nextType) {
+          var appliedType = updateLegacyConfigType(nextType);
+          _activeSwitchSeq += 1;
+          window.__LEGACY_SWITCH_SEQ__ = _activeSwitchSeq;
+          legacySwitchDebugLog("switch-seq:begin", {
+            nextType: appliedType,
+            nextGame: resolveGameByType(appliedType),
+            seq: _activeSwitchSeq,
+          });
+          return {
+            seq: _activeSwitchSeq,
+            type: appliedType,
+          };
+        }
+
+        function clearModuleBatchTimers() {
+          if (_moduleBatchTimers.length) {
+            legacySwitchDebugLog("module-batch:clear", {
+              count: _moduleBatchTimers.length,
+              activeSeq: getActiveSwitchSeq(),
+            });
+          }
+          for (var i = 0; i < _moduleBatchTimers.length; i++) {
+            try {
+              window.clearTimeout(_moduleBatchTimers[i]);
+            } catch (_) {}
+          }
+          _moduleBatchTimers = [];
+        }
+
+        function queuePendingGameSwitch(game) {
+          _pendingGameSwitch = game || "";
+          legacySwitchDebugLog("switch:queued", {
+            pendingGame: _pendingGameSwitch,
+            activeSeq: getActiveSwitchSeq(),
+          });
+        }
+
+        function consumePendingGameSwitch() {
+          var game = _pendingGameSwitch;
+          _pendingGameSwitch = "";
+          if (game) {
+            legacySwitchDebugLog("switch:consume-queued", {
+              pendingGame: game,
+              activeSeq: getActiveSwitchSeq(),
+            });
+          }
+          return game;
+        }
 
         function collectModuleScripts() {
           _moduleScriptSrcs = [];
@@ -230,6 +415,13 @@
               _moduleScriptSrcs.push(src);
             }
           }
+        }
+
+        function canUseLightReloadForTypeSwitch() {
+          // Legacy modules still rely heavily on document.write/writeln.
+          // Re-injecting them as async-added scripts causes runtime failures,
+          // so keep type switching on the safe full-page reload path for now.
+          return false;
         }
 
         var _transitionOverlay = null;
@@ -266,7 +458,7 @@
           ".stzt",".tmds",".ptyx",".dxzt",".jsbb",".djym",
           "#msks",".jxztBox",".cxqd",".jssx",
           ".yqjt",".yqjt2",".jd24",".rcc",".jyzt",".fslx",
-          ".nn6x",".5wzt",".js3x","#xlnxjImg","#yxym","#fhdb"
+          ".nn6x",".5wzt",".js3x","#xlnxjImg","#legacy-result-anchor","#fhdb"
         ];
 
         function clearModuleContainers() {
@@ -278,7 +470,11 @@
           }
         }
 
-        function reloadModulesByPriority() {
+        function reloadModulesByPriority(seq) {
+          legacySwitchDebugLog("modules:reload-start", {
+            seq: seq,
+            moduleCount: _moduleScriptSrcs.length,
+          });
           return new Promise(function(resolve) {
             var batches = [[], [], []]; // priority 0, 1, 2
             for (var i = 0; i < _moduleScriptSrcs.length; i++) {
@@ -292,9 +488,18 @@
             var batchDelays = [0, 80, 200]; // ms delay before each batch
 
             function loadBatch(batchIndex) {
+              if (seq !== getActiveSwitchSeq()) {
+                legacySwitchDebugLog("modules:reload-stale", {
+                  seq: seq,
+                  activeSeq: getActiveSwitchSeq(),
+                  batchIndex: batchIndex,
+                });
+                resolve();
+                return;
+              }
               if (batchIndex >= batches.length) {
                 // All batches launched — wait for pending AJAX
-                waitForPendingRequests().then(resolve);
+                waitForPendingRequests(seq).then(resolve);
                 return;
               }
 
@@ -305,11 +510,21 @@
               }
 
               for (var j = 0; j < batch.length; j++) {
-                injectModuleScript(batch[j]);
+                if (seq !== getActiveSwitchSeq()) {
+                  resolve();
+                  return;
+                }
+                injectModuleScript(batch[j], seq);
               }
 
               if (batchIndex < batches.length - 1) {
-                setTimeout(function() { loadBatch(batchIndex + 1); }, batchDelays[batchIndex + 1]);
+                var timerId = setTimeout(function() { loadBatch(batchIndex + 1); }, batchDelays[batchIndex + 1]);
+                _moduleBatchTimers.push(timerId);
+                legacySwitchDebugLog("modules:batch-scheduled", {
+                  seq: seq,
+                  batchIndex: batchIndex + 1,
+                  delayMs: batchDelays[batchIndex + 1],
+                });
               } else {
                 loadBatch(batchIndex + 1);
               }
@@ -319,24 +534,43 @@
           });
         }
 
-        function injectModuleScript(src) {
+        function injectModuleScript(src, seq) {
+          if (seq !== getActiveSwitchSeq()) return;
+          legacySwitchDebugLog("modules:inject-script", {
+            seq: seq,
+            src: src,
+          });
           var script = document.createElement("script");
           script.src = src;
           script.type = "text/javascript";
           script.async = false;
           script.dataset.moduleReload = "1";
+          script.dataset.switchSeq = String(seq);
           document.body.appendChild(script);
         }
 
-        function waitForPendingRequests() {
+        function waitForPendingRequests(seq) {
           return new Promise(function(resolve) {
             var maxWait = 4000;
             var start = Date.now();
             function check() {
+              if (seq !== getActiveSwitchSeq()) {
+                legacySwitchDebugLog("modules:pending-stale", {
+                  seq: seq,
+                  activeSeq: getActiveSwitchSeq(),
+                });
+                resolve();
+                return;
+              }
               var pending = window.__moduleXHRs ? window.__moduleXHRs.filter(function(xhr) {
                 return xhr.readyState !== 4;
               }) : [];
               if (pending.length === 0 || Date.now() - start > maxWait) {
+                legacySwitchDebugLog("modules:pending-settled", {
+                  seq: seq,
+                  pendingCount: pending.length,
+                  waitedMs: Date.now() - start,
+                });
                 resolve();
               } else {
                 setTimeout(check, 50);
@@ -347,6 +581,11 @@
         }
 
         function abortModuleRequests() {
+          clearModuleBatchTimers();
+          legacySwitchDebugLog("modules:abort-requests", {
+            activeSeq: getActiveSwitchSeq(),
+            xhrCount: window.__moduleXHRs ? window.__moduleXHRs.length : 0,
+          });
           if (window.__moduleXHRs) {
             for (var i = 0; i < window.__moduleXHRs.length; i++) {
               try { window.__moduleXHRs[i].abort(); } catch (_) {}
@@ -355,11 +594,20 @@
           window.__moduleXHRs = [];
         }
 
-        async function reloadModulesForTypeSwitch() {
+        async function reloadModulesForTypeSwitch(seq) {
+          if (seq !== getActiveSwitchSeq()) return;
+          legacySwitchDebugLog("switch:reload-begin", {
+            seq: seq,
+            type: getLegacyType(),
+            game: resolveGameByType(getLegacyType()),
+          });
           // Safety: fall back to full reload if module list not collected yet
           if (!_moduleScriptSrcs.length) {
             collectModuleScripts();
             if (!_moduleScriptSrcs.length) {
+              legacySwitchDebugLog("switch:reload-fallback-full-load", {
+                seq: seq,
+              });
               await loadLegacyPage();
               return;
             }
@@ -368,17 +616,23 @@
           abortModuleRequests();
           if (window.__moduleRequestCache) window.__moduleRequestCache.clear();
           // Sync global type/web for module scripts that read them at exec time
-          var cfgType = window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.type;
+          var cfgType = getLegacyType();
           if (cfgType !== undefined) {
             window.type = cfgType;
-            window.web = cfgType === 2 ? 2 : cfgType === 1 ? 1 : 4;
+            window.web = getLegacyWeb();
           }
           clearModuleContainers();
           var oldScripts = document.querySelectorAll("script[data-module-reload]");
           for (var i = 0; i < oldScripts.length; i++) {
             oldScripts[i].parentNode.removeChild(oldScripts[i]);
           }
-          await reloadModulesByPriority();
+          await reloadModulesByPriority(seq);
+          if (seq !== getActiveSwitchSeq()) return;
+          legacySwitchDebugLog("switch:reload-complete", {
+            seq: seq,
+            type: getLegacyType(),
+            game: resolveGameByType(getLegacyType()),
+          });
           refreshAllStaticContent();
           hideTransition();
         }
@@ -414,7 +668,7 @@
         }
 
         function applyDynamicBoardTitles() {
-          const branding = getDynamicBoardBranding(window.__LEGACY_EMBED_CONFIG__.type);
+          const branding = getDynamicBoardBranding(getLegacyType());
           const selector = [
             ".list-title",
             ".haoju",
@@ -463,8 +717,82 @@
           if (!window.__LEGACY_EMBED_CONFIG__.shellHeader) return html;
           return html.replace(
             /(<\/head>)/i,
-            "<style>body > .box.news-box, body > .box.pad#yxym, #fhdb, #nav2{display:none!important}</style>$1"
+            "<style>body > .box.news-box, body > .box.pad#legacy-hero-banner, #fhdb, #nav2{display:none!important}</style>$1"
           );
+        }
+
+        function buildLegacyDocumentWriteShim() {
+          return `<script>
+            (function() {
+              if (window.__LEGACY_DOCWRITE_SHIM__) return;
+              window.__LEGACY_DOCWRITE_SHIM__ = true;
+
+              var nativeWrite = document.write ? document.write.bind(document) : null;
+
+              function resolveActiveScript() {
+                if (document.currentScript && document.currentScript.parentNode) {
+                  return document.currentScript;
+                }
+                return null;
+              }
+
+              function flushBufferedWrite(script) {
+                if (!script || !script.parentNode) return;
+                var markup = script.__legacyWriteBuffer || "";
+                script.__legacyWriteBuffer = "";
+                script.__legacyWriteTimer = 0;
+                if (!markup) return;
+
+                var range = document.createRange();
+                range.setStartBefore(script);
+                var fragment = range.createContextualFragment(markup);
+                script.parentNode.insertBefore(fragment, script);
+              }
+
+              function queueBufferedWrite(markup) {
+                var script = resolveActiveScript();
+                if (!script) {
+                  if (nativeWrite) {
+                    try {
+                      nativeWrite(markup);
+                    } catch (_) {}
+                  }
+                  return;
+                }
+
+                script.__legacyWriteBuffer = (script.__legacyWriteBuffer || "") + String(markup == null ? "" : markup);
+                if (script.__legacyWriteTimer) return;
+                script.__legacyWriteTimer = window.setTimeout(function() {
+                  flushBufferedWrite(script);
+                }, 0);
+              }
+
+              document.write = function() {
+                var markup = "";
+                for (var i = 0; i < arguments.length; i++) {
+                  markup += arguments[i];
+                }
+                queueBufferedWrite(markup);
+              };
+
+              document.writeln = function() {
+                var markup = "";
+                for (var i = 0; i < arguments.length; i++) {
+                  markup += arguments[i];
+                }
+                queueBufferedWrite(markup + "\\n");
+              };
+
+              window.addEventListener("load", function() {
+                var scripts = document.querySelectorAll("script");
+                for (var i = 0; i < scripts.length; i++) {
+                  if (scripts[i].__legacyWriteBuffer) {
+                    flushBufferedWrite(scripts[i]);
+                  }
+                }
+              });
+            })();
+          <\/script>`;
         }
 
         function patchLegacyHtml(html) {
@@ -501,6 +829,10 @@
             /<h2([^>]*data-legacy-brand-static="data-site"[^>]*)>[\s\S]*?<\/h2>/i,
             '<h2$1>台湾资料网</h2>'
           );
+          patched = patched.replace(
+            /(<\/head>)/i,
+            buildLegacyDocumentWriteShim() + "$1"
+          );
           patched = applyShellHeaderPatch(patched);
           patched = patched.replace(/<\/body>/i, buildBridgeScript() + "</body>");
 
@@ -511,6 +843,28 @@
           return `<script>
             (function(){
               var lastHeight = 0;
+
+              function legacySwitchDebugLog(eventName, payload){
+                var host = window.__LEGACY_EMBED_HOST__;
+                if(host && typeof host.debugLog === 'function'){
+                  host.debugLog(eventName, payload);
+                }
+              }
+
+              function getActiveSwitchSeq(){
+                var host = window.__LEGACY_EMBED_HOST__;
+                if(host && typeof host.getActiveSwitchSeq === 'function'){
+                  return host.getActiveSwitchSeq();
+                }
+                return Number(window.__LEGACY_SWITCH_SEQ__ || 0);
+              }
+
+              function queuePendingGameSwitch(game){
+                var host = window.__LEGACY_EMBED_HOST__;
+                if(host && typeof host.queuePendingGameSwitch === 'function'){
+                  host.queuePendingGameSwitch(game);
+                }
+              }
 
               function resolveGameByType(type){
                 if(Number(type) === 2) return 'macau';
@@ -535,7 +889,7 @@
                 if(!(window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.shellHeader)) return;
                 var firstNewsBox = document.querySelector('body > .box.news-box');
                 var backTop = document.getElementById('fhdb');
-                var firstHero = document.querySelector('body > .box.pad#yxym');
+                var firstHero = document.querySelector('body > .box.pad#legacy-hero-banner');
                 var nav = document.getElementById('nav2');
                 if(firstNewsBox) firstNewsBox.style.display = 'none';
                 if(backTop) backTop.style.display = 'none';
@@ -544,7 +898,7 @@
               }
 
               function postAnchorMap(){
-                var anchorIds = ['7x1m', '4x8m', 'gsb', 'gsb3', 'msks', '9x1m', 'yqjt', '6x', '3t', 'lx'];
+                var anchorIds = ['legacy-result-anchor', '7x1m', '4x8m', 'gsb', 'gsb3', 'msks', '9x1m', 'yqjt', '6x', '3t', 'lx', 'legacy-attribute-anchor', 'legacy-hero-banner'];
                 var anchors = {};
                 for(var i = 0; i < anchorIds.length; i++){
                   var id = anchorIds[i];
@@ -592,14 +946,21 @@
                   window.parent.postMessage({
                     kind: 'legacy-embed-height',
                     height: height,
-                    type: window.__LEGACY_EMBED_CONFIG__ ? window.__LEGACY_EMBED_CONFIG__.type : 3,
+                    type: window.__LEGACY_GAME_STATE__ && typeof window.__LEGACY_GAME_STATE__.getType === 'function'
+                      ? window.__LEGACY_GAME_STATE__.getType()
+                      : 3,
                     href: window.location.href
                   }, '*');
                 }
               }
 
               function syncLotteryTabs(){
-                var desiredGame = resolveGameByType(window.__LEGACY_EMBED_CONFIG__ ? window.__LEGACY_EMBED_CONFIG__.type : 3);
+                var legacyGameState = window.__LEGACY_GAME_STATE__;
+                var desiredGame = resolveGameByType(
+                  legacyGameState && typeof legacyGameState.getType === 'function'
+                    ? legacyGameState.getType()
+                    : 3
+                );
                 var container = document.querySelector('.KJ-TabBox');
                 if(!container) return false;
                 var tabs = Array.prototype.slice.call(container.querySelectorAll('ul > li'));
@@ -621,8 +982,32 @@
               function applyTopLevelGameChange(game){
                 var host = window.__LEGACY_EMBED_HOST__;
                 if(!host) return;
+                legacySwitchDebugLog("switch:requested", {
+                  game: game,
+                  activeSeq: getActiveSwitchSeq(),
+                  currentType: window.__LEGACY_GAME_STATE__ &&
+                    typeof window.__LEGACY_GAME_STATE__.getType === 'function'
+                      ? Number(window.__LEGACY_GAME_STATE__.getType()) || 3
+                      : 3,
+                });
+                if(host.getIsReloadingLegacyPage && host.getIsReloadingLegacyPage()){
+                  queuePendingGameSwitch(game);
+                  return;
+                }
+                var currentType = window.__LEGACY_GAME_STATE__ &&
+                  typeof window.__LEGACY_GAME_STATE__.getType === 'function'
+                    ? Number(window.__LEGACY_GAME_STATE__.getType()) || 3
+                    : 3;
                 var nextType = resolveTypeByGame(game);
                 var nextUrl = host.getCanonicalUrlForType(nextType);
+
+                if(currentType === nextType){
+                  legacySwitchDebugLog("switch:ignored-same-type", {
+                    game: game,
+                    type: currentType,
+                  });
+                  return;
+                }
 
                 window.__LEGACY_LAST_GAME_CHANGE__ = game;
                 window.__LEGACY_LAST_GAME_CHANGE_URL__ = nextUrl;
@@ -637,28 +1022,51 @@
                   return;
                 }
 
-                if(nextUrl === window.location.href) return;
+                var switchMeta = host.beginLegacyTypeSwitch
+                  ? host.beginLegacyTypeSwitch(nextType)
+                  : { seq: 0, type: host.updateLegacyConfigType(nextType) };
+                var switchSeq = switchMeta.seq;
+                legacySwitchDebugLog("switch:accepted", {
+                  game: game,
+                  nextType: nextType,
+                  nextUrl: nextUrl,
+                  seq: switchSeq,
+                });
                 host.rememberScrollPosition();
-                host.updateLegacyConfigType(nextType);
                 host.setIsReloadingLegacyPage(true);
-
-                // Update global type/web variables so module scripts use new values
-                window.type = nextType;
-                window.web = nextType === 2 ? 2 : nextType === 1 ? 1 : 4;
 
                 if(window.history && typeof window.history.replaceState === 'function'){
                   window.history.replaceState(null, '', nextUrl);
                 }
 
+                if(!window.parent || window.parent === window){
+                  window.setTimeout(function(){
+                    window.location.reload();
+                  }, 0);
+                  return;
+                }
+
                 // Plan A: after first load, use lightweight module remount
-                var useLightReload = host.isFirstLoadDone && host.isFirstLoadDone();
+                var useLightReload = host.isFirstLoadDone &&
+                  host.isFirstLoadDone() &&
+                  host.canUseLightReloadForTypeSwitch &&
+                  host.canUseLightReloadForTypeSwitch();
                 var reloadTask = useLightReload
-                  ? host.reloadModulesForTypeSwitch()
+                  ? host.reloadModulesForTypeSwitch(switchSeq)
                   : host.loadLegacyPage();
 
                 reloadTask.finally(function(){
+                  legacySwitchDebugLog("switch:finally", {
+                    game: game,
+                    seq: switchSeq,
+                    activeSeq: getActiveSwitchSeq(),
+                  });
                   host.setIsReloadingLegacyPage(false);
                   host.restoreScrollPosition();
+                  var pendingGame = host.consumePendingGameSwitch ? host.consumePendingGameSwitch() : '';
+                  if(pendingGame && pendingGame !== game){
+                    applyTopLevelGameChange(pendingGame);
+                  }
                 });
               }
 
@@ -798,6 +1206,11 @@
           rememberScrollPosition,
           restoreScrollPosition,
           updateLegacyConfigType,
+          beginLegacyTypeSwitch,
+          getActiveSwitchSeq,
+          queuePendingGameSwitch,
+          consumePendingGameSwitch,
+          debugLog: legacySwitchDebugLog,
           loadLegacyPage: () => loadLegacyPage(),
           getIsReloadingLegacyPage: () => isReloadingLegacyPage,
           setIsReloadingLegacyPage: (nextValue) => {
@@ -807,7 +1220,8 @@
           enforceStaticBrandText,
           applyDynamicBoardTitles,
           isFirstLoadDone: () => _firstLoadDone,
-          reloadModulesForTypeSwitch: () => reloadModulesForTypeSwitch(),
+          canUseLightReloadForTypeSwitch: () => canUseLightReloadForTypeSwitch(),
+          reloadModulesForTypeSwitch: (seq) => reloadModulesForTypeSwitch(seq),
         };
 
         window.addEventListener("DOMContentLoaded", loadLegacyPage);

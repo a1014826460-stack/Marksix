@@ -1794,6 +1794,12 @@ const res = await fetch("/fackyou/api/python/admin/sites/4/prediction-modules", 
 
 接口说明：执行一次站点预测模块。
 
+说明：
+
+- 这是管理员手工入口
+- 若同一期同站点记录已存在，底层会走 `upsert` 覆盖更新
+- 用于显式重生成，不属于自动化补缺链路
+
 请求体：
 
 ```json
@@ -1840,6 +1846,12 @@ await fetch("/fackyou/api/python/admin/sites/4/prediction-modules/run", {
 
 接口说明：按期号范围批量生成预测数据，返回后台任务。
 
+说明：
+
+- 这是管理员手工入口
+- 同一期同站点记录若已存在，会在生成时覆盖更新
+- 自动化任务不会调用该接口；自动化补缺只会跳过已存在的预测资料
+
 请求体常用字段：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -1850,6 +1862,12 @@ await fetch("/fackyou/api/python/admin/sites/4/prediction-modules/run", {
 | `mechanism_keys` | array/string | 否 | 指定机制 key 列表 |
 | `future_periods` | int | 否 | 未来期数 |
 | `future_only` | bool | 否 | 仅未来期 |
+
+覆盖规则：
+
+- 管理员通过本接口发起批量生成时，允许覆盖同一期同站点已有预测资料
+- 自动化 `daily_prediction` 任务的“近期期数补缺”逻辑不会覆盖已有预测资料，只会补缺失记录
+- 自动化开奖后的 `backfill_after_draw` 只回填开奖结果字段，不会调用本接口重生成正文
 
 成功响应：
 
@@ -1947,6 +1965,12 @@ await fetch("/fackyou/api/python/admin/sites/4/prediction-modules/run", {
 ### 预测资料回填接口
 
 接口说明：批量回填预测资料的 `res_code` / `res_sx` / `res_color` 字段。遍历指定期号范围内的所有已开奖记录，将开奖号码对应的结果信息写入所有 `created.mode_payload_*` 表中匹配的记录。
+
+补充说明：
+
+- 这里只回填开奖结果字段，不会重生成预测正文 `content`
+- 只更新 `res_code`、`res_sx`、`res_color` 仍为空的记录，已有回填值不会被覆盖
+- 该接口用于开奖结果回填，不属于预测正文覆盖入口
 
 ### POST `/api/admin/backfill-predictions`
 

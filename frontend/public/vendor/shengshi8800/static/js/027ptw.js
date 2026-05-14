@@ -10,53 +10,29 @@ $.ajax({
         let data = response.data;
 
         if (data.length > 0) {
-            data = data.slice(0, 6);
             for (let i in data) {
                 let d = data[i];
                 let codeSplit = (d.res_code || '').split(',');
                 let sxSplit = (d.res_sx || '').split(',');
-                let resSx = d.res_sx || '';
                 let code = codeSplit[codeSplit.length - 1] || '';
                 let sx = sxSplit[sxSplit.length - 1] || '';
-                let result = [];
                 let xiao = d.content.split(",");
-                let reSx = d.res_sx.split(',');
 
                 let c = [];
                 for (let j = 0; j < xiao.length; j++) {
                     let index = getZjIndex(xiao[j], sxSplit);
                     if (index !== undefined) {
-                        result.push(xiao[j]);
                         c.push(`<span>${xiao[j]}</span>`);
                     } else {
                         c.push(`${xiao[j]}`);
                     }
                 }
 
-                if (result.length === 0) {
-                    if (resSx) {
-                        // 已开奖，预测全不命中 → 显示真实开奖生肖
-                        let lastSx = sxSplit.filter(function (s) { return s; }).slice(-2);
-                        if (lastSx.length === 0) {
-                            result = ['猫', '猫'];
-                        } else if (lastSx.length === 1) {
-                            result = [lastSx[0], lastSx[0]];
-                        } else {
-                            result = lastSx;
-                        }
-                    } else {
-                        // 未开奖，无开奖数据 → 占位
-                        result = ['猫', '猫'];
-                    }
-                } else if (result.length === 1) {
-                    result[1] = result[0];
-                }
-
                 htmlBoxList = htmlBoxList + ` 
                 <tr>
                     <td>
                         <font color='#000000'>${d.term}期:</font><font color='#3b9aeb'>平特王→<span class='zl'>[${c.join('')}]</span> </font>
-                        开:${result.slice(0,2).join('')}准
+                        开:${sx || '？'}${code || '00'}准
                     </td>
                 </tr>`;
             }
@@ -141,4 +117,3 @@ document.writeln("			</tr>");
 document.writeln("			");
 document.writeln("			</table>");
 document.writeln("    </div>");*/
-

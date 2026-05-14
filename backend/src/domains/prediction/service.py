@@ -480,6 +480,8 @@ def bulk_generate_site_predictions(
     site_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    ensure_prediction_configs_loaded(db_path)
+
     from domains.prediction.generation_service import (
         build_generated_prediction_row_data,
         resolve_prediction_table_for_mode,
@@ -499,6 +501,8 @@ def bulk_generate_site_predictions(
     requested_keys = payload.get("mechanism_keys") or []
     if isinstance(requested_keys, str):
         requested_keys = [key.strip() for key in requested_keys.split(",") if key.strip()]
+    trigger = str(payload.get("trigger") or "admin_generate_all")
+    allow_overwrite = parse_bool(payload.get("allow_overwrite"), trigger.startswith("admin_"))
 
     return generate_prediction_batch(
         db_path,
@@ -509,7 +513,8 @@ def bulk_generate_site_predictions(
         mechanism_keys=list(requested_keys),
         future_periods=int(payload.get("future_periods") or 0),
         future_only=parse_bool(payload.get("future_only"), False),
-        trigger="admin_generate_all",
+        trigger=trigger,
+        allow_overwrite=allow_overwrite,
         sync_site_modules=_sync_site_prediction_modules,
         resolve_prediction_table_for_mode=resolve_prediction_table_for_mode,
         build_generated_prediction_row_data=build_generated_prediction_row_data,
