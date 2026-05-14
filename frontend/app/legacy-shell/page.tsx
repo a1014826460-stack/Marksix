@@ -1,6 +1,6 @@
 "use client"
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import type { LotteryGame } from "@/lib/lotteryData"
 import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
@@ -38,18 +38,6 @@ function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
 }
 
-function buildLegacyShellParams(
-  searchParams: URLSearchParams,
-  game: LotteryGame
-) {
-  const nextParams = new URLSearchParams(searchParams.toString())
-  nextParams.set("t", GAME_T_PARAM_MAP[game])
-  nextParams.delete("type")
-  nextParams.delete("web")
-  nextParams.delete("game")
-  return nextParams
-}
-
 function resolveGameFromRouteParams(searchParams: URLSearchParams): LotteryGame {
   const rawType = searchParams.get("type") || searchParams.get("t")
   if (rawType && T_PARAM_GAME_MAP[rawType]) {
@@ -71,8 +59,6 @@ function getForumTitle(game: LotteryGame) {
 }
 
 function LegacyShellContent() {
-  const router = useRouter()
-  const pathname = usePathname()
   const searchParams = useSearchParams()
   const navRef = useRef<HTMLDivElement | null>(null)
   const initialGame = useMemo(
@@ -87,33 +73,8 @@ function LegacyShellContent() {
     setActiveGame(initialGame)
   }, [initialGame])
 
-  useEffect(() => {
-    const nextParams = buildLegacyShellParams(
-      new URLSearchParams(searchParams.toString()),
-      initialGame
-    )
-    const currentParams = searchParams.toString()
-    const canonicalParams = nextParams.toString()
-
-    if (canonicalParams !== currentParams) {
-      router.replace(
-        canonicalParams ? `${pathname}?${canonicalParams}` : pathname,
-        { scroll: false }
-      )
-    }
-  }, [initialGame, pathname, router, searchParams])
-
   function handleGameChange(game: LotteryGame) {
     setActiveGame(game)
-
-    const nextParams = buildLegacyShellParams(
-      new URLSearchParams(searchParams.toString()),
-      game
-    )
-    const nextQuery = nextParams.toString()
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
-      scroll: false,
-    })
   }
 
   function handleJump(anchorId: string) {

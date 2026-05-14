@@ -14,16 +14,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  async rewrites() {
-    return {
-      beforeFiles: [
-        {
-          source: '/',
-          destination: '/vendor/shengshi8800/embed.html',
-        },
-      ],
-    }
-  },
   async headers() {
     return [
       {

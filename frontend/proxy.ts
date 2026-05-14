@@ -5,14 +5,7 @@ const VALID_LEGACY_TYPES = new Set(["1", "2", "3"])
 
 export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
-  const legacyType = searchParams.get("type")
-
-  if (pathname === "/vendor/shengshi8800/embed.html" && legacyType && VALID_LEGACY_TYPES.has(legacyType)) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/"
-    url.search = ""
-    return NextResponse.redirect(url, 301)
-  }
+  const legacyType = searchParams.get("type") || searchParams.get("t")
 
   if (pathname === "/" && legacyType && VALID_LEGACY_TYPES.has(legacyType)) {
     const url = request.nextUrl.clone()
