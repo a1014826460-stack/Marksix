@@ -385,6 +385,36 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     # ── 邮件报警基础配置 ──
+    "database.backup_enabled": {
+        "value": True,
+        "value_type": "bool",
+        "description": "Enable scheduled PostgreSQL logical backups.",
+        "is_secret": 0,
+    },
+    "database.backup_times": {
+        "value": ["00:00", "11:00"],
+        "value_type": "json",
+        "description": "Daily PostgreSQL backup times in Beijing time, HH:MM list.",
+        "is_secret": 0,
+    },
+    "database.backup_dir": {
+        "value": "data/backups",
+        "value_type": "string",
+        "description": "Directory for pg_dump -Fc backup files. Relative paths are under backend/.",
+        "is_secret": 0,
+    },
+    "database.backup_retention_days": {
+        "value": 30,
+        "value_type": "int",
+        "description": "Retention days for scheduled PostgreSQL .dump backup files.",
+        "is_secret": 0,
+    },
+    "database.pg_dump_path": {
+        "value": "pg_dump",
+        "value_type": "string",
+        "description": "pg_dump executable path. Set an absolute path if it is not on PATH.",
+        "is_secret": 0,
+    },
     "alert.email_enabled": {
         "value": True,
         "value_type": "bool",
