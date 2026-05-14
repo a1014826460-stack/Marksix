@@ -216,7 +216,9 @@
         if (text.length <= 4) return text;
         var year = text.slice(0, 4);
         var term = text.slice(4);
-        while (term.length < 3) term = "0" + term;
+        if (Number(lotteryType) === 3) {
+          while (term.length < 3) term = "0" + term;
+        }
         return year + term;
       }
 
@@ -357,6 +359,19 @@
         return elapsedByDeadline >= 0 && elapsedByDeadline <= REVEAL_WINDOW_SEC;
       }
 
+      function _compareIssueToRevealTarget(issue) {
+        if (!_revealTargetIssue) return 0;
+        return compareIssues(issue, _revealTargetIssue);
+      }
+
+      function _shouldHoldPendingTarget(issue, payload) {
+        if (!_revealTargetIssue) return false;
+        var compared = _compareIssueToRevealTarget(issue);
+        if (compared < 0) return true;
+        if (compared === 0 && !_hasFullBalls(payload)) return true;
+        return false;
+      }
+
       function _renderRevealStep() {
         for (var i = 0; i < 7; i++) {
           if (i < _revealedCount && _pendingBalls && i < _pendingBalls.length) {
@@ -404,7 +419,6 @@
       function _syncRevealProgress() {
         if (!_revealActive || !_pendingBalls) return;
         var nextCount = _computeRevealCountForTime(_revealStartSec, getServerNowSeconds());
-        if (nextCount <= 0) nextCount = 1;
         _revealedCount = nextCount;
         _renderRevealStep();
         if (_revealedCount >= 7) {
@@ -647,6 +661,7 @@
           if (!_revealActive && _revealTargetIssue) {
             showPendingIssue(_revealTargetIssue);
           }
+          setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
           return;
         }
         if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
@@ -694,11 +709,16 @@
           }
           var payload = await response.json();
           var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
+          var hasFullBalls = _hasFullBalls(payload);
           var isNewIssue = !!issue && issue !== _lastRenderedIssue;
           var shouldRevealCurrentPayload = !!revealOnLoad && !_lastRenderedIssue && _shouldRevealPayload(payload);
-          var isRevealTargetIssue = !!_revealTargetIssue && issue === _revealTargetIssue;
-          var isOlderThanRevealTarget = !!_revealTargetIssue && compareIssues(issue, _revealTargetIssue) < 0;
-          var shouldStartTargetReveal = !!_revealTargetIssue && !_revealActive && isRevealTargetIssue && _hasFullBalls(payload);
+          var comparedToRevealTarget = _compareIssueToRevealTarget(issue);
+          var isRevealTargetIssue = !!_revealTargetIssue && comparedToRevealTarget === 0;
+          var isOlderThanRevealTarget = !!_revealTargetIssue && comparedToRevealTarget < 0;
+          var isNewerThanRevealTarget = !!_revealTargetIssue && comparedToRevealTarget > 0;
+          var shouldHoldPendingTarget = _shouldHoldPendingTarget(issue, payload);
+          var shouldStartTargetReveal = !!_revealTargetIssue && !_revealActive && (isRevealTargetIssue || isNewerThanRevealTarget) && hasFullBalls;
+          var shouldStartRevealFromPolling = !!useReveal && !_revealActive && hasFullBalls && (!_revealTargetIssue || comparedToRevealTarget >= 0) && (isNewIssue || shouldStartTargetReveal);
           debugLog("latest-draw:evaluated", {
             issue: issue,
             payloadCurrentIssue: payload && payload.current_issue,
@@ -710,13 +730,16 @@
             shouldRevealCurrentPayload: shouldRevealCurrentPayload,
             isRevealTargetIssue: isRevealTargetIssue,
             isOlderThanRevealTarget: isOlderThanRevealTarget,
+            isNewerThanRevealTarget: isNewerThanRevealTarget,
+            shouldHoldPendingTarget: shouldHoldPendingTarget,
             shouldStartTargetReveal: shouldStartTargetReveal,
-            hasFullBalls: _hasFullBalls(payload),
+            shouldStartRevealFromPolling: shouldStartRevealFromPolling,
+            hasFullBalls: hasFullBalls,
             drawTime: payload && payload.draw_time ? payload.draw_time : ""
           });
 
-          if (shouldStartTargetReveal || (useReveal && isNewIssue && _hasFullBalls(payload)) || shouldRevealCurrentPayload) {
-            if (!_revealTargetIssue) {
+          if (shouldStartTargetReveal || shouldStartRevealFromPolling || shouldRevealCurrentPayload) {
+            if (issue) {
               _revealTargetIssue = issue;
             }
             debugLog("latest-draw:branch-start-reveal", {
@@ -727,14 +750,14 @@
             });
             updateIssueInfo(payload || {});
             _startReveal(payload);
-          } else if (isOlderThanRevealTarget) {
+          } else if (shouldHoldPendingTarget) {
             debugLog("latest-draw:branch-keep-pending-target", {
               issue: issue,
               revealTargetIssue: _revealTargetIssue
             });
             showPendingIssue(_revealTargetIssue);
           } else {
-            if (_revealTargetIssue && !isRevealTargetIssue && !isNewIssue && !keepCurrentWhenPending) {
+            if (_revealTargetIssue && !isRevealTargetIssue && (isOlderThanRevealTarget || !isNewIssue) && !keepCurrentWhenPending) {
               debugLog("latest-draw:branch-manual-keep-pending-target", {
                 issue: issue,
                 revealTargetIssue: _revealTargetIssue
@@ -749,7 +772,7 @@
               });
               render(payload || {});
             }
-            if (_revealTargetIssue && compareIssues(issue, _revealTargetIssue) >= 0) {
+            if (_revealTargetIssue && hasFullBalls && compareIssues(issue, _revealTargetIssue) >= 0) {
               debugLog("latest-draw:clear-reveal-target", {
                 issue: issue,
                 previousRevealTargetIssue: _revealTargetIssue
