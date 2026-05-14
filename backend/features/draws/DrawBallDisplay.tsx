@@ -251,16 +251,16 @@ export function DrawBallDisplay({ numbers }: DrawBallDisplayProps) {
       <div
         key={`${isSpecial ? "s" : "b"}-${idx}-${num}`}
         className="flex flex-col items-center"
-        style={{ minWidth: 42 }}
+        style={{ minWidth: 34 }}
       >
         {/* Ball */}
         <div
           className="inline-flex items-center justify-center rounded-full text-white font-bold select-none"
           style={{
-            width: 36,
-            height: 36,
+            width: 26,
+            height: 26,
             background: gradient,
-            fontSize: 16,
+            fontSize: 12,
             textShadow: "0 1px 2px rgba(0,0,0,0.35)",
           }}
         >
@@ -269,28 +269,28 @@ export function DrawBallDisplay({ numbers }: DrawBallDisplayProps) {
 
         {/* Attribute rows */}
         {visible.has("zodiac") && (
-          <div className="text-[10px] text-center mt-0.5 leading-tight px-0.5">
+          <div className="text-[9px] text-center mt-px leading-tight px-0.5">
             <span>{zodiac || "-"}</span>
             <span className="text-muted-foreground opacity-50">/</span>
             <span style={{ color: elementColor || undefined }}>{element || "-"}</span>
           </div>
         )}
         {visible.has("wave") && (
-          <div className="text-[10px] text-center mt-0.5 leading-tight px-0.5">
+          <div className="text-[9px] text-center mt-px leading-tight px-0.5">
             <span>{wave || "-"}</span>
             <span className="text-muted-foreground opacity-50">/</span>
             <span>{size}</span>
           </div>
         )}
         {visible.has("oddEven") && (
-          <div className="text-[10px] text-center mt-0.5 leading-tight px-0.5">
+          <div className="text-[9px] text-center mt-px leading-tight px-0.5">
             <span>{oddEven}</span>
             <span className="text-muted-foreground opacity-50">/</span>
             <span>{combinedOddEven}</span>
           </div>
         )}
         {visible.has("animal") && (
-          <div className="text-[10px] text-center mt-0.5 leading-tight px-0.5">
+          <div className="text-[9px] text-center mt-px leading-tight px-0.5">
             <span style={{ color: animalColor || undefined }}>{animalType || "-"}</span>
             <span className="text-muted-foreground opacity-50">/</span>
             <span>{sumOddEven}</span>
@@ -301,12 +301,12 @@ export function DrawBallDisplay({ numbers }: DrawBallDisplayProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-start gap-x-2 gap-y-1 py-1">
+    <div className="flex flex-wrap items-start gap-x-1 gap-y-1 py-1">
       {regularBalls.map((num, idx) => renderBall(num, false, idx))}
       {specialBall != null && (
         <>
-          <div className="flex items-center self-start pt-2">
-            <span className="text-base font-bold text-muted-foreground opacity-40">+</span>
+          <div className="flex items-center self-start pt-1">
+            <span className="text-sm font-bold text-muted-foreground opacity-40">+</span>
           </div>
           {renderBall(specialBall, true, 6)}
         </>

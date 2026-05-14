@@ -67,6 +67,22 @@ _LT_CFG_PREFIX: dict[int, str] = {1: "lottery.hk", 2: "lottery.macau", 3: "lotte
 _LT_NAME_MAP: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 
 
+_PRECISE_PASSED_RETRY_SECONDS = 60
+
+
+def _parse_beijing_draw_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    _crawler_logger.warning("Invalid Beijing draw_time format: %s", text)
+    return None
+
+
 def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) -> None:
     """Run the heavy daily prediction work in a separate Python process."""
     script_path = Path(__file__).resolve().parent / "daily_prediction_worker.py"
@@ -573,6 +589,7 @@ class CrawlerScheduler:
         self._auto_crawl_timer: threading.Timer | None = None
         self._task_timer: threading.Timer | None = None
         self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
+        self._precise_reschedule_active = False
         self._worker_id = f"crawler:{id(self)}"
 
     def _auto_open_interval_seconds(self) -> int:
@@ -620,7 +637,7 @@ class CrawlerScheduler:
             开盘的记录数。
         """
         now_utc_dt = datetime.now(timezone.utc)
-        now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+        now_beijing_dt = (now_utc_dt + timedelta(hours=8)).replace(tzinfo=None)
         now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         with db_connect(self.db_path) as conn:
@@ -908,6 +925,16 @@ class CrawlerScheduler:
                 self._set_lottery_chase_mode(lt_id, True)
 
     def _reschedule_precise_checks(self) -> None:
+        if self._precise_reschedule_active:
+            _crawler_logger.debug("Precise check reschedule already active; skipping nested call")
+            return
+        self._precise_reschedule_active = True
+        try:
+            self._reschedule_precise_checks_once()
+        finally:
+            self._precise_reschedule_active = False
+
+    def _reschedule_precise_checks_once(self) -> None:
         """为 HK(1)、Macau(2)、Taiwan(3) 分别安排精确开奖检查。
 
         从 system_config 读取 lottery.{hk,macau,taiwan}_next_time（毫秒时间戳），
@@ -967,8 +994,9 @@ class CrawlerScheduler:
                         )
                         try:
                             if lt_id == 3:
-                                self._open_taiwan_draws_and_update_next_time()
-                                _schedule_backfill_after_draw(self.db_path, 3)
+                                opened_count = self._open_taiwan_draws_and_update_next_time()
+                                if opened_count > 0:
+                                    _schedule_backfill_after_draw(self.db_path, 3)
                             else:
                                 self._do_precise_draw_fetch_and_open(lt_id)
                         except Exception as exc:
@@ -977,14 +1005,25 @@ class CrawlerScheduler:
                             )
                         # 触发后重新同步 next_time 并调度下一次
                         sync_all_lottery_type_next_times(self.db_path, source="crawler.precise_passed")
-                        self._reschedule_precise_checks()
+                        timer = threading.Timer(
+                            _PRECISE_PASSED_RETRY_SECONDS,
+                            self._reschedule_precise_checks,
+                        )
+                        timer.daemon = True
+                        timer.start()
+                        self._precise_timers[lt_id] = timer
+                        _crawler_logger.warning(
+                            "Precise check lt=%s still points to a passed fire time; retry scheduled in %ds",
+                            lt_id, _PRECISE_PASSED_RETRY_SECONDS,
+                        )
                     continue
 
                 def _fire(_lt_id=lt_id, _db=self.db_path):
                     try:
                         if _lt_id == 3:
-                            self._open_taiwan_draws_and_update_next_time()
-                            _schedule_backfill_after_draw(_db, 3)
+                            opened_count = self._open_taiwan_draws_and_update_next_time()
+                            if opened_count > 0:
+                                _schedule_backfill_after_draw(_db, 3)
                         else:
                             self._do_precise_draw_fetch_and_open(_lt_id)
                     except Exception as exc:
@@ -1334,10 +1373,11 @@ class CrawlerScheduler:
             )
             return
         if task_type == TASK_TYPE_TAIWAN_PRECISE_OPEN:
-            self._open_taiwan_draws_and_update_next_time()
+            opened_count = self._open_taiwan_draws_and_update_next_time()
             sync_all_lottery_type_next_times(self.db_path, source="crawler.taiwan_open")
             _ensure_taiwan_precise_open_task(self.db_path)
-            _schedule_backfill_after_draw(self.db_path, 3)
+            if opened_count > 0:
+                _schedule_backfill_after_draw(self.db_path, 3)
             self._reschedule_precise_checks()
             return
         if task_type == TASK_TYPE_DAILY_PREDICTION:
@@ -1371,49 +1411,58 @@ class CrawlerScheduler:
             return
         raise ValueError(f"Unsupported scheduler task type: {task_type}")
 
-    def _open_taiwan_draws_and_update_next_time(self) -> None:
+    def _open_taiwan_draws_and_update_next_time(self) -> int:
         """北京时间 22:30 精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，
         并立即计算下一期 draw_time 更新 next_time 为 Unix 秒级时间戳。
 
         注意：draw_time 字段存储的是北京时间字符串，比较时必须使用北京时间。"""
-        from calendar import timegm
-
         now_utc_dt = datetime.now(timezone.utc)
         now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
-        now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+        now_beijing_dt = (now_utc_dt + timedelta(hours=8)).replace(tzinfo=None)
 
         with db_connect(self.db_path) as conn:
-            cur = conn.execute(
-                """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
+            pending_rows = conn.execute(
+                """SELECT id, year, term, draw_time
+                   FROM lottery_draws
                    WHERE lottery_type_id = 3 AND is_opened = 0
-                   AND draw_time IS NOT NULL AND draw_time != ''
-                   AND draw_time <= ?""",
-                (now_utc, now_beijing),
-            )
-            opened_count = cur.rowcount
+                   AND draw_time IS NOT NULL AND draw_time != ''""",
+            ).fetchall()
+            due_rows = [
+                row for row in pending_rows
+                if (
+                    (draw_dt := _parse_beijing_draw_datetime(row["draw_time"]))
+                    and draw_dt <= now_beijing_dt
+                )
+            ]
+            opened_count = len(due_rows)
+            if due_rows:
+                ids = [row["id"] for row in due_rows]
+                placeholders = ",".join("?" for _ in ids)
+                conn.execute(
+                    f"UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                    f"WHERE id IN ({placeholders})",
+                    [now_utc] + ids,
+                )
             if opened_count > 0:
                 _crawler_logger.info("TaiwanOpen 22:30 Beijing — opened %d Taiwan draw(s)", opened_count)
             else:
                 _crawler_logger.debug("TaiwanOpen 22:30 Beijing — no Taiwan draws to open")
 
-            rows = conn.execute(
-                """SELECT id, year, term, draw_time FROM lottery_draws
-                   WHERE lottery_type_id = 3 AND updated_at = ?""",
-                (now_utc,),
-            ).fetchall()
-
-            for row in rows:
+            for row in due_rows:
                 self._calc_and_update_next_time(conn, row, now_utc)
 
-            if rows:
+            if due_rows:
                 conn.commit()
+            return opened_count
 
     def _calc_and_update_next_time(self, conn, row, now_str: str) -> None:
         """根据当期 draw_time + 1 天计算下一期 draw_time，将 next_time 更新为毫秒级时间戳。"""
         from calendar import timegm
 
         draw_time_str = row["draw_time"]
-        draw_dt = datetime.strptime(draw_time_str, "%Y-%m-%d %H:%M:%S")
+        draw_dt = _parse_beijing_draw_datetime(draw_time_str)
+        if draw_dt is None:
+            raise ValueError(f"Invalid Taiwan draw_time: {draw_time_str}")
         next_dt = draw_dt + timedelta(days=1)
         # draw_time 存储的是北京时间，转为 UTC 后计算毫秒时间戳
         utc_dt = next_dt - timedelta(hours=8)

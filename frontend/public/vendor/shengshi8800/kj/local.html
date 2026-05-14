@@ -160,10 +160,10 @@
       var countdownTimerId = null;
       var countdownExpired = false;
 
-      var REVEAL_INTERVAL_MS = 10000;
+      var REVEAL_INTERVAL_MS = 30000;
       var REVEAL_INTERVAL_SEC = REVEAL_INTERVAL_MS / 1000;
       var REVEAL_POLL_INTERVAL_MS = 3000;
-      var REVEAL_WINDOW_SEC = 120;
+      var REVEAL_WINDOW_SEC = 210;
       var UI_TEXT = {
         countdownPrefix: "下次开奖 ",
         countdownWaiting: "开奖核验中...",
@@ -488,7 +488,13 @@
         _revealActive = true;
         _lastRenderedIssue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
         _revealTargetIssue = _lastRenderedIssue;
-        _syncRevealProgress();
+        _revealedCount = Math.max(1, _computeRevealCountForTime(_revealStartSec, getServerNowSeconds()));
+        _renderRevealStep();
+        if (_revealedCount >= 7) {
+          _stopReveal(true);
+          return;
+        }
+        _scheduleRevealTick();
       }
 
       function updateCountdownDisplay() {
