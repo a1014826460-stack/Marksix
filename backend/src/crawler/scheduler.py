@@ -28,12 +28,14 @@ from crawler.tasks import (  # noqa: F401 - 兼容导出
     TASK_TABLE_NAME,
     TASK_TYPE_AUTO_PREDICTION,
     TASK_TYPE_DAILY_PREDICTION,
+    TASK_TYPE_POSTGRES_BACKUP,
     TASK_TYPE_TAIWAN_PRECISE_OPEN,
     _task_lock_timeout_seconds,
     _task_poll_interval_seconds,
     _task_retry_delay_seconds,
     acquire_due_scheduler_tasks,
     ensure_daily_prediction_task,
+    ensure_postgres_backup_tasks,
     ensure_taiwan_precise_open_task,
     mark_scheduler_task_done,
     mark_scheduler_task_failed,
@@ -169,6 +171,7 @@ _mark_scheduler_task_done = mark_scheduler_task_done
 _mark_scheduler_task_failed = mark_scheduler_task_failed
 _ensure_taiwan_precise_open_task = ensure_taiwan_precise_open_task
 _ensure_daily_prediction_task = ensure_daily_prediction_task
+_ensure_postgres_backup_tasks = ensure_postgres_backup_tasks
 
 # HK/Macau 的 collector URL（优先读 lottery_types.collect_url，回退到此默认值）
 _PRECISE_DRAW_COLLECT_URLS: dict[int, str] = {
@@ -1034,6 +1037,7 @@ class CrawlerScheduler:
         self._schedule_task_loop()
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
+        _ensure_postgres_backup_tasks(self.db_path)
         # 如果今天配置的时间已过且今天尚未执行过预测，立即补跑一次
         self._run_daily_prediction_if_missed()
         # 精确开奖检查（HK/Macau/Taiwan 均基于 system_config 中 lottery.{type}_next_time 调度）
@@ -1301,6 +1305,20 @@ class CrawlerScheduler:
                 _mark_scheduler_task_done(self.db_path, int(task["id"]))
             except Exception as exc:
                 _mark_scheduler_task_failed(self.db_path, task, exc)
+                if str(task.get("task_type") or "") == TASK_TYPE_POSTGRES_BACKUP:
+                    try:
+                        from crawler.postgres_backup import send_backup_failure_alert
+
+                        attempt_no = int(task.get("attempt_count") or 0)
+                        max_attempts = int(task.get("max_attempts") or 2)
+                        send_backup_failure_alert(
+                            self.db_path,
+                            error_message=str(exc),
+                            attempt_no=attempt_no,
+                            final=attempt_no >= max_attempts,
+                        )
+                    except Exception as alert_exc:
+                        _crawler_logger.error("PostgresBackup alert failed: %s", alert_exc)
                 _crawler_logger.exception("Scheduler task failed: %s", task.get("task_key"))
 
     def _execute_task(self, task: dict[str, Any]) -> None:
@@ -1337,6 +1355,13 @@ class CrawlerScheduler:
                 alert_prediction_gap(self.db_path)
             except Exception:
                 pass
+            return
+        if task_type == TASK_TYPE_POSTGRES_BACKUP:
+            from crawler.postgres_backup import run_postgres_backup
+
+            result = run_postgres_backup(self.db_path, payload)
+            _crawler_logger.info("PostgresBackup done: %s", result)
+            _ensure_postgres_backup_tasks(self.db_path)
             return
         if task_type == "backfill_after_draw":
             _backfill_latest_opened_prediction_results(

@@ -18,6 +18,7 @@ TASK_RUN_TABLE_NAME = "scheduler_task_runs"
 TASK_TYPE_AUTO_PREDICTION = "auto_prediction"
 TASK_TYPE_TAIWAN_PRECISE_OPEN = "taiwan_precise_open"
 TASK_TYPE_DAILY_PREDICTION = "daily_prediction"
+TASK_TYPE_POSTGRES_BACKUP = "postgres_backup"
 SCHEDULE_SCOPE_AUTO = "auto"
 SCHEDULE_SCOPE_MANUAL = "manual"
 
@@ -45,6 +46,8 @@ def _task_key(task_type: str, payload: dict[str, Any]) -> str:
         return f"{task_type}:{payload.get('schedule_date')}"
     if task_type == TASK_TYPE_DAILY_PREDICTION:
         return f"{task_type}:{payload.get('schedule_date')}"
+    if task_type == TASK_TYPE_POSTGRES_BACKUP:
+        return f"{task_type}:{payload.get('schedule_date')}:{payload.get('schedule_time')}"
     return f"{task_type}:{_json_dumps(payload)}"
 
 
@@ -243,7 +246,7 @@ def mark_scheduler_task_done(db_path: str | Path, task_id: int) -> None:
 def mark_scheduler_task_failed(db_path: str | Path, task: dict[str, Any], exc: Exception) -> None:
     now = datetime.now(timezone.utc)
     now_text = now.isoformat()
-    attempt_count = int(task.get("attempt_count") or 0) + 1
+    attempt_count = int(task.get("attempt_count") or 0)
     max_attempts = int(task.get("max_attempts") or 3)
     final_status = "failed" if attempt_count >= max_attempts else "pending"
     retry_at = (now + timedelta(seconds=_task_retry_delay_seconds(db_path))).isoformat()
@@ -326,6 +329,40 @@ def ensure_daily_prediction_task(
         schedule_scope=SCHEDULE_SCOPE_AUTO,
         force_reschedule=force_reschedule,
     )
+
+
+def ensure_postgres_backup_tasks(
+    db_path: str | Path,
+    *,
+    force_reschedule: bool = False,
+) -> None:
+    """Schedule the next PostgreSQL backup tasks for configured Beijing times."""
+    from crawler.postgres_backup import backup_enabled, configured_backup_times
+
+    if not backup_enabled(db_path):
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    beijing_now = now_utc + timedelta(hours=8)
+    for schedule_time in configured_backup_times(db_path):
+        hour, minute = [int(part) for part in schedule_time.split(":", 1)]
+        target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if beijing_now >= target_beijing:
+            target_beijing += timedelta(days=1)
+        target_utc = target_beijing - timedelta(hours=8)
+        schedule_date = target_beijing.strftime("%Y-%m-%d")
+        upsert_scheduler_task(
+            db_path,
+            task_type=TASK_TYPE_POSTGRES_BACKUP,
+            payload={
+                "schedule_date": schedule_date,
+                "schedule_time": schedule_time,
+            },
+            run_at=target_utc.isoformat(),
+            max_attempts=2,
+            schedule_scope=SCHEDULE_SCOPE_AUTO,
+            force_reschedule=force_reschedule,
+        )
 
 
 def enqueue_manual_daily_prediction_task(
