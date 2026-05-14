@@ -71,6 +71,7 @@
 	<body id="app">
 	<div class="box news-box">
 		<div class="riqi">
+			<div id="legacy-date-info"></div>
 			<script language="JavaScript">
 				function CalConv() {
 					FIRSTYEAR = 1998;
@@ -126,9 +127,13 @@
 						this.length = initArray.arguments.length
 						for (var i = 0; i < this.length; i++) this[i + 1] = initArray.arguments[i]}
 					var d = new initArray("<span color=#FF0000><b>星期日.</b></span>", "<span color=#FF0000><b>星期一.</b></span>", "<span color=#FF0000><b>星期二.</b></span>", "<span color=#FF0000><b>星期三.</b></span>", "<span color=#FF0000><b>星期四.</b></span>", "<span color=#FF0000><b>星期五.</b></span>", "<span color=#FF0000F><b>星期六.</b></span>");
-					document.write("<span color=#3333CC><b>今:</b></span><span color=#FF0000><b>", today.getMonth() + 1, "</b></span><span color=#3333CC><b>月</b></span><span color=#FF0000><b>", today.getDate(), "</b></span><span color=#3333CC><b>日.</b></span>", d[today.getDay() + 1], "");
-					document.write("<span color=#3333CC><span class=d><b>农历:</b></span><span color=#FF0000><b>" + LunarMonth + "</b><span color=#3333CC><b>月</b></span><b>" + LunarDate + "</b><span color=#3333CC><b>日.</b></span></span>");
-					document.write("<span class=d><span color=#3333CC><b>煞</b></span><b><span color=#FF0000>" + Location + " </span></b><span color=#3333CC><b>正冲生肖:</b></span><b><span color=#FF0000>" + Animal + "</span></b></span><br>");
+					var dateInfoHtml = "<span color=#3333CC><b>今:</b></span><span color=#FF0000><b>" + (today.getMonth() + 1) + "</b></span><span color=#3333CC><b>月</b></span><span color=#FF0000><b>" + today.getDate() + "</b></span><span color=#3333CC><b>日.</b></span>" + d[today.getDay() + 1] + "";
+					dateInfoHtml += "<span color=#3333CC><span class=d><b>农历:</b></span><span color=#FF0000><b>" + LunarMonth + "</b><span color=#3333CC><b>月</b></span><b>" + LunarDate + "</b><span color=#3333CC><b>日.</b></span></span>";
+					dateInfoHtml += "<span class=d><span color=#3333CC><b>煞</b></span><b><span color=#FF0000>" + Location + " </span></b><span color=#3333CC><b>正冲生肖:</b></span><b><span color=#FF0000>" + Animal + "</span></b></span><br>";
+					var dateInfoEl = document.getElementById("legacy-date-info");
+					if (dateInfoEl) {
+						dateInfoEl.innerHTML = dateInfoHtml;
+					}
 					return 0}
 				function GetLeap(year) {
 					if (year % 400 == 0) return 1;
@@ -154,9 +159,7 @@
 				if(seconds<=9)
 					seconds="0"+seconds
 				myclock="<span><b>"+hours+":"+minutes+":"+seconds+"  </b></span>"
-				if(document.layers){document.layers.liveclock.document.write(myclock)
-					document.layers.liveclock.document.close()
-				}else if(document.all)
+				if(document.all)
 					liveclock.innerHTML=myclock
 				setTimeout("www_helpor_net()",1000)}
 			www_helpor_net();
@@ -173,7 +176,7 @@
 
 
 	<div id="fhdb"></div>
-		<div class='box pad' id='yxym'>
+		<div class='box pad' id='legacy-hero-banner'>
 			<img src='static/picture/header.jpg' width='100%'>
 		</div>
 		<div id='nav2' class='nav2'>
@@ -454,7 +457,7 @@
 		<!--双波中特---->
 		<div id="sbztBox"></div>
 		<script type='text/javascript' src='static/js/012sbzt.js'></script>
-		<div class='box pad' id='yxym'>
+		<div class='box pad' id='legacy-result-anchor'>
 			<table border='0' width='100%' cellspacing='0' cellpadding='0' bgcolor='#ffffff'>
 				<tr>
 					<td>
@@ -712,15 +715,20 @@
 		</div>
 		<script type='text/javascript' src='static/js/018shu3x.js'></script>
 		<!--图库---->
-		<div class='box pad' id='yxym'>
+		<div class='box pad' id='legacy-attribute-anchor'>
 			<div class='list-title'>属性知识</div>
+			<div id="legacy-attribute-gallery"></div>
 			<script>
 				let img1 = httpApi +'/uploads/image/20250322/1742580086567063.png';
 				let img2 = httpApi +'/uploads/image/20250322/1742580119746508.jpg';
 				let img3 = httpApi +'/uploads/image/20250322/1742580130762983.jpg';
-				document.write(`<img src="${img1}" width="100%"/>`)
-				document.write(`<img src="${img2}" width="100%"/>`)
-				document.write(`<img src="${img3}" width="100%"/>`)
+				var galleryHtml = `<img src="${img1}" width="100%"/>` +
+					`<img src="${img2}" width="100%"/>` +
+					`<img src="${img3}" width="100%"/>`;
+				var galleryEl = document.getElementById("legacy-attribute-gallery");
+				if (galleryEl) {
+					galleryEl.innerHTML = galleryHtml;
+				}
 			</script>
 		</div>
 		<div class='box pad'>

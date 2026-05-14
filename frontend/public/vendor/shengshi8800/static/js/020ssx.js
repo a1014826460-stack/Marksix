@@ -22,16 +22,13 @@ $.ajax({
                 let ma = [];
 
                 let c1 = [];
-                let zj = true;
                 for (let i = 0; i < xiao.length; i++) {
                     if (sx && xiao[i].indexOf(sx) === -1) {
                         c1.push(`<span>${xiao[i]}</span>`);
                     }else {
-                        zj = false;
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                if (sx && !zj) continue;
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 		

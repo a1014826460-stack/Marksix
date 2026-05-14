@@ -1,6 +1,6 @@
 # 六合彩彩票数据管理系统 - 部署指南
 
-> 适用于 **Ubuntu 24.04 LTS**。本文以当前重构后的仓库实际结构为准。
+> 适用于 **Ubuntu 20.04 / 22.04 / 24.04 LTS**。本文以当前仓库实际结构为准，默认按“普通部署用户 + sudo”方式编写。
 
 ## 概览
 
@@ -21,10 +21,34 @@
 
 ## 前置要求
 
-- Ubuntu 24.04 LTS
+- Ubuntu 20.04 / 22.04 / 24.04 LTS
 - 至少 4 GB 内存，推荐 8 GB
 - 至少 20 GB 可用磁盘
 - 能访问外网，用于拉取 Docker 镜像和依赖
+- 一个可使用 `sudo` 的普通用户
+
+建议先完成系统基础准备：
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y ca-certificates curl git nano dnsutils ufw
+sudo timedatectl set-timezone Asia/Hong_Kong
+```
+
+说明：
+
+- `git` 用于拉取仓库
+- `curl` 用于检查服务和安装 Docker
+- `dnsutils` 提供 `dig` / `nslookup`
+- `ufw` 用于可选的主机防火墙配置
+
+建议把项目统一部署到固定目录，例如 `/opt/Liuhecai`：
+
+```bash
+sudo install -d -m 755 /opt/Liuhecai
+sudo chown "$USER":"$USER" /opt/Liuhecai
+```
 
 安装 Docker 与 Compose：
 
@@ -36,10 +60,17 @@ sudo apt update
 sudo apt install -y docker-compose-plugin
 
 sudo usermod -aG docker $USER
-newgrp docker
+echo "请重新登录当前 shell，或重新 SSH 登录一次，让 docker 用户组生效"
 
 docker --version
 docker compose version
+docker info
+```
+
+如果 `docker info` 失败，再执行：
+
+```bash
+sudo systemctl enable --now docker
 docker info
 ```
 
@@ -48,14 +79,13 @@ docker info
 ### 1. 获取项目
 
 ```bash
-git clone https://github.com/a1014826460-stack/Marksix.git
-cd Marksix
+git clone https://github.com/a1014826460-stack/Marksix.git /opt/Liuhecai
+cd /opt/Liuhecai
 ```
 
 ### 2. 配置环境变量
 
 ```bash
-apt update && apt install nano -y
 cp .env.example .env
 nano .env
 ```
@@ -72,6 +102,8 @@ LOTTERY_SITE_ID=1
 - `POSTGRES_PASSWORD` 必改
 - `LOTTERY_SITE_ID` 决定前台默认站点
 - 根目录 `.env` 主要给 `docker compose` 使用
+- `.env.example` 中的 `DATABASE_URL` 仅作为参考；`docker-compose.yml` 会在容器内部注入正式值
+- 首次部署前，确认 `.env` 中不再保留 `change_me_in_production`
 
 ### 3. 执行一键部署
 
@@ -104,6 +136,16 @@ chmod +x deploy/deploy.sh
 ```bash
 chmod +x deploy/verify.sh
 ./deploy/verify.sh
+```
+
+如果你想人工再确认一次，至少检查：
+
+```bash
+docker compose ps
+curl http://localhost/health
+curl http://localhost/api/latest-draw
+docker compose logs --tail 100 nginx
+docker compose logs --tail 100 python-api
 ```
 
 ## 手动部署
@@ -150,6 +192,8 @@ docker compose exec python-api python /app/src/tools/import_fixed_data.py \
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
+说明：首次部署建议执行；如果库里已存在 `fixed_data` 表，可跳过。
+
 规范化 `mode_payload_*` 表：
 
 ```bash
@@ -157,12 +201,16 @@ docker compose exec python-api python /app/src/utils/normalize_payload_tables.py
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
+说明：可重复执行，主要用于补齐和规范化相关表结构。
+
 生成文本历史映射：
 
 ```bash
 docker compose exec python-api python /app/src/utils/build_text_history_mappings.py \
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
+
+说明：可重复执行；如果你导入了新的基础数据，建议重跑一次。
 
 ## 服务入口说明
 
@@ -249,17 +297,37 @@ pg_dump -h localhost -U postgres -d liuhecai -F c -f liuhecai_backup.dump
 上传到服务器：
 
 ```bash
-scp liuhecai_backup.dump root@你的服务器IP:/opt/Liuhecai/
+scp liuhecai_backup.dump deploy@你的服务器IP:/opt/Liuhecai/
 ```
 
 服务器导入：
 
 ```bash
-ssh root@你的服务器IP
+ssh deploy@你的服务器IP
 cd /opt/Liuhecai
 docker compose cp liuhecai_backup.dump postgres:/tmp/restore.dump
 docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
 ```
+
+说明：
+
+- 推荐使用普通部署用户，不要默认使用 `root`
+- `pg_restore --clean --if-exists` 会覆盖已有对象，导入前请先备份
+
+## 仅用 IP 访问
+
+如果你暂时没有域名，可以直接使用默认 `deploy/nginx.conf` 通过服务器 IP 访问：
+
+- 前台：`http://服务器IP/`
+- 后台：`http://服务器IP/fackyou/login`
+- 健康检查：`http://服务器IP/health`
+
+限制说明：
+
+- 默认仅启用 HTTP；虽然 `docker-compose.yml` 暴露了 `443`，但默认 `deploy/nginx.conf` 不监听 `443`
+- 没有域名时，通常无法申请公开可信的 Let's Encrypt 证书
+- 如果强行给 IP 配自签 HTTPS，浏览器会提示证书不受信任，不适合正式公网访问
+- 当前文档覆盖的是普通 HTTP/HTTPS 反向代理；如果后续接入 WebSocket，需要额外补充 `Upgrade` / `Connection` 头配置
 
 ## 域名绑定与 HTTPS
 
@@ -293,7 +361,36 @@ nslookup www.example.com
 
 ### 2. 准备证书
 
-把证书文件放到：
+推荐使用 Let's Encrypt + Certbot 获取证书。
+
+首次申请证书前，先确保：
+
+- 域名已经正确解析到当前服务器
+- 云安全组和主机防火墙已放行 `80/tcp`
+- 80 端口没有被别的进程长期占用
+
+安装 Certbot：
+
+```bash
+sudo apt update
+sudo apt install -y certbot
+```
+
+如果当前 Nginx 容器已占用 80 端口，可临时停掉它后再申请：
+
+```bash
+cd /opt/Liuhecai
+docker compose stop nginx
+sudo certbot certonly --standalone \
+  -d example.com \
+  -d www.example.com \
+  --agree-tos \
+  -m you@example.com \
+  --non-interactive
+docker compose start nginx
+```
+
+申请成功后，把证书文件放到：
 
 ```text
 deploy/ssl/fullchain.pem
@@ -305,8 +402,9 @@ deploy/ssl/privkey.pem
 例如：
 
 ```bash
-cp /etc/letsencrypt/live/example.com/fullchain.pem deploy/ssl/fullchain.pem
-cp /etc/letsencrypt/live/example.com/privkey.pem deploy/ssl/privkey.pem
+sudo cp /etc/letsencrypt/live/example.com/fullchain.pem deploy/ssl/fullchain.pem
+sudo cp /etc/letsencrypt/live/example.com/privkey.pem deploy/ssl/privkey.pem
+sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
 ```
 
 ### 3. 使用 HTTPS Nginx 配置
@@ -342,11 +440,11 @@ cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf
 
 替换成你的真实域名。
 
-### 4. 重启 Nginx
+### 4. 先检查配置，再加载 Nginx
 
 ```bash
-docker compose restart nginx
 docker compose exec nginx nginx -t
+docker compose restart nginx
 ```
 
 ### 5. 验证 HTTPS
@@ -358,7 +456,33 @@ curl -I https://www.example.com
 curl -k https://www.example.com/health
 ```
 
-### 6. 推荐切换顺序
+预期结果：
+
+- `http://example.com` 返回 `301/308` 跳转到 HTTPS
+- `https://example.com` 跳转到主域名 `https://www.example.com`
+- `https://www.example.com/health` 返回 `200`
+
+### 6. 配置证书续期
+
+Let's Encrypt 证书默认有效期较短，建议配置自动续期：
+
+```bash
+sudo crontab -e
+```
+
+加入：
+
+```cron
+15 3 * * * certbot renew --quiet --deploy-hook 'cd /opt/Liuhecai && docker compose restart nginx'
+```
+
+也可以先手动演练一次：
+
+```bash
+sudo certbot renew --dry-run
+```
+
+### 7. 推荐切换顺序
 
 推荐按这个顺序做，最稳：
 
@@ -383,6 +507,11 @@ git pull
 docker compose build
 docker compose up -d
 ```
+
+注意：
+
+- `docker compose down -v` 会删除 Compose 卷，通常意味着会清空 PostgreSQL 数据卷
+- `git pull` 后如果镜像内容变了，记得执行 `docker compose build && docker compose up -d`
 
 进入容器：
 
@@ -410,8 +539,12 @@ curl -k https://localhost/health
 
 ## 防火墙
 
+如果服务器前面还有云厂商安全组，请先同时放行 `22`、`80`、`443`，再启用 UFW。
+
+如果 SSH 不是默认 22 端口，请把下面的 `22/tcp` 替换成真实端口；更稳妥的写法是直接放行 `OpenSSH`：
+
 ```bash
-sudo ufw allow 22/tcp
+sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
@@ -463,6 +596,8 @@ docker compose build --no-cache
 docker system prune -a
 ```
 
+注意：`docker system prune -a` 会删除未使用镜像和缓存，请先确认机器上没有其他依赖这些镜像的项目。
+
 ### 磁盘空间不足
 
 ```bash
@@ -470,6 +605,8 @@ df -h
 docker system prune -a --volumes
 sudo journalctl --vacuum-size=200M
 ```
+
+注意：`docker system prune -a --volumes` 可能删除未使用卷，执行前务必确认备份。
 
 ## 目录结构
 

@@ -12,7 +12,6 @@ $.ajax({
         let data = response.data
 
         if(data.length>0){
-            data = data.slice(0, 8);
             for(let i in data){
                 let result = '00'
                 let d = data[i];

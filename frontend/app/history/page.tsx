@@ -18,6 +18,8 @@ const LOTTERY_OPTIONS = [
 
 const DEFAULT_PAGE_SIZE = 20
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 50]
+const ROOT_GAME_STORAGE_KEY = "legacy-root-active-game"
+const ROOT_TYPE_STORAGE_KEY = "legacy-root-active-type"
 
 const DEFAULT_VISIBLE_OPTIONS = {
   number: true,
@@ -60,6 +62,15 @@ function normalizePositiveInteger(value: string | null, fallback: number) {
 function normalizePageSize(value: string | null) {
   const parsed = normalizePositiveInteger(value, DEFAULT_PAGE_SIZE)
   return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE
+}
+
+function persistRootLotteryType(lotteryType: number) {
+  if (typeof window === "undefined") return
+  const game = lotteryType === 2 ? "macau" : lotteryType === 1 ? "hongkong" : "taiwan"
+  try {
+    window.localStorage.setItem(ROOT_TYPE_STORAGE_KEY, String(lotteryType))
+    window.localStorage.setItem(ROOT_GAME_STORAGE_KEY, game)
+  } catch (_) {}
 }
 
 function renderBall(ball: DrawHistoryBall | undefined, key: string, visible: VisibleOptions) {
@@ -165,7 +176,7 @@ function HistoryPageContent() {
         <div className="main">
           <div className="head">
             <span style={{ position: "absolute", left: 12 }}>
-              <a href={`/?t=${lotteryType}`} style={{ color: "white" }}>
+              <a href="/" style={{ color: "white" }} onClick={() => persistRootLotteryType(lotteryType)}>
                 返回上级
               </a>
             </span>
@@ -175,7 +186,7 @@ function HistoryPageContent() {
             <div className="menu fixed-top history-fixed-menu">
               <div className="inner main">
                 <span style={{ position: "absolute", top: 12, left: 12 }}>
-                  <a href={`/?t=${lotteryType}`} style={{ color: "#fff" }}>
+                  <a href="/" style={{ color: "#fff" }} onClick={() => persistRootLotteryType(lotteryType)}>
                     返回上级
                   </a>
                 </span>

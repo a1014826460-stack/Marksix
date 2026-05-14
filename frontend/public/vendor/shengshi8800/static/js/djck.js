@@ -56,8 +56,8 @@
     return cell
   }
 
-  row.appendChild(buildCell("djck1", "/?t=3", "台湾论坛", "forum-short", "一码中特"))
-  row.appendChild(buildCell("djck2", "/?t=3", "台湾资料网", "data-site", "三期必开"))
+  row.appendChild(buildCell("djck1", "/", "台湾论坛", "forum-short", "一码中特"))
+  row.appendChild(buildCell("djck2", "/", "台湾资料网", "data-site", "三期必开"))
   table.appendChild(row)
 
   var parent = currentScript.parentNode

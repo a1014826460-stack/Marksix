@@ -30,18 +30,14 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
                 let c1 = [];
-                let b = true;
                 for (let i = 0; i < xiao.length; i++) {
                     let xp = xiao[i].split('');
                     if (code && xiaoV[i].indexOf(code) === -1) {
                         c1.push(`<span style="background-color: #FFFF00">${xp[0]}波${xp[1]}</span>`);
                     }else {
-                        b = false;
                         c1.push(`<span >${xp[0]}波${xp[1]}</span>`)
                     }
                 }
-                if (code && !b) continue;
-
 
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 

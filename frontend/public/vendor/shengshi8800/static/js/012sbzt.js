@@ -12,8 +12,6 @@ $.ajax({
         
         if(data.length>0){
             
-            data = data.slice(0, 6);
-            
             for(let i in data){
                 let d = data[i]
                 let codeSplit = d.res_code.split(',');

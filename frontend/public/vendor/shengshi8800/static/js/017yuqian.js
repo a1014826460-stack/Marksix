@@ -8,7 +8,7 @@ $.ajax({
 
         let htmlBox = '',htmlBoxList = '',term=''
 
-        let data = response.data.slice(0,10)
+        let data = response.data
 
         if(data.length>0){
             for(let i in data){

@@ -19,18 +19,7 @@ const nextConfig = {
       beforeFiles: [
         {
           source: '/',
-          has: [
-            {
-              type: 'query',
-              key: 't',
-              value: '(?<legacyType>1|2|3)',
-            },
-          ],
-          destination: '/vendor/shengshi8800/embed.html?type=:legacyType&web=4',
-        },
-        {
-          source: '/',
-          destination: '/vendor/shengshi8800/embed.html?type=3&web=4',
+          destination: '/vendor/shengshi8800/embed.html',
         },
       ],
     }

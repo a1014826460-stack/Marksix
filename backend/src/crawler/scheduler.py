@@ -6,6 +6,7 @@ saving all results to the lottery_draws table.
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -67,6 +68,14 @@ _LT_NAME_MAP: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) -> None:
     """Run the heavy daily prediction work in a separate Python process."""
     script_path = Path(__file__).resolve().parent / "daily_prediction_worker.py"
+    src_root = script_path.parents[1]
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        str(src_root)
+        if not existing_pythonpath
+        else os.pathsep.join([str(src_root), existing_pythonpath])
+    )
     command = [
         sys.executable,
         str(script_path),
@@ -78,6 +87,8 @@ def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) 
     _crawler_logger.info("Daily prediction subprocess starting: %s", command)
     completed = subprocess.run(
         command,
+        cwd=str(src_root),
+        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -1675,6 +1686,8 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int, *, trigger: 
                             "end_issue": issue_str,
                             "future_periods": 1,
                             "future_only": True,
+                            "trigger": "daily_prediction",
+                            "allow_overwrite": False,
                         },
                     )
                     total_inserted += gen.get("inserted", 0)
@@ -1756,8 +1769,11 @@ def _ensure_recent_periods_have_predictions(
         lottery_type_id, start_year, start_term, current_year, current_term, recent_count,
     )
 
-    # 获取范围内所有已开奖记录
+    # 获取范围内所有已开奖记录、站点和模块配置
     opened_map: dict[tuple[int, int], dict[str, Any]] = {}
+    enabled_sites: list[int] = []
+    site_web_ids: dict[int, int] = {}
+    site_modules: dict[int, list[dict[str, Any]]] = {}
     try:
         with db_connect(db_path) as conn:
             rows = conn.execute(
@@ -1771,6 +1787,48 @@ def _ensure_recent_periods_have_predictions(
                 y, t = int(row["year"] or 0), int(row["term"] or 0)
                 if (start_year, start_term) <= (y, t) <= (current_year, current_term):
                     opened_map[(y, t)] = dict(row)
+
+            enabled_site_rows = conn.execute(
+                """
+                SELECT id, web_id
+                FROM managed_sites
+                WHERE enabled = 1
+                """
+            ).fetchall()
+            enabled_sites = []
+            for site_row in enabled_site_rows:
+                site_id = int(site_row["id"] or 0)
+                web_id = int(site_row["web_id"] or 0)
+                if site_id <= 0 or web_id <= 0:
+                    continue
+                enabled_sites.append(site_id)
+                site_web_ids[site_id] = web_id
+
+            for site_id in enabled_sites:
+                module_rows = conn.execute(
+                    """
+                    SELECT mechanism_key, mode_id
+                    FROM site_prediction_modules
+                    WHERE site_id = ? AND status = 1
+                    ORDER BY sort_order, id
+                    """,
+                    (site_id,),
+                ).fetchall()
+                normalized_modules: list[dict[str, Any]] = []
+                for row in module_rows:
+                    try:
+                        mechanism_key = str(row["mechanism_key"] or "").strip()
+                        mode_id = int(row["mode_id"] or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if not mechanism_key or mode_id <= 0:
+                        continue
+                    normalized_modules.append({
+                        "mechanism_key": mechanism_key,
+                        "mode_id": mode_id,
+                        "table_name": f"mode_payload_{mode_id}",
+                    })
+                site_modules[site_id] = normalized_modules
     except Exception:
         pass
 
@@ -1788,50 +1846,100 @@ def _ensure_recent_periods_have_predictions(
             "action": "skipped", "detail": "",
         }
 
-        report["missing"] += 1
+        missing_modules_by_site: dict[int, list[str]] = {}
+        try:
+            from utils.created_prediction_store import created_prediction_issue_exists
+
+            with db_connect(db_path) as conn:
+                for site_id in enabled_sites:
+                    modules = site_modules.get(site_id) or []
+                    web_id = site_web_ids.get(site_id)
+                    if web_id is None or not modules:
+                        continue
+                    for module in modules:
+                        if not created_prediction_issue_exists(
+                            conn,
+                            module["table_name"],
+                            lottery_type_id,
+                            yr,
+                            tm,
+                            web_id,
+                        ):
+                            missing_modules_by_site.setdefault(site_id, []).append(
+                                module["mechanism_key"]
+                            )
+        except Exception as exc:
+            report["errors"] += 1
+            period_info["action"] = "error"
+            period_info["detail"] = f"检查是否缺失预测失败: {exc}"
+            _log_backfill_event(db_path, lottery_type_id, period_str, "error", str(exc))
+            report["periods"].append(period_info)
+            tm += 1
+            if tm > max_terms:
+                tm = 1
+                yr += 1
+            continue
+
+        if not missing_modules_by_site:
+            period_info["action"] = "skipped_existing"
+            period_info["detail"] = "所有启用站点模块均已有预测资料，跳过自动补生成"
+            _log_backfill_event(db_path, lottery_type_id, period_str, "skipped_existing", period_info["detail"])
+            report["periods"].append(period_info)
+            tm += 1
+            if tm > max_terms:
+                tm = 1
+                yr += 1
+            continue
+
+        missing_count = sum(len(keys) for keys in missing_modules_by_site.values())
+        report["missing"] += missing_count
+        missing_sites = sorted(missing_modules_by_site.keys())
         draw = opened_map.get((yr, tm))
         if draw:
             # 历史已开奖期 → 使用真实 res_code 生成
-            period_info["detail"] = f"缺失，使用已开奖数据生成 (numbers={draw['numbers']})"
+            period_info["detail"] = (
+                f"存在缺失模块={missing_modules_by_site}，使用已开奖数据生成 (numbers={draw['numbers']})"
+            )
             _crawler_logger.info(
-                "Recent-period gap: lt=%s period=%s — generating with opened draw",
-                lottery_type_id, period_str,
+                "Recent-period gap: lt=%s period=%s missing_modules=%s — generating with opened draw",
+                lottery_type_id, period_str, missing_modules_by_site,
             )
             _log_backfill_event(db_path, lottery_type_id, period_str,
-                                "generating", f"numbers={draw['numbers']}")
+                                "generating", f"missing_modules={missing_modules_by_site} numbers={draw['numbers']}")
         else:
             # 未开奖或未来期 → 不注入 res_code
-            period_info["detail"] = "缺失，无已开奖数据，按未来期生成"
+            period_info["detail"] = f"存在缺失模块={missing_modules_by_site}，无已开奖数据，按未来期生成"
             _crawler_logger.info(
-                "Recent-period gap: lt=%s period=%s — generating without res_code",
-                lottery_type_id, period_str,
+                "Recent-period gap: lt=%s period=%s missing_modules=%s — generating without res_code",
+                lottery_type_id, period_str, missing_modules_by_site,
             )
             _log_backfill_event(db_path, lottery_type_id, period_str,
-                                "generating", "future period, no res_code")
+                                "generating", f"missing_modules={missing_modules_by_site} future period, no res_code")
 
         # 调用批量生成
         try:
             from admin.prediction import bulk_generate_site_prediction_data as _bulk_gen
-            with db_connect(db_path) as conn:
-                sites = conn.execute(
-                    "SELECT id FROM managed_sites WHERE enabled = 1"
-                ).fetchall()
-            for site in sites:
+            last_gen: dict[str, Any] = {}
+            for site_id, mechanism_keys in sorted(missing_modules_by_site.items()):
                 gen = _bulk_gen(
-                    db_path, int(site["id"]),
+                    db_path, int(site_id),
                     {
                         "lottery_type": lottery_type_id,
                         "start_issue": period_str,
                         "end_issue": period_str,
+                        "mechanism_keys": mechanism_keys,
                         "future_periods": 0,
                         "future_only": False,
+                        "trigger": "daily_prediction_recent_backfill",
+                        "allow_overwrite": False,
                     },
                 )
-                report["generated"] += gen.get("inserted", 0) + gen.get("updated", 0)
+                last_gen = gen
+                report["generated"] += gen.get("inserted", 0)
                 report["errors"] += gen.get("errors", 0)
             period_info["action"] = "generated"
             _log_backfill_event(db_path, lottery_type_id, period_str,
-                                "generated", f"inserted={gen.get('inserted',0)} updated={gen.get('updated',0)}")
+                                "generated", f"sites={missing_sites} inserted={last_gen.get('inserted',0)} skipped={last_gen.get('skipped_existing',0)}")
         except Exception as exc:
             report["errors"] += 1
             period_info["action"] = "error"
@@ -1857,41 +1965,43 @@ def _ensure_recent_periods_have_predictions(
 def _future_issue_has_predictions(
     db_path: str | Path, lottery_type_id: int, next_year: int, next_term: int
 ) -> bool:
+    # Only skip when the target issue is complete across all enabled modules.
+    # Automatic generation uses allow_overwrite=False, so partial future issues
+    # should be retried to fill gaps rather than skipped forever.
     """检查未来期号是否已在 created schema 中存在非空预测数据。
 
-    遍历所有 enabled 站点的第一个模块对应的 mode_payload 表，
-    若任何表存在该 year+term+type 且 content 非空的记录，返回 True。
+    遍历所有 enabled 站点的所有启用模块，只要任一 created 预测正文已存在，
+    自动未来期生成就应跳过，避免部分模块被重生成覆盖。
     """
-    from utils.created_prediction_store import (
-        CREATED_SCHEMA_NAME, quote_qualified_identifier, schema_table_exists,
-    )
+    from utils.created_prediction_store import created_prediction_issue_exists
     try:
         with db_connect(db_path) as conn:
-            module_row = conn.execute(
+            module_rows = conn.execute(
                 """
-                SELECT spm.mode_id
+                SELECT ms.web_id, spm.mode_id
                 FROM site_prediction_modules spm
                 JOIN managed_sites ms ON ms.id = spm.site_id
                 WHERE ms.enabled = 1 AND spm.status = 1
-                LIMIT 1
                 """
-            ).fetchone()
-            if not module_row:
+            ).fetchall()
+            if not module_rows:
                 return False
-            mode_id = int(module_row["mode_id"] or 0)
-            if mode_id <= 0:
-                return False
-            table_name = f"mode_payload_{mode_id}"
-            if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
-                return False
-            qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
-            row = conn.execute(
-                f"SELECT 1 FROM {qualified} "
-                "WHERE type = ? AND year = ? AND term = ? "
-                "AND content IS NOT NULL AND content != '' LIMIT 1",
-                (str(lottery_type_id), str(next_year), str(next_term)),
-            ).fetchone()
-            return row is not None
+            for module_row in module_rows:
+                mode_id = int(module_row["mode_id"] or 0)
+                web_id = int(module_row["web_id"] or 0)
+                if mode_id <= 0 or web_id <= 0:
+                    continue
+                table_name = f"mode_payload_{mode_id}"
+                if not created_prediction_issue_exists(
+                    conn,
+                    table_name,
+                    lottery_type_id,
+                    next_year,
+                    next_term,
+                    web_id,
+                ):
+                    return False
+            return True
     except Exception:
         return False
 
