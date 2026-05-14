@@ -215,7 +215,7 @@ def load_public_draw_snapshot(
     with connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT year, term, numbers
+            SELECT year, term, numbers, draw_time
             FROM lottery_draws
             WHERE lottery_type_id = ?
               AND is_opened = 1
@@ -312,12 +312,11 @@ def get_public_latest_draw(
     with connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT year, term, numbers
+            SELECT year, term, numbers, draw_time
             FROM lottery_draws
             WHERE lottery_type_id = ?
               AND is_opened = 1
               AND numbers IS NOT NULL AND numbers != ''
-              AND POSITION(',' IN numbers) > 0
             ORDER BY year DESC, term DESC
             LIMIT 1
             """,
@@ -327,6 +326,7 @@ def get_public_latest_draw(
         if not row:
             return {
                 "current_issue": "",
+                "draw_time": "",
                 "result_balls": [],
                 "special_ball": None,
             }
@@ -342,6 +342,7 @@ def get_public_latest_draw(
 
         return {
             "current_issue": f"{latest_draw['year']}{latest_draw['term']}",
+            "draw_time": str(latest_draw.get("draw_time") or ""),
             "result_balls": balls[:-1],
             "special_ball": balls[-1] if balls else None,
         }

@@ -16,10 +16,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationEllipsis,
+} from "@/components/ui/pagination"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { adminApi, jsonBody } from "@/lib/admin-api"
 import { Field } from "@/features/shared/Field"
 import { StatusBadge } from "@/features/shared/StatusBadge"
 import { DrawNumbersInput } from "@/features/draws/DrawNumbersInput"
+import { DrawBallDisplay, DrawBallDisplayProvider, DrawBallDisplayToggles } from "@/features/draws/DrawBallDisplay"
 import type { Draw, LotteryType } from "@/features/shared/types"
 
 const TAIWAN_LOTTERY_ID = 3
@@ -82,21 +99,32 @@ export function DrawsPage() {
   const [draftStatus, setDraftStatus] = useState("1")
   const [draftIsOpened, setDraftIsOpened] = useState("0")
   const [numbersInputKey, setNumbersInputKey] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
   const formRef = useRef<HTMLFormElement | null>(null)
 
   const taiwanLottery =
     lotteries.find((lottery) => lottery.id === TAIWAN_LOTTERY_ID) || null
-  const filteredRows = rows.filter(
-    (row) => row.lottery_type_id === TAIWAN_LOTTERY_ID,
-  )
+  const filteredRows = rows
 
-  async function load() {
+  async function load(currentPage?: number, currentPageSize?: number): Promise<Draw[]> {
+    const p = currentPage ?? page
+    const ps = currentPageSize ?? pageSize
     const [drawData, lotteryData] = await Promise.all([
-      adminApi<{ draws: Draw[] }>("/admin/draws?limit=500"),
+      adminApi<{ draws: Draw[]; total: number; page: number; page_size: number; total_pages: number }>(
+        `/admin/draws?lottery_type_id=${TAIWAN_LOTTERY_ID}&page=${p}&page_size=${ps}`,
+      ),
       adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
     ])
     setRows(drawData.draws)
+    if (typeof drawData.total === "number") setTotal(drawData.total)
+    if (typeof drawData.total_pages === "number") setTotalPages(drawData.total_pages)
+    if (typeof drawData.page === "number") setPage(drawData.page)
+    if (typeof drawData.page_size === "number") setPageSize(drawData.page_size)
     setLotteries(lotteryData.lottery_types)
+    return drawData.draws
   }
 
   function applyTermDraft(term: string) {
@@ -233,12 +261,7 @@ export function DrawsPage() {
       return
     }
 
-    const [drawData, lotteryData] = await Promise.all([
-      adminApi<{ draws: Draw[] }>("/admin/draws?limit=500"),
-      adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
-    ])
-    setRows(drawData.draws)
-    setLotteries(lotteryData.lottery_types)
+    const latestDraws = await load(1)
 
     if (editing) {
       toast.success("保存成功")
@@ -250,13 +273,14 @@ export function DrawsPage() {
     setDraftNumbers("")
     setNumbersInputKey((value) => value + 1)
     toast.success("保存成功，可直接录入下一期开奖号码")
-    populateCreateDrafts(drawData.draws)
+    if (latestDraws) populateCreateDrafts(latestDraws)
   }
 
   async function remove(id: number) {
     if (!confirm("确认删除该开奖记录吗？")) return
     await adminApi(`/admin/draws/${id}`, { method: "DELETE" })
-    await load()
+    const targetPage = rows.length <= 1 && page > 1 ? page - 1 : page
+    await load(targetPage)
   }
 
   return (
@@ -395,30 +419,36 @@ export function DrawsPage() {
           </Card>
         </div>
 
-        <Card className="overflow-auto p-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>彩种</TableHead>
-                <TableHead>年份</TableHead>
-                <TableHead>期数</TableHead>
-                <TableHead>开奖号码</TableHead>
-                <TableHead>开奖时间</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>是否开奖</TableHead>
-                <TableHead>下一期期数</TableHead>
-                <TableHead>操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>{row.id}</TableCell>
-                  <TableCell>{row.lottery_name}</TableCell>
-                  <TableCell>{row.year}</TableCell>
-                  <TableCell>{row.term}</TableCell>
-                  <TableCell>{row.numbers}</TableCell>
+        <DrawBallDisplayProvider>
+          <Card className="overflow-auto p-4">
+            <div className="mb-3">
+              <DrawBallDisplayToggles />
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>彩种</TableHead>
+                  <TableHead>年份</TableHead>
+                  <TableHead>期数</TableHead>
+                  <TableHead>开奖号码</TableHead>
+                  <TableHead>开奖时间</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>是否开奖</TableHead>
+                  <TableHead>下一期期数</TableHead>
+                  <TableHead>操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>{row.id}</TableCell>
+                    <TableCell>{row.lottery_name}</TableCell>
+                    <TableCell>{row.year}</TableCell>
+                    <TableCell>{row.term}</TableCell>
+                    <TableCell>
+                      <DrawBallDisplay numbers={row.numbers} />
+                    </TableCell>
                   <TableCell>{row.draw_time}</TableCell>
                   <TableCell>
                     <StatusBadge value={row.status} />
@@ -448,7 +478,98 @@ export function DrawsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>共 {total} 条</span>
+              <span>|</span>
+              <span>第 {page} / {totalPages} 页</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  const newSize = Number(value)
+                  setPageSize(newSize)
+                  load(1, newSize)
+                }}
+              >
+                <SelectTrigger className="h-8 w-[80px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 20, 30, 50].map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size} 条/页
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Pagination className="w-auto mx-0">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (page > 1) load(page - 1)
+                    }}
+                    className={page <= 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    if (totalPages <= 7) return true
+                    if (p === 1 || p === totalPages) return true
+                    if (Math.abs(p - page) <= 1) return true
+                    return false
+                  })
+                  .reduce<(number | "ellipsis")[]>((acc, p, idx, arr) => {
+                    if (idx > 0) {
+                      const prev = arr[idx - 1]
+                      if (p - prev > 1) acc.push("ellipsis")
+                    }
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((item, idx) =>
+                    item === "ellipsis" ? (
+                      <PaginationItem key={`e-${idx}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={item}>
+                        <PaginationLink
+                          href="#"
+                          isActive={item === page}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            if (item !== page) load(item)
+                          }}
+                        >
+                          {item}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ),
+                  )}
+
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (page < totalPages) load(page + 1)
+                    }}
+                    className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
         </Card>
+        </DrawBallDisplayProvider>
       </div>
     </AdminShell>
   )

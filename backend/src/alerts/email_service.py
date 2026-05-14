@@ -38,6 +38,14 @@ def _load_smtp_config(db_path: str | Path) -> dict[str, Any]:
 
 
 def get_recipients(db_path: str | Path) -> list[str]:
+    admin_email_raw = _cfg(db_path, "admin_email", "")
+    admin_email = (
+        str(admin_email_raw).strip()
+        if isinstance(admin_email_raw, str)
+        else ""
+    )
+    if admin_email and "@" in admin_email:
+        return [admin_email]
     raw = _cfg(db_path, "alert.email_recipients", ["1014826460@qq.com"])
     if isinstance(raw, list):
         return [str(r).strip() for r in raw if str(r).strip()]

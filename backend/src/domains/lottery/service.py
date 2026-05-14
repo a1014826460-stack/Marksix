@@ -36,10 +36,10 @@ def get_latest_draw(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]
         return find_latest_draw(conn, lottery_type_id)
 
 
-def list_draws(db_path: str | Path, limit: int = 200) -> list[dict[str, Any]]:
-    """获取开奖记录列表。"""
+def list_draws(db_path: str | Path, limit: int = 200, offset: int = 0, lottery_type_id: int | None = None) -> dict[str, Any]:
+    """获取开奖记录列表（分页）。"""
     from admin.crud import list_draws as _impl
-    return _impl(db_path, limit)
+    return _impl(db_path, limit=limit, offset=offset, lottery_type_id=lottery_type_id)
 
 
 def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None = None) -> dict[str, Any]:

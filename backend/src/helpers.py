@@ -53,6 +53,209 @@ def next_draw_time_from_current_draw(draw_time: str) -> str:
     return (draw_dt + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _get_max_terms_per_year(conn: Any) -> int:
+    try:
+        from runtime_config import get_config_from_conn
+        return int(get_config_from_conn(conn, "prediction.max_terms_per_year", 365))
+    except Exception:
+        return 365
+
+
+def _compute_next_issue_parts(
+    year: int,
+    term: int,
+    *,
+    max_terms_per_year: int,
+) -> tuple[int, int]:
+    next_term = term + 1
+    next_year = year
+    if next_term > max_terms_per_year:
+        next_term = 1
+        next_year += 1
+    return next_year, next_term
+
+
+def _format_issue(year: int, term: int) -> str:
+    return f"{int(year)}{int(term):03d}"
+
+
+def _taiwan_gap_alert_key(year: int, term: int) -> str:
+    return f"alert._taiwan_missing_issue_{int(year)}_{int(term):03d}"
+
+
+def _send_taiwan_issue_gap_alert(
+    conn: Any,
+    *,
+    missing_year: int,
+    missing_term: int,
+    current_year: int,
+    current_term: int,
+    observed_future_year: int,
+    observed_future_term: int,
+) -> None:
+    try:
+        from alerts.email_service import send_alert_async
+        from runtime_config import upsert_system_config
+    except Exception:
+        return
+
+    alert_key = _taiwan_gap_alert_key(missing_year, missing_term)
+    if conn.table_exists("system_config"):
+        existing = conn.execute(
+            "SELECT value_text FROM system_config WHERE key = ? LIMIT 1",
+            (alert_key,),
+        ).fetchone()
+        if existing and str(dict(existing).get("value_text") or "").strip() == "1":
+            return
+
+    missing_issue = _format_issue(missing_year, missing_term)
+    current_issue = _format_issue(current_year, current_term)
+    observed_future_issue = _format_issue(observed_future_year, observed_future_term)
+    logging.getLogger("taiwan.issue_gap").warning(
+        "Taiwan issue gap detected: current_issue=%s missing_issue=%s observed_future_issue=%s",
+        current_issue,
+        missing_issue,
+        observed_future_issue,
+    )
+
+    send_alert_async(
+        conn.target,
+        subject=f"[六合彩告警] 台湾彩缺失期号 {missing_issue}",
+        body_html=f"""
+        <h2>台湾彩缺失期号告警</h2>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            <tr><td><b>当前已开奖期号</b></td><td>{current_issue}</td></tr>
+            <tr><td><b>缺失期号</b></td><td style="color:red"><b>{missing_issue}</b></td></tr>
+            <tr><td><b>已发现更晚期号</b></td><td>{observed_future_issue}</td></tr>
+            <tr><td><b>年份</b></td><td>{missing_year}</td></tr>
+            <tr><td><b>缺失期数</b></td><td>{missing_term:03d}</td></tr>
+        </table>
+        <p>系统检测到台湾彩期号发生跳跃，请尽快检查缺失期号数据。</p>
+        """,
+    )
+
+    try:
+        if conn.table_exists("system_config"):
+            existing = conn.execute(
+                "SELECT id FROM system_config WHERE key = ? LIMIT 1",
+                (alert_key,),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE system_config SET value_text = ?, value_type = ?, updated_at = ? WHERE key = ?",
+                    ("1", "int", datetime.utcnow().isoformat(), alert_key),
+                )
+            else:
+                now = datetime.utcnow().isoformat()
+                conn.execute(
+                    """
+                    INSERT INTO system_config (
+                        key, value_text, value_type, description, is_secret, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, 0, ?, ?)
+                    """,
+                    (
+                        alert_key,
+                        "1",
+                        "int",
+                        f"台湾彩缺失期号告警已发送: {missing_issue}",
+                        now,
+                        now,
+                    ),
+                )
+    except Exception:
+        pass
+
+    try:
+        upsert_system_config(
+            conn.target,
+            key=alert_key,
+            value=1,
+            value_type="int",
+            changed_by="helpers",
+            change_reason=f"台湾彩缺失期号告警已发送: {missing_issue}",
+        )
+    except Exception:
+        pass
+
+
+def _resolve_taiwan_next_issue_payload(conn: Any, latest_opened: dict[str, Any]) -> dict[str, Any]:
+    current_year = int(latest_opened.get("year") or 0)
+    current_term = int(latest_opened.get("term") or 0)
+    draw_time = str(latest_opened.get("draw_time") or "").strip()
+    stored_next_time = str(latest_opened.get("next_time") or "").strip()
+    max_terms_per_year = _get_max_terms_per_year(conn)
+    next_year, next_term = _compute_next_issue_parts(
+        current_year,
+        current_term,
+        max_terms_per_year=max_terms_per_year,
+    )
+
+    future_rows = conn.execute(
+        """
+        SELECT year, term, draw_time
+        FROM lottery_draws
+        WHERE lottery_type_id = 3
+          AND is_opened = 0
+          AND (
+            year > ?
+            OR (year = ? AND term >= ?)
+          )
+        ORDER BY year ASC, term ASC, id ASC
+        """,
+        (current_year, current_year, next_term if next_year == current_year else 1),
+    ).fetchall()
+
+    next_draw_time = ""
+    effective_next_time = stored_next_time
+    expected_issue = (next_year, next_term)
+    expected_found = False
+    observed_future_issue: tuple[int, int] | None = None
+
+    for row in future_rows:
+        row_year = int(row["year"] or 0)
+        row_term = int(row["term"] or 0)
+        if (row_year, row_term) == expected_issue:
+            expected_found = True
+            next_draw_time = str(row["draw_time"] or "").strip()
+            if next_draw_time:
+                try:
+                    effective_next_time = draw_time_to_unix_ms(next_draw_time)
+                except ValueError:
+                    pass
+            break
+        if (row_year, row_term) > expected_issue:
+            observed_future_issue = (row_year, row_term)
+            break
+
+    if not expected_found:
+        if observed_future_issue is not None:
+            _send_taiwan_issue_gap_alert(
+                conn,
+                missing_year=next_year,
+                missing_term=next_term,
+                current_year=current_year,
+                current_term=current_term,
+                observed_future_year=observed_future_issue[0],
+                observed_future_term=observed_future_issue[1],
+            )
+        if draw_time:
+            next_draw_time = next_draw_time_from_current_draw(draw_time)
+            try:
+                expected_next_time = draw_time_to_unix_ms(next_draw_time)
+                if not effective_next_time or effective_next_time != expected_next_time:
+                    effective_next_time = expected_next_time
+            except ValueError:
+                pass
+
+    return {
+        "current_issue": _format_issue(current_year, current_term),
+        "next_issue": _format_issue(next_year, next_term),
+        "next_draw_time": next_draw_time,
+        "next_time": effective_next_time or None,
+    }
+
+
 def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str, Any]:
     """返回该彩票类型的标准下一期抽奖的有效载荷。
 
@@ -73,34 +276,22 @@ def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str
         (int(lottery_type_id),),
     ).fetchone()
 
-    # 优先使用最新已开奖数据的 next_time，如果是台湾彩则用 draw_time 推算下一期开奖时间
+    # 优先使用最新已开奖数据的 next_time；台湾彩按 current_issue + 1 统一计算下一期期号，
+    # 若存在对应未开奖记录则以该记录的 draw_time 为准，否则回退到 draw_time + 1 天。
     if row:
         data = dict(row)
+        if int(lottery_type_id) == 3:
+            return _resolve_taiwan_next_issue_payload(conn, data)
+
+        current_year = int(data.get("year") or 0)
         current_term = int(data.get("term") or 0)
         next_term = int(data.get("next_term") or (current_term + 1 if current_term else 0))
         stored_next_time = str(data.get("next_time") or "").strip()
-        next_draw_time = ""
-        effective_next_time = stored_next_time
-        # 如果是台湾彩且 draw_time 可用，则用 draw_time 推算下一期开奖时间，并覆盖掉 stored_next_time（因为历史数据里 next_time 可能不可靠）
-        if int(lottery_type_id) == 3:
-            draw_time = str(data.get("draw_time") or "").strip()
-            if draw_time:
-                # 如果 draw_time 可用，则先用 draw_time 推算下一期开奖时间
-                next_draw_time = next_draw_time_from_current_draw(draw_time)
-            if next_draw_time:
-                try:
-                    # 把推算的下一期开奖时间转换成 unix-ms
-                    expected_next_time = draw_time_to_unix_ms(next_draw_time)
-                    # 如果推算的下一期开奖时间与 stored_next_time 不一致，则以推算的为准覆盖掉 stored_next_time
-                    if not effective_next_time or effective_next_time != expected_next_time:
-                        effective_next_time = expected_next_time
-                except ValueError:
-                    pass
         return {
-            "current_issue": f"{data.get('year') or ''}{data.get('term') or ''}",
-            "next_issue": f"{data.get('year') or ''}{next_term}" if next_term else "",
-            "next_draw_time": next_draw_time,
-            "next_time": effective_next_time or None,
+            "current_issue": f"{current_year}{current_term}",
+            "next_issue": f"{current_year}{next_term}" if next_term else "",
+            "next_draw_time": "",
+            "next_time": stored_next_time or None,
         }
 
     # 没有已开奖数据时，fallback 到 lottery_types.next_time（通常是 crawler 预设的下一期开奖时间，或管理员手动设置的值）

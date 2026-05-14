@@ -353,29 +353,64 @@ def delete_lottery_type(db_path: str | Path, lottery_id: int) -> None:
 #  开奖记录 CRUD / Draw CRUD
 # ─────────────────────────────────────────────────────────────────
 
-def list_draws(db_path: str | Path, limit: int = 200) -> list[dict[str, Any]]:
-    """获取开奖记录列表，关联彩种名称，按年份降序、期号降序、ID 降序排列。
+def list_draws(
+    db_path: str | Path,
+    limit: int = 200,
+    offset: int = 0,
+    lottery_type_id: int | None = None,
+) -> dict[str, Any]:
+    """获取开奖记录列表（分页），关联彩种名称，按年份降序、期号降序、ID 降序排列。
 
-    :param db_path: SQLite 数据库文件路径
-    :param limit: 返回记录的最大条数，默认 200
-    :return: 开奖记录字典列表，其中 ``status`` 和 ``is_opened`` 字段已转换为布尔值
+    :param db_path: 数据库路径
+    :param limit: 每页条数，默认 200
+    :param offset: 偏移量，默认 0
+    :param lottery_type_id: 可选，按彩种 ID 筛选
+    :return: ``{draws, total, page, page_size, total_pages}``
     """
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
+        conditions = []
+        params: list[Any] = []
+
+        if lottery_type_id is not None:
+            conditions.append("d.lottery_type_id = ?")
+            params.append(int(lottery_type_id))
+
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+
+        total_row = conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM lottery_draws d {where_clause}",
+            params,
+        ).fetchone()
+        total = int(total_row["cnt"]) if total_row else 0
+
         rows = conn.execute(
-            """
+            f"""
             SELECT d.*, l.name AS lottery_name
             FROM lottery_draws d
             JOIN lottery_types l ON l.id = d.lottery_type_id
+            {where_clause}
             ORDER BY d.year DESC, d.term DESC, d.id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (limit,),
+            (*params, limit, offset),
         ).fetchall()
-        return [
+
+        draws = [
             dict(row) | {"status": bool(row["status"]), "is_opened": bool(row["is_opened"])}
             for row in rows
         ]
+
+        page = (offset // limit) + 1 if limit > 0 else 1
+        return {
+            "draws": draws,
+            "total": total,
+            "page": page,
+            "page_size": limit,
+            "total_pages": max(1, -(-total // limit)) if limit > 0 else 1,
+        }
 
 
 def save_draw(db_path: str | Path, payload: dict[str, Any], draw_id: int | None = None) -> dict[str, Any]:

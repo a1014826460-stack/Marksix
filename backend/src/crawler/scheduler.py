@@ -6,6 +6,8 @@ saving all results to the lottery_draws table.
 
 import json
 import logging
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -60,6 +62,33 @@ TAIWAN_NAME = "台湾彩"
 # lottery_type_id → system_config 前缀映射
 _LT_CFG_PREFIX: dict[int, str] = {1: "lottery.hk", 2: "lottery.macau", 3: "lottery.taiwan"}
 _LT_NAME_MAP: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
+
+
+def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) -> None:
+    """Run the heavy daily prediction work in a separate Python process."""
+    script_path = Path(__file__).resolve().parent / "daily_prediction_worker.py"
+    command = [
+        sys.executable,
+        str(script_path),
+        "--db-path",
+        str(db_path),
+        "--lottery-type-id",
+        str(lottery_type_id),
+    ]
+    _crawler_logger.info("Daily prediction subprocess starting: %s", command)
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        detail = stderr or stdout or f"exit code {completed.returncode}"
+        raise RuntimeError(f"daily prediction subprocess failed: {detail}")
+    if completed.stdout.strip():
+        _crawler_logger.info("Daily prediction subprocess output: %s", completed.stdout.strip())
 
 
 def _compute_taiwan_default_next_time_ms(db_path: str | Path) -> str:
@@ -1574,6 +1603,9 @@ def _run_auto_prediction(db_path: str | Path, lottery_type_id: int, *, trigger: 
     预测生成受覆盖保护：当 trigger="auto" 时，若目标期数已存在非空预测数据，跳过并记录警告。
     手动触发（trigger="manual"）不限制覆盖。
     """
+    if trigger == "auto" and not getattr(_run_auto_prediction, "_worker_mode", False):
+        _run_daily_prediction_subprocess(db_path, lottery_type_id)
+        return
     _crawler_logger.info("AutoPred starting for lt=%s trigger=%s...", lottery_type_id, trigger)
     try:
         # 1. 读取最新开奖结果

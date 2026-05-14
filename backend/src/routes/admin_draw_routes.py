@@ -17,8 +17,12 @@ def register(router: Router) -> None:
 
 
 def list_draw_routes(ctx: RequestContext) -> None:
-    limit = int(ctx.query_value("limit", "200") or 200)
-    ctx.send_json({"draws": list_draws(ctx.db_path, limit)})
+    limit = int(ctx.query_value("limit", ctx.query_value("page_size", "20")) or 20)
+    page = int(ctx.query_value("page", "1") or 1)
+    offset = (max(page, 1) - 1) * limit
+    lottery_type_id_raw = ctx.query_value("lottery_type_id", None)
+    lottery_type_id = int(lottery_type_id_raw) if lottery_type_id_raw else None
+    ctx.send_json(list_draws(ctx.db_path, limit=limit, offset=offset, lottery_type_id=lottery_type_id))
 
 
 def create_draw(ctx: RequestContext) -> None:

@@ -685,6 +685,26 @@
                 }, true);
               }
 
+              function bindNavAnchors(){
+                var nav = document.getElementById('nav2');
+                if(!nav || nav.__navAnchorsBound) return;
+                nav.__navAnchorsBound = true;
+
+                nav.addEventListener('click', function(event){
+                  var link = event.target && event.target.closest ? event.target.closest('a[href^="#"]') : null;
+                  if(!link || !nav.contains(link)) return;
+                  var href = link.getAttribute('href');
+                  if(!href || href === '#') return;
+                  event.preventDefault();
+                  var id = href.substring(1);
+                  var target = document.getElementById(id);
+                  if(!target) return;
+                  var navHeight = nav.offsetHeight || 0;
+                  var top = target.getBoundingClientRect().top + (window.pageYOffset || 0) - navHeight - 8;
+                  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+                }, true);
+              }
+
               function refreshBridgeState(){
                 if(window.__LEGACY_EMBED_HOST__){
                   window.__LEGACY_EMBED_HOST__.enforceStaticBrandText();
@@ -692,6 +712,7 @@
                 }
                 hideShellHeader();
                 bindLotteryTabSwitch();
+                bindNavAnchors();
                 syncLotteryTabs();
                 postHeight();
                 postAnchorMap();
