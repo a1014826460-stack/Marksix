@@ -33,16 +33,20 @@ $.ajax({
                     }
                 }
 
-                // === 修改点：预测失败时用真实开奖结果 ===
                 if (result.length === 0) {
-                    // 取开奖生肖的最后两位，如果不足则重复最后一个
-                    let lastSx = sxSplit.slice(-2);
-                    if (lastSx.length === 0) {
-                        result = ['猫', '猫'];   // 极端情况无数据才用猫
-                    } else if (lastSx.length === 1) {
-                        result = [lastSx[0], lastSx[0]];
+                    if (resSx) {
+                        // 已开奖，预测全不命中 → 显示真实开奖生肖
+                        let lastSx = sxSplit.filter(function (s) { return s; }).slice(-2);
+                        if (lastSx.length === 0) {
+                            result = ['猫', '猫'];
+                        } else if (lastSx.length === 1) {
+                            result = [lastSx[0], lastSx[0]];
+                        } else {
+                            result = lastSx;
+                        }
                     } else {
-                        result = lastSx;
+                        // 未开奖，无开奖数据 → 占位
+                        result = ['猫', '猫'];
                     }
                 } else if (result.length === 1) {
                     result[1] = result[0];

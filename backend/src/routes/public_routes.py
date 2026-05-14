@@ -47,6 +47,15 @@ def latest_draw(ctx: RequestContext) -> None:
 
 
 def next_draw_deadline(ctx: RequestContext) -> None:
+    """
+    返回下一期开奖截止时间和服务器当前时间，单位为秒级时间戳
+    - args:
+        - site_id: 可选，站点ID，如果提供则根据站点配置的彩票类型返回截止时间，否则根据lottery_type参数返回截止时间
+        - lottery_type: 可选，彩票类型ID，默认为3（双色球），仅在site_id未提供时
+    - return:
+        - draw_deadline: 下一期开奖截止时间，单位为毫秒级时间戳
+        - server_time: 服务器当前时间，单位为秒级时间戳
+    """
     site_id = ctx.query_value("site_id")
     if site_id not in (None, ""):
         site_ctx = resolve_site_context(ctx.db_path, path_site_id=int(site_id), query=ctx.query)

@@ -3,6 +3,7 @@
 export type ApiError = {
   ok?: false
   error?: string
+  message?: string
   detail?: string
 }
 
@@ -17,6 +18,10 @@ export function setAdminToken(token: string) {
 
 export function clearAdminToken() {
   window.localStorage.removeItem("liuhecai_admin_token")
+}
+
+function buildHttpErrorMessage(status: number) {
+  return `请求失败：${status}`
 }
 
 export async function adminApi<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -34,12 +39,31 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
     headers,
     cache: "no-store",
   })
-  const data = await response.json()
+
+  const rawText = await response.text()
+  let data: unknown = null
+  if (rawText.trim()) {
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = { error: rawText }
+    }
+  }
+
   if (!response.ok) {
-    const message = (data as ApiError).error || `请求失败：${response.status}`
+    if (response.status === 401) {
+      clearAdminToken()
+    }
+    const apiError = (data ?? {}) as ApiError
+    const message =
+      apiError.error ||
+      apiError.message ||
+      apiError.detail ||
+      (rawText.trim() ? rawText : buildHttpErrorMessage(response.status))
     throw new Error(message)
   }
-  return data as T
+
+  return (data ?? {}) as T
 }
 
 export function jsonBody(value: unknown) {

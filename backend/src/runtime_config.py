@@ -40,6 +40,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "初始管理员显示名称。",
         "is_secret": 0,
     },
+    "admin_email": {
+        "value": "1014826460@qq.com",
+        "value_type": "string",
+        "description": "管理员告警邮箱，台湾彩缺期等关键告警优先发送到该地址。",
+        "is_secret": 0,
+    },
     "admin.role": {
         "value": "super_admin",
         "value_type": "string",

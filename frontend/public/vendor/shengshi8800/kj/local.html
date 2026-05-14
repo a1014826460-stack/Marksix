@@ -125,6 +125,7 @@
       var ballPrefixIds = ["m1", "m2", "m3", "m4", "m5", "m6", "s1"];
       var zodiacPrefixIds = ["m1x", "m2x", "m3x", "m4x", "m5x", "m6x", "s1x"];
       var ballWrapIds = ["w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+
       var beijingDateFormatter = new Intl.DateTimeFormat("zh-CN", {
         timeZone: "Asia/Shanghai",
         year: "numeric",
@@ -140,20 +141,124 @@
         second: "2-digit"
       });
 
+      var _pendingBalls = null;
+      var _revealedCount = 0;
+      var _revealTimerId = null;
+      var _revealActive = false;
+      var _revealStartSec = 0;
+      var _revealPolling = false;
+      var _revealPollTimerId = null;
+      var _revealWindowEndsAtSec = 0;
+      var _lastRenderedIssue = "";
+      var _loadingLatestDraw = false;
+      var _scheduledCurrentIssue = "";
+      var _scheduledNextIssue = "";
+      var _revealTargetIssue = "";
+
+      var countdownDeadline = 0;
+      var serverOffsetSec = 0;
+      var countdownTimerId = null;
+      var countdownExpired = false;
+
+      var REVEAL_INTERVAL_MS = 10000;
+      var REVEAL_INTERVAL_SEC = REVEAL_INTERVAL_MS / 1000;
+      var REVEAL_POLL_INTERVAL_MS = 3000;
+      var REVEAL_WINDOW_SEC = 120;
+      var UI_TEXT = {
+        countdownPrefix: "下次开奖 ",
+        countdownWaiting: "开奖核验中...",
+        countdownRevealing: "开奖中...",
+        currentIssuePrefix: "当前期号：",
+        currentIssueYearSuffixLeft: "（",
+        currentIssueYearSuffixRight: "年）",
+        refresh: "刷新",
+        refreshing: "刷新中",
+        refreshedAtPrefix: "已刷新 ",
+        refreshFailed: "刷新失败",
+        historyLink: "查看历史记录",
+        loadErrorPrefix: "开奖结果加载失败：",
+        unknownError: "未知错误"
+      };
+
+      function debugLog(eventName, payload) {
+        if (typeof console === "undefined" || typeof console.log !== "function") return;
+        console.log("[local-kj]", eventName, payload || {});
+      }
+
       function $(id) {
         return document.getElementById(id);
+      }
+
+      function normalizeToSeconds(raw) {
+        return raw > 9999999999 ? Math.floor(raw / 1000) : raw;
+      }
+
+      function getServerNowSeconds() {
+        return Math.floor(Date.now() / 1000) + serverOffsetSec;
+      }
+
+      function parseBeijingDateTimeToSeconds(value) {
+        var text = String(value || "").trim();
+        var match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(text);
+        if (!match) return 0;
+        var year = Number(match[1]);
+        var month = Number(match[2]);
+        var day = Number(match[3]);
+        var hour = Number(match[4]);
+        var minute = Number(match[5]);
+        var second = Number(match[6]);
+        return Math.floor(Date.UTC(year, month - 1, day, hour - 8, minute, second) / 1000);
+      }
+
+      function normalizeIssue(issue) {
+        var text = String(issue || "").trim();
+        if (!text) return "";
+        if (text.length <= 4) return text;
+        var year = text.slice(0, 4);
+        var term = text.slice(4);
+        while (term.length < 3) term = "0" + term;
+        return year + term;
+      }
+
+      function compareIssues(a, b) {
+        var left = normalizeIssue(a);
+        var right = normalizeIssue(b);
+        if (!left && !right) return 0;
+        if (!left) return -1;
+        if (!right) return 1;
+        if (left.length !== right.length) {
+          return left.length < right.length ? -1 : 1;
+        }
+        if (left === right) return 0;
+        return left < right ? -1 : 1;
+      }
+
+      function pad2(value) {
+        var text = String(value || "");
+        return text.length >= 2 ? text : "0" + text;
+      }
+
+      function formatBeijingTime(date) {
+        return beijingTimeFormatter.format(date || new Date());
+      }
+
+      function formatCountdown(remainingMs) {
+        if (remainingMs <= 0) return "00:00:00";
+        var totalSec = Math.floor(remainingMs / 1000);
+        var h = Math.floor(totalSec / 3600);
+        var m = Math.floor((totalSec % 3600) / 60);
+        var s = totalSec % 60;
+        return (h < 10 ? "0" + h : "" + h) + ":" +
+          (m < 10 ? "0" + m : "" + m) + ":" +
+          (s < 10 ? "0" + s : "" + s);
       }
 
       function updateHistoryLink() {
         var historyLink = $("historyLink");
         if (historyLink) {
           historyLink.href = "/history?type=" + encodeURIComponent(String(lotteryType));
+          historyLink.textContent = UI_TEXT.historyLink;
         }
-      }
-
-      function pad2(value) {
-        var text = String(value || "");
-        return text.length >= 2 ? text : "0" + text;
       }
 
       function setBall(index, ball) {
@@ -174,53 +279,234 @@
         }
       }
 
-      function formatBeijingTime(date) {
-        return beijingTimeFormatter.format(date || new Date());
+      function updateIssueInfo(payload) {
+        var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
+        var year = issue.length > 4 ? issue.slice(0, 4) : "";
+        var term = issue.length > 4 ? issue.slice(4) : issue;
+
+        $("lotteryLabel").textContent = label || labelMap[lotteryType] || labelMap[3];
+        $("q").textContent = term || "--";
+        updateHistoryLink();
+
+        var statusText = $("statusText");
+        if (statusText) {
+          var suffix = year ? UI_TEXT.currentIssueYearSuffixLeft + year + UI_TEXT.currentIssueYearSuffixRight : "";
+          statusText.innerHTML = UI_TEXT.currentIssuePrefix + '<font class="kj-font-red"><span id="currentIssue">' +
+            (issue || "--") +
+            "</span></font>" +
+            suffix;
+        }
       }
 
-      /* ── 倒计时（next_time 支持秒/毫秒，server_time 可选）── */
-      var countdownDeadline = 0;
-      var serverOffsetSec = 0;
-      var countdownTimerId = null;
-      var countdownExpired = false;
-
-      /** 规范化时间戳：>10 位视为毫秒 → 转为秒 */
-      function normalizeToSeconds(raw) {
-        return raw > 9999999999 ? Math.floor(raw / 1000) : raw;
+      function showPendingIssue(issue) {
+        var normalized = normalizeIssue(issue);
+        if (!normalized) return;
+        updateIssueInfo({ current_issue: normalized });
+        fillEmpty();
       }
 
-      function formatCountdown(remainingMs) {
-        if (remainingMs <= 0) return "00:00:00";
-        var totalSec = Math.floor(remainingMs / 1000);
-        var h = Math.floor(totalSec / 3600);
-        var m = Math.floor((totalSec % 3600) / 60);
-        var s = totalSec % 60;
-        return (h < 10 ? "0" + h : "" + h) + ":" +
-               (m < 10 ? "0" + m : "" + m) + ":" +
-               (s < 10 ? "0" + s : "" + s);
+      function render(payload) {
+        var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
+        var balls = [];
+        if (payload && Array.isArray(payload.result_balls)) {
+          balls = payload.result_balls.slice(0, 6);
+        }
+        if (payload && payload.special_ball) {
+          balls.push(payload.special_ball);
+        }
+        while (balls.length < 7) {
+          balls.push(null);
+        }
+
+        _lastRenderedIssue = issue || _lastRenderedIssue;
+        updateIssueInfo(payload || {});
+        for (var i = 0; i < 7; i++) {
+          setBall(i, balls[i]);
+        }
+      }
+
+      function showError(message) {
+        fillEmpty();
+        $("q").textContent = "--";
+        var statusText = $("statusText");
+        if (statusText) {
+          statusText.innerHTML = '<span class="error-text">' + UI_TEXT.loadErrorPrefix + String(message || UI_TEXT.unknownError) + "</span>";
+        }
+      }
+
+      function _hasFullBalls(payload) {
+        if (!payload) return false;
+        var balls = payload.result_balls;
+        if (!Array.isArray(balls) || balls.length < 6) return false;
+        if (!payload.special_ball || !payload.special_ball.value) return false;
+        for (var i = 0; i < 6; i++) {
+          if (!balls[i] || !balls[i].value) return false;
+        }
+        return true;
+      }
+
+      function _shouldRevealPayload(payload) {
+        if (!_hasFullBalls(payload)) return false;
+        var drawTimeSec = parseBeijingDateTimeToSeconds(payload && payload.draw_time ? payload.draw_time : "");
+        if (drawTimeSec > 0) {
+          var elapsedByDrawTime = getServerNowSeconds() - drawTimeSec;
+          return elapsedByDrawTime >= 0 && elapsedByDrawTime <= REVEAL_WINDOW_SEC;
+        }
+        if (countdownDeadline <= 0) return false;
+        var elapsedByDeadline = getServerNowSeconds() - countdownDeadline;
+        return elapsedByDeadline >= 0 && elapsedByDeadline <= REVEAL_WINDOW_SEC;
+      }
+
+      function _renderRevealStep() {
+        for (var i = 0; i < 7; i++) {
+          if (i < _revealedCount && _pendingBalls && i < _pendingBalls.length) {
+            setBall(i, _pendingBalls[i]);
+          } else {
+            setBall(i, null);
+          }
+        }
+      }
+
+      function _resolveRevealStartSec(payload) {
+        var drawTimeSec = parseBeijingDateTimeToSeconds(payload && payload.draw_time ? payload.draw_time : "");
+        if (drawTimeSec > 0) return drawTimeSec;
+        if (countdownDeadline > 0) return countdownDeadline;
+        return 0;
+      }
+
+      function _computeRevealCountForTime(revealStartSec, nowSec) {
+        if (!(revealStartSec > 0) || !(nowSec >= revealStartSec)) return 0;
+        var elapsedSec = nowSec - revealStartSec;
+        var count = Math.floor(elapsedSec / REVEAL_INTERVAL_SEC) + 1;
+        if (count < 1) return 1;
+        if (count > 7) return 7;
+        return count;
+      }
+
+      function _scheduleRevealTick() {
+        if (!_revealActive || !_pendingBalls || !(_revealStartSec > 0)) return;
+        if (_revealedCount >= 7) {
+          _stopReveal(true);
+          return;
+        }
+        if (_revealTimerId) {
+          clearTimeout(_revealTimerId);
+          _revealTimerId = null;
+        }
+        var nextRevealAtMs = (_revealStartSec + (_revealedCount * REVEAL_INTERVAL_SEC)) * 1000;
+        var nowMs = (Date.now() / 1000 + serverOffsetSec) * 1000;
+        var delayMs = Math.max(0, nextRevealAtMs - nowMs);
+        _revealTimerId = setTimeout(function () {
+          _syncRevealProgress();
+        }, delayMs);
+      }
+
+      function _syncRevealProgress() {
+        if (!_revealActive || !_pendingBalls) return;
+        var nextCount = _computeRevealCountForTime(_revealStartSec, getServerNowSeconds());
+        if (nextCount <= 0) nextCount = 1;
+        _revealedCount = nextCount;
+        _renderRevealStep();
+        if (_revealedCount >= 7) {
+          _stopReveal(true);
+          return;
+        }
+        _scheduleRevealTick();
+      }
+
+      function stopRevealPolling(clearTargetIssue) {
+        _revealPolling = false;
+        _revealWindowEndsAtSec = 0;
+        if (_revealPollTimerId) {
+          clearInterval(_revealPollTimerId);
+          _revealPollTimerId = null;
+        }
+        if (clearTargetIssue !== false) {
+          _revealTargetIssue = "";
+        }
+      }
+
+      function _stopReveal(completed) {
+        if (_revealTimerId) {
+          clearTimeout(_revealTimerId);
+          _revealTimerId = null;
+        }
+        _revealActive = false;
+        _revealStartSec = 0;
+        _pendingBalls = null;
+        _revealedCount = 0;
+        if (completed) {
+          stopRevealPolling(true);
+          _revealTargetIssue = "";
+          var resultBox = document.querySelector(".new-KJ-TabBox-box");
+          if (resultBox) {
+            resultBox.classList.remove("refresh-success");
+            void resultBox.offsetWidth;
+            resultBox.classList.add("refresh-success");
+          }
+          setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+          fetchCountdownDeadline().then(function () {
+            countdownExpired = false;
+            updateCountdownDisplay();
+          });
+        }
+      }
+
+      function _startReveal(payload) {
+        _stopReveal(false);
+        stopRevealPolling(false);
+        var balls = [];
+        if (payload && Array.isArray(payload.result_balls)) {
+          balls = payload.result_balls.slice(0, 6);
+        }
+        if (payload && payload.special_ball) {
+          balls.push(payload.special_ball);
+        }
+        while (balls.length < 7) {
+          balls.push(null);
+        }
+        _revealStartSec = _resolveRevealStartSec(payload);
+        if (!(_revealStartSec > 0)) {
+          render(payload || {});
+          return;
+        }
+        _pendingBalls = balls;
+        _revealActive = true;
+        _lastRenderedIssue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
+        _revealTargetIssue = _lastRenderedIssue;
+        _syncRevealProgress();
       }
 
       function updateCountdownDisplay() {
         var badge = $("countdownBadge");
         if (!badge) return;
+        if (_revealActive) {
+          badge.textContent = UI_TEXT.countdownRevealing;
+          badge.style.borderColor = "#e53e3e";
+          return;
+        }
+        if (_revealPolling) {
+          badge.textContent = UI_TEXT.countdownWaiting;
+          badge.style.borderColor = "#e53e3e";
+          return;
+        }
         if (countdownDeadline > 0) {
-          var serverNow = Math.floor(Date.now() / 1000) + serverOffsetSec;
-          var remainingSec = countdownDeadline - serverNow;
+          var remainingSec = countdownDeadline - getServerNowSeconds();
           var remaining = remainingSec * 1000;
           if (remaining <= 0) {
-            badge.textContent = "下次开奖 00:00:00";
+            badge.textContent = UI_TEXT.countdownPrefix + "00:00:00";
             badge.style.borderColor = "#e53e3e";
             if (!countdownExpired) {
               countdownExpired = true;
-              load({ manual: false });
+              beginRevealPolling();
             }
           } else {
             countdownExpired = false;
-            badge.textContent = "下次开奖 " + formatCountdown(remaining);
+            badge.textContent = UI_TEXT.countdownPrefix + formatCountdown(remaining);
             badge.style.borderColor = "#ff7a00";
           }
         } else {
-          badge.textContent = "下次开奖 --:--:--";
+          badge.textContent = UI_TEXT.countdownPrefix + "--:--:--";
         }
       }
 
@@ -228,11 +514,13 @@
         try {
           var resp = await fetch("/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType)), { cache: "no-store" });
           var data = await resp.json();
+          debugLog("next-draw-deadline:response", data);
           if (data && data.next_time) {
             countdownDeadline = normalizeToSeconds(Number(data.next_time));
+            _scheduledCurrentIssue = normalizeIssue(data.current_issue);
+            _scheduledNextIssue = normalizeIssue(data.next_issue);
             if (data.server_time) {
-              var clientSec = Math.floor(Date.now() / 1000);
-              serverOffsetSec = Number(data.server_time) - clientSec;
+              serverOffsetSec = Number(data.server_time) - Math.floor(Date.now() / 1000);
             } else {
               serverOffsetSec = 0;
             }
@@ -240,31 +528,55 @@
           } else {
             countdownDeadline = 0;
             serverOffsetSec = 0;
+            _scheduledCurrentIssue = "";
+            _scheduledNextIssue = "";
           }
-        } catch (e) {
+        } catch (_) {
           countdownDeadline = 0;
           serverOffsetSec = 0;
+          _scheduledCurrentIssue = "";
+          _scheduledNextIssue = "";
         }
+        debugLog("next-draw-deadline:normalized", {
+          countdownDeadline: countdownDeadline,
+          scheduledCurrentIssue: _scheduledCurrentIssue,
+          scheduledNextIssue: _scheduledNextIssue,
+          serverOffsetSec: serverOffsetSec
+        });
         updateCountdownDisplay();
       }
 
-      function startCountdown() {
-        stopCountdown();
-        fetchCountdownDeadline().then(function () {
-          countdownTimerId = setInterval(function () {
-            updateCountdownDisplay();
-          }, 1000);
-        });
-      }
-
-      function stopCountdown() {
-        if (countdownTimerId) {
-          clearInterval(countdownTimerId);
-          countdownTimerId = null;
+      function beginRevealPolling() {
+        if (_revealActive) return;
+        if (_scheduledNextIssue) {
+          _revealTargetIssue = _scheduledNextIssue;
+          showPendingIssue(_revealTargetIssue);
         }
+        debugLog("reveal-polling:start", {
+          revealTargetIssue: _revealTargetIssue,
+          scheduledCurrentIssue: _scheduledCurrentIssue,
+          scheduledNextIssue: _scheduledNextIssue,
+          countdownDeadline: countdownDeadline,
+          serverNow: getServerNowSeconds()
+        });
+        _revealWindowEndsAtSec = countdownDeadline > 0
+          ? countdownDeadline + REVEAL_WINDOW_SEC
+          : getServerNowSeconds() + REVEAL_WINDOW_SEC;
+        if (_revealPolling) return;
+        _revealPolling = true;
+        updateCountdownDisplay();
+        load({ reveal: true, background: true, preserveWhenPending: true });
+        _revealPollTimerId = setInterval(function () {
+          if (_revealActive) return;
+          if (_revealWindowEndsAtSec > 0 && getServerNowSeconds() > _revealWindowEndsAtSec) {
+            stopRevealPolling();
+            fetchCountdownDeadline();
+            return;
+          }
+          load({ reveal: true, background: true, preserveWhenPending: true });
+        }, REVEAL_POLL_INTERVAL_MS);
       }
 
-      /* ── 北京时间 星期 + 日期 ── */
       function updateBeijingDate() {
         var dateNode = $("beijingDate");
         if (!dateNode) return;
@@ -292,11 +604,11 @@
 
         if (state === "loading") {
           refreshButton.classList.add("is-loading");
-          refreshButton.textContent = "刷新中";
+          refreshButton.textContent = UI_TEXT.refreshing;
           refreshButton.setAttribute("aria-busy", "true");
         } else {
           refreshButton.classList.remove("is-loading");
-          refreshButton.textContent = "刷新";
+          refreshButton.textContent = UI_TEXT.refresh;
           refreshButton.removeAttribute("aria-busy");
         }
 
@@ -314,56 +626,60 @@
         }
       }
 
-      function render(payload) {
-        var issue = payload && payload.current_issue ? String(payload.current_issue) : "";
-        var year = issue.length > 4 ? issue.slice(0, 4) : "";
-        var term = issue.length > 4 ? issue.slice(4) : issue;
-        var balls = [];
-
-        if (payload && Array.isArray(payload.result_balls)) {
-          balls = payload.result_balls.slice(0, 6);
+      async function refreshWithDeadlineSync() {
+        setRefreshState("loading", "");
+        debugLog("manual-refresh:start", {
+          revealActive: _revealActive,
+          revealPolling: _revealPolling,
+          revealTargetIssue: _revealTargetIssue,
+          lastRenderedIssue: _lastRenderedIssue
+        });
+        await fetchCountdownDeadline();
+        if (_revealPolling || _revealActive) {
+          debugLog("manual-refresh:reuse-reveal-state", {
+            revealActive: _revealActive,
+            revealPolling: _revealPolling,
+            revealTargetIssue: _revealTargetIssue
+          });
+          if (_revealActive) {
+            _syncRevealProgress();
+          }
+          if (!_revealActive && _revealTargetIssue) {
+            showPendingIssue(_revealTargetIssue);
+          }
+          return;
         }
-        if (payload && payload.special_ball) {
-          balls.push(payload.special_ball);
+        if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
+          countdownExpired = true;
+          debugLog("manual-refresh:enter-reveal-polling", {
+            countdownDeadline: countdownDeadline,
+            serverNow: getServerNowSeconds(),
+            scheduledNextIssue: _scheduledNextIssue
+          });
+          beginRevealPolling();
+          return;
         }
-
-        while (balls.length < 7) {
-          balls.push(null);
-        }
-
-        $("lotteryLabel").textContent = label || labelMap[lotteryType] || labelMap[3];
-        $("q").textContent = term || "--";
-        $("currentIssue").textContent = issue || "--";
-        updateHistoryLink();
-
-        var statusText = $("statusText");
-        if (statusText) {
-          var suffix = year ? "（" + year + "年）" : "";
-          statusText.innerHTML = '当前期号：<font class="kj-font-red"><span id="currentIssue">' +
-            (issue || "--") +
-            "</span></font>" +
-            suffix;
-        }
-
-        for (var i = 0; i < 7; i++) {
-          setBall(i, balls[i]);
-        }
-      }
-
-      function showError(message) {
-        fillEmpty();
-        $("q").textContent = "--";
-        var statusText = $("statusText");
-        if (statusText) {
-          statusText.innerHTML = '<span class="error-text">开奖结果加载失败：' + String(message || "未知错误") + "</span>";
-        }
+        debugLog("manual-refresh:plain-load", {
+          countdownDeadline: countdownDeadline,
+          serverNow: getServerNowSeconds(),
+          scheduledCurrentIssue: _scheduledCurrentIssue,
+          scheduledNextIssue: _scheduledNextIssue
+        });
+        load({ manual: true, revealOnLoad: true });
       }
 
       async function load(options) {
         var isManual = options && options.manual;
+        var useReveal = options && options.reveal;
+        var revealOnLoad = options && options.revealOnLoad;
+        var keepCurrentWhenPending = options && options.preserveWhenPending;
+        var background = options && options.background;
+
         if (isManual) {
           setRefreshState("loading", "");
         }
+        if (_loadingLatestDraw) return;
+        _loadingLatestDraw = true;
 
         try {
           var query = new URLSearchParams({
@@ -377,29 +693,108 @@
             throw new Error("HTTP " + response.status);
           }
           var payload = await response.json();
-          render(payload || {});
-          if (isManual) {
-            setRefreshState("done", "已刷新 " + formatBeijingTime(new Date()));
+          var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
+          var isNewIssue = !!issue && issue !== _lastRenderedIssue;
+          var shouldRevealCurrentPayload = !!revealOnLoad && !_lastRenderedIssue && _shouldRevealPayload(payload);
+          var isRevealTargetIssue = !!_revealTargetIssue && issue === _revealTargetIssue;
+          var isOlderThanRevealTarget = !!_revealTargetIssue && compareIssues(issue, _revealTargetIssue) < 0;
+          var shouldStartTargetReveal = !!_revealTargetIssue && !_revealActive && isRevealTargetIssue && _hasFullBalls(payload);
+          debugLog("latest-draw:evaluated", {
+            issue: issue,
+            payloadCurrentIssue: payload && payload.current_issue,
+            revealTargetIssue: _revealTargetIssue,
+            lastRenderedIssue: _lastRenderedIssue,
+            scheduledCurrentIssue: _scheduledCurrentIssue,
+            scheduledNextIssue: _scheduledNextIssue,
+            isNewIssue: isNewIssue,
+            shouldRevealCurrentPayload: shouldRevealCurrentPayload,
+            isRevealTargetIssue: isRevealTargetIssue,
+            isOlderThanRevealTarget: isOlderThanRevealTarget,
+            shouldStartTargetReveal: shouldStartTargetReveal,
+            hasFullBalls: _hasFullBalls(payload),
+            drawTime: payload && payload.draw_time ? payload.draw_time : ""
+          });
+
+          if (shouldStartTargetReveal || (useReveal && isNewIssue && _hasFullBalls(payload)) || shouldRevealCurrentPayload) {
+            if (!_revealTargetIssue) {
+              _revealTargetIssue = issue;
+            }
+            debugLog("latest-draw:branch-start-reveal", {
+              issue: issue,
+              revealTargetIssue: _revealTargetIssue,
+              useReveal: !!useReveal,
+              revealOnLoad: !!revealOnLoad
+            });
+            updateIssueInfo(payload || {});
+            _startReveal(payload);
+          } else if (isOlderThanRevealTarget) {
+            debugLog("latest-draw:branch-keep-pending-target", {
+              issue: issue,
+              revealTargetIssue: _revealTargetIssue
+            });
+            showPendingIssue(_revealTargetIssue);
+          } else {
+            if (_revealTargetIssue && !isRevealTargetIssue && !isNewIssue && !keepCurrentWhenPending) {
+              debugLog("latest-draw:branch-manual-keep-pending-target", {
+                issue: issue,
+                revealTargetIssue: _revealTargetIssue
+              });
+              showPendingIssue(_revealTargetIssue);
+            } else if (!keepCurrentWhenPending || !_lastRenderedIssue || isNewIssue) {
+              debugLog("latest-draw:branch-render", {
+                issue: issue,
+                revealTargetIssue: _revealTargetIssue,
+                keepCurrentWhenPending: !!keepCurrentWhenPending,
+                lastRenderedIssue: _lastRenderedIssue
+              });
+              render(payload || {});
+            }
+            if (_revealTargetIssue && compareIssues(issue, _revealTargetIssue) >= 0) {
+              debugLog("latest-draw:clear-reveal-target", {
+                issue: issue,
+                previousRevealTargetIssue: _revealTargetIssue
+              });
+              _revealTargetIssue = "";
+            }
+            if (isManual) {
+              setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+            }
           }
         } catch (error) {
-          showError(error && error.message ? error.message : String(error));
-          if (isManual) {
-            setRefreshState("error", "刷新失败");
+          if (!background) {
+            showError(error && error.message ? error.message : String(error));
           }
+          if (isManual) {
+            setRefreshState("error", UI_TEXT.refreshFailed);
+          }
+        } finally {
+          _loadingLatestDraw = false;
         }
       }
 
       $("refreshButton").addEventListener("click", function () {
         if ($("refreshButton").classList.contains("is-loading")) return;
-        load({ manual: true });
+        refreshWithDeadlineSync().catch(function () {
+          setRefreshState("error", UI_TEXT.refreshFailed);
+        });
       });
 
       fillEmpty();
       updateHistoryLink();
       updateBeijingDate();
       setInterval(updateBeijingDate, 1000);
-      startCountdown();
-      load();
+
+      fetchCountdownDeadline().then(function () {
+        if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
+          countdownExpired = true;
+          beginRevealPolling();
+        } else {
+          load({ revealOnLoad: true });
+        }
+        countdownTimerId = setInterval(function () {
+          updateCountdownDisplay();
+        }, 1000);
+      });
     })();
   </script>
 </body>
