@@ -1,7 +1,7 @@
 "use client"
 
 import type { FormEvent } from "react"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Plus, Save } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Card } from "@/components/ui/card"
@@ -104,6 +104,41 @@ export function DrawsPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const formRef = useRef<HTMLFormElement | null>(null)
+
+  // Column resize
+  const defaultColWidths = [50, 70, 56, 56, 220, 140, 56, 62, 76, 90]
+  const [colWidths, setColWidths] = useState<number[]>(defaultColWidths)
+  const resizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null)
+  const [resizingIdx, setResizingIdx] = useState<number | null>(null)
+
+  const onResizeStart = useCallback((index: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    resizeRef.current = { index, startX: e.clientX, startWidth: colWidths[index] }
+    setResizingIdx(index)
+  }, [colWidths])
+
+  useEffect(() => {
+    if (resizingIdx === null) return
+    const onMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return
+      const delta = e.clientX - resizeRef.current.startX
+      setColWidths((prev) => {
+        const next = [...prev]
+        next[resizeRef.current!.index] = Math.max(40, resizeRef.current!.startWidth + delta)
+        return next
+      })
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      setResizingIdx(null)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+  }, [resizingIdx])
 
   const taiwanLottery =
     lotteries.find((lottery) => lottery.id === TAIWAN_LOTTERY_ID) || null
@@ -424,60 +459,73 @@ export function DrawsPage() {
             <div className="mb-3">
               <DrawBallDisplayToggles />
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>彩种</TableHead>
-                  <TableHead>年份</TableHead>
-                  <TableHead>期数</TableHead>
-                  <TableHead>开奖号码</TableHead>
-                  <TableHead>开奖时间</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>是否开奖</TableHead>
-                  <TableHead>下一期期数</TableHead>
-                  <TableHead>操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{row.id}</TableCell>
-                    <TableCell>{row.lottery_name}</TableCell>
-                    <TableCell>{row.year}</TableCell>
-                    <TableCell>{row.term}</TableCell>
-                    <TableCell>
-                      <DrawBallDisplay numbers={row.numbers} />
-                    </TableCell>
-                  <TableCell>{row.draw_time}</TableCell>
-                  <TableCell>
-                    <StatusBadge value={row.status} />
-                  </TableCell>
-                  <TableCell>{row.is_opened ? "是" : "否"}</TableCell>
-                  <TableCell>{row.next_term}</TableCell>
-                  <TableCell className="flex gap-1 flex-wrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setEditing(row)
-                        setFormOpen(true)
-                      }}
-                    >
-                      修改
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => remove(row.id)}
-                    >
-                      删除
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+            <div
+              className="overflow-x-auto"
+              style={{ cursor: resizingIdx !== null ? "col-resize" : undefined }}
+            >
+              <Table style={{ tableLayout: "fixed", width: colWidths.reduce((s, w) => s + w, 0), minWidth: "100%" }}>
+                <colgroup>
+                  {colWidths.map((w, i) => (
+                    <col key={i} style={{ width: w }} />
+                  ))}
+                </colgroup>
+                <TableHeader>
+                  <TableRow>
+                    {["ID", "彩种", "年份", "期数", "开奖号码", "开奖时间", "状态", "是否开奖", "下一期期数", "操作"].map(
+                      (label, i) => (
+                        <TableHead key={i} className="relative select-none">
+                          <span className="whitespace-nowrap">{label}</span>
+                          <div
+                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/20 active:bg-primary/40 z-10"
+                            onMouseDown={(e) => onResizeStart(i, e)}
+                          />
+                        </TableHead>
+                      ),
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{row.id}</TableCell>
+                      <TableCell>{row.lottery_name}</TableCell>
+                      <TableCell>{row.year}</TableCell>
+                      <TableCell>{row.term}</TableCell>
+                      <TableCell>
+                        <DrawBallDisplay numbers={row.numbers} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{row.draw_time}</TableCell>
+                      <TableCell>
+                        <StatusBadge value={row.status} />
+                      </TableCell>
+                      <TableCell>{row.is_opened ? "是" : "否"}</TableCell>
+                      <TableCell>{row.next_term}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-nowrap">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditing(row)
+                              setFormOpen(true)
+                            }}
+                          >
+                            修改
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => remove(row.id)}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
 
           {/* Pagination */}
           <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t">
