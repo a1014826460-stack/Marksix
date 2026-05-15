@@ -1,14 +1,13 @@
 "use client"
 
 import type { FormEvent } from "react"
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { adminApi, jsonBody, setAdminToken } from "@/lib/admin-api"
 import { Field } from "@/features/shared/Field"
-import { AdminNotice } from "@/features/shared/AdminNotice"
 import { formValue } from "@/features/shared/form-helpers"
 
 // 诗句数据
@@ -19,25 +18,140 @@ const verseLines = [
   "事了拂衣去，深藏身与名",
 ]
 
+/** 递增延迟：失败次数 → 秒数（1, 2, 4, 8, 16 封顶） */
+function retryDelaySeconds(failureCount: number): number {
+  return Math.min(2 ** (failureCount - 1), 16)
+}
+
+/** 格式化剩余秒数为 mm:ss */
+function formatCountdown(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  return `${m}:${s.toString().padStart(2, "0")}`
+}
+
 export function LoginPage() {
   const router = useRouter()
   const [message, setMessage] = useState("")
+  const [messageIsWarning, setMessageIsWarning] = useState(false)
+
+  // 验证码
+  const [captchaImage, setCaptchaImage] = useState("")
+  const [captchaLoading, setCaptchaLoading] = useState(false)
+
+  // 锁定状态
+  const [locked, setLocked] = useState(false)
+  const [lockCountdown, setLockCountdown] = useState(0)
+  const lockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 本地递增延迟
+  const [submitting, setSubmitting] = useState(false)
+  const localFailuresRef = useRef(0)
+  const lastSubmitRef = useRef(0)
+
+  // 获取验证码
+  const fetchCaptcha = useCallback(async () => {
+    setCaptchaLoading(true)
+    try {
+      const data = await adminApi<{ image: string; expires_in_seconds: number }>(
+        "/auth/captcha",
+      )
+      setCaptchaImage(data.image)
+    } catch {
+      setCaptchaImage("")
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }, [])
+
+  // 首次加载获取验证码
+  useEffect(() => {
+    fetchCaptcha()
+    return () => {
+      if (lockTimerRef.current) clearInterval(lockTimerRef.current)
+    }
+  }, [fetchCaptcha])
+
+  // 锁定倒计时
+  useEffect(() => {
+    if (locked && lockCountdown > 0) {
+      lockTimerRef.current = setInterval(() => {
+        setLockCountdown((prev) => {
+          if (prev <= 1) {
+            setLocked(false)
+            localFailuresRef.current = 0
+            fetchCaptcha()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      return () => {
+        if (lockTimerRef.current) clearInterval(lockTimerRef.current)
+      }
+    }
+  }, [locked, lockCountdown, fetchCaptcha])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // 立即保存 form 引用 —— React 合成事件在 await 后会置空 currentTarget
     const form = event.currentTarget
+
+    // 节流：1 秒内最多一次请求
+    const now = Date.now()
+    if (now - lastSubmitRef.current < 1000) return
+    lastSubmitRef.current = now
+
+    // 递增延迟
+    if (submitting) return
+    const delay = retryDelaySeconds(localFailuresRef.current)
+    if (delay > 0 && localFailuresRef.current > 0) {
+      setSubmitting(true)
+      setMessage(`请等待 ${delay} 秒后再试...`)
+      setMessageIsWarning(true)
+      await new Promise((r) => setTimeout(r, delay * 1000))
+    }
+
+    setMessage("")
+    setMessageIsWarning(false)
+
     try {
       const result = await adminApi<{ token: string }>("/auth/login", {
         method: "POST",
         body: jsonBody({
           username: formValue(form, "username"),
           password: formValue(form, "password"),
+          captcha: formValue(form, "captcha"),
         }),
       })
+      // 登录成功
+      localFailuresRef.current = 0
       setAdminToken(result.token)
       router.replace("/")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "登录失败")
+      const err = error as Error & { locked?: boolean; attemptCount?: number; maxAttempts?: number }
+      setMessage(err.message || "登录失败")
+      setMessageIsWarning(false)
+
+      // 被锁定
+      if (err.locked) {
+        setLocked(true)
+        setLockCountdown(15 * 60) // 15 分钟
+        setMessage(err.message)
+        return
+      }
+
+      // 失败递增
+      localFailuresRef.current += 1
+
+      // 刷新验证码
+      fetchCaptcha()
+      // 清空验证码输入
+      const captchaInput = form.querySelector<HTMLInputElement>('[name="captcha"]')
+      if (captchaInput) captchaInput.value = ""
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -150,9 +264,26 @@ export function LoginPage() {
         `}</style>
       </div>
 
+          {/* 锁定遮罩 */}
+          {locked && (
+            <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-700 dark:bg-red-950 dark:text-red-100">
+              <p className="font-semibold">设备已临时锁定</p>
+              <p className="mt-1">
+                因多次尝试失败，该设备已被临时锁定，请{" "}
+                <span className="font-mono font-bold">{formatCountdown(lockCountdown)}</span>{" "}
+                后再试。
+              </p>
+            </div>
+          )}
+
           <form className="mt-5 space-y-3" onSubmit={submit}>
             <Field label="用户名">
-              <Input name="username" defaultValue="admin" autoComplete="username" />
+              <Input
+                name="username"
+                defaultValue="admin"
+                autoComplete="username"
+                disabled={locked}
+              />
             </Field>
             <Field label="密码">
               <Input
@@ -160,11 +291,59 @@ export function LoginPage() {
                 type="password"
                 defaultValue="admin123"
                 autoComplete="current-password"
+                disabled={locked}
               />
             </Field>
-            <AdminNotice message={message} />
-            <Button className="w-full" type="submit">
-              登录
+
+            {/* 验证码 */}
+            <Field label="验证码">
+              <div className="flex gap-2">
+                <Input
+                  name="captcha"
+                  className="flex-1"
+                  placeholder="请输入验证码"
+                  autoComplete="off"
+                  maxLength={4}
+                  disabled={locked}
+                />
+                <button
+                  type="button"
+                  className="h-9 w-[100px] flex-shrink-0 overflow-hidden rounded-md border"
+                  onClick={fetchCaptcha}
+                  disabled={locked || captchaLoading}
+                  title="点击刷新验证码"
+                >
+                  {captchaImage ? (
+                    <img
+                      src={captchaImage}
+                      alt="验证码"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                      {captchaLoading ? "加载中..." : "获取验证码"}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </Field>
+
+            {message ? (
+              <div
+                className={
+                  messageIsWarning
+                    ? "rounded-md border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-800 shadow-sm dark:border-blue-700 dark:bg-blue-950 dark:text-blue-100"
+                    : "rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+                }
+              >
+                <span className="mr-2 text-xs opacity-60">
+                  [{new Date().toLocaleTimeString("zh-CN", { hour12: false })}]
+                </span>
+                {message}
+              </div>
+            ) : null}
+            <Button className="w-full" type="submit" disabled={locked || submitting}>
+              {submitting ? "请稍候..." : locked ? `已锁定 ${formatCountdown(lockCountdown)}` : "登录"}
             </Button>
           </form>
         </Card>

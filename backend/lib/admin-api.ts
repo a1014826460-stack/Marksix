@@ -5,6 +5,9 @@ export type ApiError = {
   error?: string
   message?: string
   detail?: string
+  locked?: boolean
+  attempt_count?: number
+  max_attempts?: number
 }
 
 export function getAdminToken() {
@@ -20,8 +23,37 @@ export function clearAdminToken() {
   window.localStorage.removeItem("liuhecai_admin_token")
 }
 
+/** 生成简单的设备指纹，用于登录锁定追踪 */
+export function getDeviceFingerprint(): string {
+  if (typeof window === "undefined") return ""
+  const parts = [
+    navigator.hardwareConcurrency || "",
+    navigator.language || "",
+    screen.colorDepth || "",
+    screen.width || "",
+    screen.height || "",
+    new Date().getTimezoneOffset() || "",
+    navigator.platform || "",
+  ]
+  // hash 为短指纹
+  let hash = 0
+  const raw = parts.join("|")
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw.charCodeAt(i)
+    hash = ((hash << 5) - hash) + ch
+    hash |= 0
+  }
+  return "fp_" + Math.abs(hash).toString(36)
+}
+
 function buildHttpErrorMessage(status: number) {
   return `请求失败：${status}`
+}
+
+export type AdminApiError = Error & {
+  locked?: boolean
+  attemptCount?: number
+  maxAttempts?: number
 }
 
 export async function adminApi<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -32,6 +64,11 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
   }
   if (token) {
     headers.set("authorization", `Bearer ${token}`)
+  }
+  // 设备指纹（登录等敏感操作需要）
+  const fp = getDeviceFingerprint()
+  if (fp) {
+    headers.set("X-Device-Fingerprint", fp)
   }
 
   const response = await fetch(`/fackyou/api/python${path}`, {
@@ -60,7 +97,11 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
       apiError.message ||
       apiError.detail ||
       (rawText.trim() ? rawText : buildHttpErrorMessage(response.status))
-    throw new Error(message)
+    const err = new Error(message) as AdminApiError
+    if (apiError.locked) err.locked = true
+    if (apiError.attempt_count != null) err.attemptCount = apiError.attempt_count
+    if (apiError.max_attempts != null) err.maxAttempts = apiError.max_attempts
+    throw err
   }
 
   return (data ?? {}) as T
