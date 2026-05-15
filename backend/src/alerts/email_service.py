@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import socket
 import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -25,6 +26,28 @@ def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
         return get_config(db_path, key, fallback)
     except Exception:
         return fallback
+
+
+def _get_server_identity() -> str:
+    """获取服务器标识信息（主机名 + IP），用于报警邮件中定位问题服务器。"""
+    hostname = "unknown"
+    try:
+        hostname = socket.gethostname()
+    except Exception:
+        pass
+    ip = "unknown"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(1.0)
+        s.connect(("10.254.254.254", 1))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        try:
+            ip = socket.gethostbyname(hostname)
+        except Exception:
+            pass
+    return f"{hostname} ({ip})"
 
 
 def _load_smtp_config(db_path: str | Path) -> dict[str, Any]:
@@ -82,11 +105,16 @@ def send_alert_email(
         _email_logger.warning("无收件人配置，跳过邮件发送: %s", subject)
         return False
 
+    server_id = _get_server_identity()
+    full_body = (
+        body_html
+        + f"<hr><p style='color:#888;font-size:12px'>服务器: {server_id}</p>"
+    )
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = formataddr((smtp["from_name"], smtp["username"]))
     msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(body_html, "html", "utf-8"))
+    msg.attach(MIMEText(full_body, "html", "utf-8"))
 
     try:
         server = smtplib.SMTP(smtp["host"], smtp["port"], timeout=15)

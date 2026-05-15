@@ -484,13 +484,16 @@ export function DrawsPage() {
                   <TableRow>
                     {["ID", "彩种", "年份", "期数", "开奖号码", "开奖时间", "状态", "是否开奖", "下一期期数", "操作"].map(
                       (label, i) => (
-                        <TableHead key={i} className="relative select-none">
+                        <TableHead key={i} className="relative select-none border-r border-border last:border-r-0">
                           <span className="whitespace-nowrap">{label}</span>
+                          {/* resize handle: wide touch target with visible center line */}
                           <div
-                            className="absolute right-0 top-0 h-full w-3 cursor-col-resize hover:bg-primary/20 active:bg-primary/40 z-10"
+                            className="absolute right-0 top-0 h-full w-5 -mr-2.5 cursor-col-resize z-10 group"
                             onMouseDown={(e) => { e.preventDefault(); beginResize(i, e.clientX) }}
                             onTouchStart={(e) => { e.preventDefault(); beginResize(i, e.touches[0].clientX) }}
-                          />
+                          >
+                            <div className="absolute left-1/2 top-1 -translate-x-1/2 h-[calc(100%-8px)] w-[3px] rounded-full bg-border transition-colors group-hover:bg-primary/50 group-active:bg-primary" />
+                          </div>
                         </TableHead>
                       ),
                     )}
@@ -499,19 +502,19 @@ export function DrawsPage() {
                 <TableBody>
                   {filteredRows.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>{row.id}</TableCell>
-                      <TableCell>{row.lottery_name}</TableCell>
-                      <TableCell>{row.year}</TableCell>
-                      <TableCell>{row.term}</TableCell>
-                      <TableCell>
+                      <TableCell className="border-r border-border">{row.id}</TableCell>
+                      <TableCell className="border-r border-border">{row.lottery_name}</TableCell>
+                      <TableCell className="border-r border-border">{row.year}</TableCell>
+                      <TableCell className="border-r border-border">{row.term}</TableCell>
+                      <TableCell className="border-r border-border">
                         <DrawBallDisplay numbers={row.numbers} />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{row.draw_time}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap text-xs border-r border-border">{row.draw_time}</TableCell>
+                      <TableCell className="border-r border-border">
                         <StatusBadge value={row.status} />
                       </TableCell>
-                      <TableCell>{row.is_opened ? "是" : "否"}</TableCell>
-                      <TableCell>{row.next_term}</TableCell>
+                      <TableCell className="border-r border-border">{row.is_opened ? "是" : "否"}</TableCell>
+                      <TableCell className="border-r border-border">{row.next_term}</TableCell>
                       <TableCell>
                         <div className="flex gap-1 flex-nowrap">
                           <Button
