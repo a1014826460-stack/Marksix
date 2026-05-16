@@ -21,6 +21,9 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/next-draw-deadline", next_draw_deadline)
     router.add("GET", "/api/public/draw-history", draw_history)
     router.add("GET", "/api/public/current-period", current_period)
+    router.add("GET", "/api/public/notice", notice)
+    # 旧前端兼容路径
+    router.add("GET", "/api/index/notice", notice)
 
 
 def site_page(ctx: RequestContext) -> None:
@@ -82,3 +85,42 @@ def draw_history(ctx: RequestContext) -> None:
 def current_period(ctx: RequestContext) -> None:
     lottery_type = int(ctx.query_value("lottery_type", "3") or 3)
     ctx.send_json(get_current_period(ctx.db_path, lottery_type))
+
+
+def notice(ctx: RequestContext) -> None:
+    """公告弹窗接口。
+
+    根据 web 参数查找对应站点公告，返回前端要求的 { code: 600, data: { content } } 格式。
+    code 必须为 600，否则前端会跳过公告展示。
+    """
+    from db import connect
+
+    raw_web = ctx.query_value("web")
+    web_id: int | None = None
+    if raw_web not in (None, ""):
+        try:
+            web_id = int(str(raw_web).strip())
+        except (ValueError, TypeError):
+            pass
+
+    announcement = ""
+    if web_id is not None:
+        with connect(ctx.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT announcement
+                FROM managed_sites
+                WHERE enabled = TRUE
+                  AND (id = ? OR web_id = ?)
+                ORDER BY id
+                LIMIT 1
+                """,
+                (web_id, web_id),
+            ).fetchone()
+            if row:
+                announcement = str(row["announcement"] or "")
+
+    ctx.send_json({
+        "code": 600 if announcement else 200,
+        "data": {"content": announcement},
+    })

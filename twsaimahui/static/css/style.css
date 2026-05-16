@@ -1,0 +1,498 @@
+﻿
+body,div,dl,dt,dd,ul,ol,li,h1,h2,h3,h4,h5,h6,p,form,input,button,textarea,th,td{margin:0;padding:0}
+table{border-collapse:collapse;border-spacing:0}
+img{border:0}
+a{color:#444}
+a:hover{left: 1px;position:relative;top: 1px;text-decoration: underline;}
+li{list-style:none}
+body{overflow-x:hidden;-webkit-text-size-adjust:none;-moz-text-size-adjust:none;-ms-text-size-adjust:none;text-size-adjust:none;background:#e6e6e6;font:14px/1.5 tahoma,"\5FAE\8F6F\96C5\9ED1","\5B8B\4F53",arial,georgia,verdana,helvetica,sans-serif;color:#444;margin: 0 auto;max-width: 720px;} 
+h1,h2,h3,h4,h5,h6{font-size:100%}
+textarea{line-height:normal;resize:none;outline:0;vertical-align:middle;-webkit-appearance:none;}
+::-webkit-input-placeholder,input:-moz-placeholder{font-size:14px}
+a,.but,.inp,select,textarea{outline:0;blur:expression(this.onFocus=this.blur());-webkit-tap-highlight-color:rgba(0,0,0,0);text-decoration:none;}
+.gclear:after,.header:after,.footer:after,.cont:after,.box:after,ul.applist:after,ul.piclist:after,ul.limg:after,ul.txtlist:after,ul.txt:after,ul.txt2:after,ul.txt3:after,ul.txt4:after,ul.txt5:after,ul.txt6:after,ul.pics:after,.pages:after{display:block;clear:both;visibility:hidden;height:0;content:''}
+.gclear,.header,.footer,.cont,.box,.pages,ul.applist,ul.piclist,ul.limg,ul.txtlist,ul.txt,ul.txt2,ul.txt3,ul.txt4,ul.txt5,ul.txt6,ul.pics{zoom:1}
+ul.tools li{float:left;width:31%;height:120px;text-align:center;background-color:#f8f7f5;margin:8px 0 0 8px}
+ul.tools li a{position:relative;width:100%;display:block;margin:0 auto;text-decoration:none;height:100%;-moz-background-size:72px 72px;-webkit-background-size:72px 72px;-o-background-size:72px 72px;background-size:72px 72px;background-repeat:no-repeat;background-position:center 12px}
+ul.tools li a:hover{text-decoration: underline;}
+ul.tools li a span{position:absolute;top:90px;left:0;right:0}
+div.header{background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#ececec);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#ececec));border-bottom:1px solid #c6c6c6;width:100%;height:44px;moz-box-shadow:0 0 2px rgba(180,180,180,0.7);webkit-box-shadow:0 0 2px rgba(180,180,180,0.7);box-shadow:0 0 2px rgba(180,180,180,0.7);position:relative}
+div.ftop{position:fixed;top:0;z-index:999}
+#tm{height:45px}
+
+.go6h_header{width:100%;height:47px;background-color:#ff0000;position:absolute;/*left:0;top:0;*/z-index:999;background:-webkit-gradient(linear,0 0,0 50%,from(#63504E),to(#312120))}
+.go6h_header .go6h_header_ul{float:left}
+.go6h_header .go6h_header_li{float:left;position:relative;padding-left:16.5px;height:44px;line-height:44px;font-size:1.4rem;color:#fff}
+.go6h_header .go6h_header_li i{display:block;height:44px;width:16.5px;position:absolute;top:0;right:-15px;z-index:999;background-size:16.5px}
+.go6h_header .go6h_header_li:active{background-color:#008000}
+.go6h_header .go6h_header_li:active i{background-size:16.5px}
+.go6h_header .go6h_header_li.go6h_header_logo{padding-left:5px}
+.go6h_header .go6h_header_li.go6h_header_logo span{background:url("../image/logo.png") no-repeat 10px;display:block;height:50px;width:180px;background-size:contain;background-position:50%;}
+.go6h_header_right{float:right;font-size:16px;height:35px;padding-top:5px}
+.go6h_header_right ul{width:174px;}
+.go6h_header_right ul li{}
+.go6h_header_right ul li a{float:left;width:50px;height:33px;line-height:33px;margin-right:6px;color:#fff;text-decoration:none;background-color:#3c2b2a;text-align:center;border-radius: 8px;border:solid 0px #fff}
+.go6h_header_right ul li a:hover{background-color:#FF0000;}
+.go6h_header_right .link,.go6h_header_right span{font-size:8pt width:70px;height:44px;text-align:center;color:#fff;padding-top:25px;box-sizing:border-box;display:inline-block;text-decoration:none;padding-right:8px;}
+.go6h_header_right .go6h_header_rightPhoneIcon,.go6h_header_right .go6h_header_rightUserIcon,.go6h_header_right .go6h_header_rightFeedbackIcon{font-size:8pt}
+.go6h_header_right .go6h_header_rightUserIcon{background:url("http://www.twsaimahui.com/tu/user.png")/*tpa=/tu/user.png*/ no-repeat center 9px;background-size:13px}
+.go6h_header_right .go6h_header_rightPhoneIcon{background:url("http://www.twsaimahui.com/css/Phone.png")/*tpa=/css/http://www.twsaimahui.com/css/Phone.png*/ no-repeat center 9px;background-size:9px}
+.go6h_header_right .go6h_header_rightFeedbackIcon{background:url("http://www.twsaimahui.com/css/Feedback.png")/*tpa=css/http://www.twsaimahui.com/css/Feedback.png*/ no-repeat center 9px;background-size:15px}
+
+
+div.header h1,div.header h2,div.header h3{text-shadow:1px 1px 0 #fff;font-size:14pt;text-align:center;line-height:44px}
+div.cont h2,div.cont h3{color:green}
+a.back,a.more,a.home,a.pop,a.refresh,a.search,a.set{position:absolute;background-color:transparent;background-position:center center;background-repeat:no-repeat;width:30px;height:30px;display:block;margin:7px;-moz-background-size:cover;-webkit-background-size:cover;-o-background-size:cover;background-size:cover}
+a.right{right:0}
+.fleft{float:left}
+.fright{float:right}
+.center{text-align:center}
+.right{text-align:right}
+.left{text-align:left}
+.b{font-weight:bold}
+.nor{font-weight:normal}
+.ml{margin-left:8px}
+.mr{margin-right:8px}
+.none{display:none}
+.cboth{clear:both}
+.bwhite{background-color:#fff}
+.bgreen{background-color:#008000}
+.bred{background-color:red}
+.bblue{background-color:blue}
+.bpink{background-color:#c00}
+.bgray{background-color:#e5e5e5}
+.borange{background-color:orange}
+.byellow{background-color:#ffffb5}
+.bblack{background-color:#333}
+.bbb,.br,.brl,.blr,.btr,.brt,.bbr,.brb{border-right:1px solid #e5e5e5}
+.bbb,.bl,.brl,.blr,.btl,.blt,.bbl,.blb{border-left:1px solid #e5e5e5}
+.bbb,.bt,.btb,.bbt,.btl,.blt,.btr,.brt{border-top:1px solid #e5e5e5}
+.bbb,.bb,.btb,.bbt,.blb,.bbl,.brb,.bbr{border-bottom:1px solid #e5e5e5}
+.mm,.mr,.mrl,.mlr,.mtr,.mrt,.mbr,.mrb{margin-right:8px}
+.mm,.ml,.mrl,.mlr,.mtl,.mlt,.mbl,.mlb{margin-left:8px}
+.mm,.mt,.mtb,.mbt,.mtl,.mlt,.mtr,.mrt{margin-top:8px}
+.mm,.mb,.mtb,.mbt,.mlb,.mbl,.mrb,.mbr{margin-bottom:8px}
+.pp,.pr,.prl,.plr,.ptr,.prt,.pbr,.prb{padding-right:8px}
+.pp,.pl,.prl,.plr,.ptl,.plt,.pbl,.plb{padding-left:8px}
+.pp,.pt,.ptb,.pbt,.ptl,.plt,.ptr,.prt{padding-top:8px}
+.pp,.pb,.ptb,.pbt,.plb,.pbl,.prb,.pbr{padding-bottom:8px}
+.f8,.f8 a{font-size:8pt}
+.f9,.f9 a{font-size:9pt}
+.f10,.f10 a{font-size:10pt}
+.f11,.f11 a{font-size:11pt}
+.f12,.f12 a{font-size:12pt}
+.f13,.f13 a{font-size:13pt}
+.f14,.f14 a{font-size:14pt}
+.f16,.f16 a{font-size:16pt}
+.f18,.f18 a{font-size:18pt}
+.f24,.f24 a{font-size:24pt}
+.f36,.f36 a{font-size:36pt}
+.l100{line-height:100%}
+.l150{line-height:150%}
+.l180{line-height:180%}
+.l200{line-height:200%}
+.l250{line-height:250%}
+.l300{line-height:300%}
+.daxie{text-transform:uppercase}
+.xiaoxie{text-transform:lowercase}
+.td1{border:0px solid #e5e5e5;padding:3px 2px;word-break:break-all;}
+table thead th,table tbody th{border:1px solid #e5e5e5;background-color:#f8f8f8;font-weight:normal;padding:3px 1px;}
+table td{border:1px solid #e5e5e5;padding:3px 2px;word-break:break-all;}
+table.center td,table.center th,tr.center td,tr.center th,td.center{text-align:center}
+table.nob,table.nob th,table.nob td{border:0}
+ul.applist li,ul.txtlist li{height:69px}
+ul.applist li,ul.piclist li,ul.limg li,ul.txtlist li{border-top:1px solid #eee;position:relative}
+ul.applist li:nth-child(1),ul.piclist li:nth-child(1),ul.limg li:nth-child(1),ul.txtlist li:nth-child(1){border-top:0}
+ul.pics{margin:0 4px}
+ul.pics li{position:relative;float:left;margin:0 0 8px}
+ul.pic2 li{width:50%}
+ul.pic3 li{width:33.33%}
+ul.pic4 li{width:25%}
+ul.pic5 li{width:20%}
+ul.pic2 li:nth-child(-n+2),ul.pic3 li:nth-child(-n+3),ul.pic4 li:nth-child(-n+4),ul.pic5 li:nth-child(-n+5){padding-top:8px}
+ul.pics li a{margin:0 4px}
+ul.txt li,ul.txt2 li,ul.txt3 li,ul.txt4 li,ul.txt5 li,ul.txt6 li{position:relative;-moz-box-shadow:-1px 0 0 0 #eee;-webkit-box-shadow:-1px 0 0 0 #eee;box-shadow:-1px 0 0 0 #eee;border-top:1px solid #eee;float:left}
+ul.txt li:nth-child(1),ul.txt2 li:nth-child(-n+2),ul.txt3 li:nth-child(-n+3),ul.txt4 li:nth-child(-n+4),ul.txt5 li:nth-child(-n+5),ul.txt6 li:nth-child(-n+6){border-top:0}
+ul.txt li:nth-child(n+1),ul.txt2 li:nth-child(2n+1),ul.txt3 li:nth-child(3n+1),ul.txt4 li:nth-child(4n+1),ul.txt5 li:nth-child(5n+1),ul.txt6 li:nth-child(6n+1),ul.txt li:nth-child(1),ul.txt2 li:nth-child(1),ul.txt3 li:nth-child(1),ul.txt4 li:nth-child(1),ul.txt5 li:nth-child(1),ul.txt6 li:nth-child(1){-moz-box-shadow:0;-webkit-box-shadow:0;box-shadow:0}
+ul.txt li{width:100%}
+ul.txt2 li{width:50%}
+ul.txt3 li{width:33.33%}
+ul.txt4 li{width:25%}
+ul.txt5 li{width:20%}
+ul.txt6 li{width:16.66%}
+ul.txtlist li,ul.txt li,ul.txt2 li,ul.txt3 li,ul.txt4 li,ul.txt5 li,ul.txt6 li{height:30px}
+ul.arrow li,li.arrow{background:transparent url(http://www.twsaimahui.com/css/ico_arrow.png) center right no-repeat;-moz-background-size:18px 15px;-webkit-background-size:18px 15px;-o-background-size:18px 15px;background-size:18px 15px}
+ul.applist li a,ul.piclist li a,ul.limg li a,ul.txtlist li a,ul.txt2 li a,ul.txt3 li a,ul.txt4 li a,ul.txt5 li a,ul.txt6 li a,ul.pics li a{height:100%;display:block;text-decoration:none;overflow-y:hidden}
+ul.applist li a:hover,ul.piclist li a:hover,ul.limg li a:hover,ul.txtlist li a:hover,ul.txt2 li a:hover,ul.txt3 li a:hover,ul.txt4 li a:hover,ul.txt5 li a:hover,ul.txt6 li a:hover,ul.pics li a:hover{text-decoration: underline;}
+ul.app li a{background-color:transparent;background-position:center 4px;background-size:57px 57px;background-repeat:no-repeat}
+ul.app li a{display:block;text-decoration:none;padding-top:65px;padding-bottom:4px}
+ul.app li a:hover{text-decoration: underline;}
+ul.applist li a,ul.piclist li a,ul.limg li a{background-color:transparent;background-position:6px 6px;background-size:57px 57px;background-repeat:no-repeat}
+ul.applist li span.apptitle{position:absolute;left:75px;top:10px;font-size:12pt;font-weight:bold;color:#444;cursor:pointer}
+ul.applist li span.appintro{position:absolute;font-weight:normal;left:75px;top:40px;font-size:10pt;color:#999;cursor:pointer}
+ul.txtlist li span.apptitle,ul.txtlist li,ul.txt li,ul.txt2 li,ul.txt3 li,ul.txt4 li,ul.txt5 li,ul.txt6 li,ul.txtlist li a,ul.txt li a,ul.txt2 li a,ul.txt3 li a,ul.txt4 li a,ul.txt5 li a,ul.txt6 li a{line-height:30px;font-size:12pt;color:#444;cursor:pointer}
+ul.txtlist li span.apptitle a,ul.txtlist li a,ul.txt li a,ul.txt2 li a,ul.txt3 li a,ul.txt4 li a,ul.txt5 li a,ul.txt6 li a{padding:0 8px}
+ul.txtlist li span.appintro{position:absolute;font-weight:normal;right:8px;top:0;line-height:45px;font-size:10pt;color:#999;cursor:pointer}
+ul.arrow li span.appintro{right:27px}
+ul.arrow li span.apptitle{padding-right:27px}
+ul.txtlist li span.apptitle{margin-left:8px}
+ul.txtlist li a span.apptitle{margin:0}
+ul.piclist li a img,ul.limg li a img{vertical-align:text-top;margin:6px}
+ul.piclist li span.apptitle,ul.limg li span.apptitle{position:absolute;top:8px;font-size:12pt;font-weight:bold;color:#444;cursor:pointer}
+ul.piclist li span.appintro,ul.limg li span.appintro{position:absolute;font-weight:normal;top:38px;font-size:10pt;color:#999;cursor:pointer;right:auto}
+ul.limg li a img{width:85px;height:53px}
+ul.limg li span.apptitle{max-height:53px;overflow:hidden;font-weight:normal}
+div.cont{padding:3px}
+div.cont+div.cont{padding:0 8px 8px}
+p{margin:8px 0}
+p:nth-child(1){margin-top:0}
+p+h2,p+h3{padding-top:8px}
+p+p{margin-bottom:0}
+select{-webkit-appearance:none;height:39px;font-size:12pt;width:100%;border:0;background-color:transparent;background-position:right center;background-repeat:no-repeat;-moz-background-size:18px 5px;-webkit-background-size:18px 5px;-o-background-size:18px 5px;background-size:18px 5px}
+@media only screen and (-moz-min-device-pixel-ratio:1),only screen and (-o-min-device-pixel-ratio:1/1),only screen and (-webkit-min-device-pixel-ratio:1),only screen and (min-device-pixel-ratio:1){a.back{background-image:url(http://www.twsaimahui.com/css/l/nav_back.png)}
+    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_back_h.png)}
+    a.more{background-image:url(http://www.twsaimahui.com/css/l/nav_more.png)}
+    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_more_h.png)}
+    a.home{background-image:url(http://www.twsaimahui.com/css/l/nav_home.png)}
+    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_home_h.png)}
+    a.pop{background-image:url(http://www.twsaimahui.com/css/l/nav_pop.png)}
+    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_pop_h.png)}
+    a.refresh{background-image:url(http://www.twsaimahui.com/css/l/nav_refresh.png)}
+    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_refresh_h.png)}
+    a.search{background-image:url(http://www.twsaimahui.com/css/l/nav_search.png)}
+    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_search_h.png)}
+    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/l/ico_arrow.png)}
+    select{background-image:url(http://www.twsaimahui.com/css/l/select.png)}
+}
+@media only screen and (-moz-min-device-pixel-ratio:1.5),only screen and (-o-min-device-pixel-ratio:3/2),only screen and (-webkit-min-device-pixel-ratio:1.5),only screen and (min-device-pixel-ratio:1.5){a.back{background-image:url(http://www.twsaimahui.com/css/nav_back.png)}
+    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/nav_back_h.png)}
+    a.more{background-image:url(http://www.twsaimahui.com/css/nav_more.png)}
+    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/nav_more_h.png)}
+    a.home{background-image:url(http://www.twsaimahui.com/css/nav_home.png)}
+    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/nav_home_h.png)}
+    a.pop{background-image:url(http://www.twsaimahui.com/css/nav_pop.png)}
+    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/nav_pop_h.png)}
+    a.refresh{background-image:url(http://www.twsaimahui.com/css/nav_refresh.png)}
+    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/nav_refresh_h.png)}
+    a.search{background-image:url(http://www.twsaimahui.com/css/nav_search.png)}
+    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/nav_search_h.png)}
+    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/ico_arrow.png)}
+    select{background-image:url(http://www.twsaimahui.com/css/select.png)}
+}
+@media only screen and (-moz-min-device-pixel-ratio:2),only screen and (-o-min-device-pixel-ratio:2/1),only screen and (-webkit-min-device-pixel-ratio:2),only screen and (min-device-pixel-ratio:2){a.back{background-image:url(http://www.twsaimahui.com/css/nav_back.png)}
+    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/nav_back_h.png)}
+    a.more{background-image:url(http://www.twsaimahui.com/css/nav_more.png)}
+    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/nav_more_h.png)}
+    a.home{background-image:url(http://www.twsaimahui.com/css/nav_home.png)}
+    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/nav_home_h.png)}
+    a.pop{background-image:url(http://www.twsaimahui.com/css/nav_pop.png)}
+    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/nav_pop_h.png)}
+    a.refresh{background-image:url(http://www.twsaimahui.com/css/nav_refresh.png)}
+    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/nav_refresh_h.png)}
+    a.search{background-image:url(http://www.twsaimahui.com/css/nav_search.png)}
+    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/nav_search_h.png)}
+    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/ico_arrow.png)}
+    select{background-image:url(http://www.twsaimahui.com/css/select.png)}
+}
+div.box{margin:0 1px 1px;background-color:#fff}
+@media screen and (min-width:720px){
+    div.box,div.adbox,div.nobox{margin:0 auto 1px;max-width:720px}
+    .go6h_header,.top_bar{
+        width: 720px;
+        left:50%;
+        margin-left: -360px;
+    }
+}
+.article_content h2{margin:0;font-size:14pt;color:#000}
+.article_content .content_hd_media{color:#666;background-color:#fbfbfb;border-bottom:1px solid #dedede;padding:8px}
+.article_content .meta_info{color:#999;font-size:9pt;margin-top:6px}
+.article_content .meta_info div{display:inline-block;margin-right:5px;vertical-align:middle;height:35px;line-height:35px}
+.article_content .meta_info span.tip{border:1px solid #00aeef;border-radius:9px;padding:0 4px 1px;margin-left:5px;color:#00aeef;display:inline-block}.article_content .meta_info .imedia{color:#009de8}
+.article_content .content_bd a{color:#3261a3;line-height:1.7}.article_content .content_bd p,.article_content .content_bd div{vertical-align:baseline;color:#000;letter-spacing:-0.5px}
+.article_content .content_bd .a_image{margin:0 auto 10px;padding:0;position:relative}.article_content .content_bd p.copyright{font-size:8pt;color:#999;text-align:center;margin-top:30px}
+
+.cgi-info dt img { width: 36px; height: 36px; border-radius: 50%;}
+
+div.box img{vertical-align:middle}
+div.box div.title,div.box div.otitle,div.box div.foot{font-size:9pt;padding:4px 8px;color:#666;background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#f8f8f8);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#f8f8f8));border-top:1px solid #eee;border-bottom:1px solid #eee}
+div.box div.title{border-top:0;-moz-border-radius-topleft:4px;-moz-border-radius-topright:4px;-webkit-border-top-left-radius:4px;-webkit-border-top-right-radius:4px;border-top-left-radius:4px;border-top-right-radius:4px}
+div.foot{border-bottom:0;-moz-border-radius-bottomleft:4px;-moz-border-radius-bottomright:4px;-webkit-border-bottom-left-radius:4px;-webkit-border-bottom-right-radius:4px;border-bottom-left-radius:4px;border-bottom-right-radius:4px;background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#f8f8f8);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#f8f8f8))}
+div.box,.shadow,div.pop,.pages a{-moz-box-shadow:0 1px 2px rgba(180,180,180,0.7);-webkit-box-shadow:0 1px 2px rgba(180,180,180,0.7);box-shadow:0 1px 2px rgba(180,180,180,0.7)}
+a.top{float:right;height:40px;display:block;color:#fff}
+div.footer{font-size:9pt;color:#999;margin:0 8px;height:30px}
+div.footer a{color:#999}
+div.box,.rpic,div.pop,#gotop,.pages a{-moz-border-radius:4px;-webkit-border-radius:4px;border-radius:4px}
+div.pop{position:fixed;z-index:1000;width:120px;height:60px;background-color:#666;color:#fff;padding:8px;top:38px;right:8px;opacity:1;visibility:visible;-webkit-transition:opacity .2s ease-in-out;-moz-transition:opacity .2s ease-in-out;-o-transition:opacity .2s ease-in-out;transition:opacity .2s ease-in-out}
+div.nopop{width:0;height:0;opacity:0;visibility:hidden}
+#gotop{position:fixed;width:45px;height:45px;bottom:60px;right:10px;background:#fff url(http://www.twsaimahui.com/css/gotop.png) center center no-repeat;-moz-opacity:.70;opacity:.70;-moz-background-size:45px 45px;-webkit-background-size:45px 45px;-o-background-size:45px 45px;background-size:45px 45px;z-index:999}
+.wrapper{width:100%;height:100%;position:absolute}
+.panel{height:100%;overflow-y:scroll;position:relative}
+.pages a{font-size:10pt;padding:12px 18px;color:#666;text-align:center;display:inline-block;text-decoration:none;background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#f8f8f8);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#f8f8f8))}
+.pages a:hover{text-decoration: underline;}
+.pages a+a{margin-left:10px}
+.pages{margin:0 8px 8px}
+.ipt{font-size:12pt;color:#666;height:39px;line-height:39px;color:#666}
+.ibl,.iblr{border-left:1px solid #c6c6c6}
+.ibr,.iblr{border-right:1px solid #c6c6c6}
+.but,.lbut{border:0;border-left:1px solid #c6c6c6;font-size:12pt;color:#666;height:39px;width:80px;margin-left:10px;text-align:center;display:inline-block;-moz-border-radius:0 4px 4px 0;-webkit-border-radius:0 4px 4px 0;border-radius:0 4px 4px 0;-webkit-appearance:none;-moz-appearance:none;appearance:none;background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#f8f8f8);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#f8f8f8))}
+.lbut{border:0;margin:0;width:100%;-moz-border-radius:4px;-webkit-border-radius:4px;border-radius:4px}
+table.sbut,table.sbut tr,table.sbut th,table.sbut td{border:0}
+.inp{height:39px;font-size:12pt;width:100%;border:0;background-color:transparent}
+.texa{width:100%;border:0;-moz-border-radius:4px;-webkit-border-radius:4px;border-radius:4px}
+.wrap{display:-moz-box;display:-webkit-box;display:box;border:1px solid #c6c6c6;-moz-border-radius:4px;-webkit-border-radius:4px;border-radius:4px}
+.pbut{width:90px}
+.pinp{-moz-box-flex:1;-webkit-box-flex:1;box-flex:1}
+.pwrap{display:-moz-box;display:-webkit-box;display:box}
+.pbox,.pbox1{width:25%}
+.pbox2{width:50%}
+.pbox3{width:75%}
+a.white,.white,.white a{color:#fff}
+a.green,.green,.green a{color:#008000}
+a.red,.red,.red a{color:red}
+a.blue,.blue,.blue a{color:blue}
+a.pink,.pink,.pink a{color:#c00}
+a.gray,.gray,.gray a{color:#aaa}
+a.orange,.orange,.orange a{color:orange}
+a.yellow,.yellow,.yellow a{color:#ff0}
+a.black,.black,.black a{color:#333}
+.noline a,a.noline{text-decoration:none}
+.noline a:hover,a.noline:hover{text-decoration: underline;}
+.ad_bottom{height:60px;width:100%}
+.ad_bottom .ad_bottom_con{-webkit-box-sizing:border-box;position:fixed;bottom:0;left:0;z-index:1000;padding:0 8px;overflow:hidden;width:100%}
+.ad_bottom .ad_bottom_con img{width:100%}
+.weatherDate{border-bottom:1px solid #dadada;margin:0 auto;padding:0;height:100%;text-align:center;position:relative}
+.weatherDate li{width:50%;float:left}
+.weatherDate li a{display:block;border-left:1px solid #dadada;overflow:hidden}
+.weatherDate li a:active{background-color:#e7e7e7}
+.weatherDate li:nth-child(2n+1) a{border-left:0 none;border-right:1px solid #fff}
+.weatherDate li .pTxt{display:inline-block;margin:0 auto;position:relative}
+.weatherDate li .pTxt .sDes{display:block;text-align:left}
+.weatherDate li.weatherList .weatherPic{position:absolute;top:0;left:0}
+.weatherDate li.dateList .dateIcon{position:absolute;top:0;left:0}
+@media only screen{.weatherDate{font-size:17px}
+    .weatherDate li a{font-size:13px;line-height:17px}
+    .weatherDate li .pTxt{margin-top:6px;margin-bottom:6px;height:46px}
+    .weatherDate li .pTxt .sDes{padding-top:6px}
+    .weatherDate li.weatherList .pTxt{padding-left:30px}
+    .weatherDate li.weatherList .pTxt .weatherPic{width:23px;height:23px;top:2px}
+    .weatherDate li.dateList .pTxt{padding-left:25px}
+    .weatherDate li.dateList .pTxt .dateIcon{width:16px;height:17px;background-size:16px 17px;top:8px}
+}
+@media only screen and (min-width:360px) and (max-width:399px){.weatherDate{font-size:19px}
+    .weatherDate li a{font-size:15px;line-height:19px}
+    .weatherDate li .pTxt{margin-top:7px;margin-bottom:7px;height:52px}
+    .weatherDate li .pTxt .sDes{padding-top:6px}
+    .weatherDate li.weatherList .pTxt{padding-left:34px}
+    .weatherDate li.weatherList .pTxt .weatherPic{width:26px;height:26px;top:3px}
+    .weatherDate li.dateList .pTxt{padding-left:28px}
+    .weatherDate li.dateList .pTxt .dateIcon{width:18px;height:19px;background-size:18px 19px;top:9px}
+}
+@media only screen and (min-width:400px) and (max-width:479px){.weatherDate{font-size:21px}
+    .weatherDate li a{font-size:16px;line-height:21px}
+    .weatherDate li .pTxt{margin-top:8px;margin-bottom:8px;height:58px}
+    .weatherDate li .pTxt .sDes{padding-top:7px}
+    .weatherDate li.weatherList .pTxt{padding-left:38px}
+    .weatherDate li.weatherList .pTxt .weatherPic{width:29px;height:29px;top:3px}
+    .weatherDate li.dateList .pTxt{padding-left:31px}
+    .weatherDate li.dateList .pTxt .dateIcon{width:20px;height:21px;background-size:20px 21px;top:10px}
+}
+@media only screen and (min-width:480px){.weatherDate{font-size:26px}
+    .weatherDate li a{font-size:20px;line-height:26px}
+    .weatherDate li .pTxt{margin-top:10px;margin-bottom:10px;height:70px}
+    .weatherDate li .pTxt .sDes{padding-top:9px}
+    .weatherDate li.weatherList .pTxt{padding-left:46px}
+    .weatherDate li.weatherList .pTxt .weatherPic{width:35px;height:35px;top:4px}
+    .weatherDate li.dateList .pTxt{padding-left:38px}
+    .weatherDate li.dateList .pTxt .dateIcon{width:25px;height:26px;background-size:25px 26px;top:12px}
+}
+#pages_nav{ margin:0 auto;}
+#pages_nav a{ margin:0 8px; line-height:25px;}
+.notice{background:hsla(0,0%,100%,.1);padding:2px 2px;display:-webkit-box;display:-ms-flexbox;display:flex;}
+.notice i{display:block;width:26px;height:26px;background:url(http://www.twsaimahui.com/images/icon-notice.png) 50% no-repeat;background-size:contain;margin-right:5px;margin-top:2px}
+.notice .marquee{-webkit-box-flex:1;-ms-flex:1;flex:1;display:block;line-height:normal;overflow:hidden;font-size:15px;white-space:nowrap;position:relative}
+.notice .marquee span{display:inline;width:auto;white-space:nowrap}
+
+.example {width: 100%;height:200px;max-height:200px;font-size: 40px;text-align: center;margin: 0px auto;background-color: #464576;}
+.ft-carousel {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.ft-carousel .carousel-inner {
+	position: absolute;
+	left: 0;
+	top: 0;
+	height: 100%;
+}
+
+.ft-carousel .carousel-inner .carousel-item {
+	float: left;
+	height: 100%;
+}
+
+.ft-carousel .carousel-item img {
+	width: 100%;
+	height:200px;
+}
+.ft-carousel .carousel-indicators {
+	position: absolute;
+	left: 0;
+	bottom: 10px;
+	width: 100%;
+	text-align: center;
+	font-size: 0;
+}
+
+.ft-carousel .carousel-indicators span {
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	background-color: #fff;
+	margin: 0 4px;
+	border-radius: 50%;
+	cursor: pointer;
+}
+
+.ft-carousel .carousel-indicators span.active {
+	background-color: #de3a3a;
+}
+
+.ft-carousel .carousel-btn {
+	position: absolute;
+	top: 50%;
+	width: 50px;
+	height: 45px;
+	margin-top: -25px;
+	cursor: pointer;
+}
+
+/* pagination */
+.iCMS_pagination { margin: 10px; clear: both; max-height: 30px; position: relative; text-align: center }
+.iCMS_pagination a,.iCMS_pagination span { display: inline-block; padding: 4px 12px; line-height: 20px; text-decoration: none; background-color: #fff; border: 1px solid #ddd; border-left-width: 0 }
+.iCMS_pagination span.current,.iCMS_pagination span.page_nowindex{background-color: #ddd;color: #333;}
+.iCMS_pagination a:hover, .iCMS_pagination a:focus { background-color: #f5f5f5 }
+.iCMS_pagination a.page_nowindex { color: #999; cursor: default }
+.iCMS_pagination a:first-child, .iCMS_pagination span:first-child { border-left-width: 1px; -webkit-border-bottom-left-radius: 4px; border-bottom-left-radius: 4px; -webkit-border-top-left-radius: 4px; border-top-left-radius: 4px; -moz-border-radius-bottomleft: 4px; -moz-border-radius-topleft: 4px }
+.iCMS_pagination a:last-child, .iCMS_pagination span:last-child { -webkit-border-top-right-radius: 4px; border-top-right-radius: 4px; -webkit-border-bottom-right-radius: 4px; border-bottom-right-radius: 4px; -moz-border-radius-topright: 4px; -moz-border-radius-bottomright: 4px }
+
+
+
+.tb2{width:100%;word-break:keep-all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txt0{padding-left: 15px;padding-right: 23px;background-color: #d64343;border-radius: 5px;color:#FFFFFF;float: left;margin: 0px -12px;font-family: 微软雅黑; font-size: 14px;background: url(http://www.twsaimahui.com/tu/gsh3.png) left center no-repeat;}
+.txt{padding-left: 15px;padding-right: 23px;background-color: #d64343;border-radius: 5px;color:#FFFFFF;float: left;margin: 0px -12px;font-family: 微软雅黑; font-size: 14px;background: url(../image/gsh.png) left center no-repeat;}
+.txt1{padding-left: 2px; padding-right: 2px; padding-top: 1px; padding-bottom: 1px;background-color: #800000;border-radius: 5px; color:#FFFFFF;float:left}
+.txt2{padding-left: 2px; padding-right: 2px; padding-top: 1px; padding-bottom: 1px;background-color: #800080;border-radius: 5px; color:#FFFFFF;float:left}
+.txt3{padding-left: 2px; padding-right: 2px; padding-top: 1px; padding-bottom: 1px;background-color: #FF9900;border-radius: 5px; color:#FFFFFF;float:left}
+.txt5{padding-left: 2px; padding-right: 2px; padding-top: 2px; padding-bottom: 2px;background-color: #FF0000;color:#FFFF00;float:left;width:16px;border-style: dotted; border-width: 2px}
+.txt6{padding-left: 2px; padding-right: 2px; padding-top: 2px; padding-bottom: 2px;background-color: #FF0000;color:#FFFF00;float:right;width:16px;border-style: dotted; border-width: 2px}
+
+
+
+/*推荐资料--夹子*/
+
+.rec-num { text-align: center;}
+.rec-num ul { padding: 0 7px;}
+.rec-num li { float: left; width: calc(23% - 0px); padding: 0 3px;}
+.rec-num li .shujia { width: 20px; height: 30px; background: url(http://www.twsaimahui.com/tu/shujia.png) bottom center no-repeat; background-size: 100% auto; display: inline-block; position: relative; z-index: 1;}
+.rec-num li a { margin-top: -13px; padding-top: 10px; padding-bottom: 10px; display: inline-block; border-radius: 5px; background: #e9ece3; box-shadow: 0 2px 0 rgba(0,0,0,.3); position: relative; vertical-align: middle; display: block;}
+.rec-num li .row1 { font-weight: bold;}
+.rec-num li .row2 {}
+.rec-num li .row2 marquee {width: calc(100% - 20px); margin-top: 3px; color: #81511c; background: #fff;}
+.rec-num li .row3 { font-size: 12px; color: rgba(0,0,0,.5);}
+.rec-num li .row4 { padding: 0 5px; display: inline-block; color: #ff0; border-radius: 5px; background: #e70000; animation: ddd 1s both infinite;}
+
+
+.clearfix:after {content: ".";display: block;height: 0;clear: both;overflow: hidden;visibility: hidden }
+.clearfix {*zoom:1;}
+
+.clearfix:after {content: ".";display: block;height: 0;clear: both;overflow: hidden;visibility: hidden }
+.clearfix {*zoom:1 }
+.clear {clear: both;width: 0px;height: 0px;font-size: 0px;overflow: hidden }
+
+.clearfix:after {content: ".";display: block;height: 0;clear: both;overflow: hidden;visibility: hidden}
+.clearfix {
+
+/*推荐资料--夹子end*/
+
+
+
+/*优秀站*/
+
+*{ margin:0; padding:0;}
+html {}
+.tit20161231,.box20161231{ font-size: 14px; color:#000; font-weight:bolder; font-family: "Microsoft YaHei";}
+.box20161231 a:hover img,img{ border:none;}
+ul{ list-style:none;}
+.box20161231 table{ border-collapse:collapse;}
+.box20161231 a{ text-decoration:none; color: inherit; color: #000;}
+.box20161231 a:hover{ position: relative; top: 1px; left: 1px; color: #f00;}
+
+/*-------------------------结束公用样式--------------------------*/
+.tit20161231 { width: 100%; height: 45px; line-height: 40px; margin: 0 auto; text-align: center; font-size: 22px; color: #fff;background: url(http://www.twsaimahui.com/tu/tubiao.png) top center no-repeat; }
+.box20161231 .clearfix:after{content:".";display:block;height:0;clear:both;overflow:hidden;visibility:hidden}
+.box20161231 .clearfix{*zoom:1}
+.box20161231 .clear{clear:both;width:0px;height:0px;font-size:0px;overflow:hidden}
+
+.box20161231 { width: 1000px; margin: 0 auto; background: #fff;}
+.box20161231 table {}
+.box20161231 table td { width: 20%; text-align: center; vertical-align: top; border: solid 1px #ddd; position: relative;}
+.box20161231 table td a { padding: 5px 10px; display: inline-block; margin: 0 auto;}
+.box20161231 table td a .web_pic { width: 180px; height: 45px; text-align: center;}
+.box20161231 table td a .web_pic img { max-width: 180px; height: 45px;}
+.box20161231 table td a span { height: 24px; line-height: 24px;}
+.box20161231 table td a:hover {}
+
+/*优秀站end*/
+
+
+
+.ifrAo{height:160px;}
+@media screen and (max-width:800px) {
+.ifrAo{height:160px;}
+}
+@media screen and (max-width:650px) {
+.ifrAo{height:150px;}
+}
+@media screen and (max-width:530px) {
+.ifrAo{height:130px;}
+}
+@media screen and (max-width:480px) {
+.ifrAo{height:120px;}
+}
+@media screen and (max-width:430px) {
+.ifrAo{height:110px;}
+}
+
+
+.anmao1 { position: relative;}
+.anmao2 { height: 219px; position: absolute; top: -219px;}
+
+
+.k1 { padding: 1px; border: solid 1px #4b260b; background: #f9e08c;}
+.k2 { padding: 1px; border: solid 1px #442f14; background: #e9ebea;}
+.k3 { padding: 3px; border: solid 1px #a48125; background: #fef6cf;}
+.kk { padding: 3px; border: solid 1px #968e60; background: #e7e6b8; position: relative;}
+.kk-fang { display: block; width: 3px; height: 3px; border: solid 1px #968e60; background: #fef6cf;}
+.kk-fang.tl { position: absolute; top: -1px; left: -1px;}
+.kk-fang.tr { position: absolute; top: -1px; right: -1px;}
+.kk-fang.bl { position: absolute; bottom: -1px; left: -1px;}
+.kk-fang.br { position: absolute; bottom: -1px; right: -1px;}
+
+.k1.nob { padding-bottom: 0; border-bottom: 0;}
+.k2.nob { padding-bottom: 0; border-bottom: 0;}
+.k3.nob { border-bottom: 0;}
+.k1.not { padding-top: 0; border-top: 0;}
+.k2.not { padding-top: 0; border-top: 0;}
+.k3.not { padding-top: 0; border-top: 0;}
+
+
+.dbkj { height: 65px; overflow: hidden; background: #fff;}
+
+.enter { padding: 1px 0; text-align: center; font-size: 18px; font-weight: bold;}
+.enter ul { display: flex;}
+.enter ul li { flex: 1; padding: 0 3px;}
+.enter ul li a { display: block; padding: 5px 0; border-radius: 4px; border: solid 1px #000; background: #fff;}
+.enter ul li a.active { color: #ff0; background: #c51b19;}
+.enter ul li img { width: 1.5em; height: auto;}

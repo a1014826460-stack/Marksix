@@ -69,6 +69,7 @@ server {
     }
 
     # ---- Frontend Next.js API proxy ----
+    # See deploy/nginx.conf for full routing documentation
     location /api/ {
         proxy_pass http://frontend:3000;
         proxy_set_header Host $host;

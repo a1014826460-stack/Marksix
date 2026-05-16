@@ -121,14 +121,14 @@ def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) 
 
 
 def _compute_taiwan_default_next_time_ms(db_path: str | Path) -> str:
-    """当 system_config 中未配置 lottery.taiwan_next_time 时，回退到默认今天 22:30 北京时间。
+    """当 system_config 中未配置 lottery.taiwan_next_time 时，回退到 draw.taiwan_default_draw_time 计算下一期开奖时间。
 
     Returns:
         毫秒级 Unix 时间戳字符串
     """
     from calendar import timegm
-    hour = int(_cfg(db_path, "crawler.taiwan_precise_open_hour", 22))
-    minute = int(_cfg(db_path, "crawler.taiwan_precise_open_minute", 30))
+    from crawler.collectors import _get_taiwan_draw_time_parts
+    hour, minute = _get_taiwan_draw_time_parts(db_path)
     now_utc = datetime.now(timezone.utc)
     beijing_now = now_utc + timedelta(hours=8)
     target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -497,8 +497,14 @@ def _upsert_current_draw_records(
                 continue
 
             _upsert_draw(
-                conn, lottery_type_id, year, term,
-                str(record.get("result") or ""), open_time, 1, now,
+                conn,
+                lottery_type_id,
+                year,
+                term,
+                str(record.get("result") or ""),
+                open_time,
+                0,
+                now,
                 next_time=str(record.get("next_time") or ""),
             )
 
@@ -713,6 +719,14 @@ class CrawlerScheduler:
                 )
                 break
 
+            # API 期号等于 current_period → 外部数据源尚未更新，正常推迟
+            if period and period == current_period:
+                _crawler_logger.info(
+                    "Precise fetch lt=%s: API still at current_period=%s, deferring (attempt=%d)",
+                    lottery_type_id, current_period, attempt + 1,
+                )
+                return {"status": "deferred", "detail": "API period unchanged, deferred", "upsert_result": None}
+
             _crawler_logger.warning(
                 "Precise fetch lt=%s: MISMATCH expected=%s actual=%s error=%s (attempt=%d/4)",
                 lottery_type_id, expected_period, period or "N/A", error or "N/A",
@@ -722,6 +736,16 @@ class CrawlerScheduler:
         if not period_matched:
             final_period, final_error = _fetch_current_draw_period(lottery_type_id, self.db_path)
             final_actual = final_period or f"error: {final_error}"
+
+            # API 仍未更新 → 正常滞后，不告警，仅开启追赶模式
+            if final_period and final_period == current_period:
+                _crawler_logger.info(
+                    "Precise fetch lt=%s: API still at current_period=%s after all retries, deferring",
+                    lottery_type_id, current_period,
+                )
+                self._set_lottery_chase_mode(lottery_type_id, True)
+                return {"status": "deferred", "detail": "API period unchanged after retries", "upsert_result": None}
+
             _trigger_draw_mismatch_alert(
                 self.db_path, lottery_type_id, expected_period, final_actual, 4,
             )
@@ -1275,19 +1299,10 @@ class CrawlerScheduler:
                     )
                     reset_crawler_fail_count(self.db_path, lt_id)
                     self._set_lottery_chase_mode(lt_id, False)
-                    # 立即开盘（不再等待 auto_open 轮询）
-                    opened_count = self._open_specific_records(lt_id, result.get("latest_draw"))
-                    if opened_count > 0:
-                        _crawler_logger.info(
-                            "Auto-crawl %s: auto-opened %d record(s)", lt_name, opened_count,
-                        )
-                    # 延迟回填（预测由 daily_prediction 统一生成）
-                    try:
-                        _schedule_backfill_after_draw(self.db_path, lt_id)
-                    except Exception as exc:
-                        _crawler_logger.error(
-                            "Auto-crawl %s backfill schedule failed: %s", lt_name, exc
-                        )
+                    _crawler_logger.info(
+                        "Auto-crawl %s: draw cached and waiting for precise open",
+                        lt_name,
+                    )
                 else:
                     _crawler_logger.info(
                         "Auto-crawl %s: all %d record(s) already up-to-date, skipped",
@@ -1412,8 +1427,8 @@ class CrawlerScheduler:
         raise ValueError(f"Unsupported scheduler task type: {task_type}")
 
     def _open_taiwan_draws_and_update_next_time(self) -> int:
-        """北京时间 22:30 精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，
-        并立即计算下一期 draw_time 更新 next_time 为 Unix 秒级时间戳。
+        """精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，
+        并立即计算下一期 draw_time（日期 +1 天，钟点取自 draw.taiwan_default_draw_time 配置）。
 
         注意：draw_time 字段存储的是北京时间字符串，比较时必须使用北京时间。"""
         now_utc_dt = datetime.now(timezone.utc)
@@ -1444,9 +1459,9 @@ class CrawlerScheduler:
                     [now_utc] + ids,
                 )
             if opened_count > 0:
-                _crawler_logger.info("TaiwanOpen 22:30 Beijing — opened %d Taiwan draw(s)", opened_count)
+                _crawler_logger.info("TaiwanOpen — opened %d Taiwan draw(s)", opened_count)
             else:
-                _crawler_logger.debug("TaiwanOpen 22:30 Beijing — no Taiwan draws to open")
+                _crawler_logger.debug("TaiwanOpen — no Taiwan draws to open")
 
             for row in due_rows:
                 self._calc_and_update_next_time(conn, row, now_utc)
@@ -1456,14 +1471,17 @@ class CrawlerScheduler:
             return opened_count
 
     def _calc_and_update_next_time(self, conn, row, now_str: str) -> None:
-        """根据当期 draw_time + 1 天计算下一期 draw_time，将 next_time 更新为毫秒级时间戳。"""
+        """根据当期日期 + 1 天，搭配 draw.taiwan_default_draw_time 配置的钟点，计算下一期开奖时间。"""
         from calendar import timegm
+        from crawler.collectors import _get_taiwan_draw_time_parts
 
         draw_time_str = row["draw_time"]
         draw_dt = _parse_beijing_draw_datetime(draw_time_str)
         if draw_dt is None:
             raise ValueError(f"Invalid Taiwan draw_time: {draw_time_str}")
-        next_dt = draw_dt + timedelta(days=1)
+        next_date = (draw_dt + timedelta(days=1)).date()
+        cfg_hour, cfg_minute = _get_taiwan_draw_time_parts(self.db_path)
+        next_dt = datetime.combine(next_date, datetime.min.time().replace(hour=cfg_hour, minute=cfg_minute))
         # draw_time 存储的是北京时间，转为 UTC 后计算毫秒时间戳
         utc_dt = next_dt - timedelta(hours=8)
         unix_ms = int(timegm(utc_dt.timetuple()) * 1000)

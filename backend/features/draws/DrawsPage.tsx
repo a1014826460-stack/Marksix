@@ -265,6 +265,7 @@ export function DrawsPage() {
       return
     }
 
+    // draw_time 来自 lottery_types 表，权威值在服务端 draw.taiwan_default_draw_time 配置
     const timeStr = taiwanLottery?.draw_time || "22:30:00"
     const parts = timeStr.split(":")
     const timeWithSec = parts.length >= 3 ? timeStr : `${timeStr}:00`

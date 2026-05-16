@@ -676,8 +676,52 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
         return jsonResponse(mapStructuredTitleRows(payload.rows))
       }
 
-      default:
+      // ── 路径别名：前端调用名与已注册 case 名不同 ─────────────────
+      case "getXiaoma2":
+      case "getXiaoMa2": {
+        // 等同于 getXiaoma，前端多一个 "2" 后缀
+        const payload = await fetchLegacyRows(url, 44, 6)
+        return jsonResponse(mapSevenXiaoQiMa(payload.rows))
+      }
+
+      case "getHbx": {
+        // 等同于 getHbnx（hee bai xiao → 黑白肖）
+        const payload = await fetchLegacyRows(url, 45, 6)
+        return jsonResponse(mapHeiBai(payload.rows))
+      }
+
+      // ── 中特系列：根据 num 映射到不同 modes_id ─────────────
+      case "getZhongte": {
+        const modesId = num === "9" ? 49     // 九肖中特 (jxzt)
+                      : num === "6" ? 46     // 六肖中特 (lxzt)
+                      : num === "5" ? 46     // 隐刺五肖 → 六肖中特
+                      : num === "4" ? 46     // 四肖 / 六肖 → 六肖中特
+                      : num === "3" ? 46     // 三肖 → 暂用六肖中特
+                      : 46                   // 默认回退
+        const payload = await fetchLegacyRows(url, modesId, 10)
+        return jsonResponse(mapSimpleContent(payload.rows))
+      }
+
+      // ── 兜底：未显式处理的端点 ───────────────────────────────
+      // 所有 35 个已知 modes_id 已由显式 case 覆盖。
+      // 以下端点对应的 modes_id 在数据库中可能不存在，
+      // 需要后续创建对应的 mode_payload 表后再添加显式 case。
+      //
+      // 未映射端点列表 (modes_id 待确定):
+      //   getJyxiao2, getZyx, getYysx, getDsWei, getHeds,
+      //   getTdsx1, getCyptwei, getDsxiao, getYbzt, getWeima2,
+      //   getWwx, getYwx, getBmzy, getX2jiam8, getPtWei,
+      //   getShama, getFyld, getYzxj, getCypt, getNnnx,
+      //   getXysxma, getShatou, getJmxc, getFsx, getDxd,
+      //   getShaBds, rd70i73lziizczak
+      //
+      // 注意：不代理到 Python /api/kaijiang/* 兜底，
+      // 因为 frontend_compat.py 使用 num 作为 modes_id，
+      // 可能返回不相关模块的错误数据（如 num=2 会匹配 modes_id=2/六尾中特）。
+      default: {
+        console.warn(`[kaijiang] unknown endpoint: ${endpoint} (num=${num}) — returning empty, modes_id mapping needed`)
         return jsonResponse([])
+      }
     }
   } catch (error) {
     return NextResponse.json(
