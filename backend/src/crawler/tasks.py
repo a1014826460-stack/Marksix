@@ -275,8 +275,8 @@ def mark_scheduler_task_failed(db_path: str | Path, task: dict[str, Any], exc: E
 def ensure_taiwan_precise_open_task(db_path: str | Path) -> None:
     now_utc = datetime.now(timezone.utc)
     beijing_now = now_utc + timedelta(hours=8)
-    hour = int(_cfg(db_path, "crawler.taiwan_precise_open_hour", 22))
-    minute = int(_cfg(db_path, "crawler.taiwan_precise_open_minute", 30))
+    from crawler.collectors import _get_taiwan_draw_time_parts
+    hour, minute = _get_taiwan_draw_time_parts(db_path)
     target_beijing = beijing_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if beijing_now >= target_beijing:
         target_beijing += timedelta(days=1)

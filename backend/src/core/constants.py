@@ -38,7 +38,8 @@ LOTTERY_TYPE_HK = 1      # 香港彩
 LOTTERY_TYPE_MACAU = 2   # 澳门彩
 LOTTERY_TYPE_TAIWAN = 3  # 台湾彩
 
-# ── 默认开奖时间 ────────────────────────────────────
+# ── 默认开奖时间（已废弃，仅保留作为文档参考）────
+# 实际开奖时间配置已统一到 draw.{hk,macau,taiwan}_default_draw_time 配置项
 DEFAULT_HK_DRAW_TIME = "21:30"
 DEFAULT_MACAU_DRAW_TIME = "21:30"
 DEFAULT_TAIWAN_DRAW_TIME = "22:30"

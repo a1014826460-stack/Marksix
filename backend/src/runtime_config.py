@@ -151,13 +151,13 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
     "crawler.taiwan_precise_open_hour": {
         "value": 22,
         "value_type": "int",
-        "description": "台湾彩精准开奖北京时间小时。",
+        "description": "【已废弃】请使用 draw.taiwan_default_draw_time。台湾彩精准开奖北京时间小时。",
         "is_secret": 0,
     },
     "crawler.taiwan_precise_open_minute": {
         "value": 30,
         "value_type": "int",
-        "description": "台湾彩精准开奖北京时间分钟。",
+        "description": "【已废弃】请使用 draw.taiwan_default_draw_time。台湾彩精准开奖北京时间分钟。",
         "is_secret": 0,
     },
     "crawler.taiwan_retry_delays_seconds": {
@@ -229,7 +229,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
     "draw.taiwan_default_draw_time": {
         "value": "22:30",
         "value_type": "string",
-        "description": "初始台湾彩开奖时间。",
+        "description": "台湾彩开奖时间（北京时间 HH:MM）。用于精准开奖调度和下一期时间计算。",
         "is_secret": 0,
     },
     "draw.hk_default_collect_url": {
@@ -1293,8 +1293,7 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
                 "crawler.task_poll_interval_seconds",
                 "crawler.task_lock_timeout_seconds",
                 "crawler.task_retry_delay_seconds",
-                "crawler.taiwan_precise_open_hour",
-                "crawler.taiwan_precise_open_minute",
+                "draw.taiwan_default_draw_time",
                 "crawler.taiwan_max_retries",
                 "crawler.http_timeout_seconds",
                 "crawler.http_retry_count",

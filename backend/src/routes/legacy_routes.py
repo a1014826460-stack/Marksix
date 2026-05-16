@@ -4,6 +4,7 @@ from legacy.api import get_legacy_current_term, list_legacy_post_images, load_le
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from db import connect
 
 
 def register(router: Router, *, default_pc: int, default_web: int, default_type: int) -> None:
@@ -14,6 +15,40 @@ def register(router: Router, *, default_pc: int, default_web: int, default_type:
         lambda ctx: post_list(ctx, default_pc=default_pc, default_web=default_web, default_type=default_type),
     )
     router.add("GET", "/api/legacy/module-rows", module_rows)
+
+    # 旧前端兼容层：接收 twsaimahui 静态页原始请求
+    # /api/kaijiang/* 和 /api/post/getList
+    _register_frontend_compat_routes(router, default_pc, default_web, default_type)
+
+
+def _register_frontend_compat_routes(
+    router: Router, default_pc: int, default_web: int, default_type: int
+) -> None:
+    """注册旧前端兼容层路由。
+
+    这些路由接收 twsaimahui 静态 HTML 页面的原始 AJAX 请求格式，
+    把请求委托给 legacy/frontend_compat.py 处理。
+    """
+    from legacy.frontend_compat import (
+        handle_frontend_kaijiang_api,
+        handle_frontend_post_api,
+    )
+
+    def _kaijiang_handler(ctx: RequestContext) -> None:
+        with connect(ctx.db_path) as conn:
+            result = handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
+        ctx.send_json(result)
+
+    def _post_handler(ctx: RequestContext) -> None:
+        with connect(ctx.db_path) as conn:
+            result = handle_frontend_post_api(ctx.path, ctx.query, conn)
+        ctx.send_json(result)
+
+    # 注意：这些路由仅作为兜底。
+    # 正常请求优先走 Next.js 兼容层 (app/api/kaijiang/[...path]/route.ts)
+    # 当 Next.js 层未显式处理时才会代理到此处。
+    router.add_prefix("GET", "/api/kaijiang/", _kaijiang_handler)
+    router.add("GET", "/api/post/getList", _post_handler)
 
 
 def current_term(ctx: RequestContext) -> None:

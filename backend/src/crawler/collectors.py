@@ -28,6 +28,37 @@ def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
         return fallback
 
 
+def _get_taiwan_draw_time_parts(db_path: str | Path) -> tuple[int, int]:
+    """返回台湾彩北京时间开奖 (小时, 分钟)。
+
+    主路径：解析 ``draw.taiwan_default_draw_time``（格式 "HH:MM"）。
+    向后兼容：若旧 key ``crawler.taiwan_precise_open_hour`` / ``_minute``
+    已被显式覆盖（不等于出厂默认 22/30），优先使用旧值。
+    """
+    # ── 主路径：统一 key ──
+    time_str = str(_cfg(db_path, "draw.taiwan_default_draw_time", "")).strip()
+    if time_str:
+        try:
+            parts = time_str.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, IndexError):
+            hour, minute = 22, 30
+    else:
+        hour, minute = 22, 30
+
+    # ── 向后兼容：旧 split key ──
+    try:
+        legacy_h = int(_cfg(db_path, "crawler.taiwan_precise_open_hour", 22))
+        legacy_m = int(_cfg(db_path, "crawler.taiwan_precise_open_minute", 30))
+        if legacy_h != 22 or legacy_m != 30:
+            return (legacy_h, legacy_m)
+    except (ValueError, TypeError):
+        pass
+
+    return (hour, minute)
+
+
 def _get_lottery_meta(db_path: str | Path) -> dict[str, dict[str, Any]]:
     """从数据库 lottery_types 表中读取所有彩种的配置信息。"""
     with db_connect(db_path) as conn:
