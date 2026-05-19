@@ -287,6 +287,8 @@
   window.__LOTTERY_API_BASE__ = httpApiBase;
   window.__LEGACY_KAIJIANG_API_BASE__ = kaijiangApiBase;
 
+  var titleObserver = null;
+
   function scheduleRegionTitlePrefix() {
     if (typeof window.applyLotteryRegionTitlePrefix !== "function") {
       return;
@@ -296,8 +298,11 @@
     });
   }
 
-  if (typeof window.MutationObserver === "function" && document && document.body) {
-    var titleObserver = new MutationObserver(function (mutations) {
+  function ensureRegionTitleObserver() {
+    if (titleObserver || typeof window.MutationObserver !== "function" || !document || !document.body) {
+      return;
+    }
+    titleObserver = new MutationObserver(function (mutations) {
       for (var i = 0; i < mutations.length; i++) {
         if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
           scheduleRegionTitlePrefix();
@@ -309,7 +314,23 @@
   }
 
   if (document && typeof document.addEventListener === "function") {
-    document.addEventListener("DOMContentLoaded", scheduleRegionTitlePrefix);
+    document.addEventListener("DOMContentLoaded", function () {
+      ensureRegionTitleObserver();
+      scheduleRegionTitlePrefix();
+      window.setTimeout(scheduleRegionTitlePrefix, 0);
+    });
   }
+  if (window && typeof window.addEventListener === "function") {
+    window.addEventListener("load", function () {
+      ensureRegionTitleObserver();
+      scheduleRegionTitlePrefix();
+    });
+  }
+
+  ensureRegionTitleObserver();
   scheduleRegionTitlePrefix();
+  window.setTimeout(function () {
+    ensureRegionTitleObserver();
+    scheduleRegionTitlePrefix();
+  }, 0);
 })(window);
