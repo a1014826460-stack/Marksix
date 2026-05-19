@@ -574,11 +574,12 @@ def predict(
             predicted_labels = (random.choice(labels),)
 
         # 若传入了当期 res_code，将真实结果注入预测标签，保证必中
-        latest = history[-1]
-        if res_code and latest.outcome and not is_exclude:
-            predicted_labels = _ensure_outcome_included(
-                predicted_labels, latest.outcome, config.label_count,
-            )
+        if res_code and history and not is_exclude:
+            latest = history[-1]
+            if latest.outcome:
+                predicted_labels = _ensure_outcome_included(
+                    predicted_labels, latest.outcome, config.label_count,
+                )
 
         benchmark_rate, benchmark_size = historical_content_hit_rate(source_history, config.hit_checker)
         generated_content = config.content_formatter(predicted_labels, conn)
@@ -596,7 +597,7 @@ def predict(
         if _close_conn:
             conn.__exit__(None, None, None)
 
-    latest = history[-1]
+    latest = history[-1] if history else None
     return {
         "mode": {
             "key": config.key,
@@ -615,8 +616,8 @@ def predict(
         "input": {
             "res_code": res_code,
             "content": content,
-            "latest_term": latest.term,
-            "latest_outcome": latest.outcome,
+            "latest_term": latest.term if latest else 0,
+            "latest_outcome": latest.outcome if latest else "",
         },
         "prediction": {
             "labels": prediction_labels,

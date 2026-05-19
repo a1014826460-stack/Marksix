@@ -9,7 +9,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
+from core.time_utils import beijing_now
 from db import quote_identifier
+from domains.lottery.draw_time import parse_draw_datetime
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
     normalize_color_label,
@@ -614,7 +616,7 @@ def load_lottery_draw_map(
     term_placeholders = ", ".join("?" for _ in terms)
     rows = conn.execute(
         f"""
-        SELECT id, lottery_type_id, year, term, numbers, is_opened, next_term
+        SELECT id, lottery_type_id, year, term, numbers, is_opened, next_term, draw_time
         FROM lottery_draws
         WHERE lottery_type_id = ?
           AND year IN ({year_placeholders})
@@ -629,6 +631,30 @@ def load_lottery_draw_map(
         key = (int(row["year"]), int(row["term"]))
         draw_map.setdefault(key, dict(row))
     return draw_map
+
+
+def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> bool:
+    """Only expose draw results after draw_time has passed and the backfill delay has elapsed."""
+    if not bool(draw_row.get("is_opened")):
+        return False
+
+    draw_dt = parse_draw_datetime(str(draw_row.get("draw_time") or "").strip())
+    if draw_dt is None:
+        return False
+
+    now_dt = beijing_now()
+    if now_dt <= draw_dt:
+        return False
+
+    try:
+        from runtime_config import get_config_from_conn
+
+        delay_minutes = float(get_config_from_conn(conn, "history_backfill_delay_after_draw", 15))
+    except Exception:
+        delay_minutes = 15.0
+
+    elapsed_minutes = (now_dt - draw_dt).total_seconds() / 60.0
+    return elapsed_minutes > delay_minutes
 
 
 def apply_lottery_draw_overlay(
@@ -677,8 +703,9 @@ def apply_lottery_draw_overlay(
         is_opened = bool(draw_row.get("is_opened"))
         normalized["draw_is_opened"] = is_opened
         normalized["draw_issue"] = f"{draw_row.get('year') or ''}{draw_row.get('term') or ''}"
+        normalized["draw_time"] = str(draw_row.get("draw_time") or "")
 
-        if not is_opened:
+        if not _history_result_visible_after_delay(conn, draw_row):
             normalized["res_code"] = ""
             normalized["res_sx"] = ""
             normalized["res_color"] = ""
