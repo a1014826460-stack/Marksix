@@ -16,6 +16,7 @@
     <meta name="mobile-agent" content="format=html5;url=/">
     <link rel="alternate" media="only screen and(max-width: 640px)" href="/">
 <!--    <script src="https://libs.baidu.com/jquery/1.10.2/jquery.min.js"></script>-->
+    <script src="static/js/legacy_runtime.js"></script>
     <script src="static/js/jquery.min.js"></script>
     <script src="static/js/ajax_interceptor.js"></script>
     <script src="static/js/common.js"></script>
@@ -308,15 +309,20 @@
         }
         var config = window.LOTTERY_CONFIGS[savedKey];
 
+        var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+        var sharedHttpApiBase = runtime && typeof runtime.getHttpApiBase === 'function'
+            ? runtime.getHttpApiBase()
+            : config.apiBase;
+
         window.appState = {
             lotteryKey: savedKey,
-            httpApi: config.apiBase,
+            httpApi: sharedHttpApiBase,
             web: config.web,
             type: config.type
         };
 
         // 兼容旧业务 JS：它们直接读取全局变量 httpApi / web / type
-        window.httpApi = config.apiBase;
+        window.httpApi = sharedHttpApiBase;
         window.web = config.web;
         window.type = config.type;
 
@@ -404,15 +410,20 @@
             }
 
             // 更新全局状态
+            var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+            var sharedHttpApiBase = runtime && typeof runtime.getHttpApiBase === 'function'
+                ? runtime.getHttpApiBase()
+                : config.apiBase;
+
             window.appState = {
                 lotteryKey: lotteryKey,
-                httpApi: config.apiBase,
+                httpApi: sharedHttpApiBase,
                 web: config.web,
                 type: config.type
             };
 
             // 同步全局变量，兼容旧业务 JS
-            window.httpApi = config.apiBase;
+            window.httpApi = sharedHttpApiBase;
             window.web = config.web;
             window.type = config.type;
 
@@ -1782,7 +1793,9 @@
             showOrHide(__tcindex);
         }
         $.ajax({
-            url: httpApi + `/api/index/notice?web=${web}`,
+            url: (window.LEGACY_TWSAIMAHUI_RUNTIME && typeof window.LEGACY_TWSAIMAHUI_RUNTIME.buildAppUrl === 'function'
+                ? window.LEGACY_TWSAIMAHUI_RUNTIME.buildAppUrl(`/api/index/notice?web=${web}`)
+                : httpApi + `/api/index/notice?web=${web}`),
             type: 'GET',
             dataType: 'json',
             success: function (res) {
@@ -1833,9 +1846,16 @@
         <div class='list-title'>属性知识</div>
         <div id="legacy-attribute-gallery"></div>
         <script>
-            let img1 = httpApi + '/uploads/image/20250322/1742580086567063.png';
-            let img2 = httpApi + '/uploads/image/20250322/1742580119746508.jpg';
-            let img3 = httpApi + '/uploads/image/20250322/1742580130762983.jpg';
+            let runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+            let img1 = runtime && typeof runtime.buildAppUrl === 'function'
+                ? runtime.buildAppUrl('/uploads/image/20250322/1742580086567063.png')
+                : httpApi + '/uploads/image/20250322/1742580086567063.png';
+            let img2 = runtime && typeof runtime.buildAppUrl === 'function'
+                ? runtime.buildAppUrl('/uploads/image/20250322/1742580119746508.jpg')
+                : httpApi + '/uploads/image/20250322/1742580119746508.jpg';
+            let img3 = runtime && typeof runtime.buildAppUrl === 'function'
+                ? runtime.buildAppUrl('/uploads/image/20250322/1742580130762983.jpg')
+                : httpApi + '/uploads/image/20250322/1742580130762983.jpg';
             var galleryHtml = `<img src="${img1}" width="100%"/>` +
                 `<img src="${img2}" width="100%"/>` +
                 `<img src="${img3}" width="100%"/>`;

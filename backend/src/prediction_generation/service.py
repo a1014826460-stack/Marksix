@@ -212,8 +212,11 @@ def _ensure_mode_251_xiao(row_data: dict[str, Any], content: Any) -> dict[str, A
     if isinstance(content, dict):
         if str(content.get("xiao") or "").strip():
             labels.extend(parse_zodiac_content(str(content.get("xiao") or "")))
-        if not labels and str(content.get("content") or "").strip():
-            labels.extend(parse_pipe_label_content(str(content.get("content") or "")))
+        # 兼容 title 作为 content 替代列（如 mode_payload_251）
+        if not labels:
+            raw = str(content.get("content") or content.get("title") or "")
+            if raw.strip():
+                labels.extend(parse_pipe_label_content(raw))
     else:
         labels.extend(parse_pipe_label_content(str(content or "")))
 
@@ -594,6 +597,7 @@ def _generate_default_mode_row(
     build_row: Any,
     lottery_type: int,
     site_web_id: int,
+    conn: Any = None,
 ) -> dict[str, Any]:
     """通用模式：调用 predict() 生成预测内容。"""
     result = predict(
@@ -602,6 +606,7 @@ def _generate_default_mode_row(
         source_table=table_name, db_path=db_path,
         target_hit_rate=default_target_hit_rate,
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
+        conn=conn,
     )
     row_data = build_row(
         mode_id=config.default_modes_id,
@@ -628,6 +633,7 @@ def _generate_single_draw_row(
     default_target_hit_rate: float,
     zodiac_map: dict,
     build_row: Any,
+    conn: Any = None,
 ) -> dict[str, Any]:
     """根据 mode_id 分发生成单期预测行。"""
     if mode_id == 65:
@@ -650,6 +656,7 @@ def _generate_single_draw_row(
     return _generate_default_mode_row(
         draw, is_future, safe_res_code, config, table_name, db_path,
         default_target_hit_rate, build_row, lottery_type, site_web_id,
+        conn=conn,
     )
 
 
@@ -842,6 +849,7 @@ def _process_single_module(
                 site_web_id=site_web_id, config=config, table_name=table_name,
                 db_path=db_path, default_target_hit_rate=default_target_hit_rate,
                 zodiac_map=zodiac_map, build_row=build_generated_prediction_row_data,
+                conn=conn,
             )
 
             if is_future:

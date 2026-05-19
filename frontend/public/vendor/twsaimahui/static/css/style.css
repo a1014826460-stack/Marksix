@@ -35,9 +35,9 @@ div.ftop{position:fixed;top:0;z-index:999}
 .go6h_header_right ul li a:hover{background-color:#FF0000;}
 .go6h_header_right .link,.go6h_header_right span{font-size:8pt width:70px;height:44px;text-align:center;color:#fff;padding-top:25px;box-sizing:border-box;display:inline-block;text-decoration:none;padding-right:8px;}
 .go6h_header_right .go6h_header_rightPhoneIcon,.go6h_header_right .go6h_header_rightUserIcon,.go6h_header_right .go6h_header_rightFeedbackIcon{font-size:8pt}
-.go6h_header_right .go6h_header_rightUserIcon{background:url("http://www.twsaimahui.com/tu/user.png")/*tpa=/tu/user.png*/ no-repeat center 9px;background-size:13px}
-.go6h_header_right .go6h_header_rightPhoneIcon{background:url("http://www.twsaimahui.com/css/Phone.png")/*tpa=/css/http://www.twsaimahui.com/css/Phone.png*/ no-repeat center 9px;background-size:9px}
-.go6h_header_right .go6h_header_rightFeedbackIcon{background:url("http://www.twsaimahui.com/css/Feedback.png")/*tpa=css/http://www.twsaimahui.com/css/Feedback.png*/ no-repeat center 9px;background-size:15px}
+.go6h_header_right .go6h_header_rightUserIcon{background:none}
+.go6h_header_right .go6h_header_rightPhoneIcon{background:none}
+.go6h_header_right .go6h_header_rightFeedbackIcon{background:none}
 
 
 div.header h1,div.header h2,div.header h3{text-shadow:1px 1px 0 #fff;font-size:14pt;text-align:center;line-height:44px}
@@ -121,7 +121,7 @@ ul.txt4 li{width:25%}
 ul.txt5 li{width:20%}
 ul.txt6 li{width:16.66%}
 ul.txtlist li,ul.txt li,ul.txt2 li,ul.txt3 li,ul.txt4 li,ul.txt5 li,ul.txt6 li{height:30px}
-ul.arrow li,li.arrow{background:transparent url(http://www.twsaimahui.com/css/ico_arrow.png) center right no-repeat;-moz-background-size:18px 15px;-webkit-background-size:18px 15px;-o-background-size:18px 15px;background-size:18px 15px}
+ul.arrow li,li.arrow{background:none;padding-right:8px}
 ul.applist li a,ul.piclist li a,ul.limg li a,ul.txtlist li a,ul.txt2 li a,ul.txt3 li a,ul.txt4 li a,ul.txt5 li a,ul.txt6 li a,ul.pics li a{height:100%;display:block;text-decoration:none;overflow-y:hidden}
 ul.applist li a:hover,ul.piclist li a:hover,ul.limg li a:hover,ul.txtlist li a:hover,ul.txt2 li a:hover,ul.txt3 li a:hover,ul.txt4 li a:hover,ul.txt5 li a:hover,ul.txt6 li a:hover,ul.pics li a:hover{text-decoration: underline;}
 ul.app li a{background-color:transparent;background-position:center 4px;background-size:57px 57px;background-repeat:no-repeat}
@@ -149,50 +149,17 @@ p:nth-child(1){margin-top:0}
 p+h2,p+h3{padding-top:8px}
 p+p{margin-bottom:0}
 select{-webkit-appearance:none;height:39px;font-size:12pt;width:100%;border:0;background-color:transparent;background-position:right center;background-repeat:no-repeat;-moz-background-size:18px 5px;-webkit-background-size:18px 5px;-o-background-size:18px 5px;background-size:18px 5px}
-@media only screen and (-moz-min-device-pixel-ratio:1),only screen and (-o-min-device-pixel-ratio:1/1),only screen and (-webkit-min-device-pixel-ratio:1),only screen and (min-device-pixel-ratio:1){a.back{background-image:url(http://www.twsaimahui.com/css/l/nav_back.png)}
-    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_back_h.png)}
-    a.more{background-image:url(http://www.twsaimahui.com/css/l/nav_more.png)}
-    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_more_h.png)}
-    a.home{background-image:url(http://www.twsaimahui.com/css/l/nav_home.png)}
-    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_home_h.png)}
-    a.pop{background-image:url(http://www.twsaimahui.com/css/l/nav_pop.png)}
-    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_pop_h.png)}
-    a.refresh{background-image:url(http://www.twsaimahui.com/css/l/nav_refresh.png)}
-    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_refresh_h.png)}
-    a.search{background-image:url(http://www.twsaimahui.com/css/l/nav_search.png)}
-    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/l/nav_search_h.png)}
-    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/l/ico_arrow.png)}
-    select{background-image:url(http://www.twsaimahui.com/css/l/select.png)}
+@media only screen and (-moz-min-device-pixel-ratio:1),only screen and (-o-min-device-pixel-ratio:1/1),only screen and (-webkit-min-device-pixel-ratio:1),only screen and (min-device-pixel-ratio:1){a.back,a.back:active,a.back:focus,a.more,a.more:active,a.more:focus,a.home,a.home:active,a.home:focus,a.pop,a.pop:active,a.pop:focus,a.refresh,a.refresh:active,a.refresh:focus,a.search,a.search:active,a.search:focus{background-image:none}
+    ul.arrow li,li.arrow{background-image:none}
+    select{background-image:none}
 }
-@media only screen and (-moz-min-device-pixel-ratio:1.5),only screen and (-o-min-device-pixel-ratio:3/2),only screen and (-webkit-min-device-pixel-ratio:1.5),only screen and (min-device-pixel-ratio:1.5){a.back{background-image:url(http://www.twsaimahui.com/css/nav_back.png)}
-    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/nav_back_h.png)}
-    a.more{background-image:url(http://www.twsaimahui.com/css/nav_more.png)}
-    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/nav_more_h.png)}
-    a.home{background-image:url(http://www.twsaimahui.com/css/nav_home.png)}
-    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/nav_home_h.png)}
-    a.pop{background-image:url(http://www.twsaimahui.com/css/nav_pop.png)}
-    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/nav_pop_h.png)}
-    a.refresh{background-image:url(http://www.twsaimahui.com/css/nav_refresh.png)}
-    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/nav_refresh_h.png)}
-    a.search{background-image:url(http://www.twsaimahui.com/css/nav_search.png)}
-    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/nav_search_h.png)}
-    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/ico_arrow.png)}
-    select{background-image:url(http://www.twsaimahui.com/css/select.png)}
+@media only screen and (-moz-min-device-pixel-ratio:1.5),only screen and (-o-min-device-pixel-ratio:3/2),only screen and (-webkit-min-device-pixel-ratio:1.5),only screen and (min-device-pixel-ratio:1.5){a.back,a.back:active,a.back:focus,a.more,a.more:active,a.more:focus,a.home,a.home:active,a.home:focus,a.pop,a.pop:active,a.pop:focus,a.refresh,a.refresh:active,a.refresh:focus,a.search,a.search:active,a.search:focus{background-image:none}
+    ul.arrow li,li.arrow{background-image:none}
+    select{background-image:none}
 }
-@media only screen and (-moz-min-device-pixel-ratio:2),only screen and (-o-min-device-pixel-ratio:2/1),only screen and (-webkit-min-device-pixel-ratio:2),only screen and (min-device-pixel-ratio:2){a.back{background-image:url(http://www.twsaimahui.com/css/nav_back.png)}
-    a.back:active,a.back:focus{background-image:url(http://www.twsaimahui.com/css/nav_back_h.png)}
-    a.more{background-image:url(http://www.twsaimahui.com/css/nav_more.png)}
-    a.more:active,a.more:focus{background-image:url(http://www.twsaimahui.com/css/nav_more_h.png)}
-    a.home{background-image:url(http://www.twsaimahui.com/css/nav_home.png)}
-    a.home:active,a.home:focus{background-image:url(http://www.twsaimahui.com/css/nav_home_h.png)}
-    a.pop{background-image:url(http://www.twsaimahui.com/css/nav_pop.png)}
-    a.pop:active,a.pop:focus{background-image:url(http://www.twsaimahui.com/css/nav_pop_h.png)}
-    a.refresh{background-image:url(http://www.twsaimahui.com/css/nav_refresh.png)}
-    a.refresh:active,a.refresh:focus{background-image:url(http://www.twsaimahui.com/css/nav_refresh_h.png)}
-    a.search{background-image:url(http://www.twsaimahui.com/css/nav_search.png)}
-    a.search:active,a.search:focus{background-image:url(http://www.twsaimahui.com/css/nav_search_h.png)}
-    ul.arrow li,li.arrow{background-image:url(http://www.twsaimahui.com/css/ico_arrow.png)}
-    select{background-image:url(http://www.twsaimahui.com/css/select.png)}
+@media only screen and (-moz-min-device-pixel-ratio:2),only screen and (-o-min-device-pixel-ratio:2/1),only screen and (-webkit-min-device-pixel-ratio:2),only screen and (min-device-pixel-ratio:2){a.back,a.back:active,a.back:focus,a.more,a.more:active,a.more:focus,a.home,a.home:active,a.home:focus,a.pop,a.pop:active,a.pop:focus,a.refresh,a.refresh:active,a.refresh:focus,a.search,a.search:active,a.search:focus{background-image:none}
+    ul.arrow li,li.arrow{background-image:none}
+    select{background-image:none}
 }
 div.box{margin:0 1px 1px;background-color:#fff}
 @media screen and (min-width:720px){
@@ -224,7 +191,7 @@ div.footer a{color:#999}
 div.box,.rpic,div.pop,#gotop,.pages a{-moz-border-radius:4px;-webkit-border-radius:4px;border-radius:4px}
 div.pop{position:fixed;z-index:1000;width:120px;height:60px;background-color:#666;color:#fff;padding:8px;top:38px;right:8px;opacity:1;visibility:visible;-webkit-transition:opacity .2s ease-in-out;-moz-transition:opacity .2s ease-in-out;-o-transition:opacity .2s ease-in-out;transition:opacity .2s ease-in-out}
 div.nopop{width:0;height:0;opacity:0;visibility:hidden}
-#gotop{position:fixed;width:45px;height:45px;bottom:60px;right:10px;background:#fff url(http://www.twsaimahui.com/css/gotop.png) center center no-repeat;-moz-opacity:.70;opacity:.70;-moz-background-size:45px 45px;-webkit-background-size:45px 45px;-o-background-size:45px 45px;background-size:45px 45px;z-index:999}
+#gotop{position:fixed;width:45px;height:45px;bottom:60px;right:10px;background:linear-gradient(180deg,#ffffff,#ececec);-moz-opacity:.70;opacity:.70;-moz-background-size:45px 45px;-webkit-background-size:45px 45px;-o-background-size:45px 45px;background-size:45px 45px;z-index:999}
 .wrapper{width:100%;height:100%;position:absolute}
 .panel{height:100%;overflow-y:scroll;position:relative}
 .pages a{font-size:10pt;padding:12px 18px;color:#666;text-align:center;display:inline-block;text-decoration:none;background-color:#fbfbfb;background:-moz-linear-gradient(top,#fff,#f8f8f8);background:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#f8f8f8))}
@@ -308,7 +275,7 @@ a.black,.black,.black a{color:#333}
 #pages_nav{ margin:0 auto;}
 #pages_nav a{ margin:0 8px; line-height:25px;}
 .notice{background:hsla(0,0%,100%,.1);padding:2px 2px;display:-webkit-box;display:-ms-flexbox;display:flex;}
-.notice i{display:block;width:26px;height:26px;background:url(http://www.twsaimahui.com/images/icon-notice.png) 50% no-repeat;background-size:contain;margin-right:5px;margin-top:2px}
+.notice i{display:block;width:26px;height:26px;background:#ffd84d;border-radius:50%;margin-right:5px;margin-top:2px}
 .notice .marquee{-webkit-box-flex:1;-ms-flex:1;flex:1;display:block;line-height:normal;overflow:hidden;font-size:15px;white-space:nowrap;position:relative}
 .notice .marquee span{display:inline;width:auto;white-space:nowrap}
 
@@ -380,7 +347,7 @@ a.black,.black,.black a{color:#333}
 
 
 .tb2{width:100%;word-break:keep-all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.txt0{padding-left: 15px;padding-right: 23px;background-color: #d64343;border-radius: 5px;color:#FFFFFF;float: left;margin: 0px -12px;font-family: 微软雅黑; font-size: 14px;background: url(http://www.twsaimahui.com/tu/gsh3.png) left center no-repeat;}
+.txt0{padding-left: 15px;padding-right: 23px;background-color: #d64343;border-radius: 5px;color:#FFFFFF;float: left;margin: 0px -12px;font-family: 微软雅黑; font-size: 14px;background: url(../image/gsh.png) left center no-repeat;}
 .txt{padding-left: 15px;padding-right: 23px;background-color: #d64343;border-radius: 5px;color:#FFFFFF;float: left;margin: 0px -12px;font-family: 微软雅黑; font-size: 14px;background: url(../image/gsh.png) left center no-repeat;}
 .txt1{padding-left: 2px; padding-right: 2px; padding-top: 1px; padding-bottom: 1px;background-color: #800000;border-radius: 5px; color:#FFFFFF;float:left}
 .txt2{padding-left: 2px; padding-right: 2px; padding-top: 1px; padding-bottom: 1px;background-color: #800080;border-radius: 5px; color:#FFFFFF;float:left}
@@ -395,7 +362,7 @@ a.black,.black,.black a{color:#333}
 .rec-num { text-align: center;}
 .rec-num ul { padding: 0 7px;}
 .rec-num li { float: left; width: calc(23% - 0px); padding: 0 3px;}
-.rec-num li .shujia { width: 20px; height: 30px; background: url(http://www.twsaimahui.com/tu/shujia.png) bottom center no-repeat; background-size: 100% auto; display: inline-block; position: relative; z-index: 1;}
+.rec-num li .shujia { width: 20px; height: 30px; background: linear-gradient(180deg,#f6d29a,#c8872e); background-size: 100% auto; display: inline-block; position: relative; z-index: 1; border-radius: 2px 2px 6px 6px;}
 .rec-num li a { margin-top: -13px; padding-top: 10px; padding-bottom: 10px; display: inline-block; border-radius: 5px; background: #e9ece3; box-shadow: 0 2px 0 rgba(0,0,0,.3); position: relative; vertical-align: middle; display: block;}
 .rec-num li .row1 { font-weight: bold;}
 .rec-num li .row2 {}
@@ -430,7 +397,7 @@ ul{ list-style:none;}
 .box20161231 a:hover{ position: relative; top: 1px; left: 1px; color: #f00;}
 
 /*-------------------------结束公用样式--------------------------*/
-.tit20161231 { width: 100%; height: 45px; line-height: 40px; margin: 0 auto; text-align: center; font-size: 22px; color: #fff;background: url(http://www.twsaimahui.com/tu/tubiao.png) top center no-repeat; }
+.tit20161231 { width: 100%; height: 45px; line-height: 40px; margin: 0 auto; text-align: center; font-size: 22px; color: #fff;background: linear-gradient(180deg,#d12a2a,#8e0f0f); }
 .box20161231 .clearfix:after{content:".";display:block;height:0;clear:both;overflow:hidden;visibility:hidden}
 .box20161231 .clearfix{*zoom:1}
 .box20161231 .clear{clear:both;width:0px;height:0px;font-size:0px;overflow:hidden}

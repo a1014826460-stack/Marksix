@@ -91,7 +91,7 @@
       </div>
       <div class="new-KJ-TabBox-box-tit-r">
         <span id="countdownBadge" class="beijing-time-badge">下次开奖 --:--:--</span>
-        <a id="historyLink" target="_blank" href="/history?type=3" class="kj-font-red">查看历史记录</a>
+        <a id="historyLink" target="_blank" href="history?type=3" class="kj-font-red">查看历史记录</a>
       </div>
     </div>
     <div class="new-KJ-TabBox-box-con">
@@ -119,6 +119,15 @@
   <script>
     (function () {
       var params = new URLSearchParams(window.location.search);
+      var runtime = (function () {
+        try {
+          return window.parent && window.parent.LEGACY_TWSAIMAHUI_RUNTIME
+            ? window.parent.LEGACY_TWSAIMAHUI_RUNTIME
+            : window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+        } catch (_) {
+          return window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+        }
+      })();
       var lotteryType = Number(params.get("lottery_type") || "3");
       var label = params.get("label") || "";
       var labelMap = { 1: "香港彩", 2: "澳门彩", 3: "台湾彩" };
@@ -298,7 +307,9 @@
       function updateHistoryLink() {
         var historyLink = $("historyLink");
         if (historyLink) {
-          historyLink.href = "/history?type=" + encodeURIComponent(String(lotteryType));
+          historyLink.href = runtime && typeof runtime.buildHistoryUrl === "function"
+            ? runtime.buildHistoryUrl(String(lotteryType))
+            : "/history?type=" + encodeURIComponent(String(lotteryType));
           historyLink.textContent = UI_TEXT.historyLink;
         }
       }
@@ -574,7 +585,10 @@
 
       async function fetchCountdownDeadline() {
         try {
-          var resp = await fetch("/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType)), { cache: "no-store" });
+          var countdownUrl = runtime && typeof runtime.buildAppUrl === "function"
+            ? runtime.buildAppUrl("/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType)))
+            : "/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType));
+          var resp = await fetch(countdownUrl, { cache: "no-store" });
           var data = await resp.json();
           debugLog("next-draw-deadline:response", data);
           if (data && data.next_time) {
@@ -749,7 +763,10 @@
             lottery_type: String(lotteryType),
             _ts: String(Date.now())
           });
-          var response = await fetch("/api/latest-draw?" + query.toString(), {
+          var latestDrawUrl = runtime && typeof runtime.buildAppUrl === "function"
+            ? runtime.buildAppUrl("/api/latest-draw?" + query.toString())
+            : "/api/latest-draw?" + query.toString();
+          var response = await fetch(latestDrawUrl, {
             cache: "no-store"
           });
           if (!response.ok) {

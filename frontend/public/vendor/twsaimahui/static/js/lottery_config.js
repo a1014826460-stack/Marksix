@@ -5,10 +5,31 @@
  * 本地测试 apiBase 指向 Next.js (端口 3000)。
  * 生产环境改回: 'https://admin.shengshi8800.com' / 'https://b.jsc111111.com'
  */
+var __legacyLotteryApiBase = (function () {
+  function normalizeApiBase(value) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    return value.replace(/\/+$/, '');
+  }
+
+  function readApiBaseFromQuery() {
+    var search = window.location && typeof window.location.search === 'string'
+      ? window.location.search
+      : '';
+    var match = search.match(/[?&]api_base=([^&]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  return normalizeApiBase(window.__LOTTERY_API_BASE__) ||
+    normalizeApiBase(readApiBaseFromQuery()) ||
+    '';
+})();
+
 window.LOTTERY_CONFIGS = {
   taiwan: {
     label: '台湾彩',
-    apiBase: 'http://127.0.0.1:3000',
+    apiBase: __legacyLotteryApiBase,
     // twsaimahui web_id=6
     web: 6,
     type: 3,
@@ -16,7 +37,7 @@ window.LOTTERY_CONFIGS = {
   },
   macau: {
     label: '澳门彩',
-    apiBase: 'http://127.0.0.1:3000',
+    apiBase: __legacyLotteryApiBase,
     // twsaimahui web_id=6
     web: 6,
     type: 2,
@@ -24,7 +45,7 @@ window.LOTTERY_CONFIGS = {
   },
   hongkong: {
     label: '香港彩',
-    apiBase: 'http://127.0.0.1:3000',
+    apiBase: __legacyLotteryApiBase,
     // twsaimahui web_id=6
     web: 6,
     type: 1,

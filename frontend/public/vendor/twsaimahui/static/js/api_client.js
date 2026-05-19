@@ -14,10 +14,15 @@ window.apiClient = {
    */
   get: function (url, params, options) {
     var opts = options || {};
+    var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+    var isKaijiang = runtime && typeof runtime.isKaijiangRequest === 'function' && runtime.isKaijiangRequest(url);
+    var requestUrl = isKaijiang
+      ? runtime.buildKaijiangUrl(url, params)
+      : (window.httpApi || '') + url;
     var request = $.ajax({
       type: 'GET',
-      url: window.httpApi + url,
-      data: params,
+      url: requestUrl,
+      data: isKaijiang ? undefined : params,
       dataType: 'json',
       timeout: opts.timeout || 10000
     });
@@ -35,10 +40,13 @@ window.apiClient = {
    * @returns {{ httpApi: string, web: number, type: number }}
    */
   getParams: function () {
+    var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
     return {
       httpApi: window.httpApi,
       web: window.web,
-      type: window.type
+      type: window.type,
+      source: runtime && runtime.source ? runtime.source : '',
+      domain: runtime && runtime.hostname ? runtime.hostname : ''
     };
   }
 };

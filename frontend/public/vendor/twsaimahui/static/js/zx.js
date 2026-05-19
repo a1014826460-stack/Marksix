@@ -7,7 +7,9 @@
     Vue.createApp({
         data: function () {
             return {
-                to: '/components/detail.html',
+                to: (window.LEGACY_TWSAIMAHUI_RUNTIME && typeof window.LEGACY_TWSAIMAHUI_RUNTIME.buildHistoryUrl === 'function')
+                    ? window.LEGACY_TWSAIMAHUI_RUNTIME.buildHistoryUrl(window.type)
+                    : '/history?type=' + encodeURIComponent(String(window.type || '3')),
                 d1: [],
                 error: false
             };

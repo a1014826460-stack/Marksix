@@ -1,4 +1,27 @@
-﻿document.write(`
+var __legacyTwsRuntime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+
+function __legacyTwsBuildKjUrl(lotteryType, label) {
+	var params = new URLSearchParams();
+	params.set("lottery_type", String(lotteryType));
+	params.set("label", label);
+
+	if (__legacyTwsRuntime && typeof __legacyTwsRuntime.getSiteParams === "function") {
+		var siteParams = __legacyTwsRuntime.getSiteParams();
+		for (var key in siteParams) {
+			if (Object.prototype.hasOwnProperty.call(siteParams, key) && siteParams[key] && !params.has(key)) {
+				params.set(key, siteParams[key]);
+			}
+		}
+	}
+
+	var basePath = __legacyTwsRuntime && typeof __legacyTwsRuntime.buildVendorPath === "function"
+		? __legacyTwsRuntime.buildVendorPath("kj/local.html")
+		: "kj/local.html";
+
+	return basePath + "?" + params.toString();
+}
+
+document.write(`
 <style>
 .KJ-TabBox { height: 166px; overflow: visible; color:#333; background: #fff; font-family: 'PingFang SC', 'microsoft yahei', arial, 'helvetica neue', 'hiragino sans gb', sans-serif;}
 .KJ-TabBox ul,.KJ-TabBox li{margin:0;list-style:none;padding:0;border:0;font-size: 18px;}
@@ -18,17 +41,15 @@
 </style>
 <div class="KJ-TabBox">
     <ul>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/twsaimahui/kj/local.html?lottery_type=3&label=台湾彩','height':220}">
+    <li data-opt="{'color':'#ffffff','url':'${__legacyTwsBuildKjUrl(3, "台湾彩")}','height':220}">
     台湾彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/twsaimahui/kj/local.html?lottery_type=2&label=澳门彩','height':220}">
+    <li data-opt="{'color':'#ffffff','url':'${__legacyTwsBuildKjUrl(2, "澳门彩")}','height':220}">
     澳门彩
     </li>
-    <li data-opt="{'color':'#ffffff','url':'/vendor/twsaimahui/kj/local.html?lottery_type=1&label=香港彩','height':220}">
+    <li data-opt="{'color':'#ffffff','url':'${__legacyTwsBuildKjUrl(1, "香港彩")}','height':220}">
     香港彩
     </li>
-    
-
     </ul>
     <div></div>
     <div></div>
@@ -41,12 +62,12 @@
 	.waibox a:link {text-decoration: none;}
 	.waibox .location_to {padding: 10px;background: beige;border-radius: 15px;color: #f44336;font-weight: 700;letter-spacing: 1px;box-shadow: 2px 2px 1px #f44336;}
 	</style>
-	<a class="location_to" href="http:///00853.html" target="_blank"><img src="https://d31q194n7fpdes.cloudfront.net/mygai/tp/images/hands.gif" style="vertical-align: middle;width:45px;">台湾赛马会永久网站www.twsaimahui.com</a>
+	<a class="location_to" href="javascript:void(0)" target="_self"><span style="display:inline-block;vertical-align:middle;width:20px;height:20px;margin-right:8px;border-radius:50%;background:#ffb300;"></span>台湾赛马会永久网站www.twsaimahui.com</a>
 	</div>
 
 `);
 
-var KJTB ={
+var KJTB = {
 	$(str){return document.querySelector(str);},
 	resolveTabType(el){
 		if(!el) return null;
@@ -64,11 +85,7 @@ var KJTB ={
 	},
 	resolveLotteryKey(el){
 		var type = this.resolveTabType(el);
-		var keyMap = {
-			3: "taiwan",
-			2: "macau",
-			1: "hongkong"
-		};
+		var keyMap = { 3: "taiwan", 2: "macau", 1: "hongkong" };
 		return keyMap[type] || null;
 	},
 	getCurrentLotteryKey(){
@@ -114,44 +131,44 @@ var KJTB ={
 			dom.removeAttribute("data-kj-sync-disabled");
 		}
 	},
-		init(str){
-			var that = this;
-			var dom = this.$(str);
-			if(!dom) return;
-			dom.addEventListener("click",function(e){
-				var el = e.target;
-				if(el.tagName != "LI"||el.className=="cur")return;
-				var type = that.resolveTabType(el);
-				var lotteryKey = that.resolveLotteryKey(el);
-				console.log('[twsaimahui] kj tab click', {
-					label: el.textContent && el.textContent.trim(),
-					type: type,
+	init(str){
+		var that = this;
+		var dom = this.$(str);
+		if(!dom) return;
+		dom.addEventListener("click",function(e){
+			var el = e.target;
+			if(el.tagName != "LI"||el.className=="cur")return;
+			var type = that.resolveTabType(el);
+			var lotteryKey = that.resolveLotteryKey(el);
+			console.log('[twsaimahui] kj tab click', {
+				label: el.textContent && el.textContent.trim(),
+				type: type,
+				lotteryKey: lotteryKey,
+				currentLotteryKey: window.appState && window.appState.lotteryKey
+			});
+
+			if(
+				!dom.getAttribute("data-kj-sync-disabled") &&
+				lotteryKey &&
+				window.appState &&
+				window.appState.lotteryKey !== lotteryKey &&
+				typeof window.switchLottery === "function"
+			){
+				console.log('[twsaimahui] kj tab sync switchLottery', {
 					lotteryKey: lotteryKey,
-					currentLotteryKey: window.appState && window.appState.lotteryKey
+					type: type
 				});
+				window.switchLottery(lotteryKey);
+				return;
+			}
 
-				if(
-					!dom.getAttribute("data-kj-sync-disabled") &&
-					lotteryKey &&
-					window.appState &&
-					window.appState.lotteryKey !== lotteryKey &&
-					typeof window.switchLottery === "function"
-				){
-					console.log('[twsaimahui] kj tab sync switchLottery', {
-						lotteryKey: lotteryKey,
-						type: type
-					});
-					window.switchLottery(lotteryKey);
-					return;
-				}
-
-				that.activate(dom,el);
+			that.activate(dom,el);
 		});
 		var initialKey = that.getCurrentLotteryKey();
 		var initialTypeKeyMap = { taiwan: 0, macau: 1, hongkong: 2 };
 		var initialLi = that.getEl(dom.querySelector("UL"), initialTypeKeyMap[initialKey] || 0, "LI");
 		if(initialLi) that.activate(dom,initialLi);
-		[[document,"DOMContentLoaded"],[window,"resize"]].forEach((item,index,self)=>{
+		[[document,"DOMContentLoaded"],[window,"resize"]].forEach((item)=>{
 			var removeEl=(id)=>{
 				try{
 					var ifr = document.getElementById(id);
@@ -162,8 +179,8 @@ var KJTB ={
 				var dom = document.createElement("style");
 				dom.id = id;
 				dom.innerHTML = str;
-				document.head.appendChild(dom);			
-			}
+				document.head.appendChild(dom);
+			};
 			item[0].addEventListener(item[1],function(){
 				removeEl("kj-iframe-css");
 				var w = window.screen.availWidth;
@@ -180,7 +197,6 @@ var KJTB ={
 		});
 	},
 	cur(dom,el,node){
-		var that = this;
 		var data = el.getAttribute('data-opt');
 		data = JSON.parse(data.replace(/'/g,"\""));
 		el.style.color = data["color"];
@@ -198,13 +214,12 @@ var KJTB ={
 		`;
 	},
 	leave(item){
-		var that = this;
 		function remove(el){
-			this.id = setTimeout(()=>{								
-						if(!el.getAttribute("_tid")) return;
-						el.removeAttribute("_tid");
-						el.innerHTML="";
-					},1000*10);
+			this.id = setTimeout(()=>{
+				if(!el.getAttribute("_tid")) return;
+				el.removeAttribute("_tid");
+				el.innerHTML="";
+			},1000*10);
 			el.setAttribute("_tid",this.id);
 		}
 		new remove(item);
@@ -228,12 +243,7 @@ var KJTB ={
 };
 KJTB.init(".KJ-TabBox");
 
-/**
- * 根据 lotteryKey 切换开奖 iframe Tab
- * 供 index.html 中的 switchLottery() 调用
- * @param {string} lotteryKey - 'taiwan' | 'macau' | 'hongkong'
- */
-	window.updateKjIframe = function(lotteryKey) {
-		console.log('[twsaimahui] updateKjIframe', lotteryKey);
-    KJTB.activateByLotteryKey(lotteryKey);
+window.updateKjIframe = function(lotteryKey) {
+	console.log('[twsaimahui] updateKjIframe', lotteryKey);
+	KJTB.activateByLotteryKey(lotteryKey);
 };

@@ -522,12 +522,15 @@ def predict(
     db_path: str | Path = DEFAULT_DB_TARGET,
     target_hit_rate: float = DEFAULT_TARGET_HIT_RATE,
     random_seed: str | None = None,
+    conn: Any = None,
 ) -> dict[str, Any]:
     """统一预测入口，供脚本和前端 API 复用。
 
     :param random_seed: 可选随机种子字符串。传入时用于固定随机数生成器状态，
         确保同一种子产生相同预测结果，不同种子（如不同期号）产生不同结果。
         用于未来期预测的差异性保证。
+    :param conn: 可选的外部数据库连接。传入时复用该连接，不再新开连接。
+        用于批量生成场景减少连接握手开销。
     """
     _seed_int: int | None = None
     if random_seed is not None:
@@ -537,7 +540,10 @@ def predict(
     table_name = source_table or config.default_table
     resolved_target = str(db_path)
 
-    with db_connect(db_path) as conn:
+    _close_conn = conn is None
+    if _close_conn:
+        conn = db_connect(db_path).__enter__()
+    try:
         labels = config.labels_loader(conn) if config.labels_loader else config.labels
         source_modes_id, source_title = get_table_title(conn, table_name)
         source_history = load_history(conn, table_name, config)
@@ -585,6 +591,10 @@ def predict(
                 prediction_labels = [str(label) for label in override_labels if str(label)]
             elif override_labels:
                 prediction_labels = [str(override_labels)]
+
+    finally:
+        if _close_conn:
+            conn.__exit__(None, None, None)
 
     latest = history[-1]
     return {

@@ -34,6 +34,12 @@ window.__moduleXHRs = window.__moduleXHRs || [];
 
 //拦截器
 $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
+    var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+    if (runtime && typeof options.url === 'string' && runtime.isKaijiangRequest(options.url)) {
+        options.url = runtime.buildKaijiangUrl(options.url, options.data);
+        options.data = undefined;
+    }
+
     // 记录请求发起时的代次
     var requestGeneration = window.__ajaxGeneration;
     var requestSeq = Number(window.__LEGACY_SWITCH_SEQ__ || 0);

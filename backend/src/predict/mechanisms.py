@@ -640,7 +640,12 @@ def format_xiao_code_columns(
     """根据选中的生肖生成对应号码列，保持 `xiao/code` 历史表结构。"""
 
     def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-        per_zodiac_numbers = {label: get_zodiac_numbers(conn, label) for label in labels}
+        # 一次查询获取全部生肖号码映射，避免逐标签重复查询 fixed_data
+        all_zodiac_map = load_fixed_value_map(conn, "生肖")
+        per_zodiac_numbers: dict[str, list[str]] = {}
+        for label in labels:
+            per_zodiac_numbers[label] = list(all_zodiac_map.get(label, ()))
+
         selected_codes: list[str] = []
         index = 0
         while len(selected_codes) < code_count and index < 5:
@@ -724,19 +729,19 @@ def mixed_dimension_excludes_hit(outcome: str, labels: tuple[str, ...]) -> bool:
     return not mixed_dimension_contains_hit(outcome, labels)
 
 
-def _content_category_pool(conn: sqlite3.Connection, table_name: str) -> list[str]:
-    if not table_exists(conn, table_name) or "content" not in _table_columns(conn, table_name):
+def _content_category_pool(conn: sqlite3.Connection, table_name: str, content_column: str = "content") -> list[str]:
+    if not table_exists(conn, table_name) or content_column not in _table_columns(conn, table_name):
         return []
     rows = conn.execute(
         f"""
-        SELECT content
+        SELECT {quote_identifier(content_column)}
         FROM {quote_identifier(table_name)}
-        WHERE content IS NOT NULL AND content != ''
-        GROUP BY content
-        ORDER BY COUNT(*) DESC, content
+        WHERE {quote_identifier(content_column)} IS NOT NULL AND {quote_identifier(content_column)} != ''
+        GROUP BY {quote_identifier(content_column)}
+        ORDER BY COUNT(*) DESC, {quote_identifier(content_column)}
         """
     ).fetchall()
-    return [str(row["content"] or "") for row in rows]
+    return [str(row[content_column] or "") for row in rows]
 
 
 def _pipe_right_zodiac_values(content: str) -> tuple[str, ...]:
@@ -753,15 +758,16 @@ def _pipe_right_zodiac_values(content: str) -> tuple[str, ...]:
     return tuple(values)
 
 
-def format_content_xiao_columns(table_name: str, xiao_column: str = "xiao"):
+def format_content_xiao_columns(table_name: str, xiao_column: str = "xiao", content_column: str = "content"):
     """还原 `content+xiao` 输出结构。
     这类历史表的 content 是分类池，xiao 是最终生肖候选。根据历史样本，xiao 候选
     与 content 分类内生肖互斥，因此生成时优先选一个与预测生肖不重叠的历史分类。
+    content_column 允许指定输出键名，兼容表的实际列名（如 title 替代 content）。
     """
 
     def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
         selected = set(labels)
-        pool = _content_category_pool(conn, table_name)
+        pool = _content_category_pool(conn, table_name, content_column)
         content = ""
         for candidate in pool:
             if not selected.intersection(_pipe_right_zodiac_values(candidate)):
@@ -770,7 +776,7 @@ def format_content_xiao_columns(table_name: str, xiao_column: str = "xiao"):
         if not content and pool:
             content = pool[0]
         return {
-            "content": content,
+            content_column: content,
             xiao_column: ",".join(labels),
         }
 
@@ -2876,10 +2882,12 @@ def _make_content_xiao_config(
     modes_id: int,
     xiao_width: int,
     exclude: bool = False,
+    content_column: str = "content",
 ) -> PredictionConfig:
     """构建 `content+xiao` 玩法。
     历史 content 保存分类说明，例如 `地肖|蛇,羊,...`；xiao 保存最终候选生肖。
     从样本看二者互斥，因此命中回测只按 xiao 候选生肖统计，content 由历史分类池回填。
+    content_column 允许指定实际列名（如 title），兼容表结构差异。
     """
 
     return PredictionConfig(
@@ -2890,9 +2898,9 @@ def _make_content_xiao_config(
         labels=tuple(ZODIAC_ORDER),
         label_count=xiao_width,
         outcome_loader=special_zodiac_from_number_map,
-        content_loader=xiao_or_content_content_loader("xiao", "content"),
+        content_loader=xiao_or_content_content_loader("xiao", content_column),
         content_parser=parse_zodiac_content,
-        content_formatter=format_content_xiao_columns(table_name, "xiao"),
+        content_formatter=format_content_xiao_columns(table_name, "xiao", content_column),
         hit_checker=excludes_hit if exclude else contains_hit,
         explanation=(
             f"{title} 使用 `content+xiao` 双字段结构。",
@@ -2971,7 +2979,14 @@ def _classify_second_stage_config(
     all_columns = _table_columns(conn, table_name)
     preferred_text_column = _text_history_preferred_column(conn, modes_id)
 
-    if _is_jyxiao2_title(title, modes_id) and "content" in all_columns:
+    # 兼容 title 作为 content 的替代表（如 mode_payload_251）
+    _content_col = None
+    if "content" in all_columns:
+        _content_col = "content"
+    elif "title" in all_columns:
+        _content_col = "title"
+
+    if _is_jyxiao2_title(title, modes_id) and _content_col:
         # 优先检测 xiao+code 双列模式：从 xiao 列推断生肖数量，从 code 列推断号码数量
         if "xiao" in columns and "code" in columns:
             xiao_sample = _sample_column_value(conn, table_name, "xiao")
@@ -2994,8 +3009,8 @@ def _classify_second_stage_config(
                     len(code_values),
                     exclude,
                 )
-        # 回退：content 管道标签模式（家|… / 野|… 等）
-        content_sample = _sample_column_value(conn, table_name, "content")
+        # 回退：content/title 管道标签模式（家|… / 野|… 等）
+        content_sample = _sample_column_value(conn, table_name, _content_col)
         inferred_labels = parse_pipe_label_content(content_sample)
         if inferred_labels:
             return _make_content_xiao_config(
@@ -3005,6 +3020,7 @@ def _classify_second_stage_config(
                 modes_id,
                 len(tuple(dict.fromkeys(inferred_labels))),
                 exclude,
+                content_column=_content_col,
             )
 
     if preferred_text_column and _is_text_history_title(title):
