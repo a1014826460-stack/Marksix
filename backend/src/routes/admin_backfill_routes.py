@@ -5,7 +5,7 @@ from typing import Any
 
 from db import connect
 from helpers import load_fixed_data_maps
-from domains.prediction.regeneration_service import compute_res_fields
+from domains.prediction.result_fields import compute_res_fields
 from runtime_config import get_config_from_conn
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,

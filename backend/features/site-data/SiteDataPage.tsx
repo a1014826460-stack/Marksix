@@ -195,7 +195,7 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
   return (
     <AdminShell
       title={`${site?.name || "站点"} — 站点数据管理`}
-      description="点击模块按钮查看数据库数据。支持编辑、删除、重新生成、彩种筛选。"
+      description="点击模块按钮查看数据库数据。支持编辑、删除、彩种筛选。"
       actions={
         <Button asChild variant="outline" size="sm">
           <Link href="/sites">返回站点列表</Link>

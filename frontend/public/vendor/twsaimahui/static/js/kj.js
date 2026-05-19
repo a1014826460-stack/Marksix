@@ -48,6 +48,72 @@
 
 var KJTB ={
 	$(str){return document.querySelector(str);},
+	resolveTabType(el){
+		if(!el) return null;
+		var data = el.getAttribute('data-opt');
+		if(!data) return null;
+		try{
+			data = JSON.parse(data.replace(/'/g,"\""));
+			var url = String(data.url || "");
+			var match = url.match(/[?&]lottery_type=(\d+)/);
+			return match ? Number(match[1]) : null;
+		}catch(err){
+			console.warn('[twsaimahui] resolveTabType parse failed', err);
+			return null;
+		}
+	},
+	resolveLotteryKey(el){
+		var type = this.resolveTabType(el);
+		var keyMap = {
+			3: "taiwan",
+			2: "macau",
+			1: "hongkong"
+		};
+		return keyMap[type] || null;
+	},
+	getCurrentLotteryKey(){
+		return (
+			(window.appState && window.appState.lotteryKey) ||
+			localStorage.getItem("selectedLottery") ||
+			window.DEFAULT_LOTTERY_KEY ||
+			"taiwan"
+		);
+	},
+	activate(dom,el){
+		if(!dom || !el) return;
+		var ind = Math.floor(this.index(el)/2);
+		var nodes = dom.querySelectorAll("li");
+		for(var item of nodes){
+			item.removeAttribute("style");
+			item.removeAttribute("class");
+		}
+		el.className="cur";
+		nodes = dom.querySelectorAll("div");
+		for(var item of nodes){
+			if(item.getAttribute("class")=="cur") this.leave(item);
+			item.removeAttribute("style");
+			item.removeAttribute("class");
+		}
+		var node = this.getEl(dom,ind,"DIV");
+		if(!node) return;
+		node.className="cur";
+		this.cur(dom,el,node);
+	},
+	activateByLotteryKey(lotteryKey){
+		var tabMap = { taiwan: 0, macau: 1, hongkong: 2 };
+		var idx = tabMap[lotteryKey];
+		if (idx === undefined) return;
+		var dom = document.querySelector('.KJ-TabBox');
+		if (!dom) return;
+		var li = this.getEl(dom.querySelector("UL"), idx, "LI");
+		if (!li) return;
+		dom.setAttribute("data-kj-sync-disabled","1");
+		try{
+			this.activate(dom,li);
+		}finally{
+			dom.removeAttribute("data-kj-sync-disabled");
+		}
+	},
 		init(str){
 			var that = this;
 			var dom = this.$(str);
@@ -55,29 +121,36 @@ var KJTB ={
 			dom.addEventListener("click",function(e){
 				var el = e.target;
 				if(el.tagName != "LI"||el.className=="cur")return;
+				var type = that.resolveTabType(el);
+				var lotteryKey = that.resolveLotteryKey(el);
 				console.log('[twsaimahui] kj tab click', {
 					label: el.textContent && el.textContent.trim(),
-					type: that.resolveTabType(el)
+					type: type,
+					lotteryKey: lotteryKey,
+					currentLotteryKey: window.appState && window.appState.lotteryKey
 				});
-				var ind = Math.floor(that.index(el)/2);
-				var nodes = dom.querySelectorAll("li");
-			for(var item of nodes){
-				item.removeAttribute("style");
-				item.removeAttribute("class");
-			}
-			el.className="cur";
-			nodes = dom.querySelectorAll("div");
-			for(var item of nodes){
-				if(item.getAttribute("class")=="cur") that.leave(item);
-				item.removeAttribute("style");
-				item.removeAttribute("class");
-			}					
-			var node = that.getEl(dom,ind,"DIV");
-			node.className="cur";
-			that.cur(dom,el,node);
+
+				if(
+					!dom.getAttribute("data-kj-sync-disabled") &&
+					lotteryKey &&
+					window.appState &&
+					window.appState.lotteryKey !== lotteryKey &&
+					typeof window.switchLottery === "function"
+				){
+					console.log('[twsaimahui] kj tab sync switchLottery', {
+						lotteryKey: lotteryKey,
+						type: type
+					});
+					window.switchLottery(lotteryKey);
+					return;
+				}
+
+				that.activate(dom,el);
 		});
-		var node = that.getEl(dom.querySelector("UL"),0,"LI");
-		node.click();
+		var initialKey = that.getCurrentLotteryKey();
+		var initialTypeKeyMap = { taiwan: 0, macau: 1, hongkong: 2 };
+		var initialLi = that.getEl(dom.querySelector("UL"), initialTypeKeyMap[initialKey] || 0, "LI");
+		if(initialLi) that.activate(dom,initialLi);
 		[[document,"DOMContentLoaded"],[window,"resize"]].forEach((item,index,self)=>{
 			var removeEl=(id)=>{
 				try{
@@ -162,11 +235,5 @@ KJTB.init(".KJ-TabBox");
  */
 	window.updateKjIframe = function(lotteryKey) {
 		console.log('[twsaimahui] updateKjIframe', lotteryKey);
-    var tabMap = { taiwan: 0, macau: 1, hongkong: 2 };
-    var idx = tabMap[lotteryKey];
-    if (idx === undefined) return;
-    var dom = document.querySelector('.KJ-TabBox');
-    if (!dom) return;
-    var li = KJTB.getEl(dom.querySelector('UL'), idx, 'LI');
-    if (li) li.click();
+    KJTB.activateByLotteryKey(lotteryKey);
 };

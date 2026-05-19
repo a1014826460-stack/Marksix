@@ -460,6 +460,9 @@
             var currentKey = window.appState && window.appState.lotteryKey;
             if (currentKey) {
                 updateLotteryTabs(currentKey);
+                if (typeof window.updateKjIframe === 'function') {
+                    window.updateKjIframe(currentKey);
+                }
             }
 
             // 2. 仅同步本地缓存状态；切换时由 switchLottery 触发整页重载
@@ -638,9 +641,9 @@
 
 <!--结束end-->
 <!--20码start-->
-<div class='box l26'>
+<!-- <div class='box l26'>
     <script type='text/javascript' src='static/js/032ma20.js'></script>
-</div>
+</div> -->
 <!--结束end-->
 
 <!--一波开始start-->
@@ -762,9 +765,9 @@
 
 
  <!--  两肖+八码-->
-<div class='box l41'>
+<!-- <div class='box l41'>
     <script type='text/javascript' src='static/js/069lxbm.js'></script>
-</div>
+</div> -->
 <!--平特一尾start-->
 <div class='box l42'>
     <script type='text/javascript' src='static/js/022pt1w.js'></script>
@@ -822,12 +825,12 @@
 
 
 <!--一字玄机start-->
-<div id="yizixuanji"></div>
+<!-- <div id="yizixuanji"></div>
 <div class='box'>
     <div id='1z'></div>
     <div class="yzxj"></div>
     <script type='text/javascript' src='static/js/029yizixuanji.js'></script>
-</div>
+</div> -->
 
 
 <!--成语平肖start-->
@@ -863,11 +866,11 @@
 </div>-->
 <!--推end-->
 <!--男女开始start-->
-<div id="hao020"></div>
+<!-- <div id="hao020"></div>
 <div class='box l53'>
-    <script type='text/javascript' src='static/js/020nn4x.js'></script>
+    <script type='text/javascript' src='static/js/020nn4x.js'></script> -->
 
-</div>
+<!-- </div> -->
 <!--结束end-->
 <!--九肖一码开始start-->
 <div class='box'>
@@ -1713,11 +1716,12 @@
             });
         // });
         function closePop() {
-
-
-            document.getElementById('pop-xyz').style.display = 'none';
-            document.getElementById('pop-xyz2').style.display = 'none';
-            document.getElementById('second').textContent = ``;
+            var popEl = document.getElementById('pop-xyz');
+            var popBg = document.getElementById('pop-xyz2');
+            var secondEl = document.getElementById('second');
+            if (popEl) popEl.style.display = 'none';
+            if (popBg) popBg.style.display = 'none';
+            if (secondEl) secondEl.textContent = ``;
 
             const currentTimestamp = Date.now();
             localStorage.setItem('lastPopupTimestamp', currentTimestamp);
@@ -1804,11 +1808,13 @@
             let countdown = 9;
                 const updateCountdown = () => {
                     countdown--;
-                    elementToHide.textContent = `${countdown}秒`;
+                    if (elementToHide) {
+                        elementToHide.textContent = `${countdown}秒`;
+                    }
                     if (countdown === 0) {
-                        popl.style.display = 'none';
-                        popl1.style.display = 'none';
-                        localStorage.setItem('lastPopupTimestamp', currentTimestamp);
+                        if (popl) popl.style.display = 'none';
+                        if (popl1) popl1.style.display = 'none';
+                        localStorage.setItem('lastPopupTimestamp', Date.now());
                     } else {
                         setTimeout(updateCountdown, 1000)
                     }
@@ -1823,6 +1829,22 @@
     </script>
 
     <!--弹框结束-->
+    <div class='box pad' id='legacy-attribute-anchor'>
+        <div class='list-title'>属性知识</div>
+        <div id="legacy-attribute-gallery"></div>
+        <script>
+            let img1 = httpApi + '/uploads/image/20250322/1742580086567063.png';
+            let img2 = httpApi + '/uploads/image/20250322/1742580119746508.jpg';
+            let img3 = httpApi + '/uploads/image/20250322/1742580130762983.jpg';
+            var galleryHtml = `<img src="${img1}" width="100%"/>` +
+                `<img src="${img2}" width="100%"/>` +
+                `<img src="${img3}" width="100%"/>`;
+            var galleryEl = document.getElementById("legacy-attribute-gallery");
+            if (galleryEl) {
+                galleryEl.innerHTML = galleryHtml;
+            }
+        </script>
+    </div>
     </div><!-- end content-area -->
 
 </div></div></div></div></div></div></body></html>

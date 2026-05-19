@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { RefreshCw } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -9,7 +8,6 @@ import { Switch } from "@/components/ui/switch"
 import { adminApi, jsonBody } from "@/lib/admin-api"
 import { AdminNotice } from "@/features/shared/AdminNotice"
 import { RowEditDialog } from "@/features/site-data/RowEditDialog"
-import { RegenerateDialog } from "@/features/site-data/RegenerateDialog"
 import { ConfirmDialog } from "@/features/site-data/ConfirmDialog"
 import {
   getSitePredictionModuleName,
@@ -54,7 +52,6 @@ export function ModuleDataPanel({
   const [search, setSearch] = useState("")
   const [msg, setMsg] = useState("")
   const [editing, setEditing] = useState<AnyRecord | null>(null)
-  const [regenOpen, setRegenOpen] = useState(false)
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<AnyRecord | null>(null)
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
@@ -304,16 +301,6 @@ export function ModuleDataPanel({
           >
             搜索
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRegenOpen(true)}
-            className="h-7 text-xs"
-            style={{ display: "none" }}
-          >
-            <RefreshCw className="mr-1 h-3 w-3" />
-            重新生成资料
-          </Button>
         </div>
       </div>
 
@@ -497,20 +484,6 @@ export function ModuleDataPanel({
           onError={(err) => setMsg(err)}
         />
       )}
-
-      {/* 重新生成弹窗 */}
-      <RegenerateDialog
-        open={regenOpen}
-        module={module}
-        siteId={siteId}
-        tableName={tableName}
-        typeFilter={typeFilter}
-        onClose={() => setRegenOpen(false)}
-        onSuccess={(m) => setMsg(m)}
-        onError={(m) => setMsg(m)}
-        onRefresh={() => fetchPayload(page)}
-        page={page}
-      />
 
       {/* 行删除确认 */}
       <ConfirmDialog

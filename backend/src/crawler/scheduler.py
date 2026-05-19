@@ -1650,7 +1650,7 @@ def _backfill_draw_to_predictions(
     :return: {total_updated, per_table: [{table, updated}]}
     """
     from helpers import load_fixed_data_maps
-    from domains.prediction.regeneration_service import compute_res_fields as _compute_res_fields
+    from domains.prediction.result_fields import compute_res_fields as _compute_res_fields
     from utils.created_prediction_store import (
         CREATED_SCHEMA_NAME, quote_qualified_identifier, schema_table_exists,
     )

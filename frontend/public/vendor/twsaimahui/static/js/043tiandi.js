@@ -44,12 +44,12 @@
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                if (sx && !zj) continue;
+                // 预测失败也显示当期资料，不再跳过
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>天地生肖</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>天地生肖</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':' '):'??')}
 </strong>
 </td>
 </tr>\t

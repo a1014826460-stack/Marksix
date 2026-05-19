@@ -178,7 +178,7 @@
    - `admin/prediction.py:*` — 管理后台 API 调用入口
    - `routes/admin_lottery_routes.py:*` — crawl-and-generate 路由
    - `routes/admin_site_routes.py:*` — generate-all 路由
-   - `routes/admin_payload_routes.py:*` — regenerate 路由
+   - `routes/admin_site_routes.py:*` — generate-all 路由
 3. 确认已废弃代码：
    ```sql
    SELECT task_key, task_type, status FROM scheduler_tasks

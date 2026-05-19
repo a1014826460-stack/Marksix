@@ -7,7 +7,7 @@ Admin 预测管理 —— 模块同步 / 生成 / 批量操作 / 安全控制。
 - 开奖可见性安全控制（防止未开奖期次泄露号码）
 - 预测 API 响应构建
 - 期号范围解析与已开奖数据查询
-- 批量生成预测数据 & 单表重生成
+- 批量生成预测数据
 
 从 app.py 提取，不改变任何函数签名与行为。
 """
@@ -34,11 +34,7 @@ from domains.prediction.safety_service import (  # noqa: F401 - 兼容导出
     redact_prediction_result_fields,
     resolve_prediction_request_safety,
 )
-# 从 domains 层导入重新生成函数（消除反向依赖）
-from domains.prediction.regeneration_service import (  # noqa: F401 - 兼容导出
-    compute_res_fields,
-    regenerate_payload_data,
-)
+from domains.prediction.result_fields import compute_res_fields  # noqa: F401 - 兼容导出
 
 
 

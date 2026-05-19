@@ -42,18 +42,13 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
                     c2.push(ma[m]);
                 }
             }
-            var ma12j = c2.slice(0, 12).join('.');
-            var ma12 = ma12j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>精选12码：' + c2.join('.') + '</span></p>';
-            var ma6j = c2.slice(0, 6).join('.');
-            var ma6 = ma6j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>精选六码：' + c2.slice(0, 6).join('.') + '</span></p>';
-            var ma1j = c2.slice(0, 1).join('.');
-            var ma1 = ma1j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中一码：' + c2.slice(0, 1).join('.') + '</span></p>';
-            var x6j = c1.slice(0, 6).join('-');
-            var x6 = x6j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中六肖：' + c1.join('.') + '</span></p>';
-            var x3j = c1.slice(0, 3).join('-');
-            var x3 = x3j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中三肖：' + c1.slice(0, 3).join('.') + '</span></p>';
-            var x1j = c1.slice(0, 1).join('-');
-            var x1 = x1j.indexOf('span') === -1 ? '' : '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中一肖：' + c1.slice(0, 1).join('.') + '</span></p>';
+            var hasResult = !!(sx || code);
+            var ma12 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>精选12码：' + c2.join('.') + '</span></p>' : '';
+            var ma6 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>精选六码：' + c2.slice(0, 6).join('.') + '</span></p>' : '';
+            var ma1 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中一码：' + c2.slice(0, 1).join('.') + '</span></p>' : '';
+            var x6 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中六肖：' + c1.join('.') + '</span></p>' : '';
+            var x3 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中三肖：' + c1.slice(0, 3).join('.') + '</span></p>' : '';
+            var x1 = hasResult ? '<p style=\'font-size:13pt;margin-bottom:8px;text-align:left\'><span style=\'text-indent:28px;color:#000;font-family:微软雅黑;font-size:12pt\'>必中一肖：' + c1.slice(0, 1).join('.') + '</span></p>' : '';
             htmlBoxList += ' <table border=\'1\' width=\'100%\' cellpadding=\'0\' height=\'100\' cellspacing=\'0\' bordercolorlight=\'#FFFFFF\' bordercolordark=\'#FFFFFF\' bgcolor=\'#FFFFFF\' style=\'border-collapse:collapse;border-spacing:0;color:#444;font-family:tahoma,微软雅黑,宋体,arial,georgia,verdana,helvetica,sans-serif;font-size:14px;font-style:normal;font-variant-ligatures:normal;font-weight:normal;letter-spacing:normal;line-height:21px;text-align:start;text-indent:0;text-transform:none;white-space:normal;widows:1;word-spacing:0;-webkit-text-stroke-width:0;background-color:#fff\'><tbody><tr class=\'firstRowxx\'><td height=\'35\' style=\'background:#FF0000;margin:0;border-color:green;word-break:break-all;text-align:center;font-size:13pt;line-height:26px;color:#333;padding-left:2px;padding-right:2px;padding-top:3px;padding-bottom:3px\'><span style=\'color:#FFF;font-family:微软雅黑;font-weight:700;line-height:normal;font-size:12pt\'>' + d.term + '期：六肖三码</span></td></tr><tr><td style=\'margin:0;padding:3px 2px;border-color:#e5e5e5;word-break:break-all;text-align:center;line-height:26px\'>' + x6 + x3 + x1 + ma12 + ma6 + ma1 + '</td></tr></tbody></table>';
         }
         if (!htmlBoxList) {

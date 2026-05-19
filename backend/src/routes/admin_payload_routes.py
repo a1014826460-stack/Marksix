@@ -10,9 +10,7 @@ from admin.payload import (
     update_mode_payload_row,
     validate_mode_payload_table,
 )
-from admin.prediction import regenerate_payload_data
 from core.errors import ForbiddenError, NotFoundError, ValidationError
-from app_http.auth import require_generation_access
 from app_http.request_context import RequestContext
 from app_http.router import Router
 from app_http.site_context import (
@@ -95,23 +93,7 @@ def site_payload_detail(ctx: RequestContext) -> None:
         )
         return
 
-    if len(parts) == 8 and parts[7] == "regenerate" and ctx.method == "POST":
-        require_generation_access(ctx)
-        ctx.send_json(
-            regenerate_payload_data(
-                ctx.db_path,
-                table_name=table_name,
-                mechanism_key=str(body.get("mechanism_key", "")),
-                res_code=str(body.get("res_code", "")),
-                lottery_type=str(body.get("lottery_type", "3")),
-                year=str(body.get("year", "")),
-                term=str(body.get("term", "")),
-                web_value=str(current_site.web_id),
-            )
-        )
-        return
-
-    if len(parts) == 8 and parts[7] != "regenerate" and ctx.method in {"PUT", "PATCH"}:
+    if len(parts) == 8 and ctx.method in {"PUT", "PATCH"}:
         _ensure_row_belongs_to_site(
             ctx,
             table_name=table_name,
@@ -132,7 +114,7 @@ def site_payload_detail(ctx: RequestContext) -> None:
         )
         return
 
-    if len(parts) == 8 and parts[7] != "regenerate" and ctx.method == "DELETE":
+    if len(parts) == 8 and ctx.method == "DELETE":
         _ensure_row_belongs_to_site(
             ctx,
             table_name=table_name,

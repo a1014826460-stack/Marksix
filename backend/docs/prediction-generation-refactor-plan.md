@@ -243,7 +243,6 @@ This overrides cross-term diversity rules inside that window.
 ### Deprecated admin actions
 
 - `POST /admin/sites/{site_id}/prediction-modules/run`
-- `POST /admin/sites/{site_id}/mode-payload/{table}/regenerate`
 
 These must be retired because they introduce alternate generation semantics and bypass the unified batch service contract.
 

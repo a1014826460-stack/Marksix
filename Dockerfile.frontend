@@ -16,7 +16,6 @@ COPY backend/package.json ./backend/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY frontend ./frontend
-COPY sites ./sites
 
 RUN pnpm --filter @liuhecai/frontend exec cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true NODE_OPTIONS=--max-old-space-size=4096 next build
 

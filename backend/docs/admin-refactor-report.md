@@ -59,7 +59,6 @@
 | `features/site-data/ModuleDataPanel.tsx` | `ModuleDataPanel` 数据面板部分（~380 行） |
 | `features/site-data/BulkGenerateDialog.tsx` | 批量生成弹窗部分（~190 行） |
 | `features/site-data/RowEditDialog.tsx` | 行编辑弹窗（从 ModuleDataPanel 内联 modal 抽离） |
-| `features/site-data/RegenerateDialog.tsx` | 重新生成弹窗（从 ModuleDataPanel 内联 modal 抽离） |
 | `features/site-data/ConfirmDialog.tsx` | **新组件**：通用确认弹窗（替代 `window.confirm`） |
 | `features/numbers/NumbersPage.tsx` | `NumbersPageClient`（~120 行） |
 | `features/prediction-modules/PredictionModulesPage.tsx` | `PredictionModulesPageClient`（~30 行） |
@@ -93,7 +92,7 @@
 
 | 文件 | 变更内容 |
 |------|---------|
-| `src/admin/prediction.py` | `bulk_generate_site_prediction_data` 增加 `logging.getLogger("prediction.admin").debug(...)` 完成日志；`regenerate_payload_data` 增加开始/完成 DEBUG 日志（含耗时 ms） |
+| `src/admin/prediction.py` | `bulk_generate_site_prediction_data` 增加 `logging.getLogger("prediction.admin").debug(...)` 完成日志 |
 | `src/prediction_generation/service.py` | 增加模块级 per-draw DEBUG 日志：记录 `mechanism_key`、`mode_id`、处理期数（历史 + 未来）、`record_count`、`model` 标识、`summary` 分布 |
 
 ---
@@ -154,7 +153,6 @@ backend/
 │   │   ├── ModuleDataPanel.tsx          # 数据面板（表格+分页+筛选）
 │   │   ├── BulkGenerateDialog.tsx       # 批量生成弹窗
 │   │   ├── RowEditDialog.tsx            # 行编辑弹窗
-│   │   ├── RegenerateDialog.tsx         # 重新生成弹窗
 │   │   └── ConfirmDialog.tsx            # 通用确认弹窗
 │   ├── numbers/
 │   │   └── NumbersPage.tsx
@@ -275,7 +273,6 @@ python -c "import py_compile; py_compile.compile('src/prediction_generation/serv
 | `prediction.module.process` | `mechanism_key`、`mode_id`、`table_name`、`phase`、`record_count`、`model`、`summary`（historical_count / future_count） |
 | `prediction.batch.finish` | `duration_ms`、`record_count`（total_inserted）、`summary`（按模块）、`persist_path` |
 | `prediction.auto.start/finish` | `lottery_type_id`、`trigger`、`phase`、`record_count`、`persist_path` |
-| `regenerate_payload` (admin) | `table`、`mechanism`、`lottery_type`、`action`、`labels`、`duration_ms` |
 | `bulk_generate` (admin) | `site`、`modules`、`draws`、`inserted`/`updated`/`errors`、`duration_ms` |
 
 ### 6.4 日志输出示例
