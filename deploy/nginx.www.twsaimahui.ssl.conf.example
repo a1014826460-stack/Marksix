@@ -3,18 +3,11 @@
 #   https://www.twsaimahui.com/
 #     -> /twsaimahui (台湾六合彩论坛第二站点)
 #
-# 使用方式 (二选一):
+# 前提: 证书已通过 certbot 扩展为包含 twsaimahui.com 的多域名证书
+#       证书文件路径: deploy/ssl/fullchain.pem, deploy/ssl/privkey.pem
 #
-# 【方式A - 推荐】如果你已部署 shengshi8800 的 nginx 配置:
-#   将下面4个 server block 追加到你现有的 nginx 配置文件中,
-#   然后将两个域名的证书合并为多域名证书, 或分别指定证书路径。
-#
-# 【方式B】如果你使用独立证书:
-#   将下面的 server block 追加到现有配置, 确保每个 server
-#   的 ssl_certificate/ssl_certificate_key 指向对应的证书。
-#
-# 无论哪种方式, 完成后重启 nginx:
-#   docker compose restart nginx
+# 使用方式: 将下面4个 server block 追加到你现有的 nginx 配置文件中,
+#          然后 docker compose restart nginx
 # ============================================================
 
 # ---- twsaimahui apex -> www 重定向 ----
@@ -35,8 +28,8 @@ server {
     http2 on;
     server_name twsaimahui.com;
 
-    ssl_certificate /etc/nginx/ssl/twsaimahui-fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/twsaimahui-privkey.pem;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;
@@ -52,8 +45,8 @@ server {
     http2 on;
     server_name www.twsaimahui.com;
 
-    ssl_certificate /etc/nginx/ssl/twsaimahui-fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/twsaimahui-privkey.pem;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;
