@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server"
-
+import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
 import { backendFetchJson } from "@/lib/backend-api"
 
 type LegacyPostImage = {
@@ -30,21 +29,32 @@ export async function GET(request: Request) {
   const web = url.searchParams.get("web")
   const pc = url.searchParams.get("pc")
 
-  const payload = await backendFetchJson<BackendLegacyPostListPayload>("/legacy/post-list", {
-    query: {
-      type: type || undefined,
-      web: web || undefined,
-      pc: pc || undefined,
-      limit: 50,
-    },
-  })
+  async function fetchPostList(pcValue: string | null) {
+    return backendFetchJson<BackendLegacyPostListPayload>("/legacy/post-list", {
+      query: {
+        type: type || undefined,
+        web: web || undefined,
+        pc: pcValue || undefined,
+        limit: 50,
+      },
+    })
+  }
+
+  let payload = await fetchPostList(pc)
+  if (payload.data.length === 0 && pc === "72") {
+    payload = await fetchPostList("305")
+  }
 
   // The old page only reads `cover_image`, but we keep the rest of the fields
   // in place so future maintenance can audit which DB row backed each image.
-  return NextResponse.json({
+  return jsonWithCors({
     data: payload.data.map((item) => ({
       ...item,
       cover_image: normalizeImageUrl(item.cover_image),
     })),
   })
+}
+
+export function OPTIONS() {
+  return buildOptionsResponse()
 }

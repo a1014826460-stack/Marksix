@@ -34,6 +34,7 @@ from .repository import (
     list_site_modules,
     update_module,
 )
+from .site_module_blueprints import get_blocked_items_for_site
 
 MAX_BULK_DELETE_ROWS = 1000
 
@@ -103,6 +104,7 @@ def list_site_prediction_modules(db_path: str | Path, site_id: int) -> dict[str,
             "site": site,
             "modules": modules,
             "available_mechanisms": available_mechanisms,
+            "blocked_frontend_items": get_blocked_items_for_site(site),
         }
 
 
@@ -473,6 +475,21 @@ def sync_site_prediction_modules(db_path: str | Path, site_id: int) -> None:
 
     with connect(db_path) as conn:
         _impl(conn, site_id=site_id)
+
+
+def sync_site_prediction_modules_for_admin(db_path: str | Path, site_id: int) -> dict[str, Any]:
+    ensure_prediction_configs_loaded(db_path)
+    ensure_admin_tables(db_path)
+    sync_site_prediction_modules(db_path, site_id)
+    payload = list_site_prediction_modules(db_path, site_id)
+    return {
+        "ok": True,
+        "site": payload["site"],
+        "modules": payload["modules"],
+        "available_mechanisms": payload["available_mechanisms"],
+        "blocked_frontend_items": payload.get("blocked_frontend_items") or [],
+        "module_count": len(payload["modules"]),
+    }
 
 
 def bulk_generate_site_predictions(

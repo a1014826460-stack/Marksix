@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server"
-
+import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
 import { backendFetchJson } from "@/lib/backend-api"
 
 export const runtime = "nodejs"
@@ -26,14 +25,19 @@ export async function GET(request: Request) {
       query: { web: web || undefined },
     })
 
-    // 透传 Python 后端的完整响应（包含 code 字段）
-    return NextResponse.json(payload)
+    return jsonWithCors({
+      code: 600,
+      data: { content: payload?.data?.content || "" },
+    })
   } catch (error) {
-    // 公告获取失败不应阻断页面，返回空公告
     console.error("notice fetch failed:", error)
-    return NextResponse.json({
-      code: 200,
+    return jsonWithCors({
+      code: 600,
       data: { content: "" },
     })
   }
+}
+
+export function OPTIONS() {
+  return buildOptionsResponse()
 }

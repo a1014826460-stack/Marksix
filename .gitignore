@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+.pnpm-store/
 
 # next.js
 /.next/
@@ -25,6 +26,7 @@ yarn-error.log*
 .env.local
 .env.production
 .env.development
+deploy/nginx.conf.local
 
 # vercel
 .vercel

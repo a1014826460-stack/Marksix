@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Plus, RefreshCw, Trash2 } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
@@ -52,7 +52,7 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
     [modules],
   )
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const data = await adminApi<{
         site: Site
@@ -71,11 +71,11 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载失败")
     }
-  }
+  }, [siteId])
 
   useEffect(() => {
-    load()
-  }, [siteId])
+    void load()
+  }, [load])
 
   async function addModule(key?: string) {
     const targetKey = key || selectedKey

@@ -55,7 +55,7 @@ def get_site(db_path: str | Path, site_id: int, include_secret: bool = False) ->
 def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None = None) -> dict[str, Any]:
     """创建或更新托管站点。
 
-    当 site_id 为 None 时创建新站点，并从模板站点（site 1）复制预测模块配置；
+    当 site_id 为 None 时创建新站点，并从模板站点复制预测模块配置；
     否则更新已有站点。
     """
     from domains.prediction.generation_service import sync_site_prediction_modules
@@ -83,6 +83,7 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
         "notes": str(payload.get("notes") or "").strip(),
     }
     token = payload.get("token")
+    template_site_id = int(payload.get("template_site_id") or 4)
     if site_id is None:
         fields["web_id"] = fields["start_web_id"]
 
@@ -90,6 +91,8 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
         raise ValidationError("站点名称不能为空")
     if fields["start_web_id"] > fields["end_web_id"]:
         raise ValidationError("start_web_id 不能大于 end_web_id")
+    if site_id is None and int(fields["web_id"]) != int(fields["start_web_id"]):
+        raise ValidationError("新建站点时 web_id 必须与 start_web_id 一致")
     if "{web_id}" not in fields["manage_url_template"] and "{id}" not in fields["manage_url_template"]:
         raise ValidationError("manage_url_template 必须包含 {web_id} 或 {id}")
 
@@ -98,19 +101,38 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
 
     with connect(db_path) as conn:
         if site_id is None:
+            existing_web = conn.execute(
+                "SELECT id FROM managed_sites WHERE web_id = ? LIMIT 1",
+                (fields["web_id"],),
+            ).fetchone()
+            if existing_web:
+                raise ValidationError(f"web_id={fields['web_id']} 已被其他站点占用")
             fields["token"] = str(token or "")
             row = insert_site(conn, fields, now)
             new_site_id = int(row["id"])
+            new_site = dict(row)
+
+            template_exists = conn.execute(
+                "SELECT id FROM managed_sites WHERE id = ?",
+                (template_site_id,),
+            ).fetchone()
+            if not template_exists and template_site_id != 1:
+                template_site_id = 1
 
             template_modules = conn.execute(
                 """
                 SELECT mechanism_key, mode_id, status, sort_order
                 FROM site_prediction_modules
-                WHERE site_id = 1
+                WHERE site_id = ?
                 ORDER BY sort_order, id
-                """
+                """,
+                (template_site_id,),
             ).fetchall()
-            if template_modules:
+            should_copy_template_modules = not str(new_site.get("domain") or "").strip().lower() in {
+                "www.twsaimahui.com",
+                "twsaimahui.com",
+            }
+            if template_modules and should_copy_template_modules:
                 for tm in template_modules:
                     conn.execute(
                         """
@@ -125,8 +147,8 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
                             tm["status"], tm["sort_order"], now, now,
                         ),
                     )
-                sync_site_prediction_modules(conn, site_id=new_site_id)
-                conn.commit()
+            sync_site_prediction_modules(conn, site_id=new_site_id)
+            conn.commit()
             return public_site(row)
 
         # 更新已有站点

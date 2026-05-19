@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -15,10 +15,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { adminApi, jsonBody } from "@/lib/admin-api"
-import { Field } from "@/features/shared/Field"
 import { AdminNotice } from "@/features/shared/AdminNotice"
 import type {
-  ConfigEntry, ConfigGroup, ConfigHistoryEntry,
+  ConfigEntry, ConfigGroup, ConfigHistoryEntry, JsonValue,
 } from "@/features/shared/types"
 import { configSourceBadgeClass } from "@/features/shared/types"
 
@@ -45,14 +44,14 @@ export function ConfigsPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const [historyTotal, setHistoryTotal] = useState(0)
 
-  async function loadGroups() {
+  const loadGroups = useCallback(async () => {
     try {
       const data = await adminApi<{ groups: ConfigGroup[] }>("/admin/configs/groups")
       setGroups(data.groups)
     } catch { /* ignore */ }
-  }
+  }, [])
 
-  async function loadConfigs() {
+  const loadConfigs = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -64,10 +63,15 @@ export function ConfigsPage() {
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "加载失败")
     } finally { setLoading(false) }
-  }
+  }, [activeGroup, keyword, sourceFilter])
 
-  useEffect(() => { loadGroups(); loadConfigs() }, [])
-  useEffect(() => { loadConfigs() }, [activeGroup, sourceFilter])
+  useEffect(() => {
+    void loadGroups()
+  }, [loadGroups])
+
+  useEffect(() => {
+    void loadConfigs()
+  }, [loadConfigs])
 
   function showMessage(msg: string) {
     setMessage(msg)
@@ -88,7 +92,10 @@ export function ConfigsPage() {
     if (!editing) return
     setEditSaving(true)
     try {
-      const body: any = { value: editValue, value_type: editing.value_type }
+      const body: { value: JsonValue; value_type: string; change_reason?: string } = {
+        value: editValue,
+        value_type: editing.value_type,
+      }
       if (editing.sensitive && !editValue) {
         showMessage("敏感配置不能设置为空值"); setEditSaving(false); return
       }

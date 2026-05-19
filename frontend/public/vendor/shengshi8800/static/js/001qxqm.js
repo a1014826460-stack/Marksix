@@ -1,7 +1,7 @@
 ﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
-    url: httpApi + `/api/kaijiang/getXiaoma?web=${web}&type=${type}&num=7`,
+    url: httpApi + `/api/kaijiang/qxbm?web=${web}&type=${type}`,
     type: 'GET',
     dataType: 'json',
     success: function(response) {
@@ -15,16 +15,8 @@ $.ajax({
                 let sxSplit = (d.res_sx||'').split(',');
                 let code = codeSplit[codeSplit.length-1]||'';
                 let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = [];
-                let ma = [];
-                let maValue = [];
-                let content = JSON.parse(d.content);
-                for (let i in content) {
-                    let c = content[i].split('|');
-                    xiao.push(c[0])
-                    maValue[i] = c[1];
-                    ma.push(...c[1].split(','));
-                }
+                let xiao = (d.xiao || '').split(',').filter(Boolean);
+                let ma = (d.code || '').split(',').filter(Boolean);
 
                 let c1 = [];
                 for (let i = 0; i < xiao.length; i++) {

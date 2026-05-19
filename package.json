@@ -1,6 +1,36 @@
 {
+  "name": "liuhecai-workspace",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "pnpm dev:frontend:webpack",
+    "dev:frontend:turbopack": "pnpm --filter @liuhecai/frontend exec cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev --hostname 127.0.0.1 --port 3000",
+    "dev:frontend:webpack": "pnpm --filter @liuhecai/frontend exec cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --webpack --hostname 127.0.0.1 --port 3000",
+    "kill:frontend-port": "powershell -ExecutionPolicy Bypass -File .\\frontend\\scripts\\kill-frontend-port.ps1",
+    "clean:frontend-cache": "powershell -ExecutionPolicy Bypass -File .\\frontend\\scripts\\clean-frontend-cache.ps1",
+    "build:frontend": "pnpm --filter @liuhecai/frontend exec cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true NODE_OPTIONS=--max-old-space-size=4096 next build",
+    "start:frontend": "pnpm --filter @liuhecai/frontend exec cross-env NODE_OPTIONS=--max-old-space-size=4096 next start --hostname 0.0.0.0 --port 3000",
+    "lint:frontend": "eslint frontend --ext .js,.jsx,.ts,.tsx",
+    "dev:backend-admin": "pnpm --filter @liuhecai/backend-admin dev -- --hostname 127.0.0.1 --port 3002",
+    "build:backend-admin": "pnpm --filter @liuhecai/backend-admin build",
+    "start:backend-admin": "pnpm --filter @liuhecai/backend-admin start -- --hostname 0.0.0.0 --port 3002",
+    "lint:backend-admin": "eslint backend --ext .js,.jsx,.ts,.tsx",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.3.0"
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.2.4",
+    "postcss": "^8.5.0",
+    "tw-animate-css": "1.3.3",
+    "typescript": "5.7.3"
   }
 }

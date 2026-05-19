@@ -10,10 +10,10 @@ from domains.prediction.service import (
     estimate_site_prediction_modules_bulk_delete,
     list_site_prediction_modules,
     run_prediction as run_site_prediction_module,
+    sync_site_prediction_modules_for_admin,
     update_site_prediction_module,
 )
 from domains.sites.service import get_site, list_sites, save_site, delete_site
-from helpers import parse_bool
 from app_http.auth import require_generation_access
 from app_http.request_context import RequestContext
 from app_http.router import Router
@@ -23,8 +23,9 @@ from app_http.site_context import (
     resolve_site_context,
     validate_web_matches_site,
 )
+from deprecated.site_fetch_chain import deprecated_site_fetch_payload
 
-from .common import fetch_site_data, start_background_job
+from .common import start_background_job
 
 
 def register(router: Router) -> None:
@@ -65,13 +66,7 @@ def site_detail(ctx: RequestContext) -> None:
     if len(parts) == 6 and parts[5] == "fetch" and ctx.method == "POST":
         body = ctx.read_json()
         validate_web_matches_site(current_site, extract_site_web_value(ctx.query, body))
-        result = fetch_site_data(
-            ctx.db_path,
-            site_id,
-            normalize_after=parse_bool(body.get("normalize"), True),
-            build_text_mappings_after=parse_bool(body.get("build_text_mappings"), True),
-        )
-        ctx.send_json(result)
+        ctx.send_json(deprecated_site_fetch_payload(site_id), HTTPStatus.GONE)
         return
 
     if len(parts) == 6 and parts[5] == "prediction-modules":
@@ -86,6 +81,10 @@ def site_detail(ctx: RequestContext) -> None:
             return
 
     if len(parts) == 7 and parts[5] == "prediction-modules":
+        if parts[6] == "sync" and ctx.method == "POST":
+            require_generation_access(ctx)
+            ctx.send_json(sync_site_prediction_modules_for_admin(ctx.db_path, site_id))
+            return
         if parts[6] == "generate-all" and ctx.method == "POST":
             require_generation_access(ctx)
             body = ctx.read_json()

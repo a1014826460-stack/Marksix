@@ -1,4 +1,6 @@
-export type AnyRecord = Record<string, any>
+export type JsonPrimitive = string | number | boolean | null
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
+export type AnyRecord = Record<string, JsonValue | undefined>
 
 export type ApiSummary = {
   summary: Record<string, string | number>
@@ -161,10 +163,10 @@ export function levelBadgeClass(level: string) {
 
 export type ConfigEntry = {
   key: string
-  value: any
-  raw_value?: any
-  default_value: any
-  effective_value: any
+  value: JsonValue
+  raw_value?: JsonValue
+  default_value: JsonValue
+  effective_value: JsonValue
   value_type: string
   group: string
   source: string

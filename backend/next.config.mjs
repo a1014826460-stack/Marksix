@@ -7,7 +7,7 @@ const nextConfig = {
   output: 'standalone',
   basePath: '/fackyou',
   turbopack: {
-    root: __dirname,
+    root: dirname(__dirname),
   },
   typescript: {
     ignoreBuildErrors: true,

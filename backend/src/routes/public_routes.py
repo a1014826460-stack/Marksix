@@ -110,7 +110,7 @@ def notice(ctx: RequestContext) -> None:
                 """
                 SELECT announcement
                 FROM managed_sites
-                WHERE enabled = TRUE
+                WHERE enabled = 1
                   AND (id = ? OR web_id = ?)
                 ORDER BY id
                 LIMIT 1

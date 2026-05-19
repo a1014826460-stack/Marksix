@@ -337,7 +337,9 @@ async function testDrawHistory() {
     if (r.ok && r.json) {
       const d = r.json as Record<string, unknown>;
       try {
-        assert(d.page_size <= 50, "page_size 应被限制到 ≤50");
+        const pageSize = d.page_size;
+        if (typeof pageSize !== "number") throw new Error("page_size 应为数字");
+        assert(pageSize <= 50, "page_size 应被限制到 ≤50");
         ok("3.7 page_size=100 被限制到 ≤50");
       } catch (e) {
         fail("3.7 page_size=100", String(e));

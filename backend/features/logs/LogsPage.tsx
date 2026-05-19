@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FileDown } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Button } from "@/components/ui/button"
@@ -46,7 +46,7 @@ export function LogsPage() {
   const [detail, setDetail] = useState<LogEntry | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  async function load(p?: number) {
+  const load = useCallback(async (p?: number) => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -74,9 +74,9 @@ export function LogsPage() {
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "加载失败")
     } finally { setLoading(false) }
-  }
+  }, [dateFrom, dateTo, keyword, level, lotteryTypeId, module, page, pageSize, siteId, userId])
 
-  useEffect(() => { load(1) }, [])
+  useEffect(() => { void load(1) }, [load])
 
   async function showDetail(logId: number) {
     setDetailLoading(true)

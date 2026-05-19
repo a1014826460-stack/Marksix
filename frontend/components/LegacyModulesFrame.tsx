@@ -1,9 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { buildLegacyEmbedUrl, getSiteConfig } from "@/lib/sites"
 import type { LotteryGame } from "@/lib/lotteryData"
 
 type LegacyModulesFrameProps = {
+  siteKey?: string
   activeGame: LotteryGame
   onGameChange?: (game: LotteryGame) => void
   onAnchorMapChange?: (anchors: Record<string, number>) => void
@@ -20,6 +22,7 @@ const GAME_TYPE_MAP: Record<LotteryGame, number> = {
 }
 
 export function LegacyModulesFrame({
+  siteKey = "shengshi8800",
   activeGame,
   onGameChange,
   onAnchorMapChange,
@@ -31,32 +34,34 @@ export function LegacyModulesFrame({
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [frameHeight, setFrameHeight] = useState(960)
   const [displayGame, setDisplayGame] = useState<LotteryGame>(activeGame)
+  const site = getSiteConfig(siteKey)
 
-  function pushDebug(message: string) {
+  const pushDebug = useCallback((message: string) => {
     if (!debug) return
     onDebug?.(message)
-  }
+  }, [debug, onDebug])
 
   useEffect(() => {
     setDisplayGame(activeGame)
     pushDebug(`prop activeGame -> ${activeGame}`)
-  }, [activeGame])
+  }, [activeGame, pushDebug])
 
   const iframeSrc = useMemo(() => {
     const type = GAME_TYPE_MAP[displayGame]
-    const params = new URLSearchParams({
-      type: String(type),
-      web: "4",
-      debug: debug ? "1" : "0",
-      page_switch: pageSwitchEnabled ? "1" : "0",
-      shell_header: shellHeaderHidden ? "1" : "0",
+    if (!site) {
+      return `/vendor/shengshi8800/embed.html?type=${type}&web=4`
+    }
+    return buildLegacyEmbedUrl(site, {
+      lotteryTypeId: type,
+      debug,
+      pageSwitchEnabled,
+      shellHeaderHidden,
     })
-    return `/vendor/shengshi8800/embed.html?${params.toString()}`
-  }, [debug, displayGame, pageSwitchEnabled, shellHeaderHidden])
+  }, [debug, displayGame, pageSwitchEnabled, shellHeaderHidden, site])
 
   useEffect(() => {
     pushDebug(`iframe src -> ${iframeSrc}`)
-  }, [iframeSrc])
+  }, [iframeSrc, pushDebug])
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -118,13 +123,13 @@ export function LegacyModulesFrame({
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [debug, displayGame, onAnchorMapChange, onGameChange])
+  }, [debug, displayGame, onAnchorMapChange, onGameChange, pushDebug])
 
   useEffect(() => {
     pushDebug(
       `preserve height for displayGame -> ${displayGame} (type=${GAME_TYPE_MAP[displayGame]})`
     )
-  }, [displayGame])
+  }, [displayGame, pushDebug])
 
   return (
     <iframe

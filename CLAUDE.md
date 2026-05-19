@@ -35,10 +35,9 @@ Important:
 ### Backend Admin UI
 
 ```powershell
-cd backend
-npm run dev -- --hostname 127.0.0.1 --port 3002
-npm run build
-npm run lint
+pnpm dev:backend-admin
+pnpm build:backend-admin
+pnpm lint:backend-admin
 ```
 
 Browser entry:
@@ -53,10 +52,9 @@ Admin API flow:
 ### Frontend Public Site
 
 ```powershell
-cd frontend
-npm run dev -- --hostname 127.0.0.1 --port 3000
-npm run build
-npm run lint
+pnpm dev:frontend
+pnpm build:frontend
+pnpm lint:frontend
 ```
 
 Public entry note:

@@ -155,7 +155,7 @@ export function DrawsPage() {
     lotteries.find((lottery) => lottery.id === TAIWAN_LOTTERY_ID) || null
   const filteredRows = rows
 
-  async function load(currentPage?: number, currentPageSize?: number): Promise<Draw[]> {
+  const load = useCallback(async (currentPage?: number, currentPageSize?: number): Promise<Draw[]> => {
     const p = currentPage ?? page
     const ps = currentPageSize ?? pageSize
     const [drawData, lotteryData] = await Promise.all([
@@ -171,7 +171,7 @@ export function DrawsPage() {
     if (typeof drawData.page_size === "number") setPageSize(drawData.page_size)
     setLotteries(lotteryData.lottery_types)
     return drawData.draws
-  }
+  }, [page, pageSize])
 
   function applyTermDraft(term: string) {
     setDraftTerm(term)
@@ -219,7 +219,7 @@ export function DrawsPage() {
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   useEffect(() => {
     if (!formOpen) return

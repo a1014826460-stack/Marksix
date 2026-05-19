@@ -6,6 +6,7 @@
 - tools/repair_created_mode_payload_197.py: mode_payload_197 一次修复脚本
 - tools/fill_empty_mode_payload_tables_from_fetched_records.py: 一次性回填脚本
 - tools/fill_missing_type3_web4_samples_from_fetched_records.py: 一次性回填脚本
+- site_fetch_chain.py: 已废弃的站点抓取链路兼容包装
 
 这些脚本保留仅供历史参考，不应在新代码中引用。
 """

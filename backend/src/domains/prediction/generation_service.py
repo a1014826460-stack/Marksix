@@ -1,8 +1,4 @@
-"""预测资料生成服务。
-
-包含模块同步、期号解析、表解析、行数据构建等核心生成函数。
-这些函数原本分散在 admin/prediction.py 中，现集中于此以避免 domains → admin 反向依赖。
-"""
+"""Prediction generation helpers shared by admin and domain services."""
 
 from __future__ import annotations
 
@@ -12,12 +8,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from db import connect, quote_identifier, utc_now
-from helpers import (
-    load_fixed_data_maps,
-    parse_bool,
-    REQUIRED_SITE_PREDICTION_MODE_IDS,
+from db import connect, utc_now
+from domains.prediction.site_module_blueprints import (
+    get_blocked_items_for_site,
+    get_blueprint_name_for_site,
+    get_required_mode_ids_for_site,
 )
+from helpers import load_fixed_data_maps, parse_bool
 from predict.mechanisms import get_prediction_config, list_prediction_configs
 from utils.created_prediction_store import (
     normalize_color_label,
@@ -27,11 +24,22 @@ from utils.created_prediction_store import (
 _logger = logging.getLogger("domains.prediction.generation")
 
 
-# ── 模块蓝图 ────────────────────────────────────────────
+def _load_site_sync_context(conn: Any, site_id: int | None) -> dict[str, Any] | None:
+    if site_id is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
+        FROM managed_sites
+        WHERE id = ?
+        """,
+        (int(site_id),),
+    ).fetchone()
+    return dict(row) if row else None
 
 
-def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
-    """获取站点预测模块的标准配置清单。"""
+def get_site_prediction_module_blueprints(site: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Return the synced prediction-module blueprint for a site."""
     configs_by_mode_id: dict[int, dict[str, Any]] = {}
     for item in list_prediction_configs():
         try:
@@ -39,38 +47,46 @@ def get_site_prediction_module_blueprints() -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             continue
 
-    missing = [mode_id for mode_id in REQUIRED_SITE_PREDICTION_MODE_IDS if mode_id not in configs_by_mode_id]
+    required_mode_ids = get_required_mode_ids_for_site(site)
+    missing = [mode_id for mode_id in required_mode_ids if mode_id not in configs_by_mode_id]
     if missing:
-        _logger.warning("以下 mode_id 暂无预测配置，同步时跳过: %s", missing)
+        _logger.warning(
+            "site blueprint=%s missing prediction configs for mode_ids: %s",
+            get_blueprint_name_for_site(site),
+            missing,
+        )
 
     blueprints: list[dict[str, Any]] = []
-    for index, mode_id in enumerate(REQUIRED_SITE_PREDICTION_MODE_IDS):
-        if mode_id not in configs_by_mode_id:
+    for index, mode_id in enumerate(required_mode_ids):
+        item = configs_by_mode_id.get(mode_id)
+        if item is None:
             continue
-        item = dict(configs_by_mode_id[mode_id])
-        item["mode_id"] = int(mode_id)
-        item["sort_order"] = index * 10
-        blueprints.append(item)
+        payload = dict(item)
+        payload["mode_id"] = int(mode_id)
+        payload["sort_order"] = index * 10
+        payload["blueprint_name"] = get_blueprint_name_for_site(site)
+        blueprints.append(payload)
     return blueprints
 
 
-def get_site_prediction_module_blueprint_by_key(mechanism_key: str) -> dict[str, Any]:
-    """按 mechanism_key 获取站点允许使用的模块配置。"""
-    for item in get_site_prediction_module_blueprints():
+def get_site_prediction_module_blueprint_by_key(
+    mechanism_key: str,
+    site: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    for item in get_site_prediction_module_blueprints(site):
         if str(item["key"]) == str(mechanism_key):
             return item
-    raise ValueError(f"机制 {mechanism_key} 不在站点模块同步清单中")
-
-
-# ── 模块同步 ────────────────────────────────────────────
+    raise ValueError(f"mechanism {mechanism_key} is not in the synced site blueprint")
 
 
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """将 site_prediction_modules 表与前端站点模块清单保持同步。"""
-    blueprints = get_site_prediction_module_blueprints()
+    """Keep site_prediction_modules aligned with the resolved site blueprint."""
     now = utc_now()
 
-    site_query = "SELECT id FROM managed_sites"
+    site_query = """
+        SELECT id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
+        FROM managed_sites
+    """
     site_params: tuple[Any, ...] = ()
     if site_id is not None:
         site_query += " WHERE id = ?"
@@ -78,7 +94,9 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
     site_rows = conn.execute(site_query, site_params).fetchall()
 
     for site_row in site_rows:
-        current_site_id = int(site_row["id"])
+        site_data = dict(site_row)
+        current_site_id = int(site_data["id"])
+        blueprints = get_site_prediction_module_blueprints(site_data)
         existing_rows = conn.execute(
             """
             SELECT mechanism_key, status, created_at
@@ -125,8 +143,14 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
                     ),
                 )
 
-
-# ── 表解析 ──────────────────────────────────────────────
+        blocked_items = get_blocked_items_for_site(site_data)
+        if blocked_items:
+            _logger.warning(
+                "site_id=%s blueprint=%s blocked frontend items not synced into site_prediction_modules: %s",
+                current_site_id,
+                get_blueprint_name_for_site(site_data),
+                [str(item.get("page_title") or item.get("frontend_module") or "") for item in blocked_items],
+            )
 
 
 def resolve_prediction_table_for_mode(
@@ -134,7 +158,7 @@ def resolve_prediction_table_for_mode(
     mode_id: int,
     fallback_table: str = "",
 ) -> str:
-    """根据 mode_id 从 mode_payload_tables 解析对应的数据表名。"""
+    """Resolve the payload table name for one mode_id."""
     resolved_mode_id = int(mode_id or 0)
     if resolved_mode_id > 0 and conn.table_exists("mode_payload_tables"):
         row = conn.execute(
@@ -155,30 +179,24 @@ def resolve_prediction_table_for_mode(
     return ""
 
 
-# ── 期号范围解析 ────────────────────────────────────────
-
-
 def parse_issue_range_value(value: Any, label: str) -> tuple[int, int]:
-    """解析前端传入的期号范围值，返回 (year, term) 元组。"""
+    """Parse a frontend issue string like 2026001 into (year, term)."""
     digits = re.sub(r"\D", "", str(value or ""))
     if len(digits) < 5:
-        raise ValueError(f"{label} 格式无效，请输入完整期号（例如 2026001）。")
+        raise ValueError(f"{label} format is invalid, expected a full issue like 2026001")
 
     year_text = digits[:4]
     term_text = digits[4:]
     if not year_text.isdigit():
-        raise ValueError(f"{label} 年份格式无效")
+        raise ValueError(f"{label} year format is invalid")
     if not term_text.isdigit():
-        raise ValueError(f"{label} 期数格式无效")
+        raise ValueError(f"{label} term format is invalid")
 
     year = int(year_text)
     term = int(term_text)
     if term == 0:
-        raise ValueError(f"{label} 期数不能为 0。")
+        raise ValueError(f"{label} term cannot be 0")
     return year, term
-
-
-# ── 预测行数据构建 ──────────────────────────────────────
 
 
 def build_generated_prediction_row_data(
@@ -192,12 +210,13 @@ def build_generated_prediction_row_data(
     generated_content: Any,
     db_path: str | Path = "",
 ) -> dict[str, Any]:
-    """将 predict() 的输出转换成 created schema 可直接落库的行数据结构。"""
+    """Convert predict() output into one created-schema row payload."""
     web_val = str(web_value or "").strip()
     if not web_val:
-        raise ValueError("web_value 不能为空")
+        raise ValueError("web_value cannot be empty")
     if not web_val.isdigit():
-        raise ValueError("web_value 必须为整数")
+        raise ValueError("web_value must be an integer string")
+
     row_data: dict[str, Any] = {
         "type": str(lottery_type or ""),
         "year": str(year or ""),
@@ -212,8 +231,8 @@ def build_generated_prediction_row_data(
         codes = [c.strip() for c in str(res_code).split(",") if c.strip()]
         if len(codes) == 7:
             special = codes[-1]
-            with connect(db_path) as _tmp_conn:
-                zmap, cmap = load_fixed_data_maps(_tmp_conn)
+            with connect(db_path) as tmp_conn:
+                zmap, cmap = load_fixed_data_maps(tmp_conn)
             row_data["res_sx"] = zmap.get(special, "")
             color = cmap.get(special, "")
             if color:

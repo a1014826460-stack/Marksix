@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -83,7 +83,7 @@ export function ModuleDataPanel({
     return candidate === "created" ? "created" : "public"
   }
 
-  async function fetchPayload(p: number) {
+  const fetchPayload = useCallback(async (p: number) => {
     setLoading(true)
     try {
       const tf = typeFilterRef.current
@@ -109,12 +109,12 @@ export function ModuleDataPanel({
     } finally {
       setLoading(false)
     }
-  }
+  }, [pageSize, siteId, tableName])
 
   useEffect(() => {
     setSelectedRows(new Set())
-    fetchPayload(1)
-  }, [typeFilter, webFilter, sourceFilter, reloadToken, pageSize])
+    void fetchPayload(1)
+  }, [fetchPayload, pageSize, reloadToken, sourceFilter, typeFilter, webFilter])
 
   const totalPages = payload ? Math.ceil(payload.total / pageSize) : 0
 

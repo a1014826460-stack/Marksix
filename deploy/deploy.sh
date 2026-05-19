@@ -178,7 +178,7 @@ show_deploy_info() {
     echo ""
     echo "  HTTPS:"
     echo "    默认 nginx.conf 仅启用 HTTP"
-    echo "    绑定域名与 HTTPS 时，请参考 DEPLOY.md 和 deploy/nginx.domain.ssl.conf.example"
+    echo "    绑定域名与 HTTPS 时，请参考 DEPLOY.md 和 deploy/nginx.conf.local"
     echo ""
 }
 

@@ -1,0 +1,786 @@
+{
+  "generated_at": "2026-05-17T22:03:13.785404",
+  "base_url": "http://127.0.0.1:3000",
+  "timeout_seconds": 5.0,
+  "response_time_threshold_seconds": 5.0,
+  "discovered_routes": [
+    "app/api/draw-history/route.ts",
+    "app/api/index/notice/route.ts",
+    "app/api/kaijiang/[[...path]]/route.ts",
+    "app/api/latest-draw/route.ts",
+    "app/api/lottery-data/route.ts",
+    "app/api/next-draw-deadline/route.ts",
+    "app/api/post/getList/route.ts",
+    "app/api/predict/[mechanism]/route.ts",
+    "app/uploads/image/[bucket]/[filename]/route.ts"
+  ],
+  "summary": {
+    "total": 38,
+    "passed": 0,
+    "failed": 38
+  },
+  "results": [
+    {
+      "interface_name": "/api/draw-history",
+      "case_id": "draw-history-default",
+      "route_file": "app/api/draw-history/route.ts",
+      "route_pattern": "/api/draw-history",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/draw-history",
+        "query_params": {},
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3542.218,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/draw-history",
+      "case_id": "draw-history-type-year-sort",
+      "route_file": "app/api/draw-history/route.ts",
+      "route_pattern": "/api/draw-history",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/draw-history",
+        "query_params": {
+          "lottery_type": 3,
+          "year": 2026,
+          "sort": "d"
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3114.67,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/draw-history",
+      "case_id": "draw-history-type-alias-limit",
+      "route_file": "app/api/draw-history/route.ts",
+      "route_pattern": "/api/draw-history",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/draw-history",
+        "query_params": {
+          "type": 2,
+          "page": 1,
+          "limit": 10
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3212.944,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/draw-history",
+      "case_id": "draw-history-page-size",
+      "route_file": "app/api/draw-history/route.ts",
+      "route_pattern": "/api/draw-history",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/draw-history",
+        "query_params": {
+          "lottery_type": 1,
+          "page": 1,
+          "page_size": 5,
+          "sort": "l"
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3197.264,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/index/notice",
+      "case_id": "generic-app-api-index-notice-route-ts",
+      "route_file": "app/api/index/notice/route.ts",
+      "route_pattern": "/api/index/notice",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/index/notice",
+        "query_params": {},
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3289.779,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/curTerm",
+      "case_id": "kaijiang-curTerm-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/curTerm",
+        "query_params": {
+          "type": 3
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3012.197,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getPingte",
+      "case_id": "kaijiang-getPingte-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getPingte",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3589.232,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getPingte",
+      "case_id": "kaijiang-getPingte-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getPingte",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3509.443,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getPingte",
+      "case_id": "kaijiang-getPingte-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getPingte",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2526.286,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getSanqiXiao4new",
+      "case_id": "kaijiang-getSanqiXiao4new-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getSanqiXiao4new",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3866.88,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getSanqiXiao4new",
+      "case_id": "kaijiang-getSanqiXiao4new-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getSanqiXiao4new",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2995.282,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getSanqiXiao4new",
+      "case_id": "kaijiang-getSanqiXiao4new-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getSanqiXiao4new",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3442.751,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/sbzt",
+      "case_id": "kaijiang-sbzt-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/sbzt",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 4256.203,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/sbzt",
+      "case_id": "kaijiang-sbzt-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/sbzt",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3804.75,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/sbzt",
+      "case_id": "kaijiang-sbzt-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/sbzt",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3652.509,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getXiaoma",
+      "case_id": "kaijiang-getXiaoma-type-1-num-7",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getXiaoma",
+        "query_params": {
+          "type": 1,
+          "web": 4,
+          "num": 7
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3174.601,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getXiaoma",
+      "case_id": "kaijiang-getXiaoma-type-2-num-7",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getXiaoma",
+        "query_params": {
+          "type": 2,
+          "web": 4,
+          "num": 7
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 1948.774,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getXiaoma",
+      "case_id": "kaijiang-getXiaoma-type-3-num-7",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getXiaoma",
+        "query_params": {
+          "type": 3,
+          "web": 4,
+          "num": 7
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 4307.874,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHbnx",
+      "case_id": "kaijiang-getHbnx-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHbnx",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3967.429,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHbnx",
+      "case_id": "kaijiang-getHbnx-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHbnx",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3542.967,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHbnx",
+      "case_id": "kaijiang-getHbnx-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHbnx",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2363.593,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getYjzy",
+      "case_id": "kaijiang-getYjzy-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getYjzy",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3716.575,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getYjzy",
+      "case_id": "kaijiang-getYjzy-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getYjzy",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 1465.987,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getYjzy",
+      "case_id": "kaijiang-getYjzy-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getYjzy",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3065.613,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/lxzt",
+      "case_id": "kaijiang-lxzt-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/lxzt",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3797.043,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/lxzt",
+      "case_id": "kaijiang-lxzt-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/lxzt",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 4142.75,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/lxzt",
+      "case_id": "kaijiang-lxzt-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/lxzt",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2502.24,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHllx",
+      "case_id": "kaijiang-getHllx-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHllx",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3435.06,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHllx",
+      "case_id": "kaijiang-getHllx-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHllx",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3856.111,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getHllx",
+      "case_id": "kaijiang-getHllx-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getHllx",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3116.02,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxzt",
+      "case_id": "kaijiang-getDxzt-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxzt",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3372.553,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxzt",
+      "case_id": "kaijiang-getDxzt-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxzt",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 4204.072,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxzt",
+      "case_id": "kaijiang-getDxzt-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxzt",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3873.816,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxztt1",
+      "case_id": "kaijiang-getDxztt1-type-1",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxztt1",
+        "query_params": {
+          "type": 1,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2501.011,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxztt1",
+      "case_id": "kaijiang-getDxztt1-type-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxztt1",
+        "query_params": {
+          "type": 2,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3601.853,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getDxztt1",
+      "case_id": "kaijiang-getDxztt1-type-3",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getDxztt1",
+        "query_params": {
+          "type": 3,
+          "web": 4
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 2422.507,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getJyzt",
+      "case_id": "kaijiang-getJyzt-type-1-num-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getJyzt",
+        "query_params": {
+          "type": 1,
+          "web": 4,
+          "num": 2
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 1892.051,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    },
+    {
+      "interface_name": "/api/kaijiang/getJyzt",
+      "case_id": "kaijiang-getJyzt-type-2-num-2",
+      "route_file": "app/api/kaijiang/[[...path]]/route.ts",
+      "route_pattern": "/api/kaijiang/{path}",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/kaijiang/getJyzt",
+        "query_params": {
+          "type": 2,
+          "web": 4,
+          "num": 2
+        },
+        "json_body": null
+      },
+      "response_status_code": 502,
+      "response_time_ms": 3801.709,
+      "passed": false,
+      "error_message": "unexpected status code 502, expected (200,)",
+      "response_body": ""
+    }
+  ]
+}

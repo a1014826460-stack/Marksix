@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 六合彩部署验证脚本
-# 验证所有服务端点是否正常响应
+# Deployment verification script
 # ============================================================
 set -euo pipefail
 
@@ -30,18 +29,18 @@ check() {
 
 check_service_running() {
     local service="$1"
-    check "${service} 运行中" \
+    check "${service} running" \
         "docker compose ps --services --status running | grep -x '${service}'" \
         "${service}"
 }
 
 echo ""
 echo "========================================"
-echo "  六合彩部署验证"
+echo "  Deployment Verification"
 echo "========================================"
 echo ""
 
-echo "[容器状态]"
+echo "[Containers]"
 check_service_running "postgres"
 check_service_running "python-api"
 check_service_running "backend-admin"
@@ -49,7 +48,7 @@ check_service_running "frontend"
 check_service_running "nginx"
 
 echo ""
-echo "[健康检查端点]"
+echo "[Health]"
 check "python-api /health" \
     "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health" \
     "200"
@@ -63,36 +62,43 @@ check "nginx /health" \
     "200"
 
 echo ""
-echo "[核心路由]"
-check "前端主页 /" \
+echo "[Routes]"
+check "frontend /" \
     "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/" \
     "200"
 
-check "后台管理 /fackyou/login" \
+check "admin /fackyou/login" \
     "curl -L -s -o /dev/null -w '%{http_code}' http://localhost/fackyou/login" \
     "200"
 
-check "前端兼容 API /api/latest-draw" \
+check "frontend API /api/latest-draw" \
     "curl -s -o /dev/null -w '%{http_code}' http://localhost/api/latest-draw" \
     "200"
 
-check "PostgreSQL 连接" \
+check "PostgreSQL connection" \
     "docker compose exec postgres pg_isready -U postgres -d liuhecai 2>&1" \
     "accepting"
 
+check "pg_dump available in python-api" \
+    "docker compose exec python-api sh -lc 'command -v pg_dump >/dev/null && pg_dump --version'" \
+    "pg_dump"
+
 echo ""
 echo "[HTTPS]"
-if grep -q "listen 443" deploy/nginx.conf 2>/dev/null; then
+if [ "${NGINX_EXPECT_HTTPS:-0}" = "1" ]; then
+    check "Nginx loaded 443 SSL listener" \
+        "docker compose exec nginx sh -lc 'nginx -T 2>/dev/null | grep -q \"listen 443 ssl\"'"
+
     check "HTTPS /health" \
         "curl -k -s -o /dev/null -w '%{http_code}' https://localhost/health" \
         "200"
 else
-    echo -e "  ${YELLOW}SKIP${NC} 当前 nginx.conf 未启用 HTTPS"
+    echo -e "  ${YELLOW}SKIP${NC} HTTPS validation disabled; set NGINX_EXPECT_HTTPS=1 in production"
 fi
 
 echo ""
 echo "========================================"
-echo -e "  结果: ${GREEN}$PASS 通过${NC} / ${RED}$FAIL 失败${NC}"
+echo -e "  Result: ${GREEN}$PASS passed${NC} / ${RED}$FAIL failed${NC}"
 echo "========================================"
 
 if [ "$FAIL" -gt 0 ]; then

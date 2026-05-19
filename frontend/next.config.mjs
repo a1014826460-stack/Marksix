@@ -1,12 +1,13 @@
-﻿import { dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { dirname } from "path"
+import { fileURLToPath } from "url"
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  output: "standalone",
   turbopack: {
-    root: __dirname,
+    root: dirname(__dirname),
   },
   typescript: {
     ignoreBuildErrors: true,
@@ -17,10 +18,8 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/vendor/shengshi8800/static/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
+        source: "/vendor/:siteKey/static/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
     ]
   },

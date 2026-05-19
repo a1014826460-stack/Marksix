@@ -3,8 +3,14 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = "D:\pythonProject\outsource\Liuhecai"
 $BackendRoot = Join-Path $ProjectRoot "backend"
 $PythonExe = "D:\python\python.exe"
+$NodeExe = (Get-Command node).Source
+$PowerShellExe = (Get-Command powershell.exe).Source
+$NextCli = Join-Path $BackendRoot "node_modules\next\dist\bin\next"
 $DefaultDbUrl = "postgresql://postgres:2225427@localhost:5432/liuhecai"
 $Port = 8000
+$AdminPort = 3002
+$BackendConsoleMarker = "LIUHECAI_BACKEND_CONSOLE"
+$AdminConsoleMarker = "LIUHECAI_BACKEND_ADMIN_CONSOLE"
 
 function Get-BackendProcesses {
     Get-CimInstance Win32_Process |
@@ -14,6 +20,30 @@ function Get-BackendProcesses {
             (
                 $_.CommandLine -like "*backend/src/app.py*" -or
                 $_.CommandLine -like "*backend/src/main.py*"
+            )
+        }
+}
+
+function Get-BackendAdminProcesses {
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.Name -match '^node(\.exe)?$' -and
+            $_.CommandLine -and
+            (
+                $_.CommandLine -like "*next dev*" -and
+                $_.CommandLine -like "*3002*"
+            )
+        }
+}
+
+function Get-ManagedConsoleProcesses {
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.Name -match '^powershell(\.exe)?$' -and
+            $_.CommandLine -and
+            (
+                $_.CommandLine -like "*$BackendConsoleMarker*" -or
+                $_.CommandLine -like "*$AdminConsoleMarker*"
             )
         }
 }
@@ -56,16 +86,73 @@ function Stop-BackendProcesses {
     Start-Sleep -Seconds 2
 }
 
-function Test-PortReleased {
-    $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    if (-not $listeners) {
-        Write-Host "Port $Port is free."
+function Stop-BackendAdminProcesses {
+    $listenerPids = @(
+        Get-NetTCPConnection -LocalPort $AdminPort -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique
+    )
+
+    $targets = @()
+    if ($listenerPids.Count -gt 0) {
+        $targets = Get-CimInstance Win32_Process |
+            Where-Object {
+                $_.ProcessId -in $listenerPids -and
+                $_.Name -match '^node(\.exe)?$' -and
+                $_.CommandLine -and
+                (
+                    $_.CommandLine -like "*next dev*" -and
+                    $_.CommandLine -like "*3002*"
+                )
+            }
+    }
+
+    if (-not $targets) {
+        $targets = Get-BackendAdminProcesses
+    }
+
+    if (-not $targets) {
+        Write-Host "No matching backend admin processes found."
         return
     }
 
-    Write-Host "Port $Port still has listeners:"
+    Write-Host "Stopping backend admin processes..."
+    foreach ($proc in $targets) {
+        Write-Host ("  PID {0} -> {1}" -f $proc.ProcessId, $proc.CommandLine)
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+function Stop-ManagedConsoleProcesses {
+    $targets = Get-ManagedConsoleProcesses
+    if (-not $targets) {
+        return
+    }
+
+    Write-Host "Stopping managed console windows..."
+    foreach ($proc in $targets) {
+        Write-Host ("  PID {0} -> {1}" -f $proc.ProcessId, $proc.CommandLine)
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Seconds 1
+}
+
+function Test-PortReleased {
+    param(
+        [int]$TargetPort
+    )
+
+    $listeners = Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction SilentlyContinue
+    if (-not $listeners) {
+        Write-Host "Port $TargetPort is free."
+        return
+    }
+
+    Write-Host "Port $TargetPort still has listeners:"
     $listeners | Select-Object LocalAddress, LocalPort, OwningProcess | Format-Table -AutoSize
-    throw "Port $Port is still occupied."
+    throw "Port $TargetPort is still occupied."
 }
 
 function Start-Backend {
@@ -80,21 +167,76 @@ function Start-Backend {
     $command = "`"$PythonExe`" backend/src/app.py --db_path $DbUrl"
     Write-Host "Starting backend..."
     Write-Host "  $command"
+    $windowCommand = @"
+`$env:$BackendConsoleMarker = '1'
+`$Host.UI.RawUI.WindowTitle = 'Liuhecai Backend :8000'
+Set-Location '$ProjectRoot'
+Write-Host 'Starting Liuhecai backend on http://127.0.0.1:$Port/' -ForegroundColor Cyan
+Write-Host ''
+& '$PythonExe' 'backend/src/app.py' --db_path '$DbUrl'
+"@
 
     $process = Start-Process `
-        -FilePath $PythonExe `
-        -ArgumentList @("backend/src/app.py", "--db_path", $DbUrl) `
+        -FilePath $PowerShellExe `
+        -ArgumentList @('-NoExit', '-Command', $windowCommand) `
         -WorkingDirectory $ProjectRoot `
+        -WindowStyle Normal `
         -PassThru
 
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 3
+
+    if ($process.HasExited) {
+        throw "Backend exited immediately with code $($process.ExitCode). See logs above."
+    }
 
     Write-Host ("Started backend PID: {0}" -f $process.Id)
 }
 
+function Start-BackendAdmin {
+    if (-not (Test-Path $NodeExe)) {
+        throw "node executable not found: $NodeExe"
+    }
+
+    if (-not (Test-Path $NextCli)) {
+        throw "Next CLI not found: $NextCli"
+    }
+
+    $command = "`"$NodeExe`" `"$NextCli`" dev --hostname 127.0.0.1 --port $AdminPort"
+    Write-Host "Starting backend admin..."
+    Write-Host "  $command"
+    $windowCommand = @"
+`$env:$AdminConsoleMarker = '1'
+`$Host.UI.RawUI.WindowTitle = 'Liuhecai Backend Admin :3002'
+Set-Location '$BackendRoot'
+Write-Host 'Starting backend admin on http://127.0.0.1:$AdminPort/fackyou/login' -ForegroundColor Cyan
+Write-Host ''
+& '$NodeExe' '$NextCli' dev --hostname 127.0.0.1 --port $AdminPort
+"@
+
+    $process = Start-Process `
+        -FilePath $PowerShellExe `
+        -ArgumentList @('-NoExit', '-Command', $windowCommand) `
+        -WorkingDirectory $BackendRoot `
+        -WindowStyle Normal `
+        -PassThru
+
+    Start-Sleep -Seconds 5
+
+    if ($process.HasExited) {
+        throw "Backend admin exited immediately with code $($process.ExitCode). See logs above."
+    }
+
+    Write-Host ("Started backend admin PID: {0}" -f $process.Id)
+}
+
+Stop-ManagedConsoleProcesses
 Stop-BackendProcesses
-Test-PortReleased
+Stop-BackendAdminProcesses
+Test-PortReleased -TargetPort $Port
+Test-PortReleased -TargetPort $AdminPort
 Start-Backend
+Start-BackendAdmin
 
 Write-Host ""
-Write-Host "Done. You can now retry: http://127.0.0.1:8000/"
+Write-Host "Done. Backend: http://127.0.0.1:8000/"
+Write-Host "Done. Backend admin: http://127.0.0.1:3002/fackyou/login"

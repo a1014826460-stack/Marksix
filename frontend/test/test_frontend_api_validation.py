@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from collections import Counter
@@ -164,6 +165,38 @@ def validate_kaijiang_rows(case: "ApiCase", response: requests.Response) -> None
     payload = require_dict(response.json())
     data = require_key(payload, "data", list)
     require_list(data, "data")
+    if case.interface_name == "/api/kaijiang/getPmxjcz":
+        validate_get_pmxjcz_rows(data)
+
+
+def validate_get_pmxjcz_rows(data: list[Any]) -> None:
+    if not data:
+        return
+
+    expected_keys = ["year", "term", "title", "content", "image_url", "x7m14", "res_code", "res_sx"]
+    zodiac_pattern = re.compile(r"^(鼠|牛|虎|兔|龙|蛇|马|羊|猴|鸡|狗|猪)\|\d{2},\d{2}$")
+
+    first = require_dict(data[0])
+    actual_keys = list(first.keys())
+    if actual_keys != expected_keys:
+        raise AssertionError(f"getPmxjcz field order mismatch: expected {expected_keys}, got {actual_keys}")
+
+    for field_name in ("year", "term", "title", "content", "x7m14"):
+        value = first.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            raise AssertionError(f"getPmxjcz field '{field_name}' must be a non-empty string")
+
+    try:
+        parsed_x7m14 = json.loads(first["x7m14"])
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"getPmxjcz x7m14 must be valid JSON: {exc}") from exc
+
+    if not isinstance(parsed_x7m14, list) or len(parsed_x7m14) != 7:
+        raise AssertionError("getPmxjcz x7m14 must be a 7-item JSON array")
+
+    for item in parsed_x7m14:
+        if not isinstance(item, str) or not zodiac_pattern.fullmatch(item):
+            raise AssertionError(f"invalid getPmxjcz x7m14 item: {item!r}")
 
 
 def validate_upload_image(case: "ApiCase", response: requests.Response) -> None:

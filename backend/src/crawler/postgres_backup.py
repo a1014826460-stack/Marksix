@@ -18,6 +18,11 @@ from runtime_config import get_config
 _logger = logging.getLogger("database.backup")
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PG_DUMP_HINT = (
+    "pg_dump not found. Install postgresql-client in the container "
+    "(apt-get install -y postgresql-client) or set system_config "
+    "database.pg_dump_path to an absolute path."
+)
 
 
 def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
@@ -93,23 +98,8 @@ def _build_pg_dump_command(db_path: str | Path, output_path: Path) -> tuple[list
     pg_dump_cfg = str(_cfg(db_path, "database.pg_dump_path", "pg_dump")).strip() or "pg_dump"
     pg_dump = shutil.which(pg_dump_cfg)
     if pg_dump is None:
-        # 在 Docker / 常见 Linux 环境中搜索 pg_dump
-        for candidate in (
-            "/usr/bin/pg_dump",
-            "/usr/local/bin/pg_dump",
-            "/usr/lib/postgresql/16/bin/pg_dump",
-            "/usr/lib/postgresql/15/bin/pg_dump",
-            "/usr/lib/postgresql/14/bin/pg_dump",
-        ):
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                pg_dump = candidate
-                break
-    if pg_dump is None:
-        raise RuntimeError(
-            "pg_dump 未找到。请在容器中安装 postgresql-client "
-            "(apt-get install -y postgresql-client) "
-            "或在 system_config 中设置 database.pg_dump_path 为绝对路径。"
-        )
+        raise RuntimeError(PG_DUMP_HINT)
+
     command = [
         pg_dump,
         "-h",

@@ -419,7 +419,7 @@ sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
 **如果使用 `www.shengshi8800.com` 域名**：
 
 ```bash
-cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf
+cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf.local
 ```
 
 配置中已包含：
@@ -430,7 +430,7 @@ cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf
 **如果使用其他域名**：
 
 ```bash
-cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf
+cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf.local
 ```
 
 然后把其中的：
@@ -445,6 +445,12 @@ cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf
 ```bash
 docker compose exec nginx nginx -t
 docker compose restart nginx
+```
+
+如果你启用了本地生产配置，`.env` 里再加一行：
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.conf.local
 ```
 
 ### 5. 验证 HTTPS
@@ -489,7 +495,7 @@ sudo certbot renew --dry-run
 1. 先按默认 HTTP 配置用服务器 IP 跑通
 2. 再把域名解析到服务器
 3. 申请证书并放入 `deploy/ssl/`
-4. 再切换到 `deploy/nginx.domain.ssl.conf.example`
+4. 再切换到 `deploy/nginx.conf.local`
 5. 验证 HTTPS 正常后，再考虑启用 HSTS
 
 ## 运维常用命令

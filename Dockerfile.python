@@ -11,6 +11,7 @@ LABEL description="六合彩彩票数据 Python API 服务"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libpq-dev \
+        postgresql-client \
         gcc \
         g++ && \
     rm -rf /var/lib/apt/lists/*

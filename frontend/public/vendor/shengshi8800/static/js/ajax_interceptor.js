@@ -1,12 +1,108 @@
 // Plan B: request dedup cache + XHR tracking for abort
 window.__moduleXHRs = window.__moduleXHRs || [];
 window.__moduleRequestCache = window.__moduleRequestCache || new Map();
+window.__legacyRevealGate = window.__legacyRevealGate || null;
 
 function legacyAjaxDebugLog(eventName, payload) {
     if (!(window.__LEGACY_EMBED_CONFIG__ && window.__LEGACY_EMBED_CONFIG__.debug)) return;
     if (typeof console === "undefined" || typeof console.log !== "function") return;
     console.log("[legacy-ajax]", eventName, payload || {});
 }
+
+function normalizeLegacyIssue(issue) {
+    var text = String(issue || '').trim();
+    if (!text) return '';
+    if (text.length <= 4) return text;
+    return text.slice(0, 4) + text.slice(4).replace(/^0+/, '') || '0';
+}
+
+function parseBeijingDateTimeToSeconds(value) {
+    var text = String(value || '').trim();
+    var match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(text);
+    if (!match) return 0;
+    var year = Number(match[1]);
+    var month = Number(match[2]);
+    var day = Number(match[3]);
+    var hour = Number(match[4]);
+    var minute = Number(match[5]);
+    var second = Number(match[6]);
+    return Math.floor(Date.UTC(year, month - 1, day, hour - 8, minute, second) / 1000);
+}
+
+function resolveLegacyTypeForGate() {
+    try {
+        if (window.__LEGACY_GAME_STATE__ && typeof window.__LEGACY_GAME_STATE__.getType === 'function') {
+            return Number(window.__LEGACY_GAME_STATE__.getType()) || 3;
+        }
+    } catch (_) {}
+    if (typeof window.type !== 'undefined') {
+        return Number(window.type) || 3;
+    }
+    return 3;
+}
+
+function setLegacyRevealGate(gate) {
+    window.__legacyRevealGate = gate || null;
+    legacyAjaxDebugLog('reveal-gate:set', gate || {});
+}
+
+function clearLegacyRevealGate() {
+    window.__legacyRevealGate = null;
+    legacyAjaxDebugLog('reveal-gate:clear');
+}
+
+function normalizeIssueText(issue) {
+    var text = String(issue || '').trim();
+    if (!text) return '';
+    return text.length > 4 ? text.slice(0, 4) + text.slice(4).replace(/^0+/, '') : text;
+}
+
+function normalizeGateIssue(issue) {
+    var text = normalizeIssueText(issue);
+    return text;
+}
+
+function rowMatchesRevealGate(row, revealGate) {
+    if (!row || !revealGate) return false;
+    var rowIssue = normalizeIssueText(row.issue || row.term || row.current_issue);
+    var gateIssue = normalizeGateIssue(revealGate.issue);
+    if (!rowIssue || !gateIssue) return false;
+    return rowIssue === gateIssue;
+}
+
+function applyRevealMask(data, revealGate) {
+    if (!revealGate || !data || !data.data || !(data.data instanceof Array)) return data;
+    data.data.forEach(function(row) {
+        if (!rowMatchesRevealGate(row, revealGate)) return;
+        row.res_code = '';
+        row.res_sx = '';
+    });
+    return data;
+}
+
+function updateLegacyRevealGateFromPayload(payload) {
+    if (!payload || !payload.current_issue || !payload.draw_time) return;
+    var drawTimeSec = parseBeijingDateTimeToSeconds(payload.draw_time);
+    if (!(drawTimeSec > 0)) return;
+    var unlockAtSec = drawTimeSec + (25 * 6);
+    var nowSec = Math.floor(Date.now() / 1000);
+    if (!(unlockAtSec > nowSec)) return;
+    setLegacyRevealGate({
+        lotteryType: resolveLegacyTypeForGate(),
+        issue: normalizeLegacyIssue(payload.current_issue),
+        unlockAt: unlockAtSec
+    });
+}
+
+window.__legacyUpdateRevealGateFromPayload = updateLegacyRevealGateFromPayload;
+window.__legacyClearRevealGate = clearLegacyRevealGate;
+
+window.addEventListener('message', function(event) {
+    var data = event && event.data ? event.data : null;
+    if (!data || typeof data !== 'object') return;
+    if (data.kind !== 'legacy-draw-reveal-complete') return;
+    clearLegacyRevealGate();
+});
 
 $.ajaxSetup({
     beforeSend: function(xhr) {
@@ -27,6 +123,18 @@ $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
     // Only dedup GET requests to /api/kaijiang/
     if (options.type !== 'GET' || !options.url) return;
     if (options.url.indexOf('/api/kaijiang/') === -1) return;
+
+    var revealGate = window.__legacyRevealGate;
+    if (revealGate && revealGate.issue && revealGate.unlockAt) {
+        try {
+            var absoluteUrl = new URL(options.url, window.location.origin);
+            absoluteUrl.searchParams.set('presentation_mask', '1');
+            absoluteUrl.searchParams.set('presentation_issue', revealGate.issue);
+            absoluteUrl.searchParams.set('presentation_unlock_at', String(revealGate.unlockAt));
+            absoluteUrl.searchParams.set('presentation_lottery_type', String(revealGate.lotteryType || resolveLegacyTypeForGate()));
+            options.url = absoluteUrl.pathname + absoluteUrl.search;
+        } catch (_) {}
+    }
 
     var requestSeq = Number(window.__LEGACY_SWITCH_SEQ__ || 0);
     var originalSuccess = originalOptions.success;
@@ -131,6 +239,7 @@ $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
 
     // Intercept response data for traditional→simplified conversion
     jqXHR.done(function(data) {
+        data = applyRevealMask(data, window.__legacyRevealGate);
         var array = data.data;
         if (!(array instanceof Array)) {
             return data;

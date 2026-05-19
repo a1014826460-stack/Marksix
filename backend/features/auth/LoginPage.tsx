@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -314,10 +315,13 @@ export function LoginPage() {
                   title="点击刷新验证码"
                 >
                   {captchaImage ? (
-                    <img
+                    <Image
                       src={captchaImage}
                       alt="验证码"
                       className="h-full w-full object-cover"
+                      width={100}
+                      height={36}
+                      unoptimized
                     />
                   ) : (
                     <span className="flex h-full items-center justify-center text-xs text-muted-foreground">

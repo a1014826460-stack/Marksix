@@ -2,16 +2,12 @@
 
 import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
-import type { LotteryGame } from "@/lib/lotteryData"
 import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
 import { getCalConvTitle } from "@/lib/calconv"
+import type { LotteryGame } from "@/lib/lotteryData"
+import { getSiteConfig } from "@/lib/sites"
 
 const VALID_GAMES: LotteryGame[] = ["taiwan", "macau", "hongkong"]
-const GAME_T_PARAM_MAP: Record<LotteryGame, string> = {
-  taiwan: "3",
-  macau: "2",
-  hongkong: "1",
-}
 const T_PARAM_GAME_MAP: Record<string, LotteryGame> = {
   "3": "taiwan",
   "2": "macau",
@@ -19,20 +15,21 @@ const T_PARAM_GAME_MAP: Record<string, LotteryGame> = {
 }
 const SECTION_ROWS = [
   [
-    { id: "7x1m", label: "一肖一码" },
+    { id: "7x1m", label: "一字平特" },
     { id: "4x8m", label: "四肖八码" },
     { id: "gsb", label: "高手资料" },
     { id: "gsb3", label: "精选图片" },
-    { id: "msks", label: "买啥开啥" },
+    { id: "msks", label: "买啥开什么" },
   ],
   [
-    { id: "9x1m", label: "九肖一码" },
+    { id: "9x1m", label: "九肖一马" },
     { id: "yqjt", label: "欲钱解特" },
     { id: "6x", label: "六肖中特" },
     { id: "3t", label: "三头中特" },
     { id: "lx", label: "复式连肖" },
   ],
 ] as const
+const SHELL_SITE = getSiteConfig("shengshi8800")
 
 function isValidGame(value: string | null): value is LotteryGame {
   return VALID_GAMES.includes(value as LotteryGame)
@@ -49,13 +46,7 @@ function resolveGameFromRouteParams(searchParams: URLSearchParams): LotteryGame 
     return rawGame
   }
 
-  return "taiwan"
-}
-
-function getForumTitle(game: LotteryGame) {
-  if (game === "macau") return "澳门六合彩论坛"
-  if (game === "hongkong") return "香港六合彩论坛"
-  return "台湾六合彩论坛"
+  return SHELL_SITE?.defaultGame || "taiwan"
 }
 
 function LegacyShellContent() {
@@ -89,66 +80,76 @@ function LegacyShellContent() {
   }
 
   return (
-    <div
-      style={{
-        maxWidth: 720,
-        margin: "0 auto",
-        background: "#F4F4F4",
-        minHeight: "100dvh",
-      }}
-    >
-      <div className="box news-box">
-        <div className="riqi">{shellTitle}</div>
-      </div>
-      <div className="box pad" id="yxym">
-        <img alt="论坛头图" src="/vendor/shengshi8800/static/picture/header.jpg" width="100%" />
-      </div>
+    <>
+      {SHELL_SITE?.shellCssPaths?.map((href) => (
+        <link key={href} rel="stylesheet" href={href} />
+      ))}
       <div
-        ref={navRef}
-        className="nav2"
         style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          boxShadow: "0 5px 10px rgba(0, 0, 0, .1)",
+          maxWidth: 720,
+          margin: "0 auto",
+          background: "#F4F4F4",
+          minHeight: "100dvh",
         }}
       >
+        <div className="box news-box">
+          <div className="riqi">{shellTitle}</div>
+        </div>
+        <div className="box pad" id="yxym">
+          <img
+            alt="论坛头图"
+            src={SHELL_SITE?.headerImagePath || "/vendor/shengshi8800/static/picture/header.jpg"}
+            width="100%"
+          />
+        </div>
+        <div
+          ref={navRef}
+          className="nav2"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            boxShadow: "0 5px 10px rgba(0, 0, 0, .1)",
+          }}
+        >
           <ul>
             <li>
               <a>
-              <b>台湾六合彩论坛</b>
+                <b>{SHELL_SITE?.forumTitle || "台湾六合彩论坛"}</b>
               </a>
             </li>
           </ul>
-        {SECTION_ROWS.map((row, index) => (
-          <ul key={index}>
-            {row.map((item) => (
-              <li key={item.id}>
-                <a
-                  href={`#${item.id}`}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    handleJump(item.id)
-                  }}
-                >
-                  {item.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ))}
-      </div>
+          {SECTION_ROWS.map((row, index) => (
+            <ul key={index}>
+              {row.map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={`#${item.id}`}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      handleJump(item.id)
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </div>
 
-      <div style={{ padding: 12 }}>
-        <LegacyModulesFrame
-          activeGame={activeGame}
-          onGameChange={handleGameChange}
-          onAnchorMapChange={setAnchorMap}
-          pageSwitchEnabled
-          shellHeaderHidden
-        />
+        <div style={{ padding: 12 }}>
+          <LegacyModulesFrame
+            siteKey="shengshi8800"
+            activeGame={activeGame}
+            onGameChange={handleGameChange}
+            onAnchorMapChange={setAnchorMap}
+            pageSwitchEnabled
+            shellHeaderHidden
+          />
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

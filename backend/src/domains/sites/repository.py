@@ -76,19 +76,21 @@ def count_sites(conn: Any) -> int:
 
 def insert_site(conn: Any, fields: dict[str, Any], now: str) -> dict[str, Any]:
     """创建新站点，返回创建后的行。"""
+    web_id = int(fields["web_id"])
     row = conn.execute(
         """
         INSERT INTO managed_sites (
-            web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
+            id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
             manage_url_template, modes_data_url, token, request_limit,
             request_delay, announcement, notes,
             created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         """,
         (
-            fields["web_id"],
+            web_id,
+            web_id,
             fields["name"],
             fields["domain"],
             fields["lottery_type_id"],

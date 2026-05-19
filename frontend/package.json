@@ -1,13 +1,14 @@
 {
-  "name": "my-project",
+  "name": "@liuhecai/frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev",
-    "dev:webpack": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --no-turbopack",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next build",
-    "start": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next start",
-    "lint": "eslint ."
+    "dev": "next dev --webpack",
+    "dev:turbopack": "next dev",
+    "dev:webpack": "next dev --webpack",
+    "build": "cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
+    "start": "next start",
+    "lint": "echo Use root command: pnpm lint:frontend"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -62,13 +63,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
-    "@types/node": "^22",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "cross-env": "^10.1.0",
-    "postcss": "^8.5",
-    "tailwindcss": "^4.2.0",
-    "tw-animate-css": "1.3.3",
-    "typescript": "5.7.3"
+    "tailwindcss": "^4.2.0"
   }
 }

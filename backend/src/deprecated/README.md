@@ -32,5 +32,15 @@ Automatic generation must call the same shared service.
 - `utils/generate_predictions.py`
 - `utils/generate_all_predictions.py`
 - `tools/generate_hk_macau_predictions_via_api.py`
+- `site_fetch_chain.py`
+
+`site_fetch_chain.py` exists only to preserve a clear tombstone for the retired
+managed-site fetch entry point. The supported admin path is now:
+
+- sync modules into `public.site_prediction_modules`
+- maintain enabled site modules in admin
+- trigger `/admin/sites/{site_id}/prediction-modules/generate-all`
+- run `/api/admin/normalize`
+- run `/api/admin/text-mappings`
 
 These files should not be used as references for future feature work except during migration or historical debugging.

@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 from predict.common import parse_res_code
-from utils.created_prediction_store import normalize_color_label
+from utils.created_prediction_store import (
+    normalize_color_label,
+    sanitize_created_prediction_row_data,
+)
 
 
 # ── parse_res_code ─────────────────────────────────────
@@ -61,3 +64,29 @@ def test_normalize_color_label_empty():
 def test_normalize_color_label_unknown():
     result = normalize_color_label("unknown_color")
     assert result == "unknown_color"
+
+
+def test_sanitize_created_prediction_row_data_nulls_invalid_integer_fields():
+    result = sanitize_created_prediction_row_data(
+        "mode_payload_24",
+        {
+            "title": "男女中特",
+            "sort_order": "",
+            "mode_id": "abc",
+            "web_id": "6",
+            "status": None,
+        },
+        {
+            "title": "text",
+            "sort_order": "integer",
+            "mode_id": "integer",
+            "web_id": "integer",
+            "status": "bigint",
+        },
+    )
+
+    assert result["title"] == "男女中特"
+    assert result["sort_order"] is None
+    assert result["mode_id"] is None
+    assert result["web_id"] == 6
+    assert result["status"] is None

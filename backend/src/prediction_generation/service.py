@@ -10,6 +10,7 @@ import hashlib as _hashlib
 import json as _json
 import logging
 import random as _random
+import re as _re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +18,7 @@ from typing import Any
 
 from db import connect
 from helpers import load_fixed_data_maps
-from predict.common import predict
+from predict.common import parse_pipe_label_content, parse_zodiac_content, predict
 from predict.mechanisms import get_prediction_config
 from predict.number_maps import SIZE_NUMBER_MAP
 from prediction_generation.diversity import enforce_prediction_diversity
@@ -32,6 +33,7 @@ from utils.created_prediction_store import (
 
 _logger = logging.getLogger("prediction.service")
 _task_logger = logging.getLogger("prediction.task")
+_MODE_331_ZODIAC_ORDER = ("鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪")
 
 
 # ── 配置读取 ────────────────────────────────────────────
@@ -79,6 +81,151 @@ def compute_next_issue(year: int, term: int, offset: int, *, max_terms_per_year:
 def _make_seed_int(seed_str: str) -> int:
     """从种子字符串生成 32 位整数种子。"""
     return int(_hashlib.sha256(seed_str.encode()).hexdigest(), 16) % (2**32)
+
+
+def _normalize_prediction_numbers(values: list[Any] | tuple[Any, ...] | None) -> list[str]:
+    """Normalize prediction labels into unique two-digit codes."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values or ():
+        text = str(value or "").strip()
+        if not _re.fullmatch(r"\d{1,2}", text):
+            continue
+        number = int(text)
+        if number < 1 or number > 49:
+            continue
+        code = f"{number:02d}"
+        if code in seen:
+            continue
+        seen.add(code)
+        normalized.append(code)
+    return normalized
+
+
+def _build_mode_331_x7m14(
+    predicted_labels: list[Any] | tuple[Any, ...] | None,
+    zodiac_map: dict[str, str],
+    seed_key: str,
+) -> str:
+    """Build the persisted x7m14 payload for mode_id=331."""
+    rng = _random.Random(_make_seed_int(seed_key))
+    zodiac_number_map: dict[str, list[str]] = {zodiac: [] for zodiac in _MODE_331_ZODIAC_ORDER}
+    for raw_number, raw_zodiac in zodiac_map.items():
+        zodiac = str(raw_zodiac or "").strip()
+        text = str(raw_number or "").strip()
+        if zodiac not in zodiac_number_map or not _re.fullmatch(r"\d{1,2}", text):
+            continue
+        code = f"{int(text):02d}"
+        if code not in zodiac_number_map[zodiac]:
+            zodiac_number_map[zodiac].append(code)
+
+    predicted_numbers = _normalize_prediction_numbers(predicted_labels)
+    predicted_by_zodiac: dict[str, list[str]] = {}
+    for code in predicted_numbers:
+        zodiac = str(zodiac_map.get(code) or "").strip()
+        if zodiac not in zodiac_number_map:
+            continue
+        predicted_by_zodiac.setdefault(zodiac, [])
+        if code not in predicted_by_zodiac[zodiac]:
+            predicted_by_zodiac[zodiac].append(code)
+
+    groups: list[tuple[str, list[str]]] = []
+    used_zodiacs: set[str] = set()
+    used_numbers: set[str] = set()
+
+    preferred_zodiacs = list(predicted_by_zodiac.keys())
+    rng.shuffle(preferred_zodiacs)
+    for zodiac in preferred_zodiacs:
+        pair: list[str] = []
+        predicted_pool = list(predicted_by_zodiac[zodiac])
+        rng.shuffle(predicted_pool)
+        for code in predicted_pool:
+            if code in used_numbers:
+                continue
+            pair.append(code)
+            used_numbers.add(code)
+            if len(pair) == 2:
+                break
+
+        available_pool = [code for code in zodiac_number_map[zodiac] if code not in used_numbers]
+        rng.shuffle(available_pool)
+        while len(pair) < 2 and available_pool:
+            code = available_pool.pop()
+            pair.append(code)
+            used_numbers.add(code)
+
+        if len(pair) != 2:
+            continue
+        groups.append((zodiac, pair))
+        used_zodiacs.add(zodiac)
+        if len(groups) == 7:
+            break
+
+    remaining_zodiacs = [
+        zodiac for zodiac in _MODE_331_ZODIAC_ORDER
+        if zodiac not in used_zodiacs and len(zodiac_number_map[zodiac]) >= 2
+    ]
+    rng.shuffle(remaining_zodiacs)
+    for zodiac in remaining_zodiacs:
+        available_pool = [code for code in zodiac_number_map[zodiac] if code not in used_numbers]
+        if len(available_pool) < 2:
+            available_pool = list(zodiac_number_map[zodiac])
+        if len(available_pool) < 2:
+            continue
+        pair = rng.sample(available_pool, 2)
+        groups.append((zodiac, pair))
+        used_zodiacs.add(zodiac)
+        used_numbers.update(pair)
+        if len(groups) == 7:
+            break
+
+    if len(groups) < 7:
+        fallback_zodiacs = [zodiac for zodiac in _MODE_331_ZODIAC_ORDER if zodiac not in used_zodiacs]
+        if len(fallback_zodiacs) < 7 - len(groups):
+            fallback_zodiacs.extend(list(_MODE_331_ZODIAC_ORDER))
+        rng.shuffle(fallback_zodiacs)
+        global_pool = [f"{number:02d}" for number in range(1, 50)]
+        for zodiac in fallback_zodiacs:
+            if len(groups) == 7:
+                break
+            pool = list(zodiac_number_map.get(zodiac) or [])
+            if len(pool) < 2:
+                pool = list(global_pool)
+            if len(pool) < 2:
+                continue
+            pair = rng.sample(pool, 2)
+            groups.append((zodiac, pair))
+            used_zodiacs.add(zodiac)
+
+    rng.shuffle(groups)
+    payload = [f"{zodiac}|{pair[0]},{pair[1]}" for zodiac, pair in groups[:7]]
+    return _json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _ensure_mode_251_xiao(row_data: dict[str, Any], content: Any) -> dict[str, Any]:
+    """Backfill mode 251 `xiao` from generated payload when the formatter did not provide it."""
+    normalized = dict(row_data)
+    if str(normalized.get("xiao") or "").strip():
+        return normalized
+
+    labels: list[str] = []
+    if isinstance(content, dict):
+        if str(content.get("xiao") or "").strip():
+            labels.extend(parse_zodiac_content(str(content.get("xiao") or "")))
+        if not labels and str(content.get("content") or "").strip():
+            labels.extend(parse_pipe_label_content(str(content.get("content") or "")))
+    else:
+        labels.extend(parse_pipe_label_content(str(content or "")))
+
+    deduped: list[str] = []
+    for label in labels:
+        text = str(label or "").strip()
+        if text and text not in deduped:
+            deduped.append(text)
+
+    if deduped:
+        normalized["xiao"] = ",".join(deduped)
+    return normalized
 
 
 # ── 期号与开奖数据加载 ──────────────────────────────────
@@ -401,6 +548,41 @@ def _generate_mode_246_row(
     return row_data
 
 
+def _generate_mode_331_row(
+    draw: dict[str, Any],
+    is_future: bool,
+    safe_res_code: str | None,
+    lottery_type: int,
+    site_web_id: int,
+    config: Any,
+    table_name: str,
+    db_path: str | Path,
+    default_target_hit_rate: float,
+    zodiac_map: dict,
+    build_row: Any,
+) -> dict[str, Any]:
+    """mode_id=331: persist getPmxjcz-compatible x7m14 data into created rows."""
+    result = predict(
+        config=config,
+        res_code=None if is_future else safe_res_code,
+        source_table=table_name, db_path=db_path,
+        target_hit_rate=default_target_hit_rate,
+        random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
+    )
+    row_data = build_row(
+        mode_id=331, lottery_type=str(lottery_type),
+        year=str(draw["year"]), term=str(draw["term"]),
+        web_value=str(site_web_id), res_code=safe_res_code or "",
+        generated_content=result["prediction"]["content"],
+    )
+    row_data["x7m14"] = _build_mode_331_x7m14(
+        result["prediction"].get("labels"),
+        zodiac_map,
+        f"mode331:{draw['year']}{draw['term']:03d}:{site_web_id}:{lottery_type}",
+    )
+    return row_data
+
+
 def _generate_default_mode_row(
     draw: dict[str, Any],
     is_future: bool,
@@ -421,13 +603,16 @@ def _generate_default_mode_row(
         target_hit_rate=default_target_hit_rate,
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
     )
-    return build_row(
+    row_data = build_row(
         mode_id=config.default_modes_id,
         lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id), res_code=safe_res_code or "",
         generated_content=result["prediction"]["content"],
     )
+    if int(config.default_modes_id or 0) == 251:
+        row_data = _ensure_mode_251_xiao(row_data, result["prediction"]["content"])
+    return row_data
 
 
 def _generate_single_draw_row(
@@ -454,6 +639,11 @@ def _generate_single_draw_row(
         )
     if mode_id == 246:
         return _generate_mode_246_row(
+            draw, is_future, safe_res_code, lottery_type, site_web_id,
+            config, table_name, db_path, default_target_hit_rate, zodiac_map, build_row,
+        )
+    if mode_id == 331:
+        return _generate_mode_331_row(
             draw, is_future, safe_res_code, lottery_type, site_web_id,
             config, table_name, db_path, default_target_hit_rate, zodiac_map, build_row,
         )

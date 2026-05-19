@@ -146,6 +146,8 @@ backend/src/
 backend/src/app.py
 ```
 
+本地通过 `restart-backend.ps1` 启动时，还会一并启动后台管理界面（`3002`）。
+
 启动顺序：
 
 1. 从 `DATABASE_URL` 或配置中的 PostgreSQL DSN 解析正式运行数据库目标。

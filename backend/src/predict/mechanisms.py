@@ -674,6 +674,22 @@ def xiao_column_content_loader(column: str = "xiao"):
     return loader
 
 
+def xiao_or_content_content_loader(
+    xiao_column: str = "xiao",
+    content_column: str = "content",
+):
+    """优先读取 `xiao`，为空时回退到 `content` 中已标记的生肖标签。"""
+
+    def loader(row: sqlite3.Row) -> str:
+        xiao_value = parse_zodiac_content(str(row_get(row, xiao_column, "") or ""))
+        if xiao_value:
+            return ",".join(xiao_value)
+        content_value = str(row_get(row, content_column, "") or "")
+        return ",".join(parse_pipe_label_content(content_value))
+
+    return loader
+
+
 def mixed_xiao_tail_content_loader(
     xiao_column: str = "xiao",
     tail_column: str = "wei",
@@ -1501,6 +1517,75 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "平特2肖选择 2 个生肖。",
             "按统一预测口径，特码生肖落入预测生肖则命中。",
+        ),
+    ),
+    "pt3xiao": PredictionConfig(
+        key="pt3xiao",
+        title="平特3肖",
+        default_table="mode_payload_470",
+        default_modes_id=470,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=3,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_csv,
+        hit_checker=contains_hit,
+        explanation=(
+            "平特3肖选择 3 个生肖。",
+            "按统一预测口径，特码生肖落入预测生肖则命中。",
+        ),
+    ),
+    "liangtouzxt": PredictionConfig(
+        key="liangtouzxt",
+        title="两头中特",
+        default_table="mode_payload_471",
+        default_modes_id=471,
+        labels=tuple(HEAD_NUMBER_MAP.keys()),
+        label_count=2,
+        outcome_loader=special_head_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_head_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("头", tuple(HEAD_NUMBER_MAP.keys())),
+        explanation=(
+            "两头中特从 0头、1头、2头、3头、4头中选择 2 个头数。",
+            "开奖结果 res_code 最后一个号码按特码处理，特码所在头数落入预测头数则命中。",
+        ),
+    ),
+    "juesha1xiao": PredictionConfig(
+        key="juesha1xiao",
+        title="绝杀1肖",
+        default_table="mode_payload_472",
+        default_modes_id=472,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=1,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_csv,
+        hit_checker=excludes_hit,
+        explanation=(
+            "绝杀1肖选择 1 个生肖作为排除生肖。",
+            "若特码生肖没有落入预测的绝杀生肖，则本期按命中计算。",
+        ),
+    ),
+    "juesha2xiao": PredictionConfig(
+        key="juesha2xiao",
+        title="绝杀2肖",
+        default_table="mode_payload_473",
+        default_modes_id=473,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=2,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_csv,
+        hit_checker=excludes_hit,
+        explanation=(
+            "绝杀2肖选择 2 个生肖作为排除生肖。",
+            "若特码生肖没有落入预测的绝杀生肖，则本期按命中计算。",
         ),
     ),
     "7xiao7ma": PredictionConfig(
@@ -2463,7 +2548,7 @@ def _make_source_column_zodiac_config(
             elif column == code_column:
                 continue
             else:
-                result[column] = ""
+                result[column] = None
         if code_column:
             result[code_column] = format_xiao_code_columns(source_column, code_column, code_count)(labels, conn)[code_column]
         return result
@@ -2511,7 +2596,7 @@ def _make_source_column_number_config(
             elif column == source_column:
                 result[column] = ",".join(labels)
             else:
-                result[column] = ""
+                result[column] = None
         return result
 
     return PredictionConfig(
@@ -2556,7 +2641,7 @@ def _make_source_column_tail_config(
             elif column == source_column:
                 result[column] = json.dumps(format_tail_groups(labels, conn), ensure_ascii=False)
             else:
-                result[column] = ""
+                result[column] = None
         return result
 
     return PredictionConfig(
@@ -2595,7 +2680,7 @@ def _make_source_column_head_config(
         return str(row_get(row, source_column, "") or "")
 
     def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-        result = {column: "" for column in output_columns}
+        result = {column: None for column in output_columns}
         result[source_column] = json.dumps(format_head_groups(labels, conn), ensure_ascii=False)
         return result
 
@@ -2635,7 +2720,7 @@ def _make_source_column_element_config(
         return str(row_get(row, source_column, "") or "")
 
     def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-        result = {column: "" for column in output_columns}
+        result = {column: None for column in output_columns}
         result[source_column] = json.dumps(format_element_groups(labels, conn), ensure_ascii=False)
         return result
 
@@ -2805,7 +2890,7 @@ def _make_content_xiao_config(
         labels=tuple(ZODIAC_ORDER),
         label_count=xiao_width,
         outcome_loader=special_zodiac_from_number_map,
-        content_loader=xiao_column_content_loader("xiao"),
+        content_loader=xiao_or_content_content_loader("xiao", "content"),
         content_parser=parse_zodiac_content,
         content_formatter=format_content_xiao_columns(table_name, "xiao"),
         hit_checker=excludes_hit if exclude else contains_hit,
@@ -2815,6 +2900,10 @@ def _make_content_xiao_config(
             "生成输出时从历史 content 分类池选择一个与预测生肖不重叠的分类，再回填 xiao 字段。",
         ),
     )
+
+
+def _is_jyxiao2_title(title: str, modes_id: int) -> bool:
+    return int(modes_id or 0) == 251 or "家野两肖" in str(title or "")
 
 
 def _make_mixed_xiao_tail_config(
@@ -2881,6 +2970,19 @@ def _classify_second_stage_config(
     exclude = any(word in title for word in ("杀", "绝杀", "不中"))
     all_columns = _table_columns(conn, table_name)
     preferred_text_column = _text_history_preferred_column(conn, modes_id)
+
+    if _is_jyxiao2_title(title, modes_id) and "content" in all_columns:
+        content_sample = _sample_column_value(conn, table_name, "content")
+        inferred_labels = parse_pipe_label_content(content_sample)
+        if inferred_labels:
+            return _make_content_xiao_config(
+                key,
+                title,
+                table_name,
+                modes_id,
+                len(tuple(dict.fromkeys(inferred_labels))),
+                exclude,
+            )
 
     if preferred_text_column and _is_text_history_title(title):
         return _make_text_history_mapping_config(
@@ -3052,6 +3154,21 @@ def _classify_second_stage_config(
                 "code",
                 len(zodiac_values),
                 len(code_values),
+                exclude,
+            )
+
+    if "content" in all_columns and "xiao" in columns:
+        content_sample = _sample_column_value(conn, table_name, "content")
+        xiao_sample = _sample_column_value(conn, table_name, "xiao")
+        content_items = parse_json_or_plain_content(content_sample)
+        xiao_values = parse_zodiac_content(xiao_sample)
+        if content_items and (xiao_values or _pipe_right_zodiac_values(content_sample)):
+            return _make_content_xiao_config(
+                key,
+                title,
+                table_name,
+                modes_id,
+                len(xiao_values) or len(_pipe_right_zodiac_values(content_sample)),
                 exclude,
             )
 

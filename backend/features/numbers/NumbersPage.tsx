@@ -1,7 +1,7 @@
 "use client"
 
 import type { FormEvent } from "react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Plus, Save, Trash2 } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Card } from "@/components/ui/card"
@@ -28,16 +28,16 @@ export function NumbersPage() {
   const [editing, setEditing] = useState<NumberRow | null>(null)
   const [formOpen, setFormOpen] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     const data = await adminApi<{ numbers: NumberRow[] }>(
       `/admin/numbers?keyword=${encodeURIComponent(keyword)}`,
     )
     setRows(data.numbers)
-  }
+  }, [keyword])
 
   useEffect(() => {
-    load()
-  }, [])
+    void load()
+  }, [load])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

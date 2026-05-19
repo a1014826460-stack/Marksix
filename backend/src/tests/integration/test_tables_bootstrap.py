@@ -77,6 +77,25 @@ def test_managed_sites_web_id_exists():
     conn.close()
 
 
+def test_managed_sites_id_aligns_with_web_id():
+    """验证 bootstrap 后站点主键与 web_id 对齐，避免站点编号混用。"""
+    conn = _connect_for_test()
+    from tables import ensure_admin_tables
+    ensure_admin_tables(conn.target)
+
+    rows = conn.execute(
+        "SELECT id, web_id, name FROM managed_sites WHERE web_id IS NOT NULL ORDER BY id"
+    ).fetchall()
+    mismatches = [
+        (int(row["id"]), int(row["web_id"]), str(row["name"] or ""))
+        for row in rows
+        if int(row["id"]) != int(row["web_id"])
+    ]
+    assert not mismatches, f"存在 managed_sites.id 与 web_id 不一致的站点: {mismatches}"
+
+    conn.close()
+
+
 def test_scheduler_tasks_context_columns():
     """验证 scheduler_tasks 表存在业务上下文字段。"""
     conn = _connect_for_test()

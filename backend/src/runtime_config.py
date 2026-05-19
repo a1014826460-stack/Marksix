@@ -125,7 +125,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "history_backfill_delay_after_draw": {
-        "value": 5,
+        "value": 15,
         "value_type": "int",
         "description": "开奖后延迟执行历史回填任务的分钟数。默认 5 分钟。",
         "is_secret": 0,

@@ -11,12 +11,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from db import utc_now  # noqa: E402
+
+
+_logger = logging.getLogger("created_prediction_store")
 
 
 SOURCE_SCHEMA_NAME = "public"
@@ -159,6 +163,73 @@ def normalize_prediction_result_placeholders(row_data: dict[str, Any]) -> dict[s
         if field_name in normalized:
             normalized[field_name] = normalize_csv_placeholder_text(normalized[field_name])
     return normalized
+
+
+def _is_integer_sql_type(sql_type: str) -> bool:
+    normalized = str(sql_type or "").strip().lower()
+    return normalized in {"smallint", "integer", "bigint"} or normalized.startswith(
+        ("smallint", "integer", "bigint")
+    )
+
+
+def _coerce_integer_column_value(
+    table_name: str,
+    column_name: str,
+    value: Any,
+) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        _logger.warning(
+            "created.%s column %s expected integer but got non-integer float %r; using NULL fallback",
+            table_name,
+            column_name,
+            value,
+        )
+        return None
+
+    text = str(value).strip()
+    if text == "":
+        _logger.warning(
+            "created.%s column %s expected integer but got empty value; using NULL fallback",
+            table_name,
+            column_name,
+        )
+        return None
+    if re.fullmatch(r"[+-]?\d+", text):
+        try:
+            return int(text)
+        except (TypeError, ValueError):
+            pass
+
+    _logger.warning(
+        "created.%s column %s expected integer but got %r; using NULL fallback",
+        table_name,
+        column_name,
+        value,
+    )
+    return None
+
+
+def sanitize_created_prediction_row_data(
+    table_name: str,
+    row_data: dict[str, Any],
+    target_columns: dict[str, str],
+) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for column_name, value in row_data.items():
+        sql_type = target_columns.get(column_name, "")
+        if _is_integer_sql_type(sql_type):
+            sanitized[column_name] = _coerce_integer_column_value(table_name, column_name, value)
+        else:
+            sanitized[column_name] = value
+    return sanitized
 
 
 def normalize_color_label(label: Any) -> str:
@@ -967,7 +1038,11 @@ def upsert_created_prediction_row(
     ensure_postgres_connection(conn)
     table_name = validate_mode_payload_table_name(source_table_name)
     target_qualified = ensure_created_prediction_table(conn, table_name)
-    target_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+    target_column_defs = {
+        column.name: column.sql_type
+        for column in list_table_columns(conn, CREATED_SCHEMA_NAME, table_name)
+    }
+    target_columns = set(target_column_defs)
     normalized_row_data = normalize_three_period_special_row(conn, table_name, row_data)
     enriched_row_data = enrich_prediction_result_fields(conn, table_name, normalized_row_data)
     prepared_row_data = normalize_prediction_result_placeholders(enriched_row_data)
@@ -977,6 +1052,11 @@ def upsert_created_prediction_row(
         for key, value in prepared_row_data.items()
         if key in target_columns and key not in {"id", "created_at"}
     }
+    filtered_data = sanitize_created_prediction_row_data(
+        table_name,
+        filtered_data,
+        target_column_defs,
+    )
 
     if not filtered_data:
         raise ValueError("待写入数据与 created schema 目标表没有可匹配列。")

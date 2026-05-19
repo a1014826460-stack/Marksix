@@ -1,45 +1,36 @@
 # ============================================================
-# Next.js 后端管理界面 Dockerfile (port 3002)
-# 从 standalone 构建输出运行，生成最小化镜像
+# Next.js backend admin Dockerfile (port 3002)
+# Uses pnpm workspace build and standalone output
 # ============================================================
 
-# ---- 构建阶段 ----
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /workspace
 
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
-RUN if [ -f pnpm-lock.yaml ]; then \
-      corepack enable && corepack prepare pnpm@9 --activate && pnpm install --frozen-lockfile; \
-    else \
-      npm ci; \
-    fi
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
-# 复制源代码
-COPY . .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY frontend/package.json ./frontend/package.json
+COPY backend/package.json ./backend/package.json
 
-# 构建 Next.js standalone 输出（根据锁文件选择包管理器）
-RUN if [ -f pnpm-lock.yaml ]; then \
-      pnpm build; \
-    else \
-      ./node_modules/.bin/next build; \
-    fi
+RUN pnpm install --frozen-lockfile
 
-# ---- 运行阶段 ----
+COPY backend ./backend
+
+RUN pnpm --filter @liuhecai/backend-admin exec cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build
+
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# 创建非 root 用户
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# 复制 standalone 输出
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /workspace/backend/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /workspace/backend/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /workspace/backend/public ./public
 
 USER nextjs
 

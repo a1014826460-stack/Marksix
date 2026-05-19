@@ -88,6 +88,29 @@ def test_resolve_site_context_returns_correct_web_id():
     conn.close()
 
 
+def test_prediction_modules_follow_web_id_alignment():
+    """验证站点预测模块按对齐后的 web_id 绑定，而不是旧的内部 id。"""
+    conn = _connect_for_test()
+    from tables import ensure_admin_tables
+    ensure_admin_tables(conn.target)
+
+    row = conn.execute(
+        """
+        SELECT ms.id, ms.web_id
+        FROM managed_sites ms
+        JOIN site_prediction_modules spm ON spm.site_id = ms.id
+        WHERE ms.web_id IS NOT NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if row:
+        assert int(row["id"]) == int(row["web_id"]), (
+            f"站点模块仍然绑定在错位站点上：id={row['id']} web_id={row['web_id']}"
+        )
+
+    conn.close()
+
+
 def test_validate_web_matches_site_rejects_mismatch():
     """验证 web 不匹配时 validate_web_matches_site 抛出异常。"""
     from app_http.site_context import (

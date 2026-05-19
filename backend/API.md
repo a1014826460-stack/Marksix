@@ -1299,7 +1299,7 @@ const res = await fetch("/fackyou/api/python/admin/sites", {
 
 已实现路由：
 
-- `POST /api/admin/sites/{site_id}/fetch`
+- `POST /api/admin/sites/{site_id}/fetch`（已废弃）
 - `GET /api/admin/fetch-runs`
 - `POST /api/admin/normalize`
 - `POST /api/admin/text-mappings`
@@ -1313,67 +1313,14 @@ const res = await fetch("/fackyou/api/python/admin/sites", {
 
 ### POST `/api/admin/sites/{site_id}/fetch`
 
-接口说明：按站点配置抓取数据，并可选执行归一化与文本映射刷新。
+接口说明：该接口已废弃，不再执行站点抓取。
 
-请求体：
+当前会返回 `410 Gone`，并提示改用以下人工路径：
 
-```json
-{
-  "normalize": true,
-  "build_text_mappings": true
-}
-```
-
-成功响应：
-
-```json
-{
-  "run_id": 12,
-  "status": "success",
-  "message": "抓取完成",
-  "modes_count": 28,
-  "records_count": 560,
-  "post_process": {
-    "normalized_tables": 28,
-    "text_mappings": {
-      "ok": true
-    }
-  }
-}
-```
-
-curl 示例：
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/admin/sites/4/fetch" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d "{\"normalize\":true,\"build_text_mappings\":true}"
-```
-
-PowerShell 示例：
-
-```powershell
-Invoke-RestMethod `
-  -Method POST `
-  -Uri "http://127.0.0.1:8000/api/admin/sites/4/fetch" `
-  -Headers @{ Authorization = "Bearer <token>" } `
-  -ContentType "application/json" `
-  -Body '{"normalize":true,"build_text_mappings":true}'
-```
-
-前端调用示例：
-
-```ts
-await fetch("/fackyou/api/python/admin/sites/4/fetch", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  },
-  body: JSON.stringify({ normalize: true, build_text_mappings: true }),
-})
-```
+- `POST /api/admin/sites/{site_id}/prediction-modules/sync`
+- `POST /api/admin/sites/{site_id}/prediction-modules/generate-all`
+- `POST /api/admin/normalize`
+- `POST /api/admin/text-mappings`
 
 调试提示：
 
@@ -1722,6 +1669,7 @@ const res = await fetch("/fackyou/api/python/predict/pt2xiao", {
 
 - `GET /api/admin/sites/{site_id}/prediction-modules`
 - `POST /api/admin/sites/{site_id}/prediction-modules`
+- `POST /api/admin/sites/{site_id}/prediction-modules/sync`
 - `PUT /api/admin/sites/{site_id}/prediction-modules/{module_id}`
 - `PATCH /api/admin/sites/{site_id}/prediction-modules/{module_id}`
 - `DELETE /api/admin/sites/{site_id}/prediction-modules/{module_id}`
@@ -1772,6 +1720,23 @@ const res = await fetch("/fackyou/api/python/predict/pt2xiao", {
       "configured": true
     }
   ]
+}
+```
+
+### POST `/api/admin/sites/{site_id}/prediction-modules/sync`
+
+接口说明：将站点标准模块同步写入 `public.site_prediction_modules`，供后台管理员后续手动启用、补充与生成。
+
+成功响应示例：
+
+```json
+{
+  "ok": true,
+  "site": {
+    "id": 5,
+    "name": "台湾跑马会"
+  },
+  "module_count": 42
 }
 ```
 

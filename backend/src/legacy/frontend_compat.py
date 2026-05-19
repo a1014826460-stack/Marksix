@@ -14,6 +14,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import random
+import re
 from typing import Any
 
 from db import quote_identifier
@@ -29,6 +33,21 @@ from utils.created_prediction_store import (
 # 不在映射中的端点使用默认字段集：year, term, title, content, res_code, res_sx
 
 _ENDPOINT_FIELDS: dict[str, tuple[str, ...]] = {
+    "getJyxiao2": ("content", "res_code", "res_sx", "term", "xiao"),
+    "getZyx": ("content", "res_code", "res_sx", "term"),
+    "getYysx": ("content", "res_code", "res_sx", "term"),
+    "getCyptwei": ("res_code", "res_sx", "term", "title"),
+    "getX2jiam8": ("code", "content", "res_code", "res_sx", "term"),
+    "getPtWei": ("content", "res_code", "res_sx", "term"),
+    "getShama": ("content", "res_code", "res_sx", "term"),
+    "getYzxj": ("jiexi", "res_code", "res_sx", "term", "xiao", "zi"),
+    "getCypt": ("res_code", "res_sx", "term", "title"),
+    "getNnnx": ("nan", "nv", "res_code", "res_sx", "term"),
+    "getXysxma": ("code", "res_code", "res_sx", "term", "xiao"),
+    "getShatou": ("content", "res_code", "res_sx", "term"),
+    "getFsx": ("content", "res_code", "res_sx", "term"),
+    "getDxd": ("content", "res_code", "res_sx", "term"),
+    "getShaBds": ("content", "res_code", "res_sx", "term"),
     "getJuzi": ("term", "title", "res_code", "res_sx"),
     "getYjzy": ("term", "title", "content", "jiexi", "res_code", "res_sx"),
     "getSzxj": ("term", "title", "jiexi", "res_code", "res_sx"),
@@ -41,6 +60,30 @@ _ENDPOINT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 _DEFAULT_FIELDS = ("year", "term", "title", "content", "res_code", "res_sx")
+_MAX_FRONTEND_KAIJIANG_ROWS = 10
+
+_ENDPOINT_MODE_IDS: dict[tuple[str, str], int] = {
+    ("getjyxiao2", "2"): 251,
+    ("getzyx", "2"): 152,
+    ("getyysx", "2"): 141,
+    ("getcyptwei", "2"): 336,
+    ("getx2jiam8", "2"): 145,
+    ("getptwei", "2"): 54,
+    ("getshama", "7"): 88,
+    ("getyzxj", "6/12"): 295,
+    ("getcypt", "2"): 39,
+    ("getnnnx", "4"): 24,
+    ("getxysxma", "9/8"): 151,
+    ("getshatou", "1"): 41,
+    ("getfsx", "2"): 157,
+    ("getdxd", "2"): 158,
+    ("getshabds", "1"): 159,
+}
+
+_PMXJCZ_ALLOWED_ZODIACS = ("鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪")
+_PMXJCZ_X7M14_PATTERN = re.compile(
+    rf"^({'|'.join(_PMXJCZ_ALLOWED_ZODIACS)})\|\d{{2}},\d{{2}}$"
+)
 
 
 # ── 表名解析 ──────────────────────────────────────────────────────────
@@ -60,6 +103,13 @@ def _resolve_table_name(conn: Any, num: Any) -> str:
     Returns:
         str: 解析到的表名；未找到则返回 ``""``
     """
+    # 0) 先尝试直表名，避免 mode_payload_tables 元数据误绑时串到别的玩法表
+    raw_num = str(num).strip()
+    if raw_num:
+        direct_table_name = f"mode_payload_{raw_num}"
+        if conn.table_exists(direct_table_name):
+            return direct_table_name
+
     # 1) 尝试 mode_payload_tables 映射
     try:
         modes_id = int(str(num).strip())
@@ -76,7 +126,6 @@ def _resolve_table_name(conn: Any, num: Any) -> str:
         pass
 
     # 2) 直接构造表名
-    raw_num = str(num).strip()
     if not raw_num:
         return ""
     table_name = f"mode_payload_{raw_num}"
@@ -84,6 +133,15 @@ def _resolve_table_name(conn: Any, num: Any) -> str:
         return table_name
 
     return ""
+
+
+def _resolve_endpoint_table_name(conn: Any, endpoint: str, num: Any) -> str:
+    """Resolve frontend endpoint requests to the correct payload table."""
+    normalized_num = str(num).strip()
+    mapped_mode_id = _ENDPOINT_MODE_IDS.get((endpoint.strip().lower(), normalized_num))
+    if mapped_mode_id is not None:
+        return _resolve_table_name(conn, mapped_mode_id)
+    return _resolve_table_name(conn, num)
 
 
 # ── 表列名读取（兼容 SQLite / PostgreSQL）────────────────────────────
@@ -181,6 +239,7 @@ def _query_mode_payload_table(
     table_name: str,
     web_id: int | None,
     type_val: int | None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """从指定的 mode_payload 表中按 web_id / type 过滤查询所有行。
 
@@ -203,8 +262,12 @@ def _query_mode_payload_table(
     filters, params = _build_web_type_filters(columns, web_id, type_val)
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
     order_clause = _build_order_clause(columns)
+    limit_clause = ""
+    if limit is not None and limit > 0:
+        limit_clause = " LIMIT ?"
+        params.append(int(limit))
 
-    sql = f"SELECT * FROM {quote_identifier(table_name)}{where_clause}{order_clause}"
+    sql = f"SELECT * FROM {quote_identifier(table_name)}{where_clause}{order_clause}{limit_clause}"
     rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
@@ -214,6 +277,7 @@ def _query_created_schema(
     table_name: str,
     web_id: int | None,
     type_val: int | None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """查询 ``created`` schema 中的对应表。
 
@@ -251,9 +315,13 @@ def _query_created_schema(
     filters, params = _build_web_type_filters(target_columns, web_id, type_val)
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
     order_clause = _build_order_clause(target_columns)
+    limit_clause = ""
+    if limit is not None and limit > 0:
+        limit_clause = " LIMIT ?"
+        params.append(int(limit))
 
     table_ref = quote_schema_table(CREATED_SCHEMA_NAME, table_name)
-    sql = f"SELECT * FROM {table_ref}{where_clause}{order_clause}"
+    sql = f"SELECT * FROM {table_ref}{where_clause}{order_clause}{limit_clause}"
     rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
@@ -263,6 +331,7 @@ def _load_mode_payload_rows(
     table_name: str,
     web_id: int | None,
     type_val: int | None,
+    limit: int = _MAX_FRONTEND_KAIJIANG_ROWS,
 ) -> list[dict[str, Any]]:
     """加载模式负载数据行，优先 ``created`` schema，回退 ``public``。
 
@@ -275,8 +344,20 @@ def _load_mode_payload_rows(
     Returns:
         list[dict[str, Any]]: 合并去重后的行（created 优先）
     """
-    preferred_rows = _query_created_schema(conn, table_name, web_id, type_val)
-    fallback_rows = _query_mode_payload_table(conn, table_name, web_id, type_val)
+    preferred_rows = _query_created_schema(
+        conn,
+        table_name,
+        web_id,
+        type_val,
+        limit=max(limit * 2, limit),
+    )
+    fallback_rows = _query_mode_payload_table(
+        conn,
+        table_name,
+        web_id,
+        type_val,
+        limit=max(limit * 3, limit),
+    )
 
     # 按 (year, term) 去重，created 优先
     seen: set[tuple[str, str]] = set()
@@ -298,7 +379,7 @@ def _load_mode_payload_rows(
             return 0
 
     merged.sort(key=lambda r: (_safe_int(r.get("year")), _safe_int(r.get("term"))), reverse=True)
-    return merged
+    return merged[: max(1, int(limit))]
 
 
 # ── 结果格式化 ────────────────────────────────────────────────────────
@@ -320,6 +401,200 @@ def _sanitize_row(row: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _build_seeded_rng(row: dict[str, Any]) -> random.Random:
+    """基于行内容生成稳定随机源，避免同一期数据在重复请求时漂移。"""
+    normalized_items = [
+        (str(key), "" if value is None else str(value))
+        for key, value in sorted(row.items(), key=lambda item: str(item[0]))
+    ]
+    seed_material = json.dumps(normalized_items, ensure_ascii=False, separators=(",", ":"))
+    digest = hashlib.sha256(seed_material.encode("utf-8")).digest()
+    return random.Random(int.from_bytes(digest[:8], "big"))
+
+
+def _is_valid_pmxjcz_x7m14(value: Any) -> bool:
+    """校验 ``x7m14`` 是否为 7 组 ``生肖|两位数,两位数`` JSON 数组。"""
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+    if not isinstance(parsed, list) or len(parsed) != 7:
+        return False
+
+    seen_zodiacs: set[str] = set()
+    seen_numbers: set[str] = set()
+    for item in parsed:
+        if not isinstance(item, str):
+            return False
+        candidate = item.strip()
+        if not _PMXJCZ_X7M14_PATTERN.fullmatch(candidate):
+            return False
+        zodiac, numbers = candidate.split("|", 1)
+        number_values = numbers.split(",")
+        if zodiac in seen_zodiacs:
+            return False
+        if len(number_values) != 2 or number_values[0] == number_values[1]:
+            return False
+        if any(number in seen_numbers for number in number_values):
+            return False
+        seen_zodiacs.add(zodiac)
+        seen_numbers.update(number_values)
+    return True
+
+
+def _generate_pmxjcz_x7m14(row: dict[str, Any]) -> str:
+    """为 ``getPmxjcz`` 生成稳定随机的 ``x7m14``。"""
+    rng = _build_seeded_rng(row)
+    zodiacs = rng.sample(list(_PMXJCZ_ALLOWED_ZODIACS), 7)
+    numbers = rng.sample(range(1, 50), 14)
+    payload = [
+        f"{zodiac}|{numbers[index * 2]:02d},{numbers[index * 2 + 1]:02d}"
+        for index, zodiac in enumerate(zodiacs)
+    ]
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _normalize_pmxjcz_row(row: dict[str, Any]) -> dict[str, Any]:
+    """确保 ``getPmxjcz`` 行满足旧前端的固定字段约束。"""
+    normalized = dict(row)
+
+    year = str(normalized.get("year") or "").strip() or "0"
+    term = str(normalized.get("term") or "").strip() or "0"
+    title = str(normalized.get("title") or "").strip()
+    content = str(normalized.get("content") or "").strip()
+
+    if not title and content:
+        title = content[:12]
+    if not content and title:
+        content = title
+    if not title:
+        title = f"{year}年{term}期平特梅花"
+    if not content:
+        content = f"{year}年{term}期参考资料，仅供交流。"
+
+    normalized["year"] = year
+    normalized["term"] = term
+    normalized["title"] = title
+    normalized["content"] = content
+
+    if not _is_valid_pmxjcz_x7m14(normalized.get("x7m14")):
+        normalized["x7m14"] = _generate_pmxjcz_x7m14(normalized)
+
+    return normalized
+
+
+def _parse_json_object(value: Any) -> dict[str, Any] | None:
+    raw = str(value or "").strip()
+    if not raw or not raw.startswith("{"):
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parse_json_array(value: Any) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+    return [str(item) for item in parsed] if isinstance(parsed, list) else []
+
+
+def _normalize_nnnx_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    parsed_object = (
+        _parse_json_object(normalized.get("content"))
+        or _parse_json_object(normalized.get("xiao"))
+        or _parse_json_object(normalized.get("nan"))
+    )
+    parsed_array = _parse_json_array(normalized.get("content"))
+
+    nan = str(normalized.get("nan") or "").strip()
+    nv = str(normalized.get("nv") or "").strip()
+
+    if parsed_object:
+        nan = nan or str(
+            parsed_object.get("nan")
+            or parsed_object.get("nanx")
+            or parsed_object.get("nan_sx")
+            or parsed_object.get("xiao_1")
+            or "",
+        ).strip()
+        nv = nv or str(
+            parsed_object.get("nv")
+            or parsed_object.get("nvx")
+            or parsed_object.get("nv_sx")
+            or parsed_object.get("xiao_2")
+            or "",
+        ).strip()
+
+    if (not nan or not nv) and len(parsed_array) >= 2:
+        nan = nan or parsed_array[0].strip()
+        nv = nv or parsed_array[1].strip()
+
+    normalized["nan"] = nan
+    normalized["nv"] = nv
+    return normalized
+
+
+def _normalize_xysxma_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    parsed_object = (
+        _parse_json_object(normalized.get("content"))
+        or _parse_json_object(normalized.get("xiao"))
+        or _parse_json_object(normalized.get("code"))
+    )
+    parsed_array = _parse_json_array(normalized.get("content"))
+
+    code = str(normalized.get("code") or "").strip()
+    xiao = str(normalized.get("xiao") or "").strip()
+
+    if parsed_object:
+        code = code or str(
+            parsed_object.get("code")
+            or parsed_object.get("codes")
+            or parsed_object.get("code_list")
+            or "",
+        ).strip()
+        xiao = xiao or str(
+            parsed_object.get("xiao")
+            or parsed_object.get("sx")
+            or parsed_object.get("zodiac")
+            or "",
+        ).strip()
+
+    if parsed_array:
+        xiao_values: list[str] = []
+        code_values: list[str] = []
+        for item in parsed_array:
+            name, _, codes = item.partition("|")
+            normalized_codes = codes.replace(".", ",").strip()
+            if name.strip():
+                xiao_values.append(name.strip())
+            if normalized_codes:
+                code_values.append(normalized_codes)
+        xiao = xiao or ",".join(xiao_values)
+        code = code or ",".join(code_values)
+
+    normalized["code"] = code
+    normalized["xiao"] = xiao
+    return normalized
+
+
 def _pick_fields(row: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
     """从行中提取指定字段，缺失字段用空字符串填充。
 
@@ -338,6 +613,8 @@ def _pick_fields(row: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]
             value = ""
         elif value is None:
             value = ""
+        if field_name != "id":
+            value = str(value)
         result[field_name] = value
     return result
 
@@ -356,7 +633,15 @@ def _format_rows(
         list[dict[str, Any]]: 格式化后的行列表
     """
     fields = _ENDPOINT_FIELDS.get(endpoint, _DEFAULT_FIELDS)
-    return [_pick_fields(row, fields) for row in rows]
+    formatted_rows: list[dict[str, Any]] = []
+    for row in rows:
+        prepared_row = _normalize_pmxjcz_row(row) if endpoint == "getPmxjcz" else row
+        if endpoint == "getNnnx":
+            prepared_row = _normalize_nnnx_row(prepared_row)
+        elif endpoint == "getXysxma":
+            prepared_row = _normalize_xysxma_row(prepared_row)
+        formatted_rows.append(_pick_fields(prepared_row, fields))
+    return formatted_rows
 
 
 # ── curTerm ────────────────────────────────────────────────────────────
@@ -435,12 +720,18 @@ def _handle_standard_kaijiang(endpoint: str, query: dict, conn: Any) -> dict:
         return {"data": []}
 
     # 解析表名
-    table_name = _resolve_table_name(conn, raw_num)
+    table_name = _resolve_endpoint_table_name(conn, endpoint, raw_num)
     if not table_name:
         return {"data": []}
 
     # 查询数据
-    rows = _load_mode_payload_rows(conn, table_name, web_id, type_val)
+    rows = _load_mode_payload_rows(
+        conn,
+        table_name,
+        web_id,
+        type_val,
+        limit=_MAX_FRONTEND_KAIJIANG_ROWS,
+    )
 
     # 消毒
     rows = [_sanitize_row(row) for row in rows]
@@ -493,22 +784,28 @@ def _handle_post_get_list(query: dict, conn: Any) -> dict:
     clauses = ["enabled = 1", "source_key = ?"]
     params: list[Any] = ["legacy-post-list"]
 
-    clauses.append("source_pc = ?")
-    params.append(pc)
-    clauses.append("source_web = ?")
-    params.append(web_id)
-    clauses.append("source_type = ?")
-    params.append(type_val)
+    def _query_rows(target_pc: int):
+        local_clauses = list(clauses)
+        local_params = list(params)
+        local_clauses.append("source_pc = ?")
+        local_params.append(target_pc)
+        local_clauses.append("source_web = ?")
+        local_params.append(web_id)
+        local_clauses.append("source_type = ?")
+        local_params.append(type_val)
+        return conn.execute(
+            f"""
+            SELECT id, title, cover_image, sort_order
+            FROM legacy_image_assets
+            WHERE {' AND '.join(local_clauses)}
+            ORDER BY sort_order, id
+            """,
+            local_params,
+        ).fetchall()
 
-    rows = conn.execute(
-        f"""
-        SELECT id, title, cover_image, sort_order
-        FROM legacy_image_assets
-        WHERE {' AND '.join(clauses)}
-        ORDER BY sort_order, id
-        """,
-        params,
-    ).fetchall()
+    rows = _query_rows(pc)
+    if not rows and pc == 72:
+        rows = _query_rows(305)
 
     data: list[dict[str, Any]] = []
     for row in rows:
