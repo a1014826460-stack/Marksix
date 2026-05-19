@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Liuhecai Frontend",
-  description: "Next.js compatibility shell for legacy lottery sites.",
+  title: "全网最准尽在台湾六合彩论坛",
+  description: "全网最准尽在台湾六合彩论坛",
   icons: {
     icon: "/favicon.ico",
   },

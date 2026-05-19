@@ -1,0 +1,128 @@
+# ============================================================
+# Nginx 追加配置 for:
+#   https://www.twsaimahui.com/
+#     -> /twsaimahui (台湾六合彩论坛第二站点)
+#
+# 使用方式 (二选一):
+#
+# 【方式A - 推荐】如果你已部署 shengshi8800 的 nginx 配置:
+#   将下面4个 server block 追加到你现有的 nginx 配置文件中,
+#   然后将两个域名的证书合并为多域名证书, 或分别指定证书路径。
+#
+# 【方式B】如果你使用独立证书:
+#   将下面的 server block 追加到现有配置, 确保每个 server
+#   的 ssl_certificate/ssl_certificate_key 指向对应的证书。
+#
+# 无论哪种方式, 完成后重启 nginx:
+#   docker compose restart nginx
+# ============================================================
+
+# ---- twsaimahui apex -> www 重定向 ----
+server {
+    listen 80;
+    server_name twsaimahui.com;
+    return 301 https://www.twsaimahui.com$request_uri;
+}
+
+server {
+    listen 80;
+    server_name www.twsaimahui.com;
+    return 301 https://www.twsaimahui.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name twsaimahui.com;
+
+    ssl_certificate /etc/nginx/ssl/twsaimahui-fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/twsaimahui-privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    return 301 https://www.twsaimahui.com$request_uri;
+}
+
+# ---- twsaimahui 主站 ----
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.twsaimahui.com;
+
+    ssl_certificate /etc/nginx/ssl/twsaimahui-fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/twsaimahui-privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # 确认 HTTPS 全站无误后取消注释:
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    server_tokens off;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    client_max_body_size 100m;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    # ---- 健康检查 ----
+    location /health {
+        proxy_pass http://python-api:8000/api/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        access_log off;
+    }
+
+    # ---- 前端 API 代理 ----
+    location /api/ {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- 后台管理 ----
+    location = /fackyou {
+        proxy_pass http://backend-admin:3002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /fackyou/ {
+        proxy_pass http://backend-admin:3002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- 主站前端 (Next.js 会根据 Host 头自动路由到 /twsaimahui) ----
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ---- 上传文件 ----
+    location /uploads/ {
+        proxy_pass http://python-api:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
