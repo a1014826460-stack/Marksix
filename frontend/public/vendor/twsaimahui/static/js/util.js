@@ -98,3 +98,51 @@ function renderError(containerSelector, message) {
 function renderEmpty(containerSelector) {
     renderError(containerSelector, '暂无数据');
 }
+
+
+function getLotteryRegionName(typeValue) {
+    var normalized = String(typeValue == null ? '' : typeValue).trim();
+    if (normalized === '1') return '\u9999\u6e2f';
+    if (normalized === '2') return '\u6fb3\u95e8';
+    if (normalized === '3') return '\u53f0\u6e7e';
+    return '';
+}
+
+function prefixLotteryRegionTitle(title) {
+    var baseTitle = String(title || '').trim();
+    if (!baseTitle) return baseTitle;
+    if (/^\u3010[^\u3011]+\u3011/.test(baseTitle)) return baseTitle;
+    var regionName = getLotteryRegionName(window.type);
+    return regionName ? ('\u3010' + regionName + '\u3011' + baseTitle) : baseTitle;
+}
+
+function applyLotteryRegionTitlePrefix(root) {
+    var container = root || document;
+    if (!container || !container.querySelectorAll) return;
+
+    var selectors = [
+        '.center.f13.black.l150 font[color="#FFFFFF"]',
+        '.firstRowxx span',
+        'font[face="\\5fae\\8f6f\\96c5\\9ed1"] font[color="#FFFFFF"]'
+    ];
+    var seen = [];
+
+    selectors.forEach(function (selector) {
+        var nodes = container.querySelectorAll(selector);
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i];
+            if (!node || seen.indexOf(node) !== -1) continue;
+            seen.push(node);
+
+            var text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!text) continue;
+            if (/^\d+\u671f[:\uff1a\u203b]?$/.test(text)) continue;
+            if (/^\u3010[^\u3011]+\u3011/.test(text)) continue;
+            node.textContent = prefixLotteryRegionTitle(text);
+        }
+    });
+}
+
+window.getLotteryRegionName = getLotteryRegionName;
+window.prefixLotteryRegionTitle = prefixLotteryRegionTitle;
+window.applyLotteryRegionTitlePrefix = applyLotteryRegionTitlePrefix;

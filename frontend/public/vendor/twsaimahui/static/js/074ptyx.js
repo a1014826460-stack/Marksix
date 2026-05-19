@@ -31,8 +31,6 @@
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                if (code && !zj) continue;
-
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
@@ -61,6 +59,7 @@ ${d.term}期</strong><span class='styleliao'><strong>平特一肖</strong></span
             </table>
         `;
         $(".l64").html(htmlBoxList)
+        applyLotteryRegionTitlePrefix(document.querySelector('.l64'))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);

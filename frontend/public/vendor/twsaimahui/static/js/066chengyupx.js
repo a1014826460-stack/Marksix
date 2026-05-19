@@ -28,8 +28,6 @@
                 }else {
                     c1.push(`<span>${d.title}</span>`)
                 }
-                if (sx && !b) continue;
-
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40 class='stylelxz'><strong>
@@ -53,6 +51,7 @@ ${d.term}期</strong><span class='styleliao'><strong>成语平特肖</strong></s
             </table>
         `;
         $(".l51").html(htmlBoxList)
+        applyLotteryRegionTitlePrefix(document.querySelector('.l51'))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);

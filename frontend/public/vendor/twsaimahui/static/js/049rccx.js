@@ -48,8 +48,6 @@
                     }
                 }
                 let zj = b;
-                if (sx && !b) continue;
-
                 htmlBoxList += ` 
  
 <tr>
@@ -80,6 +78,7 @@ ${d.term}期</strong><span class='styleliao'><strong>肉草菜肖</strong></span
             </table>
         `;
         $(".l11").html(htmlBoxList)
+        applyLotteryRegionTitlePrefix(document.querySelector('.l11'))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);

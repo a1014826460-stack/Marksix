@@ -36,7 +36,6 @@
       c1.push(`${xiao[i]}`)
      }
     }
-  if (code && !zj) continue;
     htmlBoxList += ` 
 <td align='center' height=40><b>
 <font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期※</font><font color='#808000' style='font-size: 14pt' face='方正粗黑宋简体'>绝杀①头</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>※【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开:</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${ (sx?( zj?'中':'不中'):'??')}</font> </font></b></td>
@@ -61,6 +60,7 @@
             </table>
         `;
   $(".l58").html(htmlBoxList)
+  applyLotteryRegionTitlePrefix(document.querySelector('.l58'))
  },
  error: function (xhr, status, error) {
   console.error('Error:', error);

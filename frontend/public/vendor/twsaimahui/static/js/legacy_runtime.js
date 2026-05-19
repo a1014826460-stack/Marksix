@@ -286,4 +286,30 @@
 
   window.__LOTTERY_API_BASE__ = httpApiBase;
   window.__LEGACY_KAIJIANG_API_BASE__ = kaijiangApiBase;
+
+  function scheduleRegionTitlePrefix() {
+    if (typeof window.applyLotteryRegionTitlePrefix !== "function") {
+      return;
+    }
+    window.requestAnimationFrame(function () {
+      window.applyLotteryRegionTitlePrefix(document);
+    });
+  }
+
+  if (typeof window.MutationObserver === "function" && document && document.body) {
+    var titleObserver = new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
+          scheduleRegionTitlePrefix();
+          break;
+        }
+      }
+    });
+    titleObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document && typeof document.addEventListener === "function") {
+    document.addEventListener("DOMContentLoaded", scheduleRegionTitlePrefix);
+  }
+  scheduleRegionTitlePrefix();
 })(window);

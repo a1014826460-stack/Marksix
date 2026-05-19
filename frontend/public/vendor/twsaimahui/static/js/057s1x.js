@@ -30,8 +30,6 @@ $.ajax({
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                if (sx && !zj) continue;
-
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
@@ -54,6 +52,7 @@ ${d.term}期</strong><span class='styleliao'><strong>绝杀一肖</strong></span
             </table>
         `;
         $(".l40").html(htmlBoxList)
+        applyLotteryRegionTitlePrefix(document.querySelector('.l40'))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);

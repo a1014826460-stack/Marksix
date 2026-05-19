@@ -29,8 +29,6 @@
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                if (sx && !zj) continue;
-
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40><b>
@@ -55,6 +53,7 @@
             </table>
         `;
         $(".l62").html(htmlBoxList)
+        applyLotteryRegionTitlePrefix(document.querySelector('.l62'))
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);
