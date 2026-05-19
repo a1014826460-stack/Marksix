@@ -2972,6 +2972,29 @@ def _classify_second_stage_config(
     preferred_text_column = _text_history_preferred_column(conn, modes_id)
 
     if _is_jyxiao2_title(title, modes_id) and "content" in all_columns:
+        # 优先检测 xiao+code 双列模式：从 xiao 列推断生肖数量，从 code 列推断号码数量
+        if "xiao" in columns and "code" in columns:
+            xiao_sample = _sample_column_value(conn, table_name, "xiao")
+            code_sample = _sample_column_value(conn, table_name, "code")
+            zodiac_values = parse_zodiac_content(xiao_sample)
+            code_values = parse_number_content(code_sample)
+            if (
+                zodiac_values
+                and code_values
+                and all(label in ZODIAC_ORDER for label in zodiac_values)
+            ):
+                return _make_xiao_code_columns_config(
+                    key,
+                    title,
+                    table_name,
+                    modes_id,
+                    "xiao",
+                    "code",
+                    len(zodiac_values),
+                    len(code_values),
+                    exclude,
+                )
+        # 回退：content 管道标签模式（家|… / 野|… 等）
         content_sample = _sample_column_value(conn, table_name, "content")
         inferred_labels = parse_pipe_label_content(content_sample)
         if inferred_labels:

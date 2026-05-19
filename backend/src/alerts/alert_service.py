@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,27 @@ from db import connect
 from runtime_config import get_config, get_config_from_conn, upsert_system_config
 
 _alert_logger = logging.getLogger("alert.service")
+
+# 模块级报警冷却期缓存，防止同一报警在短时间内重复发送
+# key: 报警标识符 → value: 上次发送时间戳 (time.time())
+_alert_last_sent: dict[str, float] = {}
+_DEFAULT_COOLDOWN_SECONDS = 3600  # 默认冷却 1 小时
+
+
+def _is_alert_suppressed(alert_key: str, db_path, default_cooldown: int = _DEFAULT_COOLDOWN_SECONDS) -> bool:
+    """检查报警是否应被冷却期抑制。"""
+    try:
+        cooldown = int(_cfg(db_path, "alert.cooldown_seconds", default_cooldown))
+    except Exception:
+        cooldown = default_cooldown
+    if cooldown <= 0:
+        return False
+    now = _time.time()
+    last = _alert_last_sent.get(alert_key)
+    if last is not None and (now - last) < cooldown:
+        return True
+    _alert_last_sent[alert_key] = now
+    return False
 
 LOTTERY_NAMES: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 
@@ -97,6 +119,22 @@ def alert_crawler_failure(
         _alert_logger.info(
             "Crawler failure: lt=%s count=%d/%d (threshold not reached)",
             lt_name, fail_count, threshold,
+        )
+        return False
+
+    # 仅在首次达到阈值时发送报警，后续连续失败不再重复发送
+    if fail_count != threshold:
+        _alert_logger.info(
+            "Crawler ALERT suppressed: lt=%s consecutive failures=%d (already alerted at threshold=%d)",
+            lt_name, fail_count, threshold,
+        )
+        return False
+
+    alert_key = f"crawler_failure_{lottery_type_id}"
+    if _is_alert_suppressed(alert_key, db_path):
+        _alert_logger.info(
+            "Crawler ALERT cooldown suppressed: lt=%s consecutive failures=%d",
+            lt_name, fail_count,
         )
         return False
 
@@ -226,6 +264,10 @@ def alert_prediction_gap(
         return issues
 
     if issues:
+        if _is_alert_suppressed("prediction_gap", db_path):
+            _alert_logger.info("Prediction gap alert suppressed by cooldown")
+            return issues
+
         from alerts.email_service import send_alert_async
 
         rows_html = ""
@@ -315,6 +357,10 @@ def alert_draw_staleness(
                     triggered = True
 
         if triggered:
+            if _is_alert_suppressed("draw_staleness", db_path):
+                _alert_logger.info("Draw staleness alert suppressed by cooldown")
+                return triggered
+
             from alerts.email_service import send_alert_async
             send_alert_async(
                 db_path,
@@ -347,6 +393,12 @@ def alert_precise_draw_mismatch(
 ) -> None:
     """精确期号检查全部失败后发送邮件报警（补充已有 error_logs 写入）。"""
     lt_name = LOTTERY_NAMES.get(lottery_type_id, str(lottery_type_id))
+
+    alert_key = f"precise_mismatch_{lottery_type_id}"
+    if _is_alert_suppressed(alert_key, db_path):
+        _alert_logger.info("Precise draw mismatch alert suppressed by cooldown: lt=%s", lt_name)
+        return
+
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     from alerts.email_service import send_alert_async

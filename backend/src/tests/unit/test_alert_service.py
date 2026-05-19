@@ -111,6 +111,59 @@ def test_alert_crawler_reaches_threshold_sends_email(monkeypatch):
     assert result is True
 
 
+def test_alert_crawler_above_threshold_suppressed(monkeypatch):
+    """超过阈值后不再重复发送报警（防止邮件轰炸）。"""
+    from alerts.alert_service import alert_crawler_failure, _alert_last_sent
+
+    # 清除冷却期缓存，避免受其他测试影响
+    _alert_last_sent.pop("crawler_failure_1", None)
+
+    def fake_cfg(db_path, key, fallback):
+        if key == "alert.crawler_retry_threshold":
+            return 3
+        if key == "alert.cooldown_seconds":
+            return 0  # 关闭冷却期，仅验证阈值去重逻辑
+        if "fail_count" in key:
+            return 0
+        return fallback
+
+    def fake_increment(db_path, lt):
+        return 1101  # 远超阈值
+
+    monkeypatch.setattr("alerts.alert_service._cfg", fake_cfg)
+    monkeypatch.setattr("alerts.alert_service.increment_crawler_fail_count", fake_increment)
+
+    result = alert_crawler_failure("fake", 1, "超时错误")
+    assert result is False  # 超过阈值后不再发送
+
+
+def test_alert_crawler_cooldown_suppression(monkeypatch):
+    """冷却期内不重复发送报警。"""
+    import time
+    from alerts.alert_service import alert_crawler_failure, _alert_last_sent
+
+    # 预设上次发送时间为"现在"，冷却期 3600 秒
+    _alert_last_sent["crawler_failure_2"] = time.time()
+
+    def fake_cfg(db_path, key, fallback):
+        if key == "alert.crawler_retry_threshold":
+            return 3
+        if key == "alert.cooldown_seconds":
+            return 3600
+        if "fail_count" in key:
+            return 0
+        return fallback
+
+    def fake_increment(db_path, lt):
+        return 3  # 刚好等于阈值
+
+    monkeypatch.setattr("alerts.alert_service._cfg", fake_cfg)
+    monkeypatch.setattr("alerts.alert_service.increment_crawler_fail_count", fake_increment)
+
+    result = alert_crawler_failure("fake", 2, "冷却期测试")
+    assert result is False  # 冷却期内，抑制发送
+
+
 # ── SMTP 配置加载测试 ─────────────────────────────────
 
 

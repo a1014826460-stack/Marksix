@@ -463,6 +463,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "爬虫连续失败次数达到此阈值后触发报警。",
         "is_secret": 0,
     },
+    "alert.cooldown_seconds": {
+        "value": 3600,
+        "value_type": "int",
+        "description": "报警冷却期（秒）。同一报警标识符在此时间内不会重复发送邮件。默认 3600（1 小时）。",
+        "is_secret": 0,
+    },
     "alert.draw_yellow_timeout_seconds": {
         "value": 30,
         "value_type": "int",

@@ -1,33 +1,108 @@
-# 六合彩彩票数据管理系统 - 部署指南
+# Liuhecai 部署指南
 
-> 适用于 **Ubuntu 20.04 / 22.04 / 24.04 LTS**。本文以当前仓库实际结构为准，默认按“普通部署用户 + sudo”方式编写。
+适用于 Ubuntu 20.04 / 22.04 / 24.04 LTS。
+
+当前仓库已经支持两种可落地的部署方式：
+
+- 无域名 / 仅服务器 IP / HTTP
+- 有域名 / HTTPS
+
+本文档以仓库当前实际文件为准，包括：
+
+- [docker-compose.yml](/d:/pythonProject/outsource/Liuhecai/docker-compose.yml)
+- [deploy/deploy.sh](/d:/pythonProject/outsource/Liuhecai/deploy/deploy.sh)
+- [deploy/verify.sh](/d:/pythonProject/outsource/Liuhecai/deploy/verify.sh)
+- [deploy/nginx.conf](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.conf)
+- [deploy/nginx.domain.ssl.conf.example](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.domain.ssl.conf.example)
+- [deploy/nginx.www.shengshi8800.ssl.conf.example](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.www.shengshi8800.ssl.conf.example)
 
 ## 概览
 
-当前默认部署方式是：
+系统由 5 个容器组成：
 
-- `Nginx` 对外暴露 `80`
-- `frontend` 对外承载页面和前端兼容 API
-- `backend-admin` 对外承载后台管理界面
-- `python-api` 只监听宿主机 `127.0.0.1:8000`
-- `postgres` 只监听宿主机 `127.0.0.1:5432`
+- `postgres`
+- `python-api`
+- `backend-admin`
+- `frontend`
+- `nginx`
 
-这意味着：
+对外访问入口：
 
-- 外部用户直接访问：`http://服务器IP/`
-- 外部后台入口：`http://服务器IP/fackyou/login`
-- 外部 `/api/*` 是前端兼容 API，不是裸 Python API
-- Python 原生 API 主要供容器内部和服务器本机使用：`http://127.0.0.1:8000/api/*`
+- `/` -> `frontend`
+- `/api/*` -> `frontend` 的兼容 API 层
+- `/fackyou/*` -> `backend-admin`
+- `/uploads/*` -> `python-api`
+- `/health` -> `python-api:/api/health`
+
+宿主机本机访问：
+
+- `http://127.0.0.1:8000/health`
+- `http://127.0.0.1:8000/api/health`
+- `127.0.0.1:5432`
+
+## 两种部署模式
+
+### 1. 无域名 / 服务器 IP / HTTP
+
+适用场景：
+
+- 刚上服务器
+- 还没有域名
+- 先验证业务能跑通
+
+必须使用：
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.conf
+PUBLIC_HOST=你的服务器IP
+PUBLIC_SCHEME=http
+NGINX_EXPECT_HTTPS=0
+```
+
+特点：
+
+- 直接通过服务器 IP 访问
+- 不要求证书
+- 默认只走 HTTP
+
+### 2. 有域名 / HTTPS
+
+适用场景：
+
+- 已经有正式域名
+- 已完成 DNS 解析
+- 已准备证书
+
+必须使用：
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.conf.local
+PUBLIC_HOST=www.example.com
+PUBLIC_SCHEME=https
+NGINX_EXPECT_HTTPS=1
+```
+
+并且必须存在证书文件：
+
+```text
+deploy/ssl/fullchain.pem
+deploy/ssl/privkey.pem
+```
+
+说明：
+
+- `deploy/deploy.sh` 会在启动前校验 HTTPS 模式是否真的满足条件
+- 如果你开了 `NGINX_EXPECT_HTTPS=1`，但还在用默认 `deploy/nginx.conf`，脚本会直接报错
 
 ## 前置要求
 
 - Ubuntu 20.04 / 22.04 / 24.04 LTS
-- 至少 4 GB 内存，推荐 8 GB
+- 建议 4 GB 内存起步，8 GB 更稳
 - 至少 20 GB 可用磁盘
-- 能访问外网，用于拉取 Docker 镜像和依赖
-- 一个可使用 `sudo` 的普通用户
+- 能访问外网
+- 当前用户可使用 `sudo`
 
-建议先完成系统基础准备：
+基础环境准备：
 
 ```bash
 sudo apt update
@@ -36,21 +111,14 @@ sudo apt install -y ca-certificates curl git nano dnsutils ufw
 sudo timedatectl set-timezone Asia/Hong_Kong
 ```
 
-说明：
-
-- `git` 用于拉取仓库
-- `curl` 用于检查服务和安装 Docker
-- `dnsutils` 提供 `dig` / `nslookup`
-- `ufw` 用于可选的主机防火墙配置
-
-建议把项目统一部署到固定目录，例如 `/opt/Liuhecai`：
+推荐部署目录：
 
 ```bash
 sudo install -d -m 755 /opt/Liuhecai
 sudo chown "$USER":"$USER" /opt/Liuhecai
 ```
 
-安装 Docker 与 Compose：
+## 安装 Docker
 
 ```bash
 curl -fsSL https://get.docker.com -o get-docker.sh
@@ -59,98 +127,109 @@ sudo sh get-docker.sh
 sudo apt update
 sudo apt install -y docker-compose-plugin
 
-sudo usermod -aG docker $USER
-echo "请重新登录当前 shell，或重新 SSH 登录一次，让 docker 用户组生效"
+sudo usermod -aG docker "$USER"
+```
 
+重新登录 shell 或重新 SSH 登录后执行：
+
+```bash
 docker --version
 docker compose version
 docker info
 ```
 
-如果 `docker info` 失败，再执行：
+如果 `docker info` 失败：
 
 ```bash
 sudo systemctl enable --now docker
 docker info
 ```
 
-## 快速部署
-
-### 1. 获取项目
+## 获取项目
 
 ```bash
 git clone https://github.com/a1014826460-stack/Marksix.git /opt/Liuhecai
 cd /opt/Liuhecai
 ```
 
-### 2. 配置环境变量
+## 配置 `.env`
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-最少修改：
+至少要修改：
 
 ```ini
 POSTGRES_PASSWORD=请设置强密码
 LOTTERY_SITE_ID=1
 ```
 
-说明：
+### 无域名模式示例
+
+```ini
+POSTGRES_PASSWORD=请设置强密码
+LOTTERY_SITE_ID=1
+
+NGINX_CONF_SOURCE=./deploy/nginx.conf
+PUBLIC_HOST=123.123.123.123
+PUBLIC_SCHEME=http
+NGINX_EXPECT_HTTPS=0
+```
+
+### 有域名模式示例
+
+```ini
+POSTGRES_PASSWORD=请设置强密码
+LOTTERY_SITE_ID=1
+
+NGINX_CONF_SOURCE=./deploy/nginx.conf.local
+PUBLIC_HOST=www.example.com
+PUBLIC_SCHEME=https
+NGINX_EXPECT_HTTPS=1
+```
+
+补充说明：
 
 - `POSTGRES_PASSWORD` 必改
 - `LOTTERY_SITE_ID` 决定前台默认站点
-- 根目录 `.env` 主要给 `docker compose` 使用
-- `.env.example` 中的 `DATABASE_URL` 仅作为参考；`docker-compose.yml` 会在容器内部注入正式值
-- 首次部署前，确认 `.env` 中不再保留 `change_me_in_production`
+- `PUBLIC_HOST` 供 `deploy/verify.sh` 做访问验证
+- `PUBLIC_SCHEME` 必须与实际暴露协议一致
+- `NGINX_EXPECT_HTTPS=1` 时，验证脚本会按 HTTPS 检查
 
-### 3. 执行一键部署
+## 快速部署
 
 ```bash
 chmod +x deploy/deploy.sh
 ./deploy/deploy.sh
 ```
 
-脚本会：
+脚本会执行：
 
 1. 检查 Docker / Docker Compose / Docker daemon
 2. 准备 `.env`
-3. 构建镜像
-4. 启动 `postgres`、`python-api`、`backend-admin`、`frontend`、`nginx`
-5. 首次导入 `fixed_data`
+3. 校验当前部署模式
+4. 构建镜像
+5. 启动容器
+6. 等待健康检查通过
+7. 首次导入 `fixed_data`（如需要）
 
-默认访问地址：
-
-- 前端站点：`http://服务器IP/`
-- 后台管理：`http://服务器IP/fackyou/login`
-- 前端兼容 API：`http://服务器IP/api/...`
-
-服务器本机可直接访问：
-
-- Python API 健康检查：`http://127.0.0.1:8000/api/health`
-- PostgreSQL：`127.0.0.1:5432`
-
-### 4. 验证部署
+## 快速验证
 
 ```bash
 chmod +x deploy/verify.sh
 ./deploy/verify.sh
 ```
 
-如果你想人工再确认一次，至少检查：
+验证脚本现在支持两种模式：
 
-```bash
-docker compose ps
-curl http://localhost/health
-curl http://localhost/api/latest-draw
-docker compose logs --tail 100 nginx
-docker compose logs --tail 100 python-api
-```
+- HTTP/IP 模式：按 `http://PUBLIC_HOST/...` 检查
+- HTTPS/域名模式：按 `https://PUBLIC_HOST/...` 检查，并使用 `curl --resolve` 映射到本机 `127.0.0.1`
 
 ## 手动部署
 
-### 1. 构建镜像
+### 构建镜像
 
 ```bash
 docker compose build
@@ -164,27 +243,26 @@ docker compose build backend-admin
 docker compose build frontend
 ```
 
-### 2. 启动服务
+### 启动服务
 
 ```bash
 docker compose up -d
 docker compose ps
+```
+
+### 查看日志
+
+```bash
 docker compose logs -f
+docker compose logs --tail 200 frontend
+docker compose logs --tail 200 backend-admin
+docker compose logs --tail 200 python-api
+docker compose logs --tail 200 nginx
 ```
 
-预期服务：
+## 首次数据初始化
 
-```text
-postgres
-python-api
-backend-admin
-frontend
-nginx
-```
-
-### 3. 初始化数据
-
-导入 `fixed_data`：
+### 导入 `fixed_data`
 
 ```bash
 docker compose exec python-api python /app/src/tools/import_fixed_data.py \
@@ -192,182 +270,53 @@ docker compose exec python-api python /app/src/tools/import_fixed_data.py \
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
-说明：首次部署建议执行；如果库里已存在 `fixed_data` 表，可跳过。
-
-规范化 `mode_payload_*` 表：
+### 规范化 `mode_payload_*`
 
 ```bash
 docker compose exec python-api python /app/src/utils/normalize_payload_tables.py \
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
-说明：可重复执行，主要用于补齐和规范化相关表结构。
-
-生成文本历史映射：
+### 生成文本历史映射
 
 ```bash
 docker compose exec python-api python /app/src/utils/build_text_history_mappings.py \
   --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
 ```
 
-说明：可重复执行；如果你导入了新的基础数据，建议重跑一次。
+## 无域名部署说明
 
-## 服务入口说明
+如果你暂时没有域名，推荐直接使用默认的 [deploy/nginx.conf](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.conf)。
 
-### 对外入口
+访问方式：
 
 - `http://服务器IP/`
-  - 前台站点
 - `http://服务器IP/fackyou/login`
-  - 后台管理
-- `http://服务器IP/api/latest-draw`
-  - 前端兼容 API 示例
-
-### 服务器本机入口
-
-- `http://127.0.0.1:8000/health`
-  - Python 基础健康检查
-- `http://127.0.0.1:8000/api/health`
-  - Python API 健康检查
-
-### 当前代理关系
-
-- `/` -> `frontend:3000`
-- `/api/*` -> `frontend:3000`
-- `/fackyou*` -> `backend-admin:3002`（直接匹配 Next.js `basePath=/fackyou`）
-- `/uploads/*` -> `python-api:8000`
-- `/health` -> `python-api:8000/api/health`
+- `http://服务器IP/health`
 
 注意：
 
-- 当前外部 `/api/*` 不是直接转发到 Python，而是先走前端 Next.js 的兼容层
-- 后台里调用 Python API 的入口是 `/fackyou/api/python/*`
-- backend-admin 的 Next.js `basePath` 设置为 `/fackyou`，健康检查和 nginx 代理均已适配
+- 默认 `docker-compose.yml` 暴露了 `443`，但默认 `deploy/nginx.conf` 不监听 `443`
+- 没有域名时，不建议强行做公网 HTTPS
+- 如果用 IP + 自签名证书，浏览器通常会提示不受信任
 
-## 数据迁移
+## 域名 + HTTPS 部署
 
-### SQLite -> PostgreSQL
+### 第 1 步：做 DNS 解析
 
-当前这版重构后的仓库，**不再包含可直接执行的一键 SQLite -> PostgreSQL 迁移脚本**。
+示例：
 
-也就是说：
+- `A` 记录：`@` -> 服务器公网 IP
+- `A` 记录：`www` -> 服务器公网 IP
 
-- `RUN_SQLITE_MIGRATION=1 ./deploy/deploy.sh` 不会执行实际迁移
-- 文档中旧的 `migrate_sqlite_to_postgres.py` 路径已失效
-
-如果你当前手里只有历史 SQLite 数据，有两个可行方案：
-
-1. 在旧工具或旧分支中先完成 SQLite -> PostgreSQL 迁移，再把 PostgreSQL 数据导出导入到当前环境。
-2. 让我们单独补一份新的迁移脚本，再迁移。
-
-### PostgreSQL 备份
-
-```bash
-# 纯 SQL
-docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%d).sql
-
-# 自定义格式
-docker compose exec postgres pg_dump -U postgres liuhecai -F c -f /tmp/backup.dump
-docker compose cp postgres:/tmp/backup.dump ./backup_$(date +%Y%m%d).dump
-```
-
-### PostgreSQL 恢复
-
-```bash
-# 从 SQL 恢复
-docker compose exec -T postgres psql -U postgres liuhecai < backup_20250101.sql
-
-# 从自定义 dump 恢复
-docker compose cp ./backup_20250101.dump postgres:/tmp/restore.dump
-docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
-```
-
-### 本地 PostgreSQL 导入服务器
-
-本地导出：
-
-```bash
-# 本地也是 Docker PostgreSQL
-docker compose exec -T postgres pg_dump -U postgres liuhecai -F c > liuhecai_backup.dump
-
-# 本地是原生 PostgreSQL
-pg_dump -h localhost -U postgres -d liuhecai -F c -f liuhecai_backup.dump
-```
-
-上传到服务器：
-
-```bash
-scp liuhecai_backup.dump deploy@你的服务器IP:/opt/Liuhecai/
-```
-
-服务器导入：
-
-```bash
-ssh deploy@你的服务器IP
-cd /opt/Liuhecai
-docker compose cp liuhecai_backup.dump postgres:/tmp/restore.dump
-docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
-```
-
-说明：
-
-- 推荐使用普通部署用户，不要默认使用 `root`
-- `pg_restore --clean --if-exists` 会覆盖已有对象，导入前请先备份
-
-## 仅用 IP 访问
-
-如果你暂时没有域名，可以直接使用默认 `deploy/nginx.conf` 通过服务器 IP 访问：
-
-- 前台：`http://服务器IP/`
-- 后台：`http://服务器IP/fackyou/login`
-- 健康检查：`http://服务器IP/health`
-
-限制说明：
-
-- 默认仅启用 HTTP；虽然 `docker-compose.yml` 暴露了 `443`，但默认 `deploy/nginx.conf` 不监听 `443`
-- 没有域名时，通常无法申请公开可信的 Let's Encrypt 证书
-- 如果强行给 IP 配自签 HTTPS，浏览器会提示证书不受信任，不适合正式公网访问
-- 当前文档覆盖的是普通 HTTP/HTTPS 反向代理；如果后续接入 WebSocket，需要额外补充 `Upgrade` / `Connection` 头配置
-
-## 域名绑定与 HTTPS
-
-默认的 `deploy/nginx.conf` 是通用 HTTP 配置，适合：
-
-- 先用服务器 IP 跑通项目
-- 不在首次部署时强依赖证书
-
-如果后续要绑定域名并启用 HTTPS，按下面做。
-
-### 1. 域名解析
-
-在你的域名服务商后台添加 DNS 记录：
-
-- `A` 记录：`@` -> 你的服务器公网 IP
-- `A` 记录：`www` -> 你的服务器公网 IP
-
-等解析生效后，在服务器上验证：
+验证：
 
 ```bash
 dig +short example.com
 dig +short www.example.com
 ```
 
-或：
-
-```bash
-nslookup example.com
-nslookup www.example.com
-```
-
-### 2. 准备证书
-
-推荐使用 Let's Encrypt + Certbot 获取证书。
-
-首次申请证书前，先确保：
-
-- 域名已经正确解析到当前服务器
-- 云安全组和主机防火墙已放行 `80/tcp`
-- 80 端口没有被别的进程长期占用
+### 第 2 步：申请证书
 
 安装 Certbot：
 
@@ -376,30 +325,23 @@ sudo apt update
 sudo apt install -y certbot
 ```
 
-如果当前 Nginx 容器已占用 80 端口，可临时停掉它后再申请：
+如果当前 `nginx` 容器占用了 80 端口，可以暂时停掉：
 
 ```bash
 cd /opt/Liuhecai
 docker compose stop nginx
+
 sudo certbot certonly --standalone \
   -d example.com \
   -d www.example.com \
   --agree-tos \
   -m you@example.com \
   --non-interactive
+
 docker compose start nginx
 ```
 
-申请成功后，把证书文件放到：
-
-```text
-deploy/ssl/fullchain.pem
-deploy/ssl/privkey.pem
-```
-
-如果你用 Certbot，常见做法是把宿主机上的证书复制或软链接到 `deploy/ssl/`。
-
-例如：
+### 第 3 步：放置证书
 
 ```bash
 sudo cp /etc/letsencrypt/live/example.com/fullchain.pem deploy/ssl/fullchain.pem
@@ -407,53 +349,44 @@ sudo cp /etc/letsencrypt/live/example.com/privkey.pem deploy/ssl/privkey.pem
 sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
 ```
 
-### 3. 使用 HTTPS Nginx 配置
+### 第 4 步：准备 HTTPS Nginx 配置
 
-仓库里提供了两个 SSL 配置示例：
-
-| 文件 | 适用场景 |
-|------|---------|
-| `deploy/nginx.domain.ssl.conf.example` | 通用域名模板，需自行替换域名 |
-| `deploy/nginx.www.shengshi8800.ssl.conf.example` | 已预配 `www.shengshi8800.com`，直接可用 |
-
-**如果使用 `www.shengshi8800.com` 域名**：
-
-```bash
-cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf.local
-```
-
-配置中已包含：
-- `shengshi8800.com` -> `www.shengshi8800.com` 重定向（HTTP + HTTPS）
-- `/` 默认重定向到 `/?t=3`
-- `/?type=N` 自动转换为 `/?t=N`
-
-**如果使用其他域名**：
+通用域名模板：
 
 ```bash
 cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf.local
 ```
 
-然后把其中的：
+如果使用 `www.shengshi8800.com`：
+
+```bash
+cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf.local
+```
+
+如使用通用模板，请把里面的：
 
 - `example.com`
 - `www.example.com`
 
 替换成你的真实域名。
 
-### 4. 先检查配置，再加载 Nginx
+### 第 5 步：更新 `.env`
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.conf.local
+PUBLIC_HOST=www.example.com
+PUBLIC_SCHEME=https
+NGINX_EXPECT_HTTPS=1
+```
+
+### 第 6 步：检查并重启
 
 ```bash
 docker compose exec nginx nginx -t
 docker compose restart nginx
 ```
 
-如果你启用了本地生产配置，`.env` 里再加一行：
-
-```ini
-NGINX_CONF_SOURCE=./deploy/nginx.conf.local
-```
-
-### 5. 验证 HTTPS
+### 第 7 步：验证 HTTPS
 
 ```bash
 curl -I http://example.com
@@ -462,51 +395,84 @@ curl -I https://www.example.com
 curl -k https://www.example.com/health
 ```
 
-预期结果：
+预期：
 
-- `http://example.com` 返回 `301/308` 跳转到 HTTPS
-- `https://example.com` 跳转到主域名 `https://www.example.com`
+- `http://example.com` 返回 `301` 或 `308`
+- `https://example.com` 跳转到 `https://www.example.com`
 - `https://www.example.com/health` 返回 `200`
 
-### 6. 配置证书续期
+## 推荐切换顺序
 
-Let's Encrypt 证书默认有效期较短，建议配置自动续期：
+推荐按这个顺序上线，最稳：
 
-```bash
-sudo crontab -e
-```
-
-加入：
-
-```cron
-15 3 * * * certbot renew --quiet --deploy-hook 'cd /opt/Liuhecai && docker compose restart nginx'
-```
-
-也可以先手动演练一次：
-
-```bash
-sudo certbot renew --dry-run
-```
-
-### 7. 推荐切换顺序
-
-推荐按这个顺序做，最稳：
-
-1. 先按默认 HTTP 配置用服务器 IP 跑通
-2. 再把域名解析到服务器
-3. 申请证书并放入 `deploy/ssl/`
+1. 先用无域名 / IP / HTTP 模式把项目跑通
+2. 再配置 DNS
+3. 再申请证书
 4. 再切换到 `deploy/nginx.conf.local`
-5. 验证 HTTPS 正常后，再考虑启用 HSTS
+5. 再把 `.env` 改成 HTTPS 模式
+6. 最后执行 `./deploy/deploy.sh` 和 `./deploy/verify.sh`
+
+## 健康检查
+
+当前健康检查入口：
+
+- `python-api`：`http://127.0.0.1:8000/health`
+- `python-api API`：`http://127.0.0.1:8000/api/health`
+- `frontend`：容器内 `http://127.0.0.1:3000/health`
+- `backend-admin`：容器内 `http://127.0.0.1:3002/fackyou/health`
+- `nginx`：对外 `/health`
+
+说明：
+
+- `frontend` 和 `backend-admin` 已改为轻量健康路由，不再依赖完整页面渲染
+- 这能减少部署时被“页面级探针”误判为不健康的概率
+
+## SQLite 迁移说明
+
+当前仓库不再包含可直接执行的一键 SQLite -> PostgreSQL 迁移脚本。
+
+也就是说：
+
+- `RUN_SQLITE_MIGRATION=1 ./deploy/deploy.sh` 不会自动完成真实迁移
+- 如果你只有旧的 SQLite 数据，需要先在旧工具或旧分支中完成迁移，再导入 PostgreSQL
+
+## PostgreSQL 备份
+
+```bash
+docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%d).sql
+```
+
+自定义格式：
+
+```bash
+docker compose exec postgres pg_dump -U postgres liuhecai -F c -f /tmp/backup.dump
+docker compose cp postgres:/tmp/backup.dump ./backup_$(date +%Y%m%d).dump
+```
+
+## PostgreSQL 恢复
+
+SQL 恢复：
+
+```bash
+docker compose exec -T postgres psql -U postgres liuhecai < backup_20250101.sql
+```
+
+自定义 dump 恢复：
+
+```bash
+docker compose cp ./backup_20250101.dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
+```
 
 ## 运维常用命令
 
 ```bash
 docker compose ps
 docker compose logs -f
-docker compose logs -f python-api
-docker compose logs -f postgres
 docker compose restart python-api
 docker compose restart frontend
+docker compose restart backend-admin
+docker compose restart nginx
 docker compose down
 docker compose down -v
 git pull
@@ -516,8 +482,8 @@ docker compose up -d
 
 注意：
 
-- `docker compose down -v` 会删除 Compose 卷，通常意味着会清空 PostgreSQL 数据卷
-- `git pull` 后如果镜像内容变了，记得执行 `docker compose build && docker compose up -d`
+- `docker compose down -v` 可能删除 PostgreSQL 数据卷
+- 生产执行前请确认备份
 
 进入容器：
 
@@ -527,27 +493,15 @@ docker compose exec postgres psql -U postgres -d liuhecai
 docker compose exec nginx nginx -T
 ```
 
-## 健康检查
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/api/health
-curl http://localhost/health
-curl http://localhost/api/latest-draw
-docker compose exec postgres pg_isready -U postgres -d liuhecai
-```
-
-启用 HTTPS 后再检查：
-
-```bash
-curl -k https://localhost/health
-```
-
 ## 防火墙
 
-如果服务器前面还有云厂商安全组，请先同时放行 `22`、`80`、`443`，再启用 UFW。
+如果服务器前面还有云厂商安全组，请同时放行：
 
-如果 SSH 不是默认 22 端口，请把下面的 `22/tcp` 替换成真实端口；更稳妥的写法是直接放行 `OpenSSH`：
+- `22/tcp`
+- `80/tcp`
+- `443/tcp`
+
+然后再启用 UFW：
 
 ```bash
 sudo ufw allow OpenSSH
@@ -559,52 +513,55 @@ sudo ufw status verbose
 
 ## 故障排查
 
-### 服务启动失败
+### 1. 服务启动失败
 
 ```bash
-docker compose logs
-docker compose logs python-api --tail 100
-docker compose logs backend-admin --tail 100
-docker compose logs frontend --tail 100
-docker compose logs nginx --tail 100
+docker compose ps
+docker compose logs --tail 100 python-api
+docker compose logs --tail 100 backend-admin
+docker compose logs --tail 100 frontend
+docker compose logs --tail 100 nginx
 ```
 
-### Docker daemon 未启动
+### 2. Docker daemon 未启动
 
 ```bash
 sudo systemctl status docker
 sudo systemctl start docker
 ```
 
-### 访问出现 502
+### 3. 访问 502
 
 ```bash
 docker compose restart nginx
-docker compose logs nginx --tail 100
+docker compose logs --tail 100 nginx
 ```
 
-### 数据库连接失败
+### 4. 数据库连接失败
 
 ```bash
 docker compose exec postgres pg_isready -U postgres -d liuhecai
 ```
 
-### 端口冲突
+### 5. 端口冲突
 
 ```bash
 sudo ss -tlnp | grep -E ':(80|443|3000|3002|5432|8000)'
 ```
 
-### 镜像构建失败
+### 6. 镜像构建失败
 
 ```bash
 docker compose build --no-cache
+```
+
+如果需要清理：
+
+```bash
 docker system prune -a
 ```
 
-注意：`docker system prune -a` 会删除未使用镜像和缓存，请先确认机器上没有其他依赖这些镜像的项目。
-
-### 磁盘空间不足
+### 7. 磁盘空间不足
 
 ```bash
 df -h
@@ -612,7 +569,10 @@ docker system prune -a --volumes
 sudo journalctl --vacuum-size=200M
 ```
 
-注意：`docker system prune -a --volumes` 可能删除未使用卷，执行前务必确认备份。
+注意：
+
+- `docker system prune -a --volumes` 可能删除未使用卷
+- 操作前请确认备份
 
 ## 目录结构
 
@@ -625,25 +585,12 @@ Liuhecai/
 ├── .env.example
 ├── DEPLOY.md
 ├── backend/
-│   ├── requirements.txt
-│   ├── next.config.mjs
-│   ├── src/
-│   │   ├── app.py
-│   │   ├── config.yaml
-│   │   ├── db.py
-│   │   ├── crawler/
-│   │   ├── predict/
-│   │   ├── tools/
-│   │   └── utils/
-│   └── data/
-│       ├── fixed_data.json
-│       ├── lottery_modes.sqlite3
-│       ├── Images/
-│       └── lottery_data/
 ├── frontend/
 └── deploy/
     ├── deploy.sh
+    ├── verify.sh
     ├── nginx.conf
     ├── nginx.domain.ssl.conf.example
+    ├── nginx.www.shengshi8800.ssl.conf.example
     └── ssl/
 ```
