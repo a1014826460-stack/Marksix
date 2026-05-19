@@ -1862,15 +1862,15 @@
         <div class='list-title'>属性知识</div>
         <div id="legacy-attribute-gallery"></div>
         <script>
-            let runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
-            let img1 = runtime && typeof runtime.buildAppUrl === 'function'
-                ? runtime.buildAppUrl('/uploads/image/20250322/1742580086567063.png')
+            var galleryRuntime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+            var img1 = galleryRuntime && typeof galleryRuntime.buildAppUrl === 'function'
+                ? galleryRuntime.buildAppUrl('/uploads/image/20250322/1742580086567063.png')
                 : httpApi + '/uploads/image/20250322/1742580086567063.png';
-            let img2 = runtime && typeof runtime.buildAppUrl === 'function'
-                ? runtime.buildAppUrl('/uploads/image/20250322/1742580119746508.jpg')
+            var img2 = galleryRuntime && typeof galleryRuntime.buildAppUrl === 'function'
+                ? galleryRuntime.buildAppUrl('/uploads/image/20250322/1742580119746508.jpg')
                 : httpApi + '/uploads/image/20250322/1742580119746508.jpg';
-            let img3 = runtime && typeof runtime.buildAppUrl === 'function'
-                ? runtime.buildAppUrl('/uploads/image/20250322/1742580130762983.jpg')
+            var img3 = galleryRuntime && typeof galleryRuntime.buildAppUrl === 'function'
+                ? galleryRuntime.buildAppUrl('/uploads/image/20250322/1742580130762983.jpg')
                 : httpApi + '/uploads/image/20250322/1742580130762983.jpg';
             var galleryHtml = `<img src="${img1}" width="100%"/>` +
                 `<img src="${img2}" width="100%"/>` +
