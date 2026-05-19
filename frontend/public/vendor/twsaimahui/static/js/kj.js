@@ -62,7 +62,7 @@ document.write(`
 	.waibox a:link {text-decoration: none;}
 	.waibox .location_to {padding: 10px;background: beige;border-radius: 15px;color: #f44336;font-weight: 700;letter-spacing: 1px;box-shadow: 2px 2px 1px #f44336;}
 	</style>
-	<a class="location_to" href="javascript:void(0)" target="_self"><span style="display:inline-block;vertical-align:middle;width:20px;height:20px;margin-right:8px;border-radius:50%;background:#ffb300;"></span>台湾赛马会永久网站www.twsaimahui.com</a>
+	<a class="location_to" href="javascript:void(0)" target="_self"><span style="display:inline-block;vertical-align:middle;width:20px;height:20px;margin-right:8px;border-radius:50%;background:#ffb300;"></span>台湾赛马会站点入口</a>
 	</div>
 
 `);

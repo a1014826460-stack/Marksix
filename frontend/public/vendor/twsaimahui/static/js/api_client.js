@@ -16,13 +16,16 @@ window.apiClient = {
     var opts = options || {};
     var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
     var isKaijiang = runtime && typeof runtime.isKaijiangRequest === 'function' && runtime.isKaijiangRequest(url);
+    var finalParams = !isKaijiang && runtime && typeof runtime.withSiteParams === 'function'
+      ? runtime.withSiteParams(params)
+      : params;
     var requestUrl = isKaijiang
       ? runtime.buildKaijiangUrl(url, params)
       : (window.httpApi || '') + url;
     var request = $.ajax({
       type: 'GET',
       url: requestUrl,
-      data: isKaijiang ? undefined : params,
+      data: isKaijiang ? undefined : finalParams,
       dataType: 'json',
       timeout: opts.timeout || 10000
     });

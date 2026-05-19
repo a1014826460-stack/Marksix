@@ -12,9 +12,9 @@
     <title> 台湾赛马会 </title>
     <meta name="keywords" content="72293.com 189393.com 389393.com 519393.com 679393.com">
     <meta name="description" content="72293.com 189393.com 389393.com 519393.com 679393.com">
-    <meta name="mobile-agent" content="format=xhtml;url=/">
-    <meta name="mobile-agent" content="format=html5;url=/">
-    <link rel="alternate" media="only screen and(max-width: 640px)" href="/">
+    <meta name="mobile-agent" content="format=xhtml;url=.">
+    <meta name="mobile-agent" content="format=html5;url=.">
+    <link rel="alternate" media="only screen and(max-width: 640px)" href=".">
 <!--    <script src="https://libs.baidu.com/jquery/1.10.2/jquery.min.js"></script>-->
     <script src="static/js/legacy_runtime.js"></script>
     <script src="static/js/jquery.min.js"></script>
@@ -310,9 +310,15 @@
         var config = window.LOTTERY_CONFIGS[savedKey];
 
         var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+        var sharedApiOrigin = runtime && typeof runtime.buildAppUrl === 'function'
+            ? runtime.buildAppUrl('')
+            : '';
         var sharedHttpApiBase = runtime && typeof runtime.getHttpApiBase === 'function'
             ? runtime.getHttpApiBase()
             : config.apiBase;
+        if (runtime) {
+            window.__TWSAIMAHUI_SHARED_API_ORIGIN__ = sharedApiOrigin;
+        }
 
         window.appState = {
             lotteryKey: savedKey,
@@ -411,9 +417,15 @@
 
             // 更新全局状态
             var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
+            var sharedApiOrigin = runtime && typeof runtime.buildAppUrl === 'function'
+                ? runtime.buildAppUrl('')
+                : '';
             var sharedHttpApiBase = runtime && typeof runtime.getHttpApiBase === 'function'
                 ? runtime.getHttpApiBase()
                 : config.apiBase;
+            if (runtime) {
+                window.__TWSAIMAHUI_SHARED_API_ORIGIN__ = sharedApiOrigin;
+            }
 
             window.appState = {
                 lotteryKey: lotteryKey,
@@ -1085,7 +1097,7 @@
 
 
 
-        <script type='text/javascript' src='static/js/pub.js'></script>
+        <script type='text/javascript' src='static/js/site_nav.js'></script>
 
 
 
@@ -1792,11 +1804,15 @@
             }
             showOrHide(__tcindex);
         }
+        var runtime = window.LEGACY_TWSAIMAHUI_RUNTIME || null;
         $.ajax({
-            url: (window.LEGACY_TWSAIMAHUI_RUNTIME && typeof window.LEGACY_TWSAIMAHUI_RUNTIME.buildAppUrl === 'function'
-                ? window.LEGACY_TWSAIMAHUI_RUNTIME.buildAppUrl(`/api/index/notice?web=${web}`)
-                : httpApi + `/api/index/notice?web=${web}`),
+            url: runtime && typeof runtime.buildAppUrl === 'function'
+                ? runtime.buildAppUrl('/api/index/notice')
+                : httpApi + '/api/index/notice',
             type: 'GET',
+            data: runtime && typeof runtime.withSiteParams === 'function'
+                ? runtime.withSiteParams({ web: web })
+                : { web: web },
             dataType: 'json',
             success: function (res) {
     

@@ -93,6 +93,15 @@
     return origin + buildAppPath(path);
   }
 
+  function cloneSiteParams() {
+    return {
+      source: siteSource,
+      domain: currentHost,
+      site_key: SITE_KEY,
+      hostname: currentHost
+    };
+  }
+
   function buildVendorPath(path) {
     var cleanPath = String(path || "").replace(/^\/+/, "");
     return buildAppPath("/vendor/twsaimahui/" + cleanPath);
@@ -209,6 +218,18 @@
     return buildAppUrl("/history?" + searchParams.toString());
   }
 
+  function withSiteParams(data) {
+    var searchParams = new URLSearchParams();
+    appendSearchParams(searchParams, data);
+    extendSiteParams(searchParams);
+
+    var output = {};
+    searchParams.forEach(function (value, key) {
+      output[key] = value;
+    });
+    return output;
+  }
+
   var origin = resolveOrigin();
   var appBasePath = inferAppBasePath();
   var appBaseUrl = normalizeBase(origin) + appBasePath;
@@ -229,6 +250,9 @@
     readStringCandidate(
       window.__LEGACY_KAIJIANG_API_BASE__,
       window.__TWSAIMAHUI_KAIJIANG_API_BASE__,
+      readStringCandidate(window.__TWSAIMAHUI_SHARED_API_ORIGIN__, readQuery("shared_api_origin"))
+        ? normalizeBase(readStringCandidate(window.__TWSAIMAHUI_SHARED_API_ORIGIN__, readQuery("shared_api_origin"))) + "/api/kaijiang"
+        : "",
       readQuery("kaijiang_api_base")
     )
   ) || buildAppUrl("/api/kaijiang");
@@ -248,13 +272,9 @@
       return kaijiangApiBase;
     },
     getSiteParams: function () {
-      return {
-        source: siteSource,
-        domain: currentHost,
-        site_key: SITE_KEY,
-        hostname: currentHost
-      };
+      return cloneSiteParams();
     },
+    withSiteParams: withSiteParams,
     buildAppPath: buildAppPath,
     buildAppUrl: buildAppUrl,
     buildVendorPath: buildVendorPath,

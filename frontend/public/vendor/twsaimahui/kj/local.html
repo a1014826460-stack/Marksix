@@ -308,7 +308,7 @@
         var historyLink = $("historyLink");
         if (historyLink) {
           historyLink.href = runtime && typeof runtime.buildHistoryUrl === "function"
-            ? runtime.buildHistoryUrl(String(lotteryType))
+            ? runtime.buildHistoryUrl(String(lotteryType), runtime.getSiteParams ? runtime.getSiteParams() : null)
             : "/history?type=" + encodeURIComponent(String(lotteryType));
           historyLink.textContent = UI_TEXT.historyLink;
         }
