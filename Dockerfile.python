@@ -1,14 +1,17 @@
 # ============================================================
-# Python API 服务 Dockerfile
-# 基于 Python 3.12，运行彩票数据处理与预测 API
+# Python API service Dockerfile
+# Based on Python 3.12, runs lottery data processing and API
 # ============================================================
 FROM python:3.12-slim
 
 LABEL maintainer="liuhecai-deploy"
-LABEL description="六合彩彩票数据 Python API 服务"
+LABEL description="Liuhecai Python API service"
 
-# 安装编译依赖和 psycopg 所需库
-RUN apt-get update && \
+ARG APT_MIRROR=deb.debian.org
+
+# Install build dependencies required by psycopg and PostgreSQL client tools.
+RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         libpq-dev \
         postgresql-client \
@@ -18,21 +21,19 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# 安装 Python 依赖
+# Install Python dependencies
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# 复制源码
+# Copy source code
 COPY backend/src/ /app/src/
 
-# 复制数据目录（SQLite、图片等）
+# Copy data directory (SQLite, images, etc.)
 COPY backend/data/ /app/data/
 
-# 确保数据目录存在
+# Ensure data directories exist
 RUN mkdir -p /app/data/Images /app/data/lottery_data
 
-# 暴露 API 端口
 EXPOSE 8000
 
-# 启动 Python API 服务
 CMD ["python", "/app/src/app.py", "--host", "0.0.0.0", "--port", "8000"]

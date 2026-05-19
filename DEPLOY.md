@@ -164,6 +164,10 @@ nano .env
 ```ini
 POSTGRES_PASSWORD=请设置强密码
 LOTTERY_SITE_ID=1
+
+# 构建镜像源（网络不稳时建议配置）
+NPM_REGISTRY=https://registry.npmmirror.com/
+APT_MIRROR=mirrors.aliyun.com
 ```
 
 ### 无域名模式示例
