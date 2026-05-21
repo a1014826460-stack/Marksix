@@ -361,7 +361,7 @@ sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
 cp deploy/nginx.domain.ssl.conf.example deploy/nginx.conf.local
 ```
 
-如果使用 `www.shengshi8800.com`：
+如果使用 `www.tw8800.com`：
 
 ```bash
 cp deploy/nginx.www.shengshi8800.ssl.conf.example deploy/nginx.conf.local

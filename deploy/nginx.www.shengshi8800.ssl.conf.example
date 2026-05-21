@@ -1,6 +1,6 @@
 # ============================================================
 # Example Nginx config for:
-#   https://www.shengshi8800.com/
+#   https://www.tw8800.com/
 #     -> /?t=3
 #
 # Usage:
@@ -15,22 +15,22 @@
 # Apex domain -> canonical www domain over HTTPS
 server {
     listen 80;
-    server_name shengshi8800.com;
-    return 301 https://www.shengshi8800.com$request_uri;
+    server_name tw8800.com;
+    return 301 https://www.tw8800.com$request_uri;
 }
 
 # www domain over HTTP -> canonical HTTPS
 server {
     listen 80;
-    server_name www.shengshi8800.com;
-    return 301 https://www.shengshi8800.com$request_uri;
+    server_name www.tw8800.com;
+    return 301 https://www.tw8800.com$request_uri;
 }
 
 # Apex domain over HTTPS -> canonical www domain
 server {
     listen 443 ssl;
     http2 on;
-    server_name shengshi8800.com;
+    server_name tw8800.com;
 
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
@@ -40,14 +40,14 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
-    return 301 https://www.shengshi8800.com$request_uri;
+    return 301 https://www.tw8800.com$request_uri;
 }
 
 # Main site
 server {
     listen 443 ssl;
     http2 on;
-    server_name www.shengshi8800.com;
+    server_name www.tw8800.com;
 
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
