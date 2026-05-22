@@ -42,6 +42,7 @@ export type PublicHistoryRow = {
   year: string                // 年份
   term: string                // 期数序号
   prediction_text: string     // 预测文本（如 "虎羊"、"红波+绿波"）
+  image_url?: string          // 图片资料路径（带图模块可用）
   result_text: string         // 开奖结果文本（如 "蛇14准"）
   is_opened: boolean          // 是否已开奖（false 表示该期尚未开奖）
   is_correct: boolean | null  // 预测是否正确：true=准, false=不准, null=待开奖

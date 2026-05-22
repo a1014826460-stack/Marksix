@@ -466,5 +466,12 @@ def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
         title="跑马图解（带图）",
     )
     ensure_image_prediction_created_table(conn, modes_id=476)
+    ensure_image_prediction_payload_table(
+        conn,
+        pk_sql,
+        modes_id=478,
+        title="台湾跑马图（带图）",
+    )
+    ensure_image_prediction_created_table(conn, modes_id=478)
     ensure_brain_teaser_prediction_payload_table(conn, pk_sql)
     ensure_brain_teaser_prediction_created_table(conn)

@@ -1,22 +1,26 @@
 from __future__ import annotations
 
-import argparse
+import hashlib
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
-from prediction_generation.mode_478_image import build_mode_478_title_text
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-DEFAULT_SOURCE_ROOT = Path("backend/data/Images/mode_478")
-DEFAULT_FONT_PATH = Path("backend/data/font/MSYH.TTC")
-DEFAULT_TITLE_FONT_PATH = Path("backend/data/font/HYXINGZHITIF-2.TTF")
-DEFAULT_OUTPUT_DIR = Path("backend/data/Images/mode_478/output")
-DEFAULT_TITLE_TEXT = "001-2026 台湾 跑马图"
-DEFAULT_RESULT_PREFIX = "上期开奖号码："
-SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+MODE_478_ID = 478
+MODE_478_TITLE = "台湾跑马图（带图）"
+MODE_478_SOURCE_DIR = _PROJECT_ROOT / "data" / "Images" / "mode_478" / "source"
+MODE_478_OUTPUT_DIR = _PROJECT_ROOT / "data" / "Images" / "mode_478" / "prediction"
+MODE_478_OUTPUT_NAME_TEMPLATE = "mode_478_type{lottery_type}_{year}{term:03d}_web{web_id}.jpg"
+MODE_478_TEXT_FONT_PATH = _PROJECT_ROOT / "data" / "font" / "MSYH.TTC"
+MODE_478_TITLE_FONT_PATH = _PROJECT_ROOT / "data" / "font" / "HYXINGZHITIF-2.TTF"
+MODE_478_SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+MODE_478_DEFAULT_RESULT_TEXT = "01 02 03 04 05 06 07"
+MODE_478_RESULT_PREFIX = "上期开奖号码："
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,13 @@ class TextRegion:
     feather_radius: int = 0
     stroke_width: int = 0
     stroke_fill: tuple[int, int, int, int] = (255, 255, 255, 255)
+
+
+@dataclass(frozen=True)
+class Mode478RenderResult:
+    output_path: Path
+    relative_url: str
+    source_record_id: str
 
 
 TITLE_REGION = TextRegion(
@@ -53,49 +64,21 @@ RESULT_REGION = TextRegion(
 )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Randomly replace two text areas on one mode_478 source image.")
-    parser.add_argument("--source-root", type=Path, default=DEFAULT_SOURCE_ROOT, help="Source image root directory.")
-    parser.add_argument("--output", type=Path, help="Output image path.")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Default output directory.")
-    parser.add_argument("--title", default=DEFAULT_TITLE_TEXT, help="Title text for the top region.")
-    parser.add_argument(
-        "--numbers",
-        default="01 02 03 04 05 06 07",
-        help='Winning numbers shown after "上期开奖号码：".',
-    )
-    parser.add_argument("--font", type=Path, default=DEFAULT_FONT_PATH, help="Font path used to redraw the bottom text.")
-    parser.add_argument(
-        "--title-font",
-        type=Path,
-        default=DEFAULT_TITLE_FONT_PATH,
-        help="Font path used to redraw the title text.",
-    )
-    parser.add_argument("--debug-boxes", action="store_true", help="Draw debug rectangles around edited regions.")
-    return parser.parse_args()
+def _make_seed_int(seed_text: str) -> int:
+    return int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest(), 16) % (2**32)
 
 
-def resolve_source_directory(source_root: Path) -> Path:
-    preferred = source_root / "source"
-    if preferred.exists():
-        return preferred
-    return source_root
-
-
-def list_images(directory: Path) -> list[Path]:
+def _list_images(directory: Path) -> list[Path]:
     if not directory.exists():
-        raise FileNotFoundError(f"Source directory not found: {directory}")
+        raise FileNotFoundError(f"Directory does not exist: {directory}")
     files = [
-        path for path in sorted(directory.rglob("*"))
-        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+        path
+        for path in sorted(directory.iterdir())
+        if path.is_file() and path.suffix.lower() in MODE_478_SUPPORTED_EXTENSIONS
     ]
     if not files:
         raise FileNotFoundError(f"No supported image files found in directory: {directory}")
     return files
-
-
-def choose_random_image(source_root: Path) -> Path:
-    return random.choice(list_images(resolve_source_directory(source_root)))
 
 
 def load_font(font_path: Path, size: int) -> ImageFont.FreeTypeFont:
@@ -336,75 +319,84 @@ def draw_title_text(
 
 
 def normalize_previous_result_text(numbers: str) -> str:
-    parts = [part for part in str(numbers or "").split() if part.strip()]
+    parts = re.findall(r"\d+", str(numbers or ""))
     if not parts:
-        return DEFAULT_RESULT_PREFIX + "01 02 03 04 05 06 07"
+        return MODE_478_DEFAULT_RESULT_TEXT
     return " ".join(part.zfill(2) for part in parts[:7])
 
 
-def build_output_path(image_path: Path, output_dir: Path) -> Path:
-    return output_dir / f"{image_path.stem}_edited{image_path.suffix.lower()}"
+def lottery_label_for_type(lottery_type: int) -> str:
+    mapping = {
+        1: "香港",
+        2: "澳门",
+        3: "台湾",
+    }
+    return mapping.get(int(lottery_type), "台湾")
 
 
-def render_mode_478_image(
-    image_path: Path,
+def build_mode_478_title_text(*, lottery_type: int, year: int, term: int) -> str:
+    return f"{int(term):03d}-{int(year)} {lottery_label_for_type(int(lottery_type))} 跑马图"
+
+
+def choose_mode_478_source_image(
     *,
-    title: str,
-    numbers: str,
-    font_path: Path,
-    title_font_path: Path,
-    output_path: Path,
-    debug_boxes: bool,
+    lottery_type: int,
+    year: int,
+    term: int,
+    site_web_id: int,
+    source_root: Path = MODE_478_SOURCE_DIR,
 ) -> Path:
-    source = Image.open(image_path).convert("RGBA")
-    canvas = source.copy()
+    seed = _make_seed_int(f"mode478:{int(lottery_type)}:{int(year)}:{int(term)}:{int(site_web_id)}")
+    rng = random.Random(seed)
+    return rng.choice(_list_images(source_root))
 
-    title_text = str(title or "").strip() or DEFAULT_TITLE_TEXT
-    result_text = f"{DEFAULT_RESULT_PREFIX}{normalize_previous_result_text(numbers)}"
+
+def render_mode_478_prediction_image(
+    *,
+    lottery_type: int,
+    year: int,
+    term: int,
+    site_web_id: int,
+    previous_result_numbers: str,
+    source_root: Path = MODE_478_SOURCE_DIR,
+    output_dir: Path = MODE_478_OUTPUT_DIR,
+    font_path: Path = MODE_478_TEXT_FONT_PATH,
+    title_font_path: Path = MODE_478_TITLE_FONT_PATH,
+) -> Mode478RenderResult:
+    source_image_path = choose_mode_478_source_image(
+        lottery_type=lottery_type,
+        year=year,
+        term=term,
+        site_web_id=site_web_id,
+        source_root=source_root,
+    )
+    canvas = Image.open(source_image_path).convert("RGBA")
+
+    title_text = build_mode_478_title_text(
+        lottery_type=int(lottery_type),
+        year=int(year),
+        term=int(term),
+    )
+    result_text = f"{MODE_478_RESULT_PREFIX}{normalize_previous_result_text(previous_result_numbers)}"
 
     erase_text_region(canvas, TITLE_REGION)
     erase_text_region(canvas, RESULT_REGION)
     draw_title_text(canvas, title_text, TITLE_REGION, title_font_path)
     draw_positioned_text(canvas, result_text, RESULT_REGION, font_path)
 
-    if debug_boxes:
-        draw_debug_boxes(canvas)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.suffix.lower() in {".jpg", ".jpeg"}:
-        canvas.convert("RGB").save(output_path, quality=94, optimize=True)
-    elif output_path.suffix.lower() == ".webp":
-        canvas.save(output_path, format="WEBP", quality=94, method=6)
-    else:
-        canvas.save(output_path, format="PNG", optimize=True)
-    return output_path
-
-
-def draw_debug_boxes(canvas: Image.Image) -> None:
-    draw = ImageDraw.Draw(canvas)
-    for region in (TITLE_REGION, RESULT_REGION):
-        draw.rectangle(region.box, outline=(255, 0, 0, 255), width=3)
-        draw.text((region.box[0], max(0, region.box[1] - 24)), region.name, fill=(255, 0, 0, 255))
-
-
-def main() -> None:
-    args = parse_args()
-    image_path = choose_random_image(args.source_root)
-    output_path = args.output or build_output_path(image_path, args.output_dir)
-    if str(args.title or "").strip() == DEFAULT_TITLE_TEXT:
-        args.title = build_mode_478_title_text(lottery_type=3, year=2026, term=1)
-    rendered_path = render_mode_478_image(
-        image_path,
-        title=args.title,
-        numbers=args.numbers,
-        font_path=args.font,
-        title_font_path=args.title_font,
-        output_path=output_path,
-        debug_boxes=args.debug_boxes,
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_name = MODE_478_OUTPUT_NAME_TEMPLATE.format(
+        lottery_type=int(lottery_type),
+        year=int(year),
+        term=int(term),
+        web_id=int(site_web_id),
     )
-    print(f"Source: {image_path}")
-    print(f"Saved: {rendered_path}")
+    output_path = output_dir / output_name
+    canvas.convert("RGB").save(output_path, format="JPEG", quality=94, optimize=True)
 
-
-if __name__ == "__main__":
-    main()
+    relative_path = output_path.relative_to(_PROJECT_ROOT).as_posix()
+    return Mode478RenderResult(
+        output_path=output_path,
+        relative_url=f"/{relative_path}",
+        source_record_id=source_image_path.stem,
+    )

@@ -26,7 +26,7 @@ type NextDrawDeadlineResponse = {
 }
 
 const SITE_KEY = "twcaibawang"
-const DEFAULT_LOTTERY_TYPE = 3
+const DEFAULT_LOTTERY_TYPE = 1
 const DEFAULT_NEXT_TIME_SUFFIX = "21:30:00"
 
 function normalizeIssue(issue: string | null | undefined) {

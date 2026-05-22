@@ -1888,6 +1888,23 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "批量生成时由 prediction_generation.service 中的 mode_id=476 专用分支负责图片合成和落库。",
         ),
     ),
+    "tw_pmt_image": PredictionConfig(
+        key="tw_pmt_image",
+        title="台湾跑马图（带图）",
+        default_table="mode_payload_478",
+        default_modes_id=478,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=7,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_zodiac_two_codes,
+        hit_checker=contains_hit,
+        explanation=(
+            "台湾跑马图（带图）模块复用跑马图解的 7 肖 14 码预测结构，同时补充专用图片 image_url。",
+            "批量生成时由 prediction_generation.service 中的 mode_id=478 专用分支负责图片合成和落库。",
+        ),
+    ),
     "9xiao12ma": PredictionConfig(
         key="9xiao12ma",
         title="9肖12码",

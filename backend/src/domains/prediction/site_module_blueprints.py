@@ -78,6 +78,7 @@ TWSAIMAHUI_REQUIRED_MODE_IDS = (
     473,  # getShaXiao num=2 / 绝杀2肖
     475,  # brain teaser / 脑筋急转弯
     476,  # 跑马图解（带图）
+    478,  # 台湾跑马图（带图）
 )
 
 TWSAIMAHUI_BLOCKED_ITEMS = (

@@ -26,7 +26,7 @@ REQUIRED_SITE_PREDICTION_MODE_IDS = (
     3, 8, 12, 20, 28, 31, 34, 38, 42, 43,
     44, 45, 46, 49, 50, 51, 52, 53, 54, 56,
     57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
-    67, 68, 69, 108, 151, 197, 474, 475, 476,
+    67, 68, 69, 108, 151, 197, 474, 475, 476, 478,
 )
 
 
@@ -465,11 +465,11 @@ def build_mode_payload_order_clause(columns: set[str]) -> str:
     if "term" in columns:
         order_parts.append(f"{sql_safe_int_expr('term')} DESC")
     if "source_record_id" in columns:
-        order_parts.append(f"{sql_safe_int_expr('source_record_id')} DESC")
+        order_parts.append("CAST(source_record_id AS TEXT) DESC")
     elif "created_at" in columns:
         order_parts.append("CAST(created_at AS TEXT) DESC")
     elif "id" in columns:
-        order_parts.append(f"{sql_safe_int_expr('id')} DESC")
+        order_parts.append("CAST(id AS TEXT) DESC")
     return f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
 
 

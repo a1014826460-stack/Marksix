@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any
 
 from db import connect
@@ -33,6 +35,19 @@ def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
         "zodiac": zodiacs[index] if index < len(zodiacs) else "",
         "color": colors[index] if index < len(colors) else "",
     }
+
+
+def _normalize_public_image_url(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("/uploads/") or raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    normalized = raw.replace("\\", "/")
+    match = re.search(r"/data/Images/(.+)$", normalized)
+    if match:
+        return f"/uploads/{match.group(1)}"
+    return raw
 
 
 def summarize_prediction_text(row: dict[str, Any]) -> str:
@@ -69,6 +84,7 @@ def serialize_public_history_row(row: dict[str, Any]) -> dict[str, Any]:
         "year": str(row.get("year") or ""),
         "term": str(row.get("term") or ""),
         "prediction_text": prediction_text,
+        "image_url": _normalize_public_image_url(row.get("image_url")),
         "result_text": (f"{special['zodiac']}{special['code']}".strip() if is_opened and special["code"] else "待开奖"),
         "is_opened": is_opened,
         "is_correct": _check_prediction_correct(prediction_text, special) if is_opened else None,
@@ -259,6 +275,7 @@ def get_public_site_page_data(
 ) -> dict[str, Any]:
     """公开页数据按站点模块配置读取历史记录，不在这里主动生成预测。"""
     site = resolve_public_site(db_path, site_id=site_id, domain=domain)
+    logger = logging.getLogger("public.site_page")
     with connect(db_path) as conn:
         rows = conn.execute(
             """
@@ -273,26 +290,44 @@ def get_public_site_page_data(
 
     modules = []
     for row in rows:
-        module_meta = load_public_module_history(
-            db_path,
-            str(row["mechanism_key"]),
-            history_limit,
-            mode_id=int(row["mode_id"] or 0),
-            lottery_type_id=int(site.get("lottery_type_id") or 1),
-            web_start=int(site.get("start_web_id") or 0),
-            web_end=int(site.get("end_web_id") or 0),
-        )
+        mechanism_key = str(row["mechanism_key"])
+        try:
+            module_meta = load_public_module_history(
+                db_path,
+                mechanism_key,
+                history_limit,
+                mode_id=int(row["mode_id"] or 0),
+                lottery_type_id=int(site.get("lottery_type_id") or 1),
+                web_start=int(site.get("start_web_id") or 0),
+                web_end=int(site.get("end_web_id") or 0),
+            )
+        except Exception as exc:
+            logger.warning(
+                "skip public module site_id=%s mechanism_key=%s mode_id=%s error=%s",
+                site.get("id"),
+                mechanism_key,
+                row.get("mode_id"),
+                exc,
+            )
+            continue
+        if int(module_meta.get("default_modes_id") or 0) in {474, 475, 476, 478}:
+            history_rows = list(module_meta.get("history") or [])
+            if history_rows:
+                history_rows[0]["image_url"] = _normalize_public_image_url(history_rows[0].get("image_url"))
+                for extra_row in history_rows[1:]:
+                    extra_row["image_url"] = ""
+                module_meta["history"] = history_rows
         modules.append(
             {
                 "id": int(row["id"]),
-                "mechanism_key": str(row["mechanism_key"]),
+                "mechanism_key": mechanism_key,
                 "sort_order": int(row["sort_order"] or 0),
                 "status": bool(row["status"]),
                 **module_meta,
             }
         )
 
-    mechanism_keys = [str(row["mechanism_key"]) for row in rows]
+    mechanism_keys = [str(row["mechanism_key"]) for row in modules]
 
     return {
         "site": site,

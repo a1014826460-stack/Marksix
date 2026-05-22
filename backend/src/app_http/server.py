@@ -45,6 +45,7 @@ from routes import (
     legacy_routes,
     public_routes,
     system_routes,
+    vendor_routes,
 )
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +77,7 @@ def build_router() -> Router:
     system_routes.register(router, admin_html=ADMIN_HTML, legacy_images_dir=LEGACY_IMAGES_DIR)
     auth_routes.register(router)
     public_routes.register(router)
+    vendor_routes.register(router)
     legacy_routes.register(
         router,
         default_pc=LEGACY_POST_LIST_PC,

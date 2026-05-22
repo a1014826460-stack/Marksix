@@ -24,6 +24,7 @@
  */
 
 import type { PublicSitePageData } from "@/lib/site-page"
+import type { VendorHomepageModulesResponse } from "@/lib/vendor-homepage"
 
 // 通用类型：URL 查询参数允许的原始值类型
 type PrimitiveQueryValue = string | number | boolean | null | undefined
@@ -182,6 +183,24 @@ export async function getPublicSitePageData(options: PublicSiteRequestOptions = 
     query: {
       site_id: options.siteId,
       domain: options.domain,
+      history_limit: options.historyLimit ?? 8,
+    },
+  })
+}
+
+type VendorHomepageRequestOptions = {
+  siteId: number
+  lotteryType?: number
+  modules?: string[]
+  historyLimit?: number
+}
+
+export async function getVendorHomepageModules(options: VendorHomepageRequestOptions) {
+  return backendFetchJson<VendorHomepageModulesResponse>("/vendor/homepage-modules", {
+    query: {
+      site_id: options.siteId,
+      lottery_type: options.lotteryType,
+      modules: options.modules?.join(","),
       history_limit: options.historyLimit ?? 8,
     },
   })

@@ -50,6 +50,11 @@ from prediction_generation.mode_476_image import (
     MODE_476_TITLE,
     render_mode_476_prediction_image,
 )
+from prediction_generation.mode_478_image import (
+    MODE_478_ID,
+    MODE_478_TITLE,
+    render_mode_478_prediction_image,
+)
 from prediction_generation.diversity import enforce_prediction_diversity
 from runtime_config import get_config_from_conn
 from utils.created_prediction_store import (
@@ -78,6 +83,23 @@ _MODE_476_FALLBACK_CONFIG = PredictionConfig(
     hit_checker=contains_hit,
     explanation=(
         "跑马图解（带图）复用跑马图解 7 肖 14 码结构。",
+        "当动态机制 title_22 未加载时，使用内置兜底配置保证后台可生成。",
+    ),
+)
+_MODE_478_FALLBACK_CONFIG = PredictionConfig(
+    key="mode478_fallback",
+    title=MODE_478_TITLE,
+    default_table="mode_payload_22",
+    default_modes_id=22,
+    labels=_MODE_331_ZODIAC_ORDER,
+    label_count=7,
+    outcome_loader=special_zodiac_from_number_map,
+    content_loader=default_content_from_row,
+    content_parser=parse_pipe_label_content,
+    content_formatter=format_zodiac_two_codes,
+    hit_checker=contains_hit,
+    explanation=(
+        "台湾跑马图（带图）复用跑马图解 7 肖 14 码结构。",
         "当动态机制 title_22 未加载时，使用内置兜底配置保证后台可生成。",
     ),
 )
@@ -814,6 +836,60 @@ def _generate_mode_476_row(
     return row_data
 
 
+def _generate_mode_478_row(
+    draw: dict[str, Any],
+    is_future: bool,
+    safe_res_code: str | None,
+    lottery_type: int,
+    site_web_id: int,
+    db_path: str | Path,
+    default_target_hit_rate: float,
+    build_row: Any,
+    conn: Any,
+) -> dict[str, Any]:
+    """mode_id=478: reuse 跑马图解 7肖14码 text payload and add the 台湾跑马图 image_url."""
+    try:
+        mode_22_config = get_prediction_config("title_22")
+    except ValueError:
+        mode_22_config = _MODE_478_FALLBACK_CONFIG
+    result = predict(
+        config=mode_22_config,
+        res_code=None if is_future else safe_res_code,
+        source_table=mode_22_config.default_table,
+        db_path=db_path,
+        target_hit_rate=default_target_hit_rate,
+        random_seed=f"mode478:{draw['year']}{draw['term']:03d}:{site_web_id}" if is_future else None,
+        conn=conn,
+    )
+    row_data = build_row(
+        mode_id=MODE_478_ID,
+        lottery_type=str(lottery_type),
+        year=str(draw["year"]),
+        term=str(draw["term"]),
+        web_value=str(site_web_id),
+        res_code=safe_res_code or "",
+        generated_content=result["prediction"]["content"],
+    )
+    row_data["title"] = MODE_478_TITLE
+
+    previous_numbers = _load_previous_opened_numbers_for_issue(
+        conn,
+        lottery_type_id=int(lottery_type),
+        year=int(draw["year"]),
+        term=int(draw["term"]),
+    )
+    render_result = render_mode_478_prediction_image(
+        lottery_type=int(lottery_type),
+        year=int(draw["year"]),
+        term=int(draw["term"]),
+        site_web_id=int(site_web_id),
+        previous_result_numbers=previous_numbers,
+    )
+    row_data["image_url"] = render_result.relative_url
+    row_data["source_record_id"] = render_result.source_record_id
+    return row_data
+
+
 def _generate_default_mode_row(
     draw: dict[str, Any],
     is_future: bool,
@@ -889,6 +965,18 @@ def _generate_single_draw_row(
         )
     if mode_id == MODE_476_ID:
         return _generate_mode_476_row(
+            draw=draw,
+            is_future=is_future,
+            safe_res_code=safe_res_code,
+            lottery_type=lottery_type,
+            site_web_id=site_web_id,
+            db_path=db_path,
+            default_target_hit_rate=default_target_hit_rate,
+            build_row=build_row,
+            conn=conn,
+        )
+    if mode_id == MODE_478_ID:
+        return _generate_mode_478_row(
             draw=draw,
             is_future=is_future,
             safe_res_code=safe_res_code,
