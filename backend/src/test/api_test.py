@@ -25,7 +25,6 @@ import subprocess
 from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
 
 # ---- 路径配置 ----
 PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -48,7 +47,15 @@ POLL_INTERVAL = 30  # 秒
 def load_api_key() -> str:
     env_file = PROJECT_DIR / ".env.local"
     if env_file.exists():
-        load_dotenv(env_file)
+        with open(env_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                os.environ.setdefault(k, v)
     key = os.getenv("DASHSCOPE_API_KEY")
     if not key:
         print("错误：未找到 DASHSCOPE_API_KEY，请检查 backend/.env.local")
