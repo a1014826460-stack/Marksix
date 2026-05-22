@@ -135,6 +135,8 @@ def _ensure_mode_payload_metadata(
     title: str,
     table_name: str,
     now: str,
+    is_image: int = 0,
+    is_text: int = 0,
 ) -> None:
     if not conn.table_exists("mode_payload_tables"):
         return
@@ -155,10 +157,10 @@ def _ensure_mode_payload_metadata(
         insert_values.insert(2, f"{modes_id}.json")
     if "is_image" in metadata_columns:
         insert_columns.append("is_image")
-        insert_values.append(0)
+        insert_values.append(int(is_image))
     if "is_text" in metadata_columns:
         insert_columns.append("is_text")
-        insert_values.append(0)
+        insert_values.append(int(is_text))
     if "updated_at" in metadata_columns:
         insert_columns.append("updated_at")
         insert_values.append(now)
@@ -231,6 +233,210 @@ def ensure_basic_prediction_payload_table(
     )
 
 
+def ensure_image_prediction_payload_table(
+    conn: Any,
+    pk_sql: str,
+    *,
+    modes_id: int,
+    title: str,
+) -> None:
+    """Create/update a site-only image prediction payload table with image_url."""
+    table_name = f"mode_payload_{modes_id}"
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            {pk_sql},
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            title TEXT,
+            content TEXT,
+            image_url TEXT,
+            web_id INTEGER,
+            modes_id INTEGER,
+            source_record_id TEXT,
+            fetched_at TEXT
+        )
+        """
+    )
+
+    add_column_if_missing(conn, table_name, "web", "TEXT")
+    add_column_if_missing(conn, table_name, "type", "TEXT")
+    add_column_if_missing(conn, table_name, "year", "TEXT")
+    add_column_if_missing(conn, table_name, "term", "TEXT")
+    add_column_if_missing(conn, table_name, "res_code", "TEXT")
+    add_column_if_missing(conn, table_name, "res_sx", "TEXT")
+    add_column_if_missing(conn, table_name, "res_color", "TEXT")
+    add_column_if_missing(conn, table_name, "status", "INTEGER")
+    add_column_if_missing(conn, table_name, "title", "TEXT")
+    add_column_if_missing(conn, table_name, "content", "TEXT")
+    add_column_if_missing(conn, table_name, "image_url", "TEXT")
+    add_column_if_missing(conn, table_name, "web_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "modes_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "source_record_id", "TEXT")
+    add_column_if_missing(conn, table_name, "fetched_at", "TEXT")
+
+    _ensure_mode_payload_metadata(
+        conn,
+        modes_id=modes_id,
+        title=title,
+        table_name=table_name,
+        now=_current_db_now(conn),
+        is_image=1,
+        is_text=0,
+    )
+
+
+def ensure_image_prediction_created_table(
+    conn: Any,
+    *,
+    modes_id: int,
+) -> None:
+    """Ensure PostgreSQL created.mode_payload_{mode_id} also exposes image_url."""
+    if getattr(conn, "engine", "") != "postgres":
+        return
+    table_name = f"mode_payload_{int(modes_id)}"
+    conn.execute("CREATE SCHEMA IF NOT EXISTS created")
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS created.{table_name} (
+            id TEXT,
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            title TEXT,
+            content TEXT,
+            image_url TEXT,
+            web_id INTEGER,
+            modes_id INTEGER,
+            source_record_id TEXT,
+            fetched_at TEXT,
+            created_at TEXT,
+            mode_id INTEGER
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        ALTER TABLE created.{table_name}
+        ADD COLUMN IF NOT EXISTS image_url TEXT
+        """
+    )
+
+
+def ensure_brain_teaser_prediction_created_table(conn: Any) -> None:
+    """Ensure PostgreSQL created.mode_payload_475 also exposes image_url."""
+    if getattr(conn, "engine", "") != "postgres":
+        return
+    conn.execute("CREATE SCHEMA IF NOT EXISTS created")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS created.mode_payload_475 (
+            id TEXT,
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            title TEXT,
+            content TEXT,
+            image_url TEXT,
+            answer TEXT,
+            tips TEXT,
+            jiexi TEXT,
+            web_id INTEGER,
+            modes_id INTEGER,
+            source_record_id TEXT,
+            fetched_at TEXT,
+            created_at TEXT,
+            mode_id INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE created.mode_payload_475
+        ADD COLUMN IF NOT EXISTS image_url TEXT
+        """
+    )
+
+
+def ensure_brain_teaser_prediction_payload_table(
+    conn: Any,
+    pk_sql: str,
+    *,
+    modes_id: int = 475,
+    title: str = "脑筋急转弯",
+) -> None:
+    """Create/update the dedicated payload table for brain teaser predictions."""
+    table_name = f"mode_payload_{modes_id}"
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            {pk_sql},
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            title TEXT,
+            content TEXT,
+            image_url TEXT,
+            answer TEXT,
+            tips TEXT,
+            jiexi TEXT,
+            web_id INTEGER,
+            modes_id INTEGER,
+            source_record_id TEXT,
+            fetched_at TEXT
+        )
+        """
+    )
+
+    add_column_if_missing(conn, table_name, "web", "TEXT")
+    add_column_if_missing(conn, table_name, "type", "TEXT")
+    add_column_if_missing(conn, table_name, "year", "TEXT")
+    add_column_if_missing(conn, table_name, "term", "TEXT")
+    add_column_if_missing(conn, table_name, "res_code", "TEXT")
+    add_column_if_missing(conn, table_name, "res_sx", "TEXT")
+    add_column_if_missing(conn, table_name, "res_color", "TEXT")
+    add_column_if_missing(conn, table_name, "status", "INTEGER")
+    add_column_if_missing(conn, table_name, "title", "TEXT")
+    add_column_if_missing(conn, table_name, "content", "TEXT")
+    add_column_if_missing(conn, table_name, "image_url", "TEXT")
+    add_column_if_missing(conn, table_name, "answer", "TEXT")
+    add_column_if_missing(conn, table_name, "tips", "TEXT")
+    add_column_if_missing(conn, table_name, "jiexi", "TEXT")
+    add_column_if_missing(conn, table_name, "web_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "modes_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "source_record_id", "TEXT")
+    add_column_if_missing(conn, table_name, "fetched_at", "TEXT")
+
+    _ensure_mode_payload_metadata(
+        conn,
+        modes_id=modes_id,
+        title=title,
+        table_name=table_name,
+        now=_current_db_now(conn),
+    )
+
+
 def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
     """Bootstrap isolated payload tables for site-only prediction modules."""
     definitions: Iterable[tuple[int, str]] = (
@@ -246,3 +452,19 @@ def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
             modes_id=modes_id,
             title=title,
         )
+    ensure_image_prediction_payload_table(
+        conn,
+        pk_sql,
+        modes_id=474,
+        title="四不像中特图",
+    )
+    ensure_image_prediction_created_table(conn, modes_id=474)
+    ensure_image_prediction_payload_table(
+        conn,
+        pk_sql,
+        modes_id=476,
+        title="跑马图解（带图）",
+    )
+    ensure_image_prediction_created_table(conn, modes_id=476)
+    ensure_brain_teaser_prediction_payload_table(conn, pk_sql)
+    ensure_brain_teaser_prediction_created_table(conn)

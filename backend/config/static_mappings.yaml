@@ -1,0 +1,24 @@
+database:
+  url: ""
+  host: ""
+  port: "5432"
+  name: "liuhecai"
+  user: ""
+  password: ""
+  schema: public
+
+static_mappings:
+  schema: public
+  datasets:
+    - name: brain_test
+      json_path: data/json_data/brain_test.json
+      table_name: static_mapping_brain_test
+      path_prefix: json_data
+      key_field: id
+      path_field: mapping_path
+    - name: sx_verse
+      json_path: data/json_data/sx_verse.json
+      table_name: static_mapping_sx_verse
+      path_prefix: json_data
+      key_field: id
+      path_field: mapping_path

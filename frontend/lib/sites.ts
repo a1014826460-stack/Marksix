@@ -44,6 +44,17 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultLotteryTypeId: 3,
     forumTitle: "台湾赛马会",
   },
+  {
+    siteKey: "twcaibawang",
+    routePath: "/twcaibawang",
+    vendorIndexPath: "/vendor/twcaibawang.com/index.html",
+    domains: ["www.twcaibawang.com", "twcaibawang.com"],
+    legacyPublicBasePath: "/vendor/twcaibawang.com",
+    defaultGame: "hongkong",
+    defaultWebId: 5,
+    defaultLotteryTypeId: 3,
+    forumTitle: "香港天天彩",
+  },
 ]
 
 export function getAllSiteConfigs() {

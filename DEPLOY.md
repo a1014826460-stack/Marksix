@@ -405,6 +405,191 @@ curl -k https://www.example.com/health
 - `https://example.com` 跳转到 `https://www.example.com`
 - `https://www.example.com/health` 返回 `200`
 
+## 更换域名或新增域名
+
+下面分两种情况：
+
+- 更换现有主域名，例如：`www.shengshi8800.com` -> `www.tw8800.com`
+- 新增第二个域名，例如：在 `www.tw8800.com` 之外，再增加 `www.twsaimahui.com`
+
+### 场景 1：更换现有主域名
+
+推荐顺序：
+
+1. 先完成新域名的 DNS 解析
+2. 再申请或重新签发新域名证书
+3. 再修改 Nginx 配置中的 `server_name` 和跳转目标
+4. 再检查 `.env` 中的 `PUBLIC_HOST`
+5. 最后重建 `nginx` 容器并验证
+
+示例：将主域名切换到 `www.tw8800.com`
+
+1. 准备新证书
+
+```bash
+docker compose stop nginx
+
+sudo certbot certonly --standalone \
+  -d tw8800.com \
+  -d www.tw8800.com \
+  --agree-tos \
+  -m you@example.com \
+  --non-interactive
+```
+
+2. 复制证书
+
+```bash
+sudo cp /etc/letsencrypt/live/tw8800.com/fullchain.pem deploy/ssl/fullchain.pem
+sudo cp /etc/letsencrypt/live/tw8800.com/privkey.pem deploy/ssl/privkey.pem
+sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
+```
+
+3. 更新 Nginx 配置
+
+- 如果你使用仓库里的专用模板，例如 [deploy/nginx.www.shengshi8800.ssl.conf.example](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.www.shengshi8800.ssl.conf.example)，需要把其中旧域名替换为新域名
+- 或者重新从模板复制到 `deploy/nginx.conf.local`，再手工检查 `server_name`、`return 301`、注释示例域名是否都已更新
+
+4. 更新 `.env`
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.conf.local
+PUBLIC_HOST=www.tw8800.com
+PUBLIC_SCHEME=https
+NGINX_EXPECT_HTTPS=1
+```
+
+5. 重建 Nginx
+
+注意：如果你修改了 `NGINX_CONF_SOURCE` 或替换了挂载配置源，`docker compose restart nginx` 可能不够，建议直接重建容器：
+
+```bash
+docker compose up -d --force-recreate nginx
+docker compose exec nginx nginx -t
+```
+
+6. 验证
+
+```bash
+curl -I http://tw8800.com
+curl -I https://tw8800.com
+curl -I https://www.tw8800.com
+curl -k https://www.tw8800.com/health
+```
+
+### 场景 2：新增第二个域名
+
+例如：
+
+- 已有：`www.tw8800.com`
+- 新增：`www.twsaimahui.com`
+
+这种情况下，不是替换原域名，而是让同一个 `nginx` 同时服务两个正式域名。
+
+需要同时满足 3 个条件：
+
+1. 新域名已完成 DNS 解析
+2. 证书已扩展为覆盖全部域名
+3. `deploy/nginx.conf.local` 中同时存在两组 `server` 配置
+
+#### 第 1 步：扩展证书
+
+如果已有证书只包含旧域名，执行扩展：
+
+```bash
+docker compose stop nginx
+
+sudo certbot certonly --standalone \
+  -d tw8800.com \
+  -d www.tw8800.com \
+  -d twsaimahui.com \
+  -d www.twsaimahui.com \
+  --agree-tos \
+  -m you@example.com \
+  --non-interactive \
+  --expand
+```
+
+说明：
+
+- `--expand` 表示把现有证书扩展成包含更多域名的新证书
+- 证书签发完成后，继续覆盖 `deploy/ssl/fullchain.pem` 和 `deploy/ssl/privkey.pem`
+
+```bash
+sudo cp /etc/letsencrypt/live/tw8800.com/fullchain.pem deploy/ssl/fullchain.pem
+sudo cp /etc/letsencrypt/live/tw8800.com/privkey.pem deploy/ssl/privkey.pem
+sudo chown "$USER":"$USER" deploy/ssl/fullchain.pem deploy/ssl/privkey.pem
+```
+
+#### 第 2 步：把第二域名的 `server` 配置追加到主配置
+
+仓库已提供第二域名示例：
+
+- [deploy/nginx.www.twsaimahui.ssl.conf.example](/d:/pythonProject/outsource/Liuhecai/deploy/nginx.www.twsaimahui.ssl.conf.example)
+
+如果你当前的 `deploy/nginx.conf.local` 已经是 `www.tw8800.com` 的正式配置，可直接追加：
+
+```bash
+cat deploy/nginx.www.twsaimahui.ssl.conf.example >> deploy/nginx.conf.local
+```
+
+说明：
+
+- `www.tw8800.com` 和 `www.twsaimahui.com` 需要分别有自己的 `server_name`
+- 不能只保留一个域名的 `server` 块，否则另一个域名会落到默认站点或被错误跳转
+
+#### 第 3 步：检查并重建 Nginx
+
+```bash
+docker compose up -d --force-recreate nginx
+docker compose exec nginx nginx -t
+```
+
+如果 `nginx -t` 报错，优先检查：
+
+- 是否重复追加了同一份 `server` 配置
+- 是否存在相同 `server_name` 的重复定义
+- 证书文件是否已经复制到 `deploy/ssl/`
+
+#### 第 4 步：分别验证两个域名
+
+```bash
+curl -I http://tw8800.com
+curl -kI https://www.tw8800.com/health
+
+curl -I http://twsaimahui.com
+curl -kI https://www.twsaimahui.com/health
+```
+
+预期：
+
+- `http://tw8800.com` 跳转到 `https://www.tw8800.com/...`
+- `https://www.tw8800.com/health` 返回 `200`
+- `http://twsaimahui.com` 跳转到 `https://www.twsaimahui.com/...`
+- `https://www.twsaimahui.com/health` 返回 `200`
+
+### 关于 `.env` 的说明
+
+新增第二个域名时，通常不需要增加第二套 `.env`。
+
+当前 `.env` 中：
+
+- `NGINX_CONF_SOURCE` 控制 Nginx 实际挂载哪份配置
+- `PUBLIC_HOST` 主要用于 `deploy/verify.sh` 的默认验证目标
+- `PUBLIC_SCHEME` 和 `NGINX_EXPECT_HTTPS` 用于部署脚本和验证脚本的 HTTPS 模式判断
+
+也就是说：
+
+- 多域名托管的关键在 `deploy/nginx.conf.local`
+- `.env` 只需要保留一个默认 `PUBLIC_HOST`，例如 `www.tw8800.com`
+- 对第二个域名，请手工使用 `curl` 单独验证，或临时覆盖 `VERIFY_HOST`
+
+例如：
+
+```bash
+VERIFY_HOST=www.twsaimahui.com ./deploy/verify.sh
+```
+
 ## 推荐切换顺序
 
 推荐按这个顺序上线，最稳：

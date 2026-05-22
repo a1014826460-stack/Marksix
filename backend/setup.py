@@ -26,6 +26,7 @@ setup(
     install_requires=[
         "psycopg>=3.0",
         "psycopg[binary]>=3.0",
+        "PyYAML>=6.0",
     ],
     entry_points={
         "console_scripts": [

@@ -30,5 +30,5 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/vendor/shengshi8800/embed.html", "/twsaimahui"],
+  matcher: ["/", "/vendor/shengshi8800/embed.html", "/twsaimahui", "/twcaibawang"],
 }

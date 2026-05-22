@@ -1,0 +1,41 @@
+﻿
+/* CSS Document */
+*{ margin: 0; padding: 0; word-break: break-all; word-wrap: break-word; box-sizing: border-box;}
+html { }
+body { line-height: 1.5; font-size: 15px; font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif; background: #f0f5f9;}
+input, select, button, textarea { margin: 0; padding: 0; vertical-align: middle; font-size: 100%; color: inherit; border: 0; font-family: inherit; outline: none; resize: none;}
+input[type="text"] { -webkit-appearance: none;}
+ol, ul {list-style: none;}
+img { max-width: 100%; vertical-align: middle;}
+a { text-decoration: none; color: inherit;}
+:focus { outline: 0;}
+table {	border-collapse: collapse; border-spacing: 0; line-height: 1.5;}
+
+.page { max-width: 720px; margin: 0 auto; padding: 0 5px; border-left: solid 2px #a37200; border-right: solid 2px #a37200; box-sizing: content-box; background: #fff;
+}
+@media screen and (max-width:720px){
+body { font-size: 12px;}
+.page { padding: 0; border: 0;}
+}
+
+.topfix { padding: 5px 4px; max-width: 720px; background: #fff;}
+#topfix[data-fixed="fixed"]{ position: fixed; top:0; left: 0; right: 0; z-index: 9; margin: auto; max-width: 730px; background: #fff;}
+
+.nav2 { font-size: 16px;}
+.nav2 ul { display: flex; justify-content: space-between;}
+.nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 1px;}
+.nav2 ul li a { display: block; height: 40px; line-height: 40px; text-align: center; color: #fff; background: #ac0000;}
+.nav2 ul li a:hover { background: #1E90FF;}
+@media screen and (max-width:720px){
+.nav2 ul li a {height: 40px; line-height: 16px; padding-top: 4px; font-size: 14px;}
+.nav2 ul li a span { display: block;}
+}
+
+.nav-enter { font-size: 20px; font-weight: bold;}
+.nav-enter ul { display: flex; justify-content: space-between;}
+.nav-enter ul li { width: 100%; box-sizing: border-box; padding: 0 1px;}
+.nav-enter ul li a { display: block; height: 40px; line-height: 40px; text-align: center; color: #fff; background: #ac0000;}
+.nav-enter ul li a.active { background: #1E90FF;}
+.nav-enter ul li img { vertical-align: middle;}
+
+.footer { text-align: center; padding: 10px 0;}

@@ -1,0 +1,110 @@
+﻿
+/* CSS Document */
+*{ margin: 0; padding: 0; word-break: break-all; word-wrap: break-word;}
+html { background: linear-gradient(180deg, #f8f0db 0%, #fff7ea 100%) #fff; background-attachment: fixed;}
+body { width: 100%; max-width: 720px; min-height: 100vh; margin: 0 auto; line-height: 1.5; font-size: 14px; font-family: '微软雅黑', Arial, Helvetica, sans-serif;}
+input, select, button, textarea { margin: 0; padding: 0; vertical-align: middle; font-size: 100%; color: inherit; border: 0; font-family: inherit; outline: none; resize: none;}
+input[type="text"] { -webkit-appearance: none;}
+ol, ul {list-style: none;}
+img { max-width: 100%; vertical-align: middle;}
+a { text-decoration: none; color: inherit;}
+:focus { outline: 0;}
+table {	border-collapse: collapse; border-spacing: 0; line-height: 1.5;}
+
+.pad { padding: 4px 4px;}
+.box { margin: 5px 0px 0 0px; border-radius: 5px; overflow: hidden; background: #ac0000;}
+@media screen and (max-width:720px){ 
+.box { margin: 5px 0px 0 0px;}
+}
+
+
+div#channel04 {
+    background-color: #fff;
+}
+
+.anmao1 { overflow: hidden; position: relative;}
+.anmao2 { width: 91px; height: 91px; position: absolute; top: -91px;}
+
+.header-top1{ max-width: 720px; height:151px; position: fixed; top: 0; left: 0; right: 0; margin: auto; border-radius: 0 0 5px 5px; z-index: 9;}
+.header-top1-blank { height: 151px;}
+.header-top2{ max-width: 720px; height:121px; position: fixed; top: 0; left: 0; right: 0; margin: auto; border-radius: 0 0 5px 5px; z-index: 9;}
+.header-top2-blank { height: 121px;}
+
+.header { border-radius: 0 0 5px 5px; background: #fb9c8c;}
+
+.head-title-img {}
+.head-title-img img { display: block; position: absolute; left: 50%; margin-left: -30px; width: 60px; height: 60px; box-shadow: 0px 0px 20px #000; border-radius: 50%;}
+.header .logo-box { display: flex; align-items: center; height: 60px; padding: 0 10px;}
+.header .logo-box.line { border-bottom: solid 1px #000;}
+.header .logo-box .logo { flex: 1;}
+.header .logo-box .logo img { width: auto; height: 60px;}
+.header .logo-box .bank { line-height: 1.5; font-size: 12px; color: #fff;}
+.header .logo-box .bank img { width: 30px; height: 30px; margin: 0 auto; display: block;}
+.header .nav { color: #fff;}
+.header .nav ul { display: flex;}
+.header .nav ul li { flex: 1; text-align: center;}
+.header .nav ul li a { height: 30px; line-height: 30px; display: block;}
+.header .nav ul li a:hover { background: #0bbd9c;}
+@media screen and (max-width:720px){ 
+.header .head-title-img img { left: 73%;}
+.header .logo-box { padding: 0 5px;}
+.header .nav { font-size: 12px;}
+}
+
+.news-box { display: flex; height: 35px; line-height: 35px; padding: 0 5px; color: #fff;}
+.news-box .news-title img { width: 35px; height: 35px; margin-right: 5px;}
+.news-box .txtMarquee-left { flex: 1;}
+
+.subnav { border-radius: 5px; margin: 5px 0 0 0; padding: 5px 0; background: rgba(253,255,201,0.8);}
+.subnav ul { display: flex; text-align: center; font-size: 16px; font-weight: bold; text-shadow: 0px 2px 1px #78d186;}
+.subnav ul li { flex: 1;}
+.subnav ul li a {}
+.subnav ul li img { display: block; margin: 0 auto;}
+@media screen and (max-width:720px){ 
+.subnav ul li img { width: 67.2px; height: auto;}
+.subnav ul { font-size: 15px;}
+}
+
+.list-title { background: linear-gradient(transparent,#83430d); color: #ff0; text-shadow: 0px 0px 10px #f00; border-left: 1px solid #004400; border-right: 1px solid #004400; height: 40px; line-height: 40px; font-size: 24px; text-align: center; border-bottom: 1px solid #000; text-shadow: 1px 4px 1px rgba(0,0,0,.5); font-weight: bold; border-radius: 5px 5px 0 0;}
+
+.tiezi { table-layout: fixed; border: 0; background: linear-gradient(180deg, #fffef9 0%, #fff5d8 100%) #fff;}
+.tiezi td { overflow: hidden; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; border-bottom: 1px solid #6dbf8a; font-size: 16px;}
+.tiezi td a {display: block; padding: 5px 0; font-weight: bold; padding-right: 22px; overflow: hidden; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative;}
+@media screen and (max-width:720px){
+.tiezi td { font-size: 14px;}
+}
+
+
+.text-box { height: 200px; padding-left: 40px; background: linear-gradient(135deg, rgba(255,233,184,.85) 0%, rgba(255,255,255,.95) 45%, rgba(255,246,214,.95) 100%);}
+.img-title { padding-top: 40px; box-sizing: border-box; height: 212px; text-align: center;}
+.img-title h1{ font-size: 52px; line-height: 1; margin-bottom: 0.6em; letter-spacing: 6px; text-shadow: 0px 2px 1px #000; color: #f00;}
+.img-title h2{ font-size: 24px; line-height: 1; color: #0060ff; letter-spacing: 13px; text-shadow: 0px 2px 1px #000;}
+@media screen and (max-width:720px){
+.text-box { padding-left: 0;}
+}
+
+
+.footer{ padding-bottom: 1px; color: #fff; background: linear-gradient(180deg, #b71c1c 0%, #8b1111 100%);}
+.footer p { width: 80%; margin:0 auto; text-align: center; padding-bottom: 5px; margin-bottom: 5px; border-bottom:1px solid #000;}
+
+.tit { line-height: 40px; padding-bottom: 3px; color: #ff0; text-align: center; font-weight: bold; font-size: 26px; text-shadow: 1px 4px 1px #b99b5f; border-bottom: solid 1px #000; background: linear-gradient(transparent,#dacfcf);}
+.tie-con { font-size: 16px; background: #fff;}
+.tie-con ul {}
+.tie-con ul li { background: linear-gradient(90deg, rgba(255,235,186,.55) 0%, rgba(255,255,255,0) 60%);}
+.tie-con ul li a { display: block; padding: 0 20px 0 20px; line-height: 36px; font-weight: bold; border-bottom: solid 1px #b99b5f; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;}
+.tie-con.gaoshou { background: linear-gradient(180deg, #fffef9 0%, #fff5d8 100%) #fff;}
+@media screen and (max-width: 720px) {
+.tie-con { font-size: 14px;}
+}
+
+
+.detail { padding: 10px; background: linear-gradient(180deg, #fffef9 0%, #fff 100%) #fff;}
+.big-tit { padding: 10px 0 20px 0; font-size: 18px; font-weight: bold;}
+.qingchu { padding: 10px 0; font-size: 16px; color: #000000; border-top: solid 1px #ac0000; border-bottom: solid 1px #ac0000;}
+.neirong-txt { margin: 10px 0; font-size: 18px; font-weight: bold; font-family: "宋体";}
+.neirong-txt p { padding: 5px 0;}
+
+.neirong-table { border: 0; font-size: 18px; font-weight: bold; font-family: "宋体";}
+.neirong-table td { padding: 5px 0; border: 0; border-bottom: solid 1px #add9bc;}
+
+.jihao { padding: 5px; text-align: center; color: #f00; font-size: 16px; font-weight:bold; background: #ff0;}

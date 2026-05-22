@@ -20,6 +20,7 @@ yarn-error.log*
 .pnpm-debug.log*
 *.log
 *.bak
+*.psd
 
 # env files (allow .env.example template)
 .env

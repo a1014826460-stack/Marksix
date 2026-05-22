@@ -76,6 +76,8 @@ TWSAIMAHUI_REQUIRED_MODE_IDS = (
     471,  # getTou num=2 / 两头中特
     472,  # getShaXiao num=1 / 绝杀1肖
     473,  # getShaXiao num=2 / 绝杀2肖
+    475,  # brain teaser / 脑筋急转弯
+    476,  # 跑马图解（带图）
 )
 
 TWSAIMAHUI_BLOCKED_ITEMS = (
@@ -86,6 +88,79 @@ TWSAIMAHUI_BLOCKED_ITEMS = (
         "reason": "Current local data source does not match 六不中 payload semantics. mode_payload_333 is 天地4肖, not u6_code data.",
         "expected_fields": ("term", "u6_code", "res_code", "res_sx"),
         "status": "blocked_data_source",
+    },
+)
+
+# twcaibawang homepage modules that can already be mapped to working
+# mechanisms without changing shared routes or inventing new payload shapes.
+# Keep this list intentionally conservative: only include modules whose
+# frontend semantics are already clear in the current backend.
+TWCAIBAWANG_REQUIRED_MODE_IDS = (
+    12,   # 三头中特
+    26,   # 琴棋书画
+    34,   # 24码
+    38,   # 双波中特
+    49,   # 赚钱九肖 -> 9肖中特（同为 9 肖命中语义）
+    50,   # 一句爆特 -> 一句真言
+    52,   # 四字平特 / 玄机 -> 四字玄机
+    54,   # 平特一尾
+    56,   # 平特一肖
+    57,   # 大小中特
+    58,   # 绝杀一波 -> 绝杀半波
+    60,   # 九肖12码
+    197,  # 三期必开生肖
+    472,  # 必杀一肖
+)
+
+TWCAIBAWANG_BLOCKED_ITEMS = (
+    {
+        "frontend_module": "五肖五码",
+        "page_title": "五肖五码",
+        "reason": "Homepage block combines 五肖/四肖/三肖/二肖 and 五码/四码/三码/二码 in one custom static layout. No single existing mechanism matches its exact payload shape yet.",
+        "expected_fields": ("issue", "xiao_5", "xiao_4", "xiao_3", "xiao_2", "code_5", "code_4", "code_3", "code_2"),
+        "status": "blocked_exact_payload_mapping",
+    },
+    {
+        "frontend_module": "公开一肖一码",
+        "page_title": "一肖一码",
+        "reason": "Homepage block contains 九肖/七肖/五肖/三肖 plus 14码/8码/5码 and a final 一肖一码 summary. Existing mechanisms cover parts of it, but not this exact combined payload shape.",
+        "expected_fields": ("issue", "xiao_9", "xiao_7", "xiao_5", "xiao_3", "code_14", "code_8", "code_5", "best_xiao", "best_code"),
+        "status": "blocked_exact_payload_mapping",
+    },
+    {
+        "frontend_module": "高手榜单",
+        "page_title": "高手榜单",
+        "reason": "This section links to standalone detail pages like 11169.html and needs article/detail content APIs rather than prediction-module history rows.",
+        "expected_fields": ("id", "slug", "title", "term", "html"),
+        "status": "blocked_requires_article_api",
+    },
+    {
+        "frontend_module": "输尽光",
+        "page_title": "输尽光",
+        "reason": "The homepage section name is clear, but its exact backend payload contract and matching mechanism are not yet confirmed from existing tables.",
+        "expected_fields": ("issue", "content", "result_text"),
+        "status": "blocked_unconfirmed_mechanism_mapping",
+    },
+    {
+        "frontend_module": "六尾中特",
+        "page_title": "六尾中特网",
+        "reason": "The current backend has generic tail-based mechanisms, but this homepage module's exact six-tail layout and source mode_id are not confirmed yet.",
+        "expected_fields": ("issue", "tail_values", "result_text"),
+        "status": "blocked_unconfirmed_mode_id",
+    },
+    {
+        "frontend_module": "四行中特",
+        "page_title": "四行中特",
+        "reason": "Current backend ships a stable 3行 mechanism (mode 53), but the homepage requests four-line semantics. This needs either a confirmed existing mode_id or a new mechanism.",
+        "expected_fields": ("issue", "element_values", "result_text"),
+        "status": "blocked_missing_matching_mechanism",
+    },
+    {
+        "frontend_module": "绝杀10码",
+        "page_title": "绝杀10码",
+        "reason": "The site layout is known, but the exact source mode_id and stored payload columns still need confirmation from PostgreSQL history tables.",
+        "expected_fields": ("issue", "codes", "result_text"),
+        "status": "blocked_unconfirmed_mode_id",
     },
 )
 
@@ -114,19 +189,41 @@ def _site_matches_twsaimahui(site: dict[str, Any] | None) -> bool:
     return lottery_type_id == 3 and web_id == 6
 
 
+def _site_matches_twcaibawang(site: dict[str, Any] | None) -> bool:
+    if not site:
+        return False
+
+    domain = _normalize_domain(site.get("domain"))
+    if domain in {"www.twcaibawang.com", "twcaibawang.com"}:
+        return True
+
+    try:
+        web_id = int(site.get("web_id") or site.get("start_web_id") or 0)
+    except (TypeError, ValueError):
+        web_id = 0
+
+    return web_id == 5
+
+
 def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
     if _site_matches_twsaimahui(site):
         return TWSAIMAHUI_REQUIRED_MODE_IDS
+    if _site_matches_twcaibawang(site):
+        return TWCAIBAWANG_REQUIRED_MODE_IDS
     return DEFAULT_REQUIRED_MODE_IDS
 
 
 def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, Any]]:
     if _site_matches_twsaimahui(site):
         return [dict(item) for item in TWSAIMAHUI_BLOCKED_ITEMS]
+    if _site_matches_twcaibawang(site):
+        return [dict(item) for item in TWCAIBAWANG_BLOCKED_ITEMS]
     return []
 
 
 def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
     if _site_matches_twsaimahui(site):
         return "twsaimahui"
+    if _site_matches_twcaibawang(site):
+        return "twcaibawang"
     return "default"

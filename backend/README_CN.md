@@ -815,3 +815,93 @@ GET  /api/admin/configs/history          → 配置变更历史（可按 key 筛
 5. 通过配置管理页面统一管理运行参数，避免直接修改 config.yaml。
 6. 监控 `/api/health` 和 `error_logs`。
 7. 使用受监管的进程管理方式运行服务，以便服务崩溃后可以自动重启恢复。
+
+---
+
+## 静态 JSON 映射导入
+
+项目新增了两套独立脚本，用于将 `backend/data/json_data/` 下的静态 JSON 导入 PostgreSQL，并在预测模块中按路径快速读取：
+
+- 导入脚本：`backend/src/utils/import_static_mappings.py`
+- 读取脚本：`backend/src/utils/read_static_mapping.py`
+- 示例配置：`backend/config/static_mappings.yaml`
+
+默认会将每个 JSON 文件导入为 `public` schema 下的一张静态映射表，并自动补充逻辑路径字段 `mapping_path`，例如：
+
+- `brain_test.json` -> `public.static_mapping_brain_test`
+- `sx_verse.json` -> `public.static_mapping_sx_verse`
+- 路径示例：`json_data/brain_test/1`
+
+### 导入命令
+
+全量替换导入：
+
+```bash
+python backend/src/utils/import_static_mappings.py \
+  --config backend/config/static_mappings.yaml \
+  --db-target "postgresql://user:password@host:5432/liuhecai"
+```
+
+增量导入：
+
+```bash
+python backend/src/utils/import_static_mappings.py \
+  --config backend/config/static_mappings.yaml \
+  --db-host host \
+  --db-port 5432 \
+  --db-name liuhecai \
+  --db-user user \
+  --db-password password \
+  --incremental
+```
+
+说明：
+
+- 默认模式为全量替换，会先清空目标表再重建数据。
+- `--incremental` 会按主键执行 UPSERT，只插入新记录或更新已有记录。
+- 脚本会自动建表、补列、创建 `mapping_path` 唯一索引，并输出成功/失败统计日志。
+- 导入前会严格校验 JSON 是否为空、是否为数组、字段是否一致、主键是否重复。
+
+### 读取命令
+
+按路径读取单条记录：
+
+```bash
+python backend/src/utils/read_static_mapping.py \
+  --config backend/config/static_mappings.yaml \
+  --db-target "postgresql://user:password@host:5432/liuhecai" \
+  --path "json_data/brain_test/1"
+```
+
+批量读取：
+
+```bash
+python backend/src/utils/read_static_mapping.py \
+  --config backend/config/static_mappings.yaml \
+  --db-target "postgresql://user:password@host:5432/liuhecai" \
+  --paths "json_data/brain_test/1" "json_data/brain_test/2"
+```
+
+如果路径中已包含数据集名称，可以不传 `--dataset`；脚本会自动从路径推断数据集。
+
+### Python 接口
+
+```python
+from utils.read_static_mapping import get_mapping, get_mappings
+
+row = get_mapping(
+    "json_data/brain_test/1",
+    db_target="postgresql://user:password@host:5432/liuhecai",
+)
+
+rows = get_mappings(
+    ["json_data/brain_test/1", "json_data/brain_test/2"],
+    db_target="postgresql://user:password@host:5432/liuhecai",
+)
+```
+
+返回结果为可直接序列化的字典或字典列表。查不到记录时，单条返回 `{}`，批量返回 `[]`。
+
+### 当前数据注意事项
+
+当前工作区中的 `backend/data/json_data/sx_verse.json` 为空文件。导入脚本会将其视为校验失败并拒绝写入，避免把空数据同步到正式库。补回有效 JSON 内容后可直接复用同一命令重新导入。

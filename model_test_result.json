@@ -1,0 +1,211 @@
+[
+  {
+    "model": "claude-3-5-sonnet",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-3-7-sonnet",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-4-opus",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-4-sonnet",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-haiku-4-5",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-opus-4-7",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "claude-sonnet-4-6",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "deepseek-chat",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "deepseek-reasoner",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gemini-1.5-flash",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gemini-1.5-pro",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gpt-3.5-turbo",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gpt-4.1",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gpt-4o",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "gpt-4o-mini",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "qwen-max",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "qwen-plus",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  },
+  {
+    "model": "qwen-turbo",
+    "ok": false,
+    "unsupported": false,
+    "status": 401,
+    "content": "",
+    "error": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  }
+]
