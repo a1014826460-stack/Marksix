@@ -47,21 +47,31 @@ class ResponseWriter:
         self.send_json(payload, status)
 
     def serve_upload(self, path: str, base_dir: Path) -> None:
-        filename = Path(path).name
-        if not filename:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+        normalized_path = str(path or "").strip()
+        upload_prefix = "/uploads/"
+        if not normalized_path.startswith(upload_prefix):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
             return
-        file_path = base_dir / filename
+
+        relative_path = normalized_path[len(upload_prefix):].lstrip("/")
+        if not relative_path:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
+            return
+
+        file_path = base_dir / Path(relative_path)
+        base_dir_resolved = base_dir.resolve()
         resolved = file_path.resolve()
-        if not resolved.is_file() or not resolved.is_relative_to(base_dir.resolve()):
-            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+        if not resolved.is_file() or not resolved.is_relative_to(base_dir_resolved):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
             return
+
         mime_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
         try:
             data = resolved.read_bytes()
         except OSError:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "文件不存在")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
             return
+
         self._handler.send_response(HTTPStatus.OK)
         self._handler.send_header("Content-Type", mime_type)
         self._handler.send_header("Content-Length", str(len(data)))
