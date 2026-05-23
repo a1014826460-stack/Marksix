@@ -1,8 +1,8 @@
 import { buildSiteMetadata } from "@/lib/sites"
 
-export const metadata = buildSiteMetadata("twsaimahui")
+export const metadata = buildSiteMetadata("twcaibawang")
 
-export default function TwsaimahuiLayout({
+export default function TwcaibawangLayout({
   children,
 }: {
   children: React.ReactNode

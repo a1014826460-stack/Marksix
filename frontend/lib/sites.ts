@@ -1,4 +1,5 @@
 import type { LotteryGame } from "@/lib/lotteryData"
+import type { Metadata } from "next"
 
 export type FrontendSiteConfig = {
   siteKey: string
@@ -10,9 +11,13 @@ export type FrontendSiteConfig = {
   defaultWebId: number
   defaultLotteryTypeId: 1 | 2 | 3
   forumTitle: string
+  metadataTitle?: string
+  metadataDescription?: string
+  faviconPath?: `/${string}`
   headerImagePath?: `/${string}`
   embedPath?: `/${string}`
   shellCssPaths?: readonly `/${string}`[]
+  pageCssPaths?: readonly `/${string}`[]
 }
 
 const SITE_CONFIGS: FrontendSiteConfig[] = [
@@ -26,6 +31,9 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultWebId: 4,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾六合彩论坛",
+    metadataTitle: "全网最准尽在台湾六合彩论坛",
+    metadataDescription: "全网最准尽在台湾六合彩论坛",
+    faviconPath: "/favicon.ico",
     headerImagePath: "/vendor/shengshi8800/static/picture/header.jpg",
     embedPath: "/vendor/shengshi8800/embed.html",
     shellCssPaths: [
@@ -43,6 +51,9 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultWebId: 6,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾赛马会",
+    metadataTitle: "台湾赛马会：官方正版请认准唯一官方",
+    metadataDescription: "台湾赛马会：官方正版请认准唯一官方",
+    faviconPath: "/vendor/twsaimahui/static/image/favicon.ico",
   },
   {
     siteKey: "twcaibawang",
@@ -54,6 +65,15 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultWebId: 5,
     defaultLotteryTypeId: 3,
     forumTitle: "香港天天彩",
+    metadataTitle: "台湾彩霸王：聚合全网高手",
+    metadataDescription: "台湾彩霸王：聚合全网高手",
+    faviconPath: "/vendor/twcaibawang.com/static/image/favicon.ico",
+    pageCssPaths: [
+      "/vendor/twcaibawang.com/static/css/main.css",
+      "/vendor/twcaibawang.com/static/css/custom.css",
+      "/vendor/twcaibawang.com/static/css/style.css",
+      "/vendor/twcaibawang.com/static/css/nystyle.css",
+    ],
   },
 ]
 
@@ -63,6 +83,25 @@ export function getAllSiteConfigs() {
 
 export function getSiteConfig(siteKey: string) {
   return SITE_CONFIGS.find((site) => site.siteKey === siteKey) || null
+}
+
+export function buildSiteMetadata(siteKey: string, fallback?: Metadata): Metadata {
+  const site = getSiteConfig(siteKey)
+  if (!site) {
+    return fallback || {}
+  }
+
+  return {
+    ...fallback,
+    title: site.metadataTitle || fallback?.title,
+    description: site.metadataDescription || fallback?.description,
+    icons: site.faviconPath
+      ? {
+          ...(fallback?.icons && typeof fallback.icons === "object" ? fallback.icons : {}),
+          icon: site.faviconPath,
+        }
+      : fallback?.icons,
+  }
 }
 
 export function normalizeHost(host: string | null | undefined) {

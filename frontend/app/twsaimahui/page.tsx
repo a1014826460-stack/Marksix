@@ -7,7 +7,7 @@ export default function TwsaimahuiPage() {
   return (
     <iframe
       src={site?.vendorIndexPath || "/vendor/twsaimahui/index.html"}
-      title={site?.siteKey || "twsaimahui"}
+      title={site?.metadataTitle || site?.forumTitle || site?.siteKey || "twsaimahui"}
       style={{
         display: "block",
         width: "100%",

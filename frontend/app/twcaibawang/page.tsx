@@ -5,6 +5,12 @@ import { getSiteConfig } from "@/lib/sites"
 export default async function TwcaibawangPage() {
   const site = getSiteConfig("twcaibawang")
   const siteId = site?.defaultWebId || 5
+  const cssPaths = site?.pageCssPaths || [
+    "/vendor/twcaibawang.com/static/css/main.css",
+    "/vendor/twcaibawang.com/static/css/custom.css",
+    "/vendor/twcaibawang.com/static/css/style.css",
+    "/vendor/twcaibawang.com/static/css/nystyle.css",
+  ]
   const siteData = await getPublicSitePageData({
     siteId,
     historyLimit: 8,
@@ -25,10 +31,9 @@ export default async function TwcaibawangPage() {
 
   return (
     <>
-      <link rel="stylesheet" href="/vendor/twcaibawang.com/static/css/main.css" />
-      <link rel="stylesheet" href="/vendor/twcaibawang.com/static/css/custom.css" />
-      <link rel="stylesheet" href="/vendor/twcaibawang.com/static/css/style.css" />
-      <link rel="stylesheet" href="/vendor/twcaibawang.com/static/css/nystyle.css" />
+      {cssPaths.map((href) => (
+        <link key={href} rel="stylesheet" href={href} />
+      ))}
       <TwcaibawangHomeClient
         siteData={siteData}
         homepageModules={homepageModules}
