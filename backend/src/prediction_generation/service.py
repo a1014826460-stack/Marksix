@@ -42,7 +42,7 @@ from prediction_generation.brain_teaser_image import (
 )
 from prediction_generation.mode_474_image import (
     MODE_474_ID,
-    MODE_474_TITLE,
+    build_mode_474_title,
     render_mode_474_prediction_image,
 )
 from prediction_generation.mode_476_image import (
@@ -392,15 +392,16 @@ def _load_previous_opened_numbers_for_issue(
     lottery_type_id: int,
     year: int,
     term: int,
-) -> str:
+) -> str | None:
     previous_draw = find_latest_opened_draw_before_issue(
         conn,
         lottery_type_id=int(lottery_type_id),
         target_issue=(int(year), int(term)),
     )
     if not previous_draw:
-        return "01,02,03,04,05,06,07"
-    return str(previous_draw.get("numbers_str") or "01,02,03,04,05,06,07")
+        return None
+    numbers_str = str(previous_draw.get("numbers_str") or "").strip()
+    return numbers_str or None
 
 
 def _build_future_draws(
@@ -769,14 +770,25 @@ def _generate_mode_474_row(
         res_code=safe_res_code or "",
         generated_content=result["prediction"]["content"],
     )
-    row_data["title"] = MODE_474_TITLE
+    previous_numbers = _load_previous_opened_numbers_for_issue(
+        conn,
+        lottery_type_id=int(lottery_type),
+        year=int(draw["year"]),
+        term=int(draw["term"]),
+    )
+    if not previous_numbers:
+        raise ValueError(
+            f"mode_474 缺少对应彩种的上期开奖结果: lottery_type={lottery_type}, "
+            f"year={draw['year']}, term={draw['term']}"
+        )
     render_result = render_mode_474_prediction_image(
-        res_code=safe_res_code or "01,02,03,04,05,06,07",
+        res_code=previous_numbers,
         lottery_type=int(lottery_type),
         year=int(draw["year"]),
         term=int(draw["term"]),
         site_web_id=int(site_web_id),
     )
+    row_data["title"] = render_result.title or build_mode_474_title(draw["term"])
     row_data["image_url"] = render_result.relative_url
     row_data["source_record_id"] = render_result.source_record_id
     return row_data

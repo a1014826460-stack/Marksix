@@ -272,9 +272,12 @@ def get_public_site_page_data(
     site_id: int | None = None,
     domain: str | None = None,
     history_limit: int = 8,
+    lottery_type_id: int | None = None,
 ) -> dict[str, Any]:
     """公开页数据按站点模块配置读取历史记录，不在这里主动生成预测。"""
     site = resolve_public_site(db_path, site_id=site_id, domain=domain)
+    effective_lottery_type_id = int(lottery_type_id or site.get("lottery_type_id") or 1)
+    site = {**site, "lottery_type_id": effective_lottery_type_id}
     logger = logging.getLogger("public.site_page")
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -297,7 +300,7 @@ def get_public_site_page_data(
                 mechanism_key,
                 history_limit,
                 mode_id=int(row["mode_id"] or 0),
-                lottery_type_id=int(site.get("lottery_type_id") or 1),
+                lottery_type_id=effective_lottery_type_id,
                 web_start=int(site.get("start_web_id") or 0),
                 web_end=int(site.get("end_web_id") or 0),
             )

@@ -179,3 +179,51 @@ def test_load_smtp_config_defaults(monkeypatch):
     assert config["host"] == "smtp.qq.com"
     assert config["port"] == 587
     assert config["from_name"] == "Liuhecai 报警系统"
+def test_alert_draw_staleness_includes_lottery_name_and_repair_hint(monkeypatch):
+    from alerts.alert_service import alert_draw_staleness
+    from datetime import datetime as real_datetime, timezone
+
+    class FakeRow(dict):
+        pass
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            self.sql = sql
+            self.params = params
+            return self
+
+        def fetchone(self):
+            if "FROM lottery_draws" in getattr(self, "sql", ""):
+                return FakeRow({"year": 2026, "term": 142, "next_time": "1000"})
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    captured = {}
+
+    def fake_connect(db_path):
+        return FakeConn()
+
+    def fake_send_alert_async(db_path, subject, body_html):
+        captured["subject"] = subject
+        captured["body_html"] = body_html
+
+    class FakeDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime(2026, 5, 23, 9, 41, 23, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("alerts.alert_service.connect", fake_connect)
+    monkeypatch.setattr("alerts.email_service.send_alert_async", fake_send_alert_async)
+    monkeypatch.setattr("alerts.alert_service._is_alert_suppressed", lambda *args, **kwargs: False)
+    monkeypatch.setattr("alerts.alert_service.datetime", FakeDatetime)
+
+    result = alert_draw_staleness("fake", lottery_type_id=2)
+    assert result is True
+    assert "澳门彩" in captured["subject"]
+    assert "2026142" in captured["body_html"]
+    assert "POST /api/admin/crawler/run-macau" in captured["body_html"]

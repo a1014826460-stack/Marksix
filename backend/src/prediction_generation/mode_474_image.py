@@ -4,6 +4,7 @@ import hashlib
 import random
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
@@ -12,7 +13,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 MODE_474_ID = 474
-MODE_474_TITLE = "四不像中特图"
+MODE_474_TITLE_TEMPLATE = "{term}期四不像中特图"
 MODE_474_IMAGE_LABEL = "上期开奖结果："
 MODE_474_SIZE = (711, 744)
 MODE_474_ANIMALS_ROOT = _PROJECT_ROOT / "data" / "Images" / "mode_474" / "animals"
@@ -72,10 +73,26 @@ def ensure_size(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return image.resize(size, Image.Resampling.LANCZOS)
 
 
+@lru_cache(maxsize=16)
+def _load_rgba_image_cached(image_path: str, size: tuple[int, int] | None = None) -> Image.Image:
+    image = Image.open(image_path).convert("RGBA")
+    if size is not None and image.size != size:
+        image = image.resize(size, Image.Resampling.LANCZOS)
+    return image.copy()
+
+
 def resolve_font(font_path: Path, font_size: int) -> ImageFont.FreeTypeFont:
     if not font_path.exists():
         raise FileNotFoundError(f"Font file not found: {font_path}")
     return ImageFont.truetype(str(font_path), font_size)
+
+
+@lru_cache(maxsize=16)
+def resolve_font_cached(font_path: str, font_size: int) -> ImageFont.FreeTypeFont:
+    path = Path(font_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Font file not found: {path}")
+    return ImageFont.truetype(str(path), font_size)
 
 
 def normalize_res_code(res_code: str) -> str:
@@ -89,6 +106,10 @@ def normalize_res_code(res_code: str) -> str:
         raise ValueError("res_code must contain exactly 7 numbers.")
 
     return ",".join(part.zfill(2) for part in parts)
+
+
+def build_mode_474_title(term: int | str) -> str:
+    return MODE_474_TITLE_TEMPLATE.format(term=str(term))
 
 
 def text_size(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> tuple[int, int]:
@@ -232,16 +253,18 @@ def render_mode_474_prediction_image(
         source_root=source_root,
     )
 
-    frame = ensure_size(Image.open(frame_path), MODE_474_SIZE)
+    frame = _load_rgba_image_cached(str(frame_path), MODE_474_SIZE)
     base = frame.copy()
-    cutout = build_two_region_cutout(Image.open(source_image_path))
+    source_image = _load_rgba_image_cached(str(source_image_path))
+    cutout = build_two_region_cutout(source_image)
     base.alpha_composite(cutout, (0, 0))
 
-    title_font = resolve_font(title_font_path, title_font_size)
-    number_font = resolve_font(number_font_path, result_font_size)
+    title_font = resolve_font_cached(str(title_font_path), title_font_size)
+    number_font = resolve_font_cached(str(number_font_path), result_font_size)
     rng = random.Random(_make_seed_int(f"mode474:text:{int(year)}:{int(term)}:{int(site_web_id)}"))
+    title_text = build_mode_474_title(term)
 
-    draw_artistic_title(base, MODE_474_TITLE, MODE_474_TITLE_CENTER_Y, title_font)
+    draw_artistic_title(base, title_text, MODE_474_TITLE_CENTER_Y, title_font)
     draw_result_text(base, normalized_res_code, number_font, rng)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -252,13 +275,13 @@ def render_mode_474_prediction_image(
         web_id=int(site_web_id),
     )
     output_path = output_dir / output_name
-    base.convert("RGB").save(output_path, format="JPEG", quality=95, optimize=True)
+    base.convert("RGB").save(output_path, format="JPEG", quality=92)
 
     relative_path = output_path.relative_to(_PROJECT_ROOT).as_posix()
     return Mode474RenderResult(
         output_path=output_path,
         relative_url=f"/{relative_path}",
-        title=MODE_474_TITLE,
+        title=title_text,
         content="",
         source_record_id=source_image_path.stem,
     )

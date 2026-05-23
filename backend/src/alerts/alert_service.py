@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from html import escape
 import logging
 import time as _time
 from datetime import datetime, timedelta, timezone
@@ -56,6 +57,16 @@ def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
 
 def _cfg_int(db_path: str | Path, key: str, fallback: int) -> int:
     return int(_cfg(db_path, key, fallback))
+
+
+def _draw_staleness_repair_hint(lottery_type_id: int) -> str:
+    if lottery_type_id == 1:
+        return "POST /api/admin/crawler/run-hk"
+    if lottery_type_id == 2:
+        return "POST /api/admin/crawler/run-macau"
+    if lottery_type_id == 3:
+        return "后台手工录入开奖记录，随后重跑日常预测"
+    return "检查对应彩种的采集/录入入口"
 
 
 # ── 爬虫失败计数管理 ─────────────────────────────────────
@@ -315,6 +326,7 @@ def alert_draw_staleness(
     now_beijing_str = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S 北京时间")
 
     lt_ids = [lottery_type_id] if lottery_type_id else [1, 2, 3]
+    stale_items: list[dict[str, Any]] = []
 
     try:
         with connect(db_path) as conn:
@@ -348,12 +360,22 @@ def alert_draw_staleness(
                     lt_name = LOTTERY_NAMES.get(lt, str(lt))
                     year = int(row["year"] or 0)
                     term = int(row["term"] or 0)
+                    lag_seconds = max(0, int((now_utc - next_dt).total_seconds()))
+                    issue = f"{year}{term:03d}"
                     _alert_logger.warning(
                         "Draw staleness: lt=%s latest=%s/%s next_time=%s < now=%s",
                         lt_name, year, term,
                         next_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
                         now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                     )
+                    stale_items.append({
+                        "lottery_type_id": lt,
+                        "lottery_name": lt_name,
+                        "issue": issue,
+                        "next_time_utc": next_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        "lag_minutes": max(1, (lag_seconds + 59) // 60),
+                        "repair_hint": _draw_staleness_repair_hint(lt),
+                    })
                     triggered = True
 
         if triggered:
@@ -362,20 +384,39 @@ def alert_draw_staleness(
                 return triggered
 
             from alerts.email_service import send_alert_async
+            subject_names = " / ".join(item["lottery_name"] for item in stale_items) or "开奖数据"
+            rows_html = "".join(
+                f"""
+                <tr>
+                    <td>{escape(str(item["lottery_name"]))}</td>
+                    <td>{escape(str(item["issue"]))}</td>
+                    <td>{escape(str(item["next_time_utc"]))}</td>
+                    <td style="color:red"><b>{escape(str(item["lag_minutes"]))} 分钟</b></td>
+                    <td>{escape(str(item["repair_hint"]))}</td>
+                </tr>
+                """
+                for item in stale_items
+            )
             send_alert_async(
                 db_path,
-                subject="[六合彩报警] 开奖数据可能滞后",
+                subject=f"[六合彩报警] {subject_names}开奖数据可能滞后",
                 body_html=f"""
                 <h2>开奖数据滞后报警</h2>
-                <p>最新已开奖记录的 next_time 已过当前时间（UTC），但未检测到新一期开奖数据入库。</p>
-                <p>可能原因：</p>
-                <ul>
-                    <li>爬虫数据源异常，未能拉取到最新开奖数据</li>
-                    <li>开奖改期</li>
-                    <li>调度器未正常运行</li>
-                </ul>
-                <p>触发时间: {now_beijing_str}</p>
-                <p>请检查 lottery_draws 表最新记录和调度器日志。</p>
+                <p>以下彩种的最新已开奖期已超出当前 UTC 时间，但暂未看到更晚一期入库。</p>
+                <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+                    <tr style="background:#f5f5f5">
+                        <th>彩种</th><th>期号</th><th>next_time (UTC)</th><th>滞后</th><th>快速修复</th>
+                    </tr>
+                    {rows_html}
+                </table>
+                <p>触发时间: {escape(now_beijing_str)}</p>
+                <p><b>快速修复顺序</b></p>
+                <ol>
+                    <li>香港彩: 直接调用 <code>POST /api/admin/crawler/run-hk</code></li>
+                    <li>澳门彩: 直接调用 <code>POST /api/admin/crawler/run-macau</code></li>
+                    <li>台湾彩: 到后台手工录入开奖记录，然后重跑日常预测</li>
+                </ol>
+                <p>如果数据已恢复但邮件仍重复，请优先检查 <code>crawler.scheduler</code> 日志和 <code>lottery_draws</code> 最新记录。</p>
                 """,
             )
     except Exception as exc:

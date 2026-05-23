@@ -29,12 +29,14 @@ def register(router: Router) -> None:
 def site_page(ctx: RequestContext) -> None:
     site_id = ctx.query_value("site_id")
     history_limit = int(ctx.query_value("history_limit", "8") or 8)
+    lottery_type = ctx.query_value("lottery_type")
     ctx.send_json(
         get_public_site_page_data(
             ctx.db_path,
             site_id=int(site_id) if site_id not in (None, "") else None,
             domain=ctx.query_value("domain"),
             history_limit=history_limit,
+            lottery_type_id=int(lottery_type) if lottery_type not in (None, "") else None,
         )
     )
 
