@@ -22,25 +22,23 @@ type GenericModuleConfig = {
   anchor: string
   title: string
   mechanismKey: string
-  headerText?: string
   face?: string
-  titleColor?: string
   predictionColor?: string
 }
 
 type SourceRow = {
-  issue: string
   term: string
   prediction: string
   result: string
   isOpened: boolean
   isCorrect: boolean | null
+  raw: Record<string, unknown>
 }
 
 const LOTTERY_TYPE_OPTIONS: LotteryTypeOption[] = [
-  { id: 1, label: "香港天天彩", iframeLabel: "香港天天彩", color: "#00c6ff", drawLotteryType: 1 },
+  { id: 1, label: "香港天下彩", iframeLabel: "香港天下彩", color: "#00c6ff", drawLotteryType: 1 },
   { id: 2, label: "新澳门六合彩", iframeLabel: "新澳门六合彩", color: "#0084ff", drawLotteryType: 2 },
-  { id: 3, label: "香港六合彩", iframeLabel: "香港六合彩", color: "#de2910", drawLotteryType: 3 },
+  { id: 3, label: "香港六合彩", iframeLabel: "香港六合彩", color: "#de2910", drawLotteryType: 1 },
 ]
 
 const GENERIC_MODULES: GenericModuleConfig[] = [
@@ -50,10 +48,10 @@ const GENERIC_MODULES: GenericModuleConfig[] = [
   { anchor: "bz9x", title: "9肖中特", mechanismKey: "9xzt", face: "微软雅黑", predictionColor: "#FF0000" },
   { anchor: "m24", title: "24码", mechanismKey: "ma24", face: "微软雅黑", predictionColor: "#0000FF" },
   { anchor: "sxjh3", title: "三期4肖", mechanismKey: "title_197", face: "微软雅黑", predictionColor: "#0000FF" },
-  { anchor: "stzt", title: "3头中特", mechanismKey: "3tou", face: "微软雅黑", predictionColor: "#0000FF" },
-  { anchor: "x912m", title: "9肖12码", mechanismKey: "9xiao12ma", face: "微软雅黑", predictionColor: "#0000FF" },
+  { anchor: "stzt", title: "三头中特", mechanismKey: "3tou", face: "华文楷体", predictionColor: "#000080" },
+  { anchor: "x912m", title: "9肖12码", mechanismKey: "9xiao12ma", face: "华文中宋", predictionColor: "#FF9900" },
   { anchor: "dxzt", title: "大小中特", mechanismKey: "daxiao", face: "微软雅黑", predictionColor: "#0000FF" },
-  { anchor: "jsyb", title: "绝杀半波", mechanismKey: "jueshabanbo", face: "微软雅黑", predictionColor: "#0000FF" },
+  { anchor: "jsyb", title: "绝杀一波", mechanismKey: "jueshabanbo", face: "微软雅黑", predictionColor: "#0000FF" },
 ]
 
 function escapeHtml(value: unknown) {
@@ -82,22 +80,18 @@ function buildKjIframeUrl(option: LotteryTypeOption) {
 }
 
 function normalizePredictionText(value: string) {
-  return value
-    .replace(/^\[/, "")
-    .replace(/\]$/, "")
-    .replace(/"/g, "")
-    .replace(/,/g, "")
+  return value.replace(/^\[/, "").replace(/\]$/, "").replace(/"/g, "")
 }
 
 function toSourceRows(module: PublicModule | null): SourceRow[] {
   if (!module) return []
   return module.history.map((row) => ({
-    issue: row.issue || `${row.year || ""}${row.term || ""}`.trim(),
     term: row.term || "",
     prediction: normalizePredictionText(String(row.prediction_text || "")),
     result: String(row.result_text || ""),
     isOpened: !!row.is_opened,
     isCorrect: row.is_correct ?? null,
+    raw: row.raw || {},
   }))
 }
 
@@ -132,8 +126,8 @@ function formatOpenResult(resultText: string) {
   return parts.raw
 }
 
-function renderResult(resultText: string, isOpened: boolean, isCorrect: boolean | null) {
-  if (!isOpened) return `<font color="#FF00FF">???????</font>`
+function renderPlainResult(resultText: string, isOpened: boolean, isCorrect: boolean | null, pending = "???????") {
+  if (!isOpened) return pending
   const text = escapeHtml(formatOpenResult(resultText))
   if (isCorrect === false) {
     return `${text}<font color="#000">错</font>`
@@ -200,6 +194,18 @@ function renderDottedCodes(items: string[], highlighted?: string) {
     .join("")
 }
 
+function renderDashCodes(items: string[], highlighted?: string) {
+  return items
+    .map((item, index) => {
+      const prefix = index > 0 ? "-" : ""
+      const content = escapeHtml(item)
+      return highlighted && item === highlighted
+        ? `${prefix}<span style="background-color: #FFFF00">${content}</span>`
+        : `${prefix}<font>${content}</font>`
+    })
+    .join("")
+}
+
 function renderWuxiaoWuma(module: Extract<VendorHomepageModule, { module_key: "wuxiao_wuma" }> | undefined) {
   if (!module?.history?.length) return ""
   const rows = module.history
@@ -231,7 +237,7 @@ function renderWuxiaoWuma(module: Extract<VendorHomepageModule, { module_key: "w
                             <p align="center">
                                 <b>
                                     <font face="楷体" style="font-size: 18pt">
-                                        <font color="#FFFF00">香港天天彩</font>
+                                        <font color="#FFFF00">香港天下彩</font>
                                         <font color="#FFFF00" size="5" face="华文中宋">五肖五码</font>
                                     </font>
                                 </b>
@@ -259,7 +265,7 @@ function renderPublicYixiaoYima(module: Extract<VendorHomepageModule, { module_k
     <tr>
         <th align="left" style="background-color: #CC0000">
             <p align="center">
-                <font face="微软雅黑"><font size="4" style="color: #fff">香港天天彩（公开一肖一码）</font></font>
+                <font face="微软雅黑"><font size="4" style="color: #fff">香港天下彩（公开一肖一码）</font></font>
             </p>
         </th>
     </tr>
@@ -326,7 +332,7 @@ function renderPublicYixiaoYima(module: Extract<VendorHomepageModule, { module_k
     <tr>
         <td align="center" style="text-align: left" bgcolor="#FFFFFF">
             <p style="text-align: center">
-                <font color="#000000" face="微软雅黑">本期推荐一肖一码:(</font>
+                <font color="#000000" face="微软雅黑">本期推荐一肖一码(</font>
                 <font color="#FF0000" face="微软雅黑">
                     <span style="font-size: 1.5em"><font>${escapeHtml(row.best_pick.xiao)}</font><font>${escapeHtml(row.best_pick.code)}</font></span></font>
                 <font color="#000000" face="微软雅黑">)${finalText}</font></p>
@@ -353,7 +359,7 @@ function renderShujinguang(module: Extract<VendorHomepageModule, { module_key: "
         ? row.is_correct === false
           ? `<font color="#000000">${escapeHtml(row.result.res_code + row.result.res_sx)}错</font>`
           : `<font color="#FF0000">${escapeHtml(row.result.res_code + row.result.res_sx)}对</font>`
-        : `??????`
+        : "??????"
       return `<tr>
                     <td width="100%" height="40">
                         <p align="center"><b><font face="楷体" style="font-size: 14pt">${escapeHtml(row.term)}期本期<font color="#FF0000" size="5" face="楷体">【${picks}】</font>输尽光（${result}）</font></b></p>
@@ -363,21 +369,7 @@ function renderShujinguang(module: Extract<VendorHomepageModule, { module_key: "
     .join("")
 
   return `<div class="box pad" id="sjg" style="margin:0px;">
-            <table border="1" width="100%" bgcolor="#ffffff">
-                <tbody>
-                <tr>
-                    <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                        <p align="center">
-                            <b>
-                                <font face="楷体" style="font-size: 18pt">
-                                    <font color="#FFFF00">香港天天彩</font>
-                                    <font color="#FFFFFF">『本期输尽光』</font></font>
-                            </b>
-                        </p>
-                    </td>
-                </tr>
-                </tbody>
-            </table>
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『本期输尽光』</font>`)}
             <table style="border-collapse:collapse" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${rows}</tbody>
             </table>
@@ -389,8 +381,7 @@ function renderTiandi2Xiao(module: Extract<VendorHomepageModule, { module_key: "
   const rows = module.history
     .map((row) => {
       const hitSx = row.result.res_sx
-      const shouldHighlightTiandi = !!row.is_correct && !row.xiao_pair.includes(hitSx)
-      const tiandi = shouldHighlightTiandi
+      const tiandi = row.is_correct && !row.xiao_pair.includes(hitSx)
         ? `<span style="background-color: #FFFF00">${escapeHtml(row.tiandi)}</span>`
         : escapeHtml(row.tiandi)
       const xiaoPair = row.xiao_pair
@@ -400,6 +391,7 @@ function renderTiandi2Xiao(module: Extract<VendorHomepageModule, { module_key: "
             : escapeHtml(item)
         )
         .join("")
+      const result = renderPlainResult(row.result.result_text, row.result.is_opened, row.is_correct)
 
       return `<tr>
                     <td height="40">
@@ -408,7 +400,7 @@ function renderTiandi2Xiao(module: Extract<VendorHomepageModule, { module_key: "
                                 <font face="微软雅黑" size="4">${escapeHtml(row.term)}期天地肖</font>
                                 <font color="#0000FF" face="微软雅黑" size="4">【${tiandi}+${xiaoPair}】</font>
                                 <font face="微软雅黑" size="4">开
-                                    <font color="#FF00FF">${renderResult(row.result.result_text, row.result.is_opened, row.is_correct)}</font></font>
+                                    <font color="#FF00FF">${result}</font></font>
                             </b>
                         </p>
                     </td>
@@ -421,21 +413,7 @@ function renderTiandi2Xiao(module: Extract<VendorHomepageModule, { module_key: "
                 <tbody>
                 <tr>
                     <td style="text-align:center" height="60">
-                        <table border="1" width="100%" bgcolor="#ffffff">
-                            <tbody>
-                            <tr>
-                                <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                                    <p align="center">
-                                        <b>
-                                            <font face="楷体" style="font-size: 18pt">
-                                                <font color="#FFFF00">香港天天彩</font>
-                                                <font color="#FFFFFF">『天地两肖』</font></font>
-                                        </b>
-                                    </p>
-                                </td>
-                            </tr>
-                            </tbody>
-                        </table>
+                        ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『天地两肖』</font>`)}
                     </td>
                 </tr>
                 ${rows}
@@ -466,7 +444,9 @@ function renderDaxiao2Tou(module: Extract<VendorHomepageModule, { module_key: "d
       const daxiao = row.daxiao === hitDx
         ? `<span style="background-color: #FFFF00">${escapeHtml(row.daxiao)}数</span>`
         : `${escapeHtml(row.daxiao)}数`
-      const touCode = highlightTouCode(row.tou_code, row.result.res_code, row.result.res_code.startsWith(row.tou_code[0]))
+      const touCode = highlightTouCode(row.tou_code, row.result.res_code, row.is_correct)
+      const result = renderPlainResult(row.result.result_text, row.result.is_opened, row.is_correct)
+
       return `<tr>
                         <td height="38">
                             <p align="center">
@@ -474,7 +454,7 @@ function renderDaxiao2Tou(module: Extract<VendorHomepageModule, { module_key: "d
                                     <font face="微软雅黑" size="4">${escapeHtml(row.term)}期</font>
                                     <font color="#0000FF" face="微软雅黑" size="4">【${daxiao}+${touCode}】</font>
                                     <font face="微软雅黑" size="4">开
-                                        <font color="#FF00FF">${renderResult(row.result.result_text, row.result.is_opened, row.is_correct)}</font></font>
+                                        <font color="#FF00FF">${result}</font></font>
                                 </b>
                             </p>
                         </td>
@@ -483,21 +463,7 @@ function renderDaxiao2Tou(module: Extract<VendorHomepageModule, { module_key: "d
     .join("")
 
   return `<div class="box pad" style="margin:0px;">
-                <table border="1" width="100%" bgcolor="#ffffff">
-                    <tbody>
-                    <tr>
-                        <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                            <p align="center">
-                                <b>
-                                    <font face="楷体" style="font-size: 18pt">
-                                        <font color="#FFFF00">香港天天彩</font>
-                                        <font color="#FFFFFF">『大小+2头』</font></font>
-                                </b>
-                            </p>
-                        </td>
-                    </tr>
-                    </tbody>
-                </table>
+                ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『大小+2头』</font>`)}
                 <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%">
                     <tbody>${rows}</tbody>
                 </table>
@@ -508,13 +474,13 @@ function renderShuangbo12Ma(module: Extract<VendorHomepageModule, { module_key: 
   if (!module?.history?.length) return ""
   const rows = module.history
     .map((row) => {
-      const hitColor = row.result.res_color
+      const hitWave = mapColorToWave(row.result.res_color)
       const hitCode = row.result.res_code
       const groups = row.wave_groups
         .map((group, index) => {
           const color = group.label === "红波" ? "red" : group.label === "蓝波" ? "blue" : "green"
           const label =
-            row.result.is_opened && group.label === hitColor
+            row.result.is_opened && group.label === hitWave
               ? `<span style="background-color: #FFFF00">${escapeHtml(group.label)}</span>`
               : escapeHtml(group.label)
           const codes = group.codes
@@ -525,8 +491,7 @@ function renderShuangbo12Ma(module: Extract<VendorHomepageModule, { module_key: 
                 : `${prefix}<font>${escapeHtml(code)}</font>`
             })
             .join("")
-          return `${index > 0 ? `<font color="#FF0000"><br></font>` : ""}<font color="${color}">${label}:` +
-            `<font>${codes}</font></font>`
+          return `${index > 0 ? `<font color="#FF0000"><br></font>` : ""}<font color="${color}">${label}:<font>${codes}</font></font>`
         })
         .join("")
 
@@ -547,21 +512,7 @@ function renderShuangbo12Ma(module: Extract<VendorHomepageModule, { module_key: 
     .join("")
 
   return `<div class="box pad" id="sb10m" style="margin:0px;">
-            <table border="1" width="100%" bgcolor="#ffffff">
-                <tbody>
-                <tr>
-                    <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                        <p align="center">
-                            <b>
-                                <font face="楷体" style="font-size: 18pt">
-                                    <font color="#FFFF00">香港天天彩</font>
-                                    <font color="#FFFFFF">『双波12码』</font></font>
-                            </b>
-                        </p>
-                    </td>
-                </tr>
-                </tbody>
-            </table>
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『双波12码』</font>`)}
             <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" height="100">
                 <tbody>${rows}</tbody>
             </table>
@@ -577,15 +528,15 @@ function renderPt1Xiao(module: PublicModule | null) {
       const highlighted = highlightIf(escapeHtml(triple), row.isCorrect === true)
       return `<tr>
                     <td height="38">
-                        <p align="center"><b><font face="微软雅黑" size="4">${escapeHtml(row.term)}期平特<font color="#FF0000">【${highlighted}】</font>开${renderResult(row.result, row.isOpened, row.isCorrect)}</font></b></p>
+                        <p align="center"><b><font face="微软雅黑" size="4">${escapeHtml(row.term)}期平特<font color="#FF0000">【${highlighted}】</font>开${renderPlainResult(row.result, row.isOpened, row.isCorrect)}</font></b></p>
                     </td>
                 </tr>`
     })
     .join("")
 
   return `<div class="box pad" id="ptyx" style="margin:0px;">
-            ${renderTitleTable(`<font color="#FFFF00">香港天天彩</font><font color="#FFFFFF">『平特一肖』</font>`)}
-            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" height="50">
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『平特一肖』</font>`)}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" height="50" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
         </div>`
@@ -602,7 +553,7 @@ function renderPt1Wei(module: PublicModule | null) {
                     <td width="100%" height="40">
                         <p align="center">
                             <font face="楷体" style="font-size: 14pt">
-                                <b>${escapeHtml(row.term)}期 平特一尾 <font color="#FF6600">【${highlighted}】</font>开${renderResult(row.result, row.isOpened, row.isCorrect)}</b></font>
+                                <b>${escapeHtml(row.term)}期 平特一尾 <font color="#FF6600">【${highlighted}】</font>开${renderPlainResult(row.result, row.isOpened, row.isCorrect, "??????")}</b></font>
                         </p>
                     </td>
                 </tr>`
@@ -610,7 +561,7 @@ function renderPt1Wei(module: PublicModule | null) {
     .join("")
 
   return `<div class="box pad" id="ptyw" style="margin:0px;">
-            ${renderTitleTable(`<font color="#FFFF00">香港天天彩『平特一尾』</font>`)}
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩『平特一尾』</font>`)}
             <table style="border-collapse:collapse" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
@@ -626,16 +577,16 @@ function renderShuangbo(module: PublicModule | null) {
         .split(/[,+，]/)
         .map((part) => part.trim())
         .filter(Boolean)
-      const hitWave = row.isOpened ? mapColorToWave(parseResultParts(row.result).raw ? ((module?.history.find((item) => item.term === row.term)?.raw?.res_color as string) || "") : "") : ""
-      const isHit = row.isOpened && parts.some((part) => part === hitWave)
+      const resColor = String(row.raw?.res_color || "")
+      const hitWave = row.isOpened ? mapColorToWave(resColor.split(",").pop() || resColor) : ""
       const display = parts
-        .map((part) => highlightIf(escapeHtml(part), part === hitWave && isHit))
+        .map((part) => highlightIf(escapeHtml(part), part === hitWave && row.isCorrect === true))
         .join("+")
       return `<tr>
                     <td width="100%" height="40">
                         <p align="center">
                             <font face="楷体" style="font-size: 14pt">
-                                <b>${escapeHtml(row.term)}期  <font color="#0000FF">【${display}】</font>开${renderResult(row.result, row.isOpened, isHit)}</b></font>
+                                <b>${escapeHtml(row.term)}期  <font color="#0000FF">【${display}】</font>开${renderPlainResult(row.result, row.isOpened, row.isCorrect, "??????")}</b></font>
                         </p>
                     </td>
                 </tr>`
@@ -643,7 +594,7 @@ function renderShuangbo(module: PublicModule | null) {
     .join("")
 
   return `<div class="box pad" id="sbzt" style="margin:0px;">
-            ${renderTitleTable(`<font color="#FFFF00">香港天天彩『双波』</font>`)}
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩『双波』</font>`)}
             <table style="border-collapse:collapse" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
@@ -661,7 +612,7 @@ function renderJuesha1Xiao(module: PublicModule | null) {
         ? isKillSuccess
           ? `<font color="#FF0000">${escapeHtml(formatOpenResult(row.result))}对</font>`
           : `${escapeHtml(formatOpenResult(row.result))}<font color="#000">错</font>`
-        : `?????`
+        : "?????"
       return `<tr>
                     <td height="39">
                         <p align="center">
@@ -681,21 +632,7 @@ function renderJuesha1Xiao(module: PublicModule | null) {
                 <tbody>
                 <tr>
                     <td style="text-align:center" height="60">
-                        <table border="1" width="100%" bgcolor="#ffffff">
-                            <tbody>
-                            <tr>
-                                <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                                    <p align="center">
-                                        <b>
-                                            <font face="楷体" style="font-size: 18pt">
-                                                <font color="#FFFF00">香港天天彩</font>
-                                                <font color="#FFFFFF">『必杀一肖』</font></font>
-                                        </b>
-                                    </p>
-                                </td>
-                            </tr>
-                            </tbody>
-                        </table>
+                        ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『必杀一肖』</font>`)}
                     </td>
                 </tr>
                 ${body}
@@ -716,18 +653,16 @@ function renderGenericModule(config: GenericModuleConfig, module: PublicModule |
   const rows = toSourceRows(module)
   if (!rows.length) return ""
   const face = config.face || "微软雅黑"
-  const headerText = config.headerText || `香港天天彩『${config.title}』`
   const body = rows
     .map((row) => {
-      const prediction = escapeHtml(row.prediction)
+      const prediction = highlightIf(escapeHtml(row.prediction), row.isCorrect === true)
       return `<tr>
                     <td height="39">
                         <p align="center">
                             <b>
-                                <font face="${escapeAttr(face)}" size="4">${escapeHtml(row.term)}期${config.face === "隶书" ? "：" : " "}</font>
-                                <font color="${escapeAttr(config.titleColor || "#008000")}" size="3" face="${escapeAttr(face)}">${escapeHtml(config.title)}</font>
-                                <font color="${escapeAttr(config.predictionColor || "#0000FF")}" size="3" face="${escapeAttr(face)}">『${prediction}』</font>
-                                <font face="${escapeAttr(face)}" size="4">开${renderResult(row.result, row.isOpened, row.isCorrect)}</font>
+                                <font face="${escapeAttr(face)}" size="4">${escapeHtml(row.term)}期</font>
+                                <font color="${escapeAttr(config.predictionColor || "#0000FF")}" size="4" face="${escapeAttr(face)}">【${prediction}】</font>
+                                <font face="${escapeAttr(face)}" size="4">开${renderPlainResult(row.result, row.isOpened, row.isCorrect)}</font>
                             </b>
                         </p>
                     </td>
@@ -736,21 +671,8 @@ function renderGenericModule(config: GenericModuleConfig, module: PublicModule |
     .join("")
 
   return `<div class="box pad" id="${escapeAttr(config.anchor)}" style="margin:0px;">
-            <table ${config.anchor === "bs1x" ? `style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" ` : ""}border="1" width="100%" bgcolor="#ffffff">
-                <tbody>
-                <tr>
-                    <td style="border:10px double #CC0000; height: 50px;" bgcolor="#CC0000">
-                        <p align="center">
-                            <b>
-                                <font face="楷体" style="font-size: 18pt">
-                                    <font color="${config.headerText ? "#FFFF00" : "#FFFF00"}">${escapeHtml(headerText)}</font></font>
-                            </b>
-                        </p>
-                    </td>
-                </tr>
-                </tbody>
-            </table>
-            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%">
+            ${renderTitleTable(`<font color="#FFFF00">香港天下彩</font><font color="#FFFFFF">『${escapeHtml(config.title)}』</font>`)}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
         </div>`
@@ -802,7 +724,7 @@ function buildPageHtml(
     `<a name="fhdb"></a>`,
     `<div class="page-inner">`,
     `<div style="margin:0px;border:3px solid #CC0000">`,
-    `<img src="/vendor/twcaibawang.com/static/picture/2a9a358904487e3d801e2df8d85e4344.png" width="100%" alt="香港天天彩">`,
+    `<img src="/vendor/twcaibawang.com/static/picture/2a9a358904487e3d801e2df8d85e4344.png" width="100%" alt="香港天下彩">`,
     `<div id="nav2" class="nav2" data-fixed="">
     <ul>
         <li><a href="#ayxym">一肖一码</a></li>
@@ -820,32 +742,53 @@ function buildPageHtml(
     buildKjSection(defaultLotteryTypeId),
     `<div class="box news-box" style="font-size:16px; font-weight:bold">
     <div class="news-title">最新消息：</div>
-    <div class="txtMarquee-left"><marquee scrollamount="3" scrolldelay="50" direction="left" onmouseover="this.stop();" onmouseout="this.start();" style="color:red">${escapeHtml(siteData.site.announcement || "香港天天彩资料已接入当前项目后台 API，首页预测模块按源站结构动态渲染。")}</marquee></div>
+    <div class="txtMarquee-left"><marquee scrollamount="3" scrolldelay="50" direction="left" onmouseover="this.stop();" onmouseout="this.start();" style="color:red">${escapeHtml(siteData.site.announcement || "香港天下彩资料已接入当前项目后台 API，首页预测模块按源站结构动态渲染。")}</marquee></div>
 </div>`,
     `<div class="box">
-            <p style="text-wrap-mode: wrap;"><img src="/vendor/twcaibawang.com/static/picture/815ea6d729ec11d96502aaa43765e3d1.gif" alt="log.gif"><img src="/vendor/twcaibawang.com/static/picture/9dc46b1cf36b41503755bad0477ab6c5.gif" alt="2.gif"></p><p style="text-wrap-mode: wrap;"><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt="5.gif"></p>
+            <p><img src="/vendor/twcaibawang.com/static/picture/9dc46b1cf36b41503755bad0477ab6c5.gif" alt="2.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p>
+        </div>`,
+    `<div class="box amplIMG">
+            <img src="/vendor/twcaibawang.com/static/picture/chiahla_1086_125_1146.png" style="width: 100%" title="" alt="">
         </div>`,
     renderWuxiaoWuma(findVendor("wuxiao_wuma")),
+    `<div class="box amplIMG">
+            <p><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt="2765121603ed96e8e483970e2ddb8b5a.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/986d680d994f83b45386956911f934fd.gif" alt="986d680d994f83b45386956911f934fd.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.jpg" alt="80.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/d0a4a366207f221cb3c04f0aae87b6ec.jpg" alt="tuhua32.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/5c04963e886993e13f526d1b81a96177.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/98edfdac8ec8f851bc12cc9c962bdd33.gif" alt=""></p>
+        </div>`,
     renderPt1Xiao(resolveModule(modules, "pt1xiao")),
     renderPt1Wei(resolveModule(modules, "pt1wei")),
+    `<div class="box amplIMG">
+            <img src="/vendor/twcaibawang.com/static/picture/chiahla_1067_125_1105.jpg" style="width: 100%" title="" alt="">
+        </div>`,
+    `<div class="box">
+            <p><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt="5.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt="6.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p>
+        </div>`,
     renderShuangbo(resolveModule(modules, "shuangbo")),
-    renderImageModule(resolveModule(modules, "sxztu"), "sxztu", "四不像肖中特图"),
-    renderImageModule(resolveModule(modules, "brainteaser"), "brainteaser", "脑筋急转弯"),
-    renderImageModule(resolveModule(modules, "pmtj_image"), "pmtj-image", "跑马图解"),
-    renderImageModule(resolveModule(modules, "tw_pmt_image"), "tw-pmt-image", "台湾跑马图"),
+    `<div class="box">
+            <p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p>
+        </div>`,
+    `<div class="box amplIMG">
+            <img src="/vendor/twcaibawang.com/static/picture/chiahla_1053_125_1127.png" style="width: 100%" title="" alt="">
+        </div>`,
     renderTiandi2Xiao(findVendor("tiandi_2xiao")),
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/8d8e0c09a5cb36948161cb7c9ff72553.jpg" alt="8d8e0c09a5cb36948161cb7c9ff72553.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt="2765121603ed96e8e483970e2ddb8b5a.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/8d45ce25e17db9940efc4ec9b26911c8.gif" alt="8d45ce25e17db9940efc4ec9b26911c8.gif"></p>
+            <img src="/vendor/twcaibawang.com/static/picture/chiahla_1035_125_1104.png" style="width: 100%" title="" alt="">
+        </div>`,
+    `<div class="box amplIMG">
+            <p><img src="/vendor/twcaibawang.com/static/picture/8d8e0c09a5cb36948161cb7c9ff72553.jpg" alt=""><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/8d45ce25e17db9940efc4ec9b26911c8.gif" alt=""></p>
         </div>`,
     renderDaxiao2Tou(findVendor("daxiao_2tou")),
     renderPublicYixiaoYima(findVendor("public_yixiao_yima")),
+    renderImageModule(resolveModule(modules, "sxztu"), "sxztu", "四不像图"),
+    renderImageModule(resolveModule(modules, "brainteaser"), "brainteaser", "脑筋急转弯"),
+    renderImageModule(resolveModule(modules, "pmtj_image"), "pmtj-image", "跑马图解"),
+    renderImageModule(resolveModule(modules, "tw_pmt_image"), "tw-pmt-image", "台湾跑马图"),
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/201c1ae2c49d4e2bf0debe240baad433.jpg" alt="gytm80.gif"><img src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.gif" alt="80.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/17f9be2108da031fe3ad2d75ae33ede7.jpg" alt="c999e7ef3b66eaebed23f7a6c6b2c858_17f9be2108da031fe3ad2d75ae33ede7.jpg"></p>
+            <p><img src="/vendor/twcaibawang.com/static/picture/201c1ae2c49d4e2bf0debe240baad433.jpg" alt=""><img src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/17f9be2108da031fe3ad2d75ae33ede7.jpg" alt=""></p>
         </div>`,
     renderShujinguang(findVendor("shujinguang")),
     renderJuesha1Xiao(resolveModule(modules, "juesha1xiao")),
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/8d8e0c09a5cb36948161cb7c9ff72553.jpg" alt="8d8e0c09a5cb36948161cb7c9ff72553.gif"><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.jpg" alt="2765121603ed96e8e483970e2ddb8b5a.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/42ce9a26360f319a1e46203fda6a5e68.jpg" alt="46c5b99157e4b07f4ad1a7b070bd13a5.gif"><img src="/vendor/twcaibawang.com/static/picture/201c1ae2c49d4e2bf0debe240baad433.jpg" alt="gytm80.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/be31c7596d2c1fab4ffa07fe9cc603c0.gif" alt="301980.gif"></p>
+            <p><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt=""><img src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt=""></p>
         </div>`,
     renderShuangbo12Ma(findVendor("shuangbo_12ma")),
     ...GENERIC_MODULES.map((config) => renderGenericModule(config, resolveModule(modules, config.mechanismKey))),
