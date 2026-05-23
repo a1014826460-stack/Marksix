@@ -1088,7 +1088,7 @@ function buildPageHtml(
     buildKjSection(defaultLotteryTypeId),
     `<div class="box news-box" style="font-size:16px; font-weight:bold">
     <div class="news-title">最新消息：</div>
-    <div class="txtMarquee-left"><marquee scrollamount="3" scrolldelay="50" direction="left" onmouseover="this.stop();" onmouseout="this.start();" style="color:red">${escapeHtml(siteData.site.announcement || "香港天下彩资料已接入当前项目后台 API，首页预测模块按源站结构动态渲染。")}</marquee></div>
+    <div class="txtMarquee-left"><marquee scrollamount="3" scrolldelay="50" direction="left" onmouseover="this.stop();" onmouseout="this.start();" style="color:red">${escapeHtml(siteData.site.announcement || "台湾彩霸王紧急通知，广西省彩友如遇打不开本站，请使用联通和电信网络打开本站，其他省份彩友可正常访问。请各省彩友使用UC浏览器、QQ浏览器或其他浏览器进行访问！ 资料★永久网址:  taiwancaimawang.com  请收藏,以便再次访问！！！-台湾彩霸王永久网址【taiwancaimawang.com】")}</marquee></div>
 </div>`,
     `<div class="box">
             <p><img src="/vendor/twcaibawang.com/static/picture/9dc46b1cf36b41503755bad0477ab6c5.gif" alt="2.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p>
