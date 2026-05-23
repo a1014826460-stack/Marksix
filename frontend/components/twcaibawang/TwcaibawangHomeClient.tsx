@@ -964,10 +964,9 @@ function renderImageModule(module: PublicModule | null, anchor: string, title: s
 }
 
 function renderAttributeFooter(siteDomain: string) {
-  const baseUrl = siteDomain ? `https://${siteDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}` : ""
-  const img1 = `${baseUrl}/uploads/image/20250322/1742580086567063.png`
-  const img2 = `${baseUrl}/uploads/image/20250322/1742580119746508.jpg`
-  const img3 = `${baseUrl}/uploads/image/20250322/1742580130762983.jpg`
+  const img1 = `/uploads/image/20250322/1742580086567063.png`
+  const img2 = `/uploads/image/20250322/1742580119746508.jpg`
+  const img3 = `/uploads/image/20250322/1742580130762983.jpg`
   const footerDomain = siteDomain || "twcaibawang.com"
 
   return `<div class="box pad" id="legacy-attribute-anchor">
