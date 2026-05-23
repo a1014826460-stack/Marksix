@@ -97,7 +97,9 @@ function toSourceRows(module: PublicModule | null): SourceRow[] {
 
 function getLatestImage(module: PublicModule | null) {
   if (!module) return ""
-  const latest = module.history.find((row) => String(row.image_url || "").trim())
+  const latest = [...module.history]
+    .sort((a, b) => String(b.issue || "").localeCompare(String(a.issue || ""), "en"))
+    .find((row) => String(row.image_url || "").trim())
   return String(latest?.image_url || "").trim()
 }
 
@@ -345,7 +347,7 @@ function renderPublicYixiaoYima(module: Extract<VendorHomepageModule, { module_k
 
   return `<div class="box pad" id="ayxym" style="margin:0px;">
             <div id="db1x"></div>
-            <style>.neimu { line-height: 1.5; font-size: 18px; font-weight: bold;} .neimu table { color: #0F0; background: #000;} .neimu table thead th { padding: 5px 10px; font-size: 24px; color: #f00; background: #ff0;} .neimu table td { padding: 5px 10px;} @media screen and (max-width:800px){ .neimu { font-size: 16px;} .neimu table thead th { font-size: 20px;} }</style>
+            <style>.neimu { line-height: 1.5; font-size: 18px; font-weight: bold;} .neimu table { color: #000; background: #fff;} .neimu table thead th { padding: 5px 10px; font-size: 24px; color: #fff; background: #CC0000;} .neimu table td { padding: 5px 10px; background: #fff;} @media screen and (max-width:800px){ .neimu { font-size: 16px;} .neimu table thead th { font-size: 20px;} }</style>
             ${rows}
         </div>`
 }
