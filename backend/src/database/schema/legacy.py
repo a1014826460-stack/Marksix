@@ -292,6 +292,63 @@ def ensure_image_prediction_payload_table(
     )
 
 
+def ensure_xiao_code_prediction_payload_table(
+    conn: Any,
+    pk_sql: str,
+    *,
+    modes_id: int,
+    title: str,
+) -> None:
+    """Create/update a payload table with xiao/code columns."""
+    table_name = f"mode_payload_{modes_id}"
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            {pk_sql},
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            content TEXT,
+            xiao TEXT,
+            code TEXT,
+            web_id INTEGER,
+            modes_id INTEGER,
+            source_record_id TEXT,
+            fetched_at TEXT
+        )
+        """
+    )
+
+    add_column_if_missing(conn, table_name, "web", "TEXT")
+    add_column_if_missing(conn, table_name, "type", "TEXT")
+    add_column_if_missing(conn, table_name, "year", "TEXT")
+    add_column_if_missing(conn, table_name, "term", "TEXT")
+    add_column_if_missing(conn, table_name, "res_code", "TEXT")
+    add_column_if_missing(conn, table_name, "res_sx", "TEXT")
+    add_column_if_missing(conn, table_name, "res_color", "TEXT")
+    add_column_if_missing(conn, table_name, "status", "INTEGER")
+    add_column_if_missing(conn, table_name, "content", "TEXT")
+    add_column_if_missing(conn, table_name, "xiao", "TEXT")
+    add_column_if_missing(conn, table_name, "code", "TEXT")
+    add_column_if_missing(conn, table_name, "web_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "modes_id", "INTEGER")
+    add_column_if_missing(conn, table_name, "source_record_id", "TEXT")
+    add_column_if_missing(conn, table_name, "fetched_at", "TEXT")
+
+    _ensure_mode_payload_metadata(
+        conn,
+        modes_id=modes_id,
+        title=title,
+        table_name=table_name,
+        now=_current_db_now(conn),
+    )
+
+
 def ensure_image_prediction_created_table(
     conn: Any,
     *,
@@ -475,3 +532,27 @@ def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
     ensure_image_prediction_created_table(conn, modes_id=478)
     ensure_brain_teaser_prediction_payload_table(conn, pk_sql)
     ensure_brain_teaser_prediction_created_table(conn)
+
+
+def ensure_twcaibawang_prediction_tables(conn: Any, pk_sql: str) -> None:
+    """Bootstrap twcaibawang-only prediction payload tables."""
+    for modes_id, title in (
+        (479, "四段中特"),
+        (480, "凶吉六肖"),
+        (481, "稳杀10码"),
+        (482, "四行中特"),
+        (483, "四头中特"),
+    ):
+        ensure_basic_prediction_payload_table(
+            conn,
+            pk_sql,
+            modes_id=modes_id,
+            title=title,
+        )
+
+    ensure_xiao_code_prediction_payload_table(
+        conn,
+        pk_sql,
+        modes_id=484,
+        title="六肖十八码",
+    )

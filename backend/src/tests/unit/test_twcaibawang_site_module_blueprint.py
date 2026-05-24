@@ -42,6 +42,12 @@ def test_twcaibawang_site_uses_dedicated_blueprint_by_web_id():
         60,
         197,
         472,
+        479,
+        480,
+        481,
+        482,
+        483,
+        484,
     )
 
 

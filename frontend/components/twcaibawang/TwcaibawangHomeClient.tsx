@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import type { PublicModule, PublicSitePageData } from "@/lib/site-page"
@@ -102,6 +102,17 @@ function chunkArray<T>(items: T[], size: number) {
   return chunks
 }
 
+function sortRowsByTermDesc(rows: SourceRow[]) {
+  return [...rows].sort((left, right) => {
+    const leftTerm = Number.parseInt(String(left.term || ""), 10)
+    const rightTerm = Number.parseInt(String(right.term || ""), 10)
+    if (Number.isFinite(leftTerm) && Number.isFinite(rightTerm)) {
+      return rightTerm - leftTerm
+    }
+    return String(right.term || "").localeCompare(String(left.term || ""), "en")
+  })
+}
+
 function toSourceRows(module: PublicModule | null): SourceRow[] {
   if (!module) return []
   return module.history.map((row) => ({
@@ -184,6 +195,27 @@ function renderTwcaibawangResultSuffix(
   return `${text}<font color="${judgeColor}">${judgeText}</font>`
 }
 
+function renderResultWithCustomJudge(
+  resultText: string,
+  isOpened: boolean,
+  isCorrect: boolean | null,
+  options?: {
+    pending?: string
+    hitText?: string
+    missText?: string
+  }
+) {
+  const pending = options?.pending ?? "???????"
+  const hitText = options?.hitText ?? "对"
+  const missText = options?.missText ?? "错"
+  if (!isOpened) return pending
+  const text = escapeHtml(formatOpenResult(resultText))
+  if (isCorrect === true) {
+    return `<font color="#FF0000">${text}${escapeHtml(hitText)}</font>`
+  }
+  return `${text}<font color="#000000">${escapeHtml(missText)}</font>`
+}
+
 function normalizeDaxiaoLabel(label: string) {
   const text = label.trim()
   if (text.includes("大")) return "大数"
@@ -258,10 +290,27 @@ function parseLabelCodeEntries(content: string) {
     .filter((item) => item.label)
 }
 
+function getHitLabelFromEntries(entries: Array<{ label: string; codes: string[] }>, hitCode: string) {
+  const normalizedHit = String(hitCode || "").padStart(2, "0")
+  return entries.find((entry) => entry.codes.includes(normalizedHit))?.label || ""
+}
+
 function getLotteryDisplayName(lotteryTypeId: 1 | 2 | 3) {
   if (lotteryTypeId === 1) return "香港天下彩"
   if (lotteryTypeId === 2) return "澳门天下彩"
   return "台湾天下彩"
+}
+
+function getLotteryLiuheName(lotteryTypeId: 1 | 2 | 3) {
+  if (lotteryTypeId === 1) return "香港六合彩"
+  if (lotteryTypeId === 2) return "澳门六合彩"
+  return "台湾六合彩"
+}
+
+function renderLiuhePredictionTitleTable(lotteryTypeId: 1 | 2 | 3, title: string) {
+  return renderTitleTable(
+    `<font color="#FFFF00">${escapeHtml(getLotteryLiuheName(lotteryTypeId))}</font><font color="#FFFFFF"> 『${escapeHtml(title)}』</font>`
+  )
 }
 
 function renderModuleTitle(lotteryTypeId: 1 | 2 | 3, title: string) {
@@ -341,6 +390,34 @@ function renderDashCodes(items: string[], highlighted?: string) {
         : `${prefix}<font>${content}</font>`
     })
     .join("")
+}
+
+function splitZodiacText(value: string) {
+  const text = String(value || "").trim()
+  if (!text) return [] as string[]
+  const splitItems = text
+    .split(/[,\s.]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  if (splitItems.length > 1) return splitItems
+  return Array.from(text).filter((item) => /[\u4e00-\u9fa5]/.test(item))
+}
+
+const XIONGJI_ZODIACS: Record<"凶丑" | "吉美", string[]> = {
+  凶丑: ["鼠", "牛", "虎", "猴", "狗", "猪"],
+  吉美: ["兔", "龙", "蛇", "马", "羊", "鸡"],
+}
+
+function normalizeXiongjiliuxiaoLabel(label: string) {
+  const text = String(label || "").trim()
+  if (text.includes("吉")) return "吉美"
+  return "凶丑"
+}
+
+function isXiongjiliuxiaoHit(label: string, hitSx: string) {
+  if (!hitSx) return false
+  const normalizedLabel = normalizeXiongjiliuxiaoLabel(label)
+  return XIONGJI_ZODIACS[normalizedLabel].includes(hitSx)
 }
 
 function renderWuxiaoWuma(
@@ -996,6 +1073,9 @@ function renderGenericModule(config: GenericModuleConfig, module: PublicModule |
   if (config.mechanismKey === "title_197") {
     return renderSxjh3(module, lotteryTypeId)
   }
+  if (config.mechanismKey === "9xiao12ma") {
+    return renderJiuxiao12ma(module, lotteryTypeId)
+  }
   const rows = toSourceRows(module)
   if (!rows.length) return ""
   const face = config.face || "微软雅黑"
@@ -1018,6 +1098,292 @@ function renderGenericModule(config: GenericModuleConfig, module: PublicModule |
 
   return `<div class="box pad" id="${escapeAttr(config.anchor)}" style="margin:0px;">
             ${renderLotteryTitleTable(lotteryTypeId, config.title)}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderJiuxiao12ma(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const displayName = getLotteryLiuheName(lotteryTypeId)
+  const body = rows
+    .map((row) => {
+      const xiaoItems = String(row.raw?.xiao || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const codeItems = String(row.raw?.code || row.prediction || "")
+        .split(/[,.]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => item.padStart(2, "0"))
+      const hitSx = row.isOpened ? parseResultParts(row.result).sx : ""
+      const xiao9 = xiaoItems.slice(0, 9)
+      const xiao7 = xiaoItems.slice(0, 7)
+      const xiao5 = xiaoItems.slice(0, 5)
+      const xiao3 = xiaoItems.slice(0, 3)
+      const xiao1 = xiaoItems.slice(0, 1)
+      return `<tr>
+                <td height="46" bgcolor="#FFFFFF" align="center">
+                    <p align="center" style="margin:0;padding:6px 8px 2px;">
+                        <b>
+                            <font face="华文中宋" size="4" color="#000000">【${escapeHtml(displayName)}九肖12码】${escapeHtml(String(row.term).padStart(3, "0"))}期</font>
+                        </b>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}九肖】</font><font color="#FF1493" size="4">${highlightZodiacChars(xiao9.join(""), hitSx)}</font></b>
+                        </font>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}七肖】</font><font color="#FF1493" size="4">${highlightZodiacChars(xiao7.join(""), hitSx)}</font></b>
+                        </font>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}五肖】</font><font color="#FF1493" size="4">${highlightZodiacChars(xiao5.join(""), hitSx)}</font></b>
+                        </font>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}三肖】</font><font color="#FF1493" size="4">${highlightZodiacChars(xiao3.join(""), hitSx)}</font></b>
+                        </font>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}一肖】</font><font color="#FF1493" size="4">${highlightZodiacChars(xiao1.join(""), hitSx)}</font></b>
+                        </font>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 8px 8px;">
+                        <font face="华文中宋">
+                            <b><font color="#FF1493" size="4">【${escapeHtml(displayName)}12码】</font><font color="#FF1493" size="4">${renderDottedCodes(codeItems)}</font></b>
+                        </font>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="x912m" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "九肖12码")}
+            <table style="border-collapse:collapse" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderSiduanzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const staticRows = [
+    ["1段", "01,02,03,04,05,06,07"],
+    ["2段", "08,09,10,11,12,13,14"],
+    ["3段", "15,16,17,18,19,20,21"],
+    ["4段", "22,23,24,25,26,27,28"],
+    ["5段", "29,30,31,32,33,34,35"],
+    ["6段", "36,37,38,39,40,41,42"],
+    ["7段", "43,44,45,46,47,48,49"],
+  ]
+    .map(([label, codes]) => `<p align="center" style="margin:0;padding:0 0 2px;"><font face="微软雅黑" size="4">${escapeHtml(label)}：${escapeHtml(codes)}</font></p>`)
+    .join("")
+  const body = rows
+    .map((row) => {
+      const entries = parseLabelCodeEntries(getRowContent(row))
+      const hitCode = parseResultParts(row.result).code
+      const hitLabel = row.isOpened ? getHitLabelFromEntries(entries, hitCode) : ""
+      const display = entries
+        .map((entry) => {
+          const shortLabel = entry.label.replace(/段$/u, "")
+          return row.isCorrect === true && hitLabel === entry.label
+            ? `<span style="background-color: #FFFF00">${escapeHtml(shortLabel)}</span>`
+            : escapeHtml(shortLabel)
+        })
+        .join(".")
+      return `<tr>
+                <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
+                    <p align="center" style="margin:0;padding:6px 0;">
+                        <b>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF0000">【${display}段】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderResultWithCustomJudge(row.result, row.isOpened, row.isCorrect, { pending: "???????中", hitText: "对中", missText: "错" })}</font>
+                        </b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="siduanzhongte" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "四段中特")}
+            <div style="background:#FFFFFF;border-left:1px solid #000;border-right:1px solid #000;border-bottom:1px solid #000;padding:6px 4px;">
+              ${staticRows}
+            </div>
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000;border-top:none;" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderXiongjiliuxiao(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const staticRows = [
+    ["凶丑", "鼠牛虎猴狗猪"],
+    ["吉美", "兔龙蛇马羊鸡"],
+  ]
+    .map(([label, codes]) => `<p align="center" style="margin:0;padding:0 0 2px;"><font face="微软雅黑" size="4">${escapeHtml(label)}：${escapeHtml(codes)}</font></p>`)
+    .join("")
+  const body = rows
+    .map((row) => {
+      const rawItem = parseJsonStringArray(getRowContent(row))[0] || ""
+      const [labelPart = row.prediction, zodiacPart = ""] = String(rawItem).split("|", 2)
+      const label = normalizeXiongjiliuxiaoLabel(labelPart.trim() || row.prediction)
+      const zodiacList = splitZodiacText(zodiacPart || XIONGJI_ZODIACS[label].join(""))
+      const hitSx = row.isOpened ? parseResultParts(row.result).sx : ""
+      const isHit = row.isOpened ? isXiongjiliuxiaoHit(label, hitSx) : null
+      const highlightedLabel = isHit === true ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)
+      return `<tr>
+                <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
+                    <p align="center" style="margin:0;padding:6px 0;">
+                        <b>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期凶吉六肖 </font><font face="微软雅黑" size="4" color="#0000FF">【${highlightedLabel}】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderResultWithCustomJudge(row.result, row.isOpened, isHit)}</font>
+                        </b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="xiongjiliuxiao" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "凶吉六肖")}
+            <div style="background:#FFFFFF;border-left:1px solid #000;border-right:1px solid #000;border-bottom:1px solid #000;padding:6px 4px;">
+              ${staticRows}
+            </div>
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000;border-top:none;" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderWensha10ma(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const body = rows
+    .map((row) => {
+      const codes = parseJsonStringArray(getRowContent(row)).join(".")
+      return `<tr>
+                <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
+                    <p align="center" style="margin:0;padding:6px 0;">
+                        <b>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期杀</font><font face="微软雅黑" size="4" color="#FF1493">「${escapeHtml(codes)}」</font><font face="微软雅黑" size="4" color="#000000">开${renderResultWithCustomJudge(row.result, row.isOpened, row.isCorrect, { pending: "??????", hitText: "中", missText: "错" })}</font>
+                        </b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="wensha10ma" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "稳杀10码")}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderSihangzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const body = rows
+    .map((row) => {
+      const labels = parseJsonStringArray(getRowContent(row))
+        .map((item) => item.split("|")[0].trim())
+        .filter(Boolean)
+      const hitCode = row.isOpened ? parseResultParts(row.result).code : ""
+      const hitHead = row.isOpened && hitCode ? hitCode.charAt(0) : ""
+      const text = labels
+        .map((label) => (row.isCorrect === true && label === hitHead ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)))
+        .join("-")
+      return `<tr>
+                <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
+                    <p align="center" style="margin:0;padding:6px 0;">
+                        <b>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#0000FF">【${text}行】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderTwcaibawangResultSuffix(row.result, row.isOpened, row.isCorrect, "??????")}</font>
+                        </b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="sihangzhongte" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "四行中特")}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderSitouzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const body = rows
+    .map((row) => {
+      const labels = parseJsonStringArray(getRowContent(row))
+        .map((item) => item.split("|")[0].trim())
+        .filter(Boolean)
+      const hitHead = row.isOpened ? parseResultParts(row.result).code.charAt(0) || "" : ""
+      const display = labels
+        .map((label) =>
+          row.isCorrect === true && hitHead === label ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)
+        )
+        .join("-")
+      return `<tr>
+                <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
+                    <p align="center" style="margin:0;padding:6px 0;">
+                        <b>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF1493">【${display}】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderTwcaibawangResultSuffix(row.result, row.isOpened, row.isCorrect, "??????")}</font>
+                        </b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="sitouzhongte" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "四头中特")}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderLiuxiao18ma(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const body = rows
+    .map((row) => {
+      const xiao = String(row.raw?.xiao || row.prediction || "").trim()
+      const code = String(row.raw?.code || "").trim().replace(/,/g, ".")
+      return `<tr>
+                <td width="100%" align="center" bgcolor="#FFFFFF" style="padding:6px 8px;">
+                    <p align="center" style="margin:0;padding:2px 0;">
+                        <b><font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期:六肖十八码 开:${renderOpenResultCodeOnly(row.result, row.isOpened)}</font></b>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 0;">
+                        <b><font face="微软雅黑" size="4" color="#FF0000">${escapeHtml(xiao)}</font></b>
+                    </p>
+                    <p align="center" style="margin:0;padding:2px 0;">
+                        <b><font face="微软雅黑" size="4" color="#FF0000">${escapeHtml(code)}</font></b>
+                    </p>
+                </td>
+            </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="liuxiao18ma" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "六肖十八码")}
             <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
@@ -1112,6 +1478,13 @@ function buildPageHtml(
             <p><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt="5.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt="6.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p>
         </div>`,
     renderShuangbo(resolveModule(modules, "shuangbo"), defaultLotteryTypeId),
+    renderJiuxiao12ma(resolveModule(modules, "9xiao12ma"), defaultLotteryTypeId),
+    renderSiduanzhongte(resolveModule(modules, "siduanzhongte"), defaultLotteryTypeId),
+    renderXiongjiliuxiao(resolveModule(modules, "xiongjiliuxiao"), defaultLotteryTypeId),
+    renderWensha10ma(resolveModule(modules, "wensha10ma"), defaultLotteryTypeId),
+    renderSihangzhongte(resolveModule(modules, "sihangzhongte"), defaultLotteryTypeId),
+    renderSitouzhongte(resolveModule(modules, "sitouzhongte"), defaultLotteryTypeId),
+    renderLiuxiao18ma(resolveModule(modules, "liuxiao18ma"), defaultLotteryTypeId),
     `<div class="box">
             <p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p>
         </div>`,

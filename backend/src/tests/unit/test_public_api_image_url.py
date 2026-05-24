@@ -57,6 +57,21 @@ def test_serve_upload_supports_nested_relative_paths(tmp_path):
     assert handler.wfile.getvalue() == b"fake-image-data"
 
 
+def test_serve_upload_falls_back_to_flat_filename(tmp_path):
+    base_dir = tmp_path / "Images"
+    target = base_dir / "1742580130762983.jpg"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"flat-image-data")
+
+    handler = _DummyHandler()
+    writer = ResponseWriter(handler)
+
+    writer.serve_upload("/uploads/image/20250322/1742580130762983.jpg", base_dir)
+
+    assert handler.status == HTTPStatus.OK
+    assert handler.wfile.getvalue() == b"flat-image-data"
+
+
 def test_serve_upload_rejects_path_traversal(tmp_path):
     base_dir = tmp_path / "Images"
     base_dir.mkdir(parents=True, exist_ok=True)

@@ -58,10 +58,20 @@ class ResponseWriter:
             self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
             return
 
-        file_path = base_dir / Path(relative_path)
         base_dir_resolved = base_dir.resolve()
-        resolved = file_path.resolve()
-        if not resolved.is_file() or not resolved.is_relative_to(base_dir_resolved):
+        candidate_paths = [base_dir / Path(relative_path)]
+        flat_filename = Path(relative_path).name
+        if flat_filename and flat_filename != relative_path:
+            candidate_paths.append(base_dir / flat_filename)
+
+        resolved = None
+        for file_path in candidate_paths:
+            candidate = file_path.resolve()
+            if candidate.is_file() and candidate.is_relative_to(base_dir_resolved):
+                resolved = candidate
+                break
+
+        if resolved is None:
             self.send_error_json(HTTPStatus.NOT_FOUND, "File not found")
             return
 

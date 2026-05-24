@@ -874,6 +874,54 @@ def format_title_jiexi(title: str):
     return formatter
 
 
+SEGMENT_ORDER = tuple(f"{index}段" for index in range(1, 8))
+XIONGJI_LABELS = ("凶丑", "吉美")
+
+
+def special_segment_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
+    number = int(special_code_from_res_code(row["res_code"] or ""))
+    return f"{((number - 1) // 7) + 1}段"
+
+
+def special_xiongjiliuxiao_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    zodiac = special_zodiac_from_number_map(row, conn)
+    if not zodiac:
+        return ""
+    mapping = load_fixed_value_map(conn, "凶丑吉美生肖", XIONGJI_LABELS)
+    for label in XIONGJI_LABELS:
+        if zodiac in mapping.get(label, ()):
+            return label
+    if zodiac in {"鼠", "牛", "虎", "猴", "狗", "猪"}:
+        return "凶丑"
+    if zodiac in {"兔", "龙", "蛇", "马", "羊", "鸡"}:
+        return "吉美"
+    return ""
+
+
+def format_segment_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
+    mapping = load_fixed_value_map(conn, "7段", labels)
+    if not any(mapping.values()):
+        mapping = {
+            "1段": tuple(f"{number:02d}" for number in range(1, 8)),
+            "2段": tuple(f"{number:02d}" for number in range(8, 15)),
+            "3段": tuple(f"{number:02d}" for number in range(15, 22)),
+            "4段": tuple(f"{number:02d}" for number in range(22, 29)),
+            "5段": tuple(f"{number:02d}" for number in range(29, 36)),
+            "6段": tuple(f"{number:02d}" for number in range(36, 43)),
+            "7段": tuple(f"{number:02d}" for number in range(43, 50)),
+        }
+    return [f"{label}|{','.join(mapping.get(label, ()))}" for label in labels]
+
+
+def format_xiongjiliuxiao_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
+    mapping = load_fixed_value_map(conn, "凶丑吉美生肖", labels)
+    fallback = {
+        "凶丑": ("鼠", "牛", "虎", "猴", "狗", "猪"),
+        "吉美": ("兔", "龙", "蛇", "马", "羊", "鸡"),
+    }
+    return [f"{label}|{','.join(mapping.get(label, fallback.get(label, ())))}" for label in labels]
+
+
 TEXT_POOL_SOURCES: dict[str, tuple[str, str]] = {
     "一句真言": ("mode_payload_50", "content"),
     "四字玄机": ("mode_payload_52", "title"),
@@ -1523,6 +1571,113 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "平特2肖选择 2 个生肖。",
             "按统一预测口径，特码生肖落入预测生肖则命中。",
+        ),
+    ),
+    "siduanzhongte": PredictionConfig(
+        key="siduanzhongte",
+        title="四段中特",
+        default_table="mode_payload_479",
+        default_modes_id=479,
+        labels=SEGMENT_ORDER,
+        label_count=4,
+        outcome_loader=special_segment_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_segment_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("7段", SEGMENT_ORDER),
+        explanation=(
+            "四段中特把 01-49 按 7 段分组，按特码号码归属段位命中。",
+            "输出沿用 `N段|号码列表` 结构，方便前端按段位展示。",
+        ),
+    ),
+    "xiongjiliuxiao": PredictionConfig(
+        key="xiongjiliuxiao",
+        title="凶吉六肖",
+        default_table="mode_payload_480",
+        default_modes_id=480,
+        labels=XIONGJI_LABELS,
+        label_count=1,
+        outcome_loader=special_xiongjiliuxiao_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_xiongjiliuxiao_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("凶丑吉美生肖", XIONGJI_LABELS),
+        explanation=(
+            "凶吉六肖按生肖分为凶丑与吉美两类，按特码生肖归类命中。",
+            "输出沿用分类+生肖列表结构，优先读取 fixed_data 中的凶丑吉美生肖映射。",
+        ),
+    ),
+    "wensha10ma": PredictionConfig(
+        key="wensha10ma",
+        title="稳杀10码",
+        default_table="mode_payload_481",
+        default_modes_id=481,
+        labels=tuple(f"{number:02d}" for number in range(1, 50)),
+        label_count=10,
+        outcome_loader=special_number_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_number_content,
+        content_formatter=format_24_numbers,
+        hit_checker=excludes_hit,
+        explanation=(
+            "稳杀10码按号码类玩法处理，从 01-49 中选出 10 个号码。",
+            "特码号码落入预测号码集合外时按命中计算。",
+        ),
+    ),
+    "sihangzhongte": PredictionConfig(
+        key="sihangzhongte",
+        title="四行中特",
+        default_table="mode_payload_482",
+        default_modes_id=482,
+        labels=tuple(ELEMENT_ORDER),
+        label_count=4,
+        outcome_loader=special_element_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_element_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("五行肖", tuple(ELEMENT_ORDER)),
+        explanation=(
+            "四行中特按五行分组，优先读取 public.fixed_data 中的五行肖映射。",
+            "特码号码所属五行落入预测集合即命中。",
+        ),
+    ),
+    "sitouzhongte": PredictionConfig(
+        key="sitouzhongte",
+        title="四头中特",
+        default_table="mode_payload_483",
+        default_modes_id=483,
+        labels=tuple(HEAD_NUMBER_MAP.keys()),
+        label_count=4,
+        outcome_loader=special_head_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_head_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("头", tuple(HEAD_NUMBER_MAP.keys())),
+        explanation=(
+            "四头中特按特码十位分为 0头~4头，输出沿用头数号码列表结构。",
+            "特码头数落入预测集合即命中。",
+        ),
+    ),
+    "liuxiao18ma": PredictionConfig(
+        key="liuxiao18ma",
+        title="六肖十八码",
+        default_table="mode_payload_484",
+        default_modes_id=484,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=6,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_xiao_code_columns("xiao", "code", 18),
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("生肖", tuple(ZODIAC_ORDER)),
+        explanation=(
+            "六肖十八码按生肖类玩法处理，输出 xiao/code 双列结构。",
+            "特码生肖落入预测生肖集合即命中，code 从 fixed_data 的生肖号码映射生成。",
         ),
     ),
     "pt3xiao": PredictionConfig(

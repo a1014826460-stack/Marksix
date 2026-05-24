@@ -97,20 +97,26 @@ TWSAIMAHUI_BLOCKED_ITEMS = (
 # Keep this list intentionally conservative: only include modules whose
 # frontend semantics are already clear in the current backend.
 TWCAIBAWANG_REQUIRED_MODE_IDS = (
-    12,   # 三头中特
-    26,   # 琴棋书画
-    34,   # 24码
-    38,   # 双波中特
-    49,   # 赚钱九肖 -> 9肖中特（同为 9 肖命中语义）
-    50,   # 一句爆特 -> 一句真言
-    52,   # 四字平特 / 玄机 -> 四字玄机
-    54,   # 平特一尾
-    56,   # 平特一肖
-    57,   # 大小中特
-    58,   # 绝杀一波 -> 绝杀半波
-    60,   # 九肖12码
-    197,  # 三期必开生肖
-    472,  # 必杀一肖
+    12,
+    26,
+    34,
+    38,
+    49,
+    50,
+    52,
+    54,
+    56,
+    57,
+    58,
+    60,
+    197,
+    472,
+    479,
+    480,
+    481,
+    482,
+    483,
+    484,
 )
 
 TWCAIBAWANG_BLOCKED_ITEMS = (
