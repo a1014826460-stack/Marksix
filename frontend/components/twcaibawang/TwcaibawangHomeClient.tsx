@@ -1429,6 +1429,7 @@ function buildPageHtml(
 ) {
   const modules = siteData.modules || []
   const vendorModules = homepageModules.data || []
+  const historyUrl = `/history?type=${defaultLotteryTypeId}`
   const findVendor = <T extends VendorHomepageModule["module_key"]>(key: T) =>
     vendorModules.find((item) => item.module_key === key) as Extract<VendorHomepageModule, { module_key: T }> | undefined
 
@@ -1444,7 +1445,7 @@ function buildPageHtml(
         <li><a href="#ptyx">平特一肖</a></li>
         <li><a href="#sjg">输尽光</a></li>
         <li><a href="#bs1x">必杀一肖</a></li>
-        <li><a href="/index/index/history.html">历史记录</a></li>
+        <li><a href="${escapeAttr(historyUrl)}" target="_blank" rel="noopener noreferrer">历史记录</a></li>
     </ul>
 </div>`,
     `<div class="box"></div>`,
