@@ -307,6 +307,12 @@ function getLotteryLiuheName(lotteryTypeId: 1 | 2 | 3) {
   return "台湾六合彩"
 }
 
+function getLotteryRegionName(lotteryTypeId: 1 | 2 | 3) {
+  if (lotteryTypeId === 1) return "香港"
+  if (lotteryTypeId === 2) return "澳门"
+  return "台湾"
+}
+
 function renderLiuhePredictionTitleTable(lotteryTypeId: 1 | 2 | 3, title: string) {
   return renderTitleTable(
     `<font color="#FFFF00">${escapeHtml(getLotteryLiuheName(lotteryTypeId))}</font><font color="#FFFFFF"> 『${escapeHtml(title)}』</font>`
@@ -918,6 +924,7 @@ function render3Tou(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
 function renderMa24(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
   const rows = toSourceRows(module)
   if (!rows.length) return ""
+  const regionName = getLotteryRegionName(lotteryTypeId)
   const body = rows
     .map((row) => {
       const content = getRowContent(row)
@@ -938,7 +945,7 @@ function renderMa24(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
 
       return `<tr>
                     <td width="100%" height="40">
-                        <p align="center"><b><font face="华文中宋" size="4" color="#CC3300"><span style="background-color: #FFFF00">${escapeHtml(String(row.term).padStart(3, "0"))}期香港六合彩24码开:${renderOpenResultCodeOnly(row.result, row.isOpened)}</span></font></b></p>
+                        <p align="center"><b><font face="华文中宋" size="4" color="#CC3300"><span style="background-color: #FFFF00">${escapeHtml(String(row.term).padStart(3, "0"))}期${escapeHtml(regionName)}六合彩24码开:${renderOpenResultCodeOnly(row.result, row.isOpened)}</span></font></b></p>
                         <p style="text-align: center"><span style="color: #0066FF; font-family: &quot;Microsoft YaHei&quot;, Arial, Helvetica, sans-serif; font-size: 18.3333px; font-weight: 700; text-align: center; background-color: #FFFFFF;">${lines}</span></p>
                     </td>
                 </tr>`
@@ -979,6 +986,38 @@ function renderYijuzhenyan(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
   return `<div class="box pad" id="yjbt" style="margin:0px;">
             ${renderLotteryTitleTable(lotteryTypeId, "一句真言")}
             <table border="1" width="100%" class="duilianpt1" bgcolor="#ffffff" cellspacing="0" bordercolor="#FFFFFF" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" cellpadding="2">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
+function renderJueshabanbo(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = sortRowsByTermDesc(toSourceRows(module))
+  if (!rows.length) return ""
+  const body = rows
+    .map((row) => {
+      const rawItem = parseJsonStringArray(getRowContent(row))[0] || ""
+      const [labelPart = "", codesPart = ""] = String(rawItem).split("|", 2)
+      const label = labelPart.trim()
+      const hitWave = row.isOpened ? parseResultParts(row.result).raw.slice(0, 2) : ""
+      const highlightedLabel = row.isCorrect === true ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)
+      const displayCode = codesPart.trim()
+      return `<tr>
+                    <td height="39">
+                        <p align="center">
+                            <b>
+                                <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期绝杀一波 </font><font color="#0000FF" size="4">【${highlightedLabel}】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderPlainResult(row.result, row.isOpened, row.isCorrect)}</font>
+                            </b>
+                        </p>
+                        ${displayCode ? `<p align="center" style="margin:0;"><font face="微软雅黑" size="4" color="#000000">${escapeHtml(displayCode)}</font></p>` : ""}
+                    </td>
+                </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="jsyb" style="margin:0px;">
+            ${renderLiuhePredictionTitleTable(lotteryTypeId, "绝杀一波")}
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000" border="1" width="100%" bgcolor="#ffffff">
                 <tbody>${body}</tbody>
             </table>
         </div>`
@@ -1058,8 +1097,8 @@ function renderAttributeFooter(siteDomain: string) {
 			<div class="foot-img">
 				<p class="copyright">说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
 				<p class="copyright">论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
-				<p class="copyright">【香港天天彩官网】域名：${escapeHtml(footerDomain)}
-					<br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在香港天天彩論壇
+				<p class="copyright">【台湾彩霸王官网】域名：${escapeHtml(footerDomain)}
+					<br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾彩霸王論壇
 					<br>
 				</p>
 			</div>
@@ -1486,6 +1525,7 @@ function buildPageHtml(
     renderSihangzhongte(resolveModule(modules, "sihangzhongte"), defaultLotteryTypeId),
     renderSitouzhongte(resolveModule(modules, "sitouzhongte"), defaultLotteryTypeId),
     renderLiuxiao18ma(resolveModule(modules, "liuxiao18ma"), defaultLotteryTypeId),
+    renderJueshabanbo(resolveModule(modules, "jueshabanbo"), defaultLotteryTypeId),
     `<div class="box">
             <p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p>
         </div>`,
