@@ -12,6 +12,16 @@ from helpers import REQUIRED_SITE_PREDICTION_MODE_IDS
 
 
 DEFAULT_REQUIRED_MODE_IDS = tuple(int(item) for item in REQUIRED_SITE_PREDICTION_MODE_IDS)
+DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS = (
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    151,
+    197,
+)
 
 # twsaimahui frontend pages that are confirmed to map to working prediction
 # mechanisms in the current backend.
@@ -119,6 +129,45 @@ TWCAIBAWANG_REQUIRED_MODE_IDS = (
     484,
 )
 
+TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
+    5,
+    9,
+    10,
+    15,
+    22,
+    24,
+    27,
+    30,
+    39,
+    41,
+    47,
+    48,
+    63,
+    88,
+    116,
+    123,
+    132,
+    141,
+    143,
+    144,
+    145,
+    147,
+    149,
+    151,
+    152,
+    155,
+    157,
+    158,
+    159,
+    197,
+    244,
+    246,
+    251,
+    295,
+    336,
+)
+TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS = (197,)
+
 TWCAIBAWANG_BLOCKED_ITEMS = (
     {
         "frontend_module": "五肖五码",
@@ -218,6 +267,14 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
     if _site_matches_twcaibawang(site):
         return TWCAIBAWANG_REQUIRED_MODE_IDS
     return DEFAULT_REQUIRED_MODE_IDS
+
+
+def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
+    if _site_matches_twsaimahui(site):
+        return TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS
+    if _site_matches_twcaibawang(site):
+        return TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS
+    return DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS
 
 
 def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, Any]]:

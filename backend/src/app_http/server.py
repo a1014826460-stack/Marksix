@@ -27,6 +27,7 @@ from .request_context import RequestContext
 from .router import Router
 
 from routes import (
+    admin_dashboard_routes,
     admin_alert_routes,
     admin_backfill_routes,
     admin_config_routes,
@@ -85,6 +86,7 @@ def build_router() -> Router:
         default_type=LEGACY_POST_LIST_TYPE,
     )
     admin_user_routes.register(router)
+    admin_dashboard_routes.register(router)
     admin_config_routes.register(router)
     admin_prediction_routes.register(router)
     admin_lottery_routes.register(router)

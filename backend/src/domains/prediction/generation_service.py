@@ -12,6 +12,7 @@ from db import connect, utc_now
 from domains.prediction.site_module_blueprints import (
     get_blocked_items_for_site,
     get_blueprint_name_for_site,
+    get_known_unavailable_mode_ids_for_site,
     get_required_mode_ids_for_site,
 )
 from helpers import load_fixed_data_maps, parse_bool
@@ -49,11 +50,20 @@ def get_site_prediction_module_blueprints(site: dict[str, Any] | None = None) ->
 
     required_mode_ids = get_required_mode_ids_for_site(site)
     missing = [mode_id for mode_id in required_mode_ids if mode_id not in configs_by_mode_id]
-    if missing:
+    known_unavailable = set(get_known_unavailable_mode_ids_for_site(site))
+    expected_missing = [mode_id for mode_id in missing if mode_id in known_unavailable]
+    unexpected_missing = [mode_id for mode_id in missing if mode_id not in known_unavailable]
+    if unexpected_missing:
         _logger.warning(
             "site blueprint=%s missing prediction configs for mode_ids: %s",
             get_blueprint_name_for_site(site),
-            missing,
+            unexpected_missing,
+        )
+    if expected_missing:
+        _logger.info(
+            "site blueprint=%s skipping known unavailable mode_ids: %s",
+            get_blueprint_name_for_site(site),
+            expected_missing,
         )
 
     blueprints: list[dict[str, Any]] = []
@@ -145,8 +155,8 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
 
         blocked_items = get_blocked_items_for_site(site_data)
         if blocked_items:
-            _logger.warning(
-                "site_id=%s blueprint=%s blocked frontend items not synced into site_prediction_modules: %s",
+            _logger.info(
+                "site_id=%s blueprint=%s keeping blocked frontend items out of site_prediction_modules: %s",
                 current_site_id,
                 get_blueprint_name_for_site(site_data),
                 [str(item.get("page_title") or item.get("frontend_module") or "") for item in blocked_items],
