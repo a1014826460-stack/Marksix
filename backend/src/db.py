@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import psycopg
+from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
 
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
@@ -26,6 +28,30 @@ POSTGRES_REQUIRED_ERROR = (
     "未配置 PostgreSQL 数据库连接。"
     "请设置 DATABASE_URL 环境变量或通过 --db-path 参数传入。"
 )
+DEFAULT_POSTGRES_POOL_MAX_SIZE = 20
+DEFAULT_POSTGRES_POOL_TIMEOUT = 10.0
+
+
+def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.1) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
 
 
 def is_postgres_target(target: str | Path | None) -> bool:
@@ -154,23 +180,149 @@ class CursorAdapter:
         return self._cursor.fetchall()
 
 
+class _PooledPostgresConnectionManager:
+    """Small thread-safe pool for psycopg connections.
+
+    The project uses `with connect(...) as conn` widely. Pooling here lets us
+    preserve that API while avoiding one TCP/session handshake per request.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Condition()
+        self._idle_by_target: dict[str, list[Any]] = {}
+        self._total_by_target: dict[str, int] = {}
+
+    def _pool_size(self) -> int:
+        return _env_int("POSTGRES_POOL_MAX_SIZE", DEFAULT_POSTGRES_POOL_MAX_SIZE)
+
+    def _pool_timeout(self) -> float:
+        return _env_float("POSTGRES_POOL_TIMEOUT", DEFAULT_POSTGRES_POOL_TIMEOUT)
+
+    def _create_connection(self, target: str) -> Any:
+        return psycopg.connect(
+            target,
+            row_factory=dict_row,
+            connect_timeout=10,
+            prepare_threshold=None,
+        )
+
+    def acquire(self, target: str) -> Any:
+        timeout = self._pool_timeout()
+        max_size = self._pool_size()
+        with self._lock:
+            idle = self._idle_by_target.setdefault(target, [])
+            total = self._total_by_target.get(target, 0)
+
+            while True:
+                while idle:
+                    raw = idle.pop()
+                    if self._is_connection_reusable(raw):
+                        return raw
+                    self._close_raw(raw)
+                    total = max(0, self._total_by_target.get(target, 0) - 1)
+                    self._total_by_target[target] = total
+
+                if total < max_size:
+                    self._total_by_target[target] = total + 1
+                    break
+
+                notified = self._lock.wait(timeout=timeout)
+                idle = self._idle_by_target.setdefault(target, [])
+                total = self._total_by_target.get(target, 0)
+                if not notified and not idle and total >= max_size:
+                    raise psycopg.OperationalError(
+                        f"PostgreSQL connection pool exhausted for target={target!r}; "
+                        f"max_size={max_size}"
+                    )
+
+        try:
+            return self._create_connection(target)
+        except Exception:
+            with self._lock:
+                current = self._total_by_target.get(target, 0)
+                self._total_by_target[target] = max(0, current - 1)
+                self._lock.notify()
+            raise
+
+    def release(self, target: str, raw: Any, *, discard: bool = False) -> None:
+        if discard or not self._is_connection_reusable(raw):
+            self._discard(target, raw)
+            return
+
+        self._reset_connection(raw)
+        if not self._is_connection_reusable(raw):
+            self._discard(target, raw)
+            return
+
+        with self._lock:
+            self._idle_by_target.setdefault(target, []).append(raw)
+            self._lock.notify()
+
+    def _discard(self, target: str, raw: Any) -> None:
+        self._close_raw(raw)
+        with self._lock:
+            current = self._total_by_target.get(target, 0)
+            self._total_by_target[target] = max(0, current - 1)
+            self._lock.notify()
+
+    @staticmethod
+    def _close_raw(raw: Any) -> None:
+        try:
+            raw.close()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _is_connection_reusable(raw: Any) -> bool:
+        return not bool(getattr(raw, "closed", False)) and not bool(getattr(raw, "broken", False))
+
+    @staticmethod
+    def _reset_connection(raw: Any) -> None:
+        if not _PooledPostgresConnectionManager._is_connection_reusable(raw):
+            return
+        try:
+            status = raw.pgconn.transaction_status
+        except Exception:
+            _PooledPostgresConnectionManager._close_raw(raw)
+            return
+
+        try:
+            if status == TransactionStatus.INERROR:
+                raw.rollback()
+            elif status == TransactionStatus.INTRANS:
+                raw.commit()
+        except Exception:
+            _PooledPostgresConnectionManager._close_raw(raw)
+
+
+_POSTGRES_POOL = _PooledPostgresConnectionManager()
+
+
 class ConnectionAdapter:
     """统一数据库连接接口，屏蔽 SQLite / PostgreSQL 差异。"""
 
-    def __init__(self, raw: Any, engine: str, target: str):
+    def __init__(self, raw: Any, engine: str, target: str, *, release_to_pool: bool = False):
         self._raw = raw
         self.engine = engine
         self.target = target
+        self._release_to_pool = release_to_pool
+        self._closed = False
 
     def __enter__(self) -> "ConnectionAdapter":
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        if exc_type:
-            self.rollback()
-        else:
-            self.commit()
-        self.close()
+        close_discard = False
+        try:
+            if exc_type:
+                self.rollback()
+            else:
+                self.commit()
+        except Exception:
+            close_discard = True
+            raise
+        finally:
+            self.close(discard=close_discard)
 
     def _rewrite_sql(self, sql_text: str) -> str:
         if self.engine == "postgres":
@@ -196,12 +348,22 @@ class ConnectionAdapter:
         return CursorAdapter(raw_cursor)
 
     def commit(self) -> None:
+        if self._closed:
+            return
         self._raw.commit()
 
     def rollback(self) -> None:
+        if self._closed:
+            return
         self._raw.rollback()
 
-    def close(self) -> None:
+    def close(self, *, discard: bool = False) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._release_to_pool and self.engine == "postgres":
+            _POSTGRES_POOL.release(self.target, self._raw, discard=discard)
+            return
         self._raw.close()
 
     def table_exists(self, table_name: str) -> bool:
@@ -285,10 +447,8 @@ def connect(target: str | Path | None = None) -> ConnectionAdapter:
     engine = detect_database_engine(resolved)
 
     if engine == "postgres":
-        # connect_timeout=10 避免 PostgreSQL 不可达时无限挂起，
-        # 10 秒后抛出 psycopg.OperationalError，由上层处理
-        raw = psycopg.connect(resolved, row_factory=dict_row, connect_timeout=10)
-        return ConnectionAdapter(raw, engine, resolved)
+        raw = _POSTGRES_POOL.acquire(resolved)
+        return ConnectionAdapter(raw, engine, resolved, release_to_pool=True)
 
     db_path = Path(resolved)
     db_path.parent.mkdir(parents=True, exist_ok=True)

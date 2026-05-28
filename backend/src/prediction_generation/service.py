@@ -27,7 +27,11 @@ from predict.common import (
     predict,
     special_zodiac_from_number_map,
 )
-from predict.mechanisms import format_zodiac_two_codes, get_prediction_config
+from predict.mechanisms import (
+    ensure_prediction_configs_loaded,
+    format_zodiac_two_codes,
+    get_prediction_config,
+)
 from predict.number_maps import SIZE_NUMBER_MAP
 from prediction_generation.brain_teaser import (
     build_brain_teaser_generated_content,
@@ -1306,6 +1310,7 @@ def generate_prediction_batch(
         future_periods, bool(future_only), trigger,
     )
 
+    ensure_prediction_configs_loaded(db_path)
     site_web_id, site_name = _resolve_generation_context(db_path, site_id)
 
     with connect(db_path) as conn:

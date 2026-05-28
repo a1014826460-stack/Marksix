@@ -837,6 +837,15 @@ def format_zodiac_two_codes(labels: tuple[str, ...], conn: sqlite3.Connection) -
     return result
 
 
+def format_zodiac_all_codes(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
+    """Return `zodiac|number-list` rows using every fixed number for each zodiac."""
+    result: list[str] = []
+    for label in labels:
+        numbers = get_zodiac_numbers(conn, label)
+        result.append(f"{label}|{','.join(numbers)}")
+    return result
+
+
 def format_9x12(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
     """9肖12码：输出 9 个生肖和 12 个号码。"""
     selected_codes: list[str] = []
@@ -1849,6 +1858,24 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "4肖8码选择 4 个生肖，并为每个生肖带 2 个代表号码。",
             "特码生肖落入预测生肖则命中；号码用于生成接口展示。",
+        ),
+    ),
+    "title_197": PredictionConfig(
+        key="title_197",
+        title="三期4肖",
+        default_table="mode_payload_197",
+        default_modes_id=197,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=4,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_all_codes,
+        hit_checker=contains_hit,
+        explanation=(
+            "三期4肖按生肖组选处理，从 12 个生肖中选出 4 个生肖。",
+            "开奖结果取特码生肖命中判断；输出保持为 `生肖|号码列表` 结构，和历史表内容一致。",
+            "该模块直接对应 mode_payload_197 与前端 getSanqiXiao4new。",
         ),
     ),
     "sizixuanji": PredictionConfig(

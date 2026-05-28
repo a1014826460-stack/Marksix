@@ -24,6 +24,8 @@ from .repository import (
     update_site,
 )
 
+DEFAULT_SITE_BLUEPRINT_NAME = "default"
+
 
 def public_site(row: Any) -> dict[str, Any]:
     """将数据库中的站点行转换为对外安全的字典（隐藏完整 token）。"""
@@ -58,7 +60,10 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
     当 site_id 为 None 时创建新站点，并从模板站点复制预测模块配置；
     否则更新已有站点。
     """
-    from domains.prediction.generation_service import sync_site_prediction_modules
+    from domains.prediction.generation_service import (
+        initialize_site_prediction_modules_from_blueprint,
+        sync_site_prediction_modules,
+    )
 
     ensure_admin_tables(db_path)
     now = utc_now()
@@ -81,6 +86,7 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
         "request_delay": float(payload.get("request_delay") or get_config(db_path, "site.request_delay", 0.5)),
         "announcement": str(payload.get("announcement") or "").strip(),
         "notes": str(payload.get("notes") or "").strip(),
+        "blueprint_name": str(payload.get("blueprint_name") or "").strip() or DEFAULT_SITE_BLUEPRINT_NAME,
     }
     token = payload.get("token")
     template_site_id = int(payload.get("template_site_id") or 4)
@@ -110,7 +116,6 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
             fields["token"] = str(token or "")
             row = insert_site(conn, fields, now)
             new_site_id = int(row["id"])
-            new_site = dict(row)
 
             template_exists = conn.execute(
                 "SELECT id FROM managed_sites WHERE id = ?",
@@ -128,11 +133,7 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
                 """,
                 (template_site_id,),
             ).fetchall()
-            should_copy_template_modules = not str(new_site.get("domain") or "").strip().lower() in {
-                "www.twsaimahui.com",
-                "twsaimahui.com",
-            }
-            if template_modules and should_copy_template_modules:
+            if template_modules:
                 for tm in template_modules:
                     conn.execute(
                         """
@@ -147,6 +148,8 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
                             tm["status"], tm["sort_order"], now, now,
                         ),
                     )
+            new_site = find_site_by_id(conn, new_site_id) or dict(row)
+            initialize_site_prediction_modules_from_blueprint(conn, new_site)
             sync_site_prediction_modules(conn, site_id=new_site_id)
             conn.commit()
             return public_site(row)

@@ -152,7 +152,7 @@ start_services() {
     docker compose up -d || true
 
     log_info "等待服务就绪..."
-    local healthy_services=(postgres python-api backend-admin frontend)
+    local healthy_services=(postgres pgbouncer python-api backend-admin frontend)
     local running_services=(nginx)
     local service
     local attempt
@@ -250,6 +250,7 @@ show_deploy_info() {
     echo "  宿主机本地访问:"
     echo "    Python API:      http://127.0.0.1:8000/api/health"
     echo "    PostgreSQL:      127.0.0.1:5432"
+    echo "    PgBouncer:       127.0.0.1:6432"
     echo ""
     echo "  常用命令:"
     echo "    查看日志:        docker compose logs -f"

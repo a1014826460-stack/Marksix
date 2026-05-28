@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from db import connect, utc_now
+from domains.sites.repository import find_site_by_id
 from domains.prediction.site_module_blueprints import (
     get_blocked_items_for_site,
     get_blueprint_name_for_site,
@@ -16,7 +17,11 @@ from domains.prediction.site_module_blueprints import (
     get_required_mode_ids_for_site,
 )
 from helpers import load_fixed_data_maps, parse_bool
-from predict.mechanisms import get_prediction_config, list_prediction_configs
+from predict.mechanisms import (
+    ensure_prediction_configs_loaded,
+    get_prediction_config,
+    list_prediction_configs,
+)
 from utils.created_prediction_store import (
     normalize_color_label,
     upsert_created_prediction_row,
@@ -28,21 +33,47 @@ _logger = logging.getLogger("domains.prediction.generation")
 def _load_site_sync_context(conn: Any, site_id: int | None) -> dict[str, Any] | None:
     if site_id is None:
         return None
-    row = conn.execute(
+    return find_site_by_id(conn, int(site_id))
+
+
+def _load_site_module_rows(conn: Any, site_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
         """
-        SELECT id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
-        FROM managed_sites
-        WHERE id = ?
+        SELECT mechanism_key, mode_id, status, sort_order, title
+        FROM site_prediction_modules
+        WHERE site_id = ?
+        ORDER BY sort_order, id
         """,
         (int(site_id),),
-    ).fetchone()
-    return dict(row) if row else None
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
-def get_site_prediction_module_blueprints(site: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _list_prediction_configs_for_runtime(
+    conn: Any | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    resolved_target = ""
+    if db_path is not None:
+        resolved_target = str(db_path)
+    elif conn is not None:
+        resolved_target = str(getattr(conn, "target", "") or "")
+
+    if resolved_target:
+        ensure_prediction_configs_loaded(resolved_target)
+        return list_prediction_configs()
+    return list_prediction_configs()
+
+
+def get_site_prediction_module_blueprints(
+    site: dict[str, Any] | None = None,
+    *,
+    conn: Any | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
     """Return the synced prediction-module blueprint for a site."""
     configs_by_mode_id: dict[int, dict[str, Any]] = {}
-    for item in list_prediction_configs():
+    for item in _list_prediction_configs_for_runtime(conn, db_path):
         try:
             configs_by_mode_id[int(item["default_modes_id"])] = item
         except (TypeError, ValueError):
@@ -79,22 +110,107 @@ def get_site_prediction_module_blueprints(site: dict[str, Any] | None = None) ->
     return blueprints
 
 
+def get_site_prediction_modules_from_db_or_blueprint(
+    conn: Any,
+    site: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Use DB modules as the runtime source of truth; fall back to blueprint only for empty sites."""
+    if site is not None:
+        try:
+            site_id = int(site.get("id") or 0)
+        except (TypeError, ValueError):
+            site_id = 0
+        if site_id > 0:
+            existing_rows = _load_site_module_rows(conn, site_id)
+            if existing_rows:
+                configs_by_key = {
+                    str(item["key"]): dict(item)
+                    for item in _list_prediction_configs_for_runtime(conn)
+                }
+                resolved: list[dict[str, Any]] = []
+                for row in existing_rows:
+                    mechanism_key = str(row.get("mechanism_key") or "").strip()
+                    config = configs_by_key.get(mechanism_key)
+                    if not config:
+                        _logger.warning(
+                            "site_id=%s has site_prediction_modules row with unknown mechanism_key=%s",
+                            site_id,
+                            mechanism_key,
+                        )
+                        continue
+                    payload = dict(config)
+                    payload["mode_id"] = int(row.get("mode_id") or config["default_modes_id"] or 0)
+                    payload["sort_order"] = int(row.get("sort_order") or 0)
+                    payload["status"] = int(row.get("status") or 0)
+                    payload["title"] = str(row.get("title") or payload.get("title") or "")
+                    payload["blueprint_name"] = "database"
+                    resolved.append(payload)
+                if resolved:
+                    return resolved
+    return get_site_prediction_module_blueprints(site, conn=conn)
+
+
+def initialize_site_prediction_modules_from_blueprint(
+    conn: Any,
+    site: dict[str, Any] | None = None,
+) -> int:
+    """Populate site_prediction_modules only when the site has no runtime module rows yet."""
+    if not site:
+        return 0
+
+    try:
+        site_id = int(site.get("id") or 0)
+    except (TypeError, ValueError):
+        site_id = 0
+    if site_id <= 0:
+        return 0
+
+    if _load_site_module_rows(conn, site_id):
+        return 0
+
+    now = utc_now()
+    inserted = 0
+    for item in get_site_prediction_module_blueprints(site, conn=conn):
+        conn.execute(
+            """
+            INSERT INTO site_prediction_modules (
+                site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at, title
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(site_id, mechanism_key) DO NOTHING
+            """,
+            (
+                site_id,
+                str(item["key"]),
+                int(item["mode_id"]),
+                1,
+                int(item["sort_order"]),
+                now,
+                now,
+                str(item.get("title") or ""),
+            ),
+        )
+        inserted += 1
+    return inserted
+
+
 def get_site_prediction_module_blueprint_by_key(
     mechanism_key: str,
     site: dict[str, Any] | None = None,
+    *,
+    conn: Any | None = None,
+    db_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    for item in get_site_prediction_module_blueprints(site):
+    for item in get_site_prediction_module_blueprints(site, conn=conn, db_path=db_path):
         if str(item["key"]) == str(mechanism_key):
             return item
     raise ValueError(f"mechanism {mechanism_key} is not in the synced site blueprint")
 
 
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """Keep site_prediction_modules aligned with the resolved site blueprint."""
-    now = utc_now()
-
+    """Initialize empty site_prediction_modules from blueprint; do not override DB-managed sites."""
     site_query = """
-        SELECT id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
+        SELECT id
         FROM managed_sites
     """
     site_params: tuple[Any, ...] = ()
@@ -104,54 +220,20 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
     site_rows = conn.execute(site_query, site_params).fetchall()
 
     for site_row in site_rows:
-        site_data = dict(site_row)
-        current_site_id = int(site_data["id"])
-        blueprints = get_site_prediction_module_blueprints(site_data)
-        existing_rows = conn.execute(
-            """
-            SELECT mechanism_key, status, created_at
-            FROM site_prediction_modules
-            WHERE site_id = ?
-            """,
-            (current_site_id,),
-        ).fetchall()
-        existing_by_key = {str(row["mechanism_key"]): dict(row) for row in existing_rows}
+        current_site_id = int(site_row["id"])
+        site_data = _load_site_sync_context(conn, current_site_id) or {"id": current_site_id}
+        existing_rows = _load_site_module_rows(conn, current_site_id)
+        if existing_rows:
+            blocked_items = get_blocked_items_for_site(site_data)
+            if blocked_items:
+                _logger.info(
+                    "site_id=%s runtime modules come from database; blocked frontend items remain informational: %s",
+                    current_site_id,
+                    [str(item.get("page_title") or item.get("frontend_module") or "") for item in blocked_items],
+                )
+            continue
 
-        for item in blueprints:
-            existing = existing_by_key.get(str(item["key"]))
-            if existing:
-                conn.execute(
-                    """
-                    UPDATE site_prediction_modules
-                    SET mode_id = ?, sort_order = ?, updated_at = ?
-                    WHERE site_id = ? AND mechanism_key = ?
-                    """,
-                    (
-                        int(item["mode_id"]),
-                        int(item["sort_order"]),
-                        now,
-                        current_site_id,
-                        str(item["key"]),
-                    ),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO site_prediction_modules (
-                        site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        current_site_id,
-                        str(item["key"]),
-                        int(item["mode_id"]),
-                        1,
-                        int(item["sort_order"]),
-                        now,
-                        now,
-                    ),
-                )
+        initialize_site_prediction_modules_from_blueprint(conn, site_data)
 
         blocked_items = get_blocked_items_for_site(site_data)
         if blocked_items:

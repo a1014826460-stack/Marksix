@@ -300,6 +300,8 @@ async function fetchLegacyRows(url: URL, modesId: number, limit = 10) {
 
   const type = url.searchParams.get("type")
 
+  const hasExplicitWeb = web !== null && web.trim() !== ""
+
   const requestedWeb = Number(web || "0") || undefined
 
   const typeNumber = Number(type || "0")
@@ -335,6 +337,14 @@ async function fetchLegacyRows(url: URL, modesId: number, limit = 10) {
 
 
   if (primary.rows.length > 0) {
+
+    return primary
+
+  }
+
+  // Keep explicit web requests site-isolated. If a caller pins `web`,
+  // returning empty data is safer than mixing rows from other sites.
+  if (hasExplicitWeb) {
 
     return primary
 

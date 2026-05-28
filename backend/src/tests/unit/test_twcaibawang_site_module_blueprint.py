@@ -19,6 +19,22 @@ def test_twcaibawang_site_uses_dedicated_blueprint_by_domain():
     assert get_blueprint_name_for_site(site) == "twcaibawang"
 
 
+def test_database_blueprint_profile_takes_priority_over_domain_guess():
+    site = {
+        "domain": "www.example.com",
+        "web_id": 99,
+        "lottery_type_id": 3,
+        "blueprint_name": "twcaibawang",
+        "blueprint_required_mode_ids_json": "[12,26,197]",
+        "blueprint_known_unavailable_mode_ids_json": "[]",
+        "blueprint_blocked_items_json": '[{\"page_title\":\"五肖五码\",\"status\":\"blocked_exact_payload_mapping\"}]',
+    }
+
+    assert get_blueprint_name_for_site(site) == "twcaibawang"
+    assert get_required_mode_ids_for_site(site) == (12, 26, 197)
+    assert get_blocked_items_for_site(site)[0]["page_title"] == "五肖五码"
+
+
 def test_twcaibawang_site_uses_dedicated_blueprint_by_web_id():
     site = {
         "domain": "",

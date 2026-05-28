@@ -1,11 +1,12 @@
-"""Site-specific prediction module blueprints.
+"""Site prediction blueprint helpers.
 
-Keep the global default blueprint as a fallback, but allow certain sites to
-declare a tighter module set that matches the frontend's real dependency map.
+Runtime should prefer blueprint data stored in PostgreSQL. Code constants here
+are only the last-resort fallback for bootstrap and tests.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from helpers import REQUIRED_SITE_PREDICTION_MODE_IDS
@@ -20,7 +21,6 @@ DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS = (
     67,
     68,
     151,
-    197,
 )
 
 # twsaimahui frontend pages that are confirmed to map to working prediction
@@ -159,14 +159,13 @@ TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
     157,
     158,
     159,
-    197,
     244,
     246,
     251,
     295,
     336,
 )
-TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS = (197,)
+TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS = ()
 
 TWCAIBAWANG_BLOCKED_ITEMS = (
     {
@@ -225,6 +224,61 @@ def _normalize_domain(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _parse_int_tuple(raw_value: Any) -> tuple[int, ...]:
+    try:
+        parsed = json.loads(str(raw_value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ()
+    values: list[int] = []
+    for item in parsed if isinstance(parsed, list) else []:
+        try:
+            values.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return tuple(values)
+
+
+def _parse_blocked_items(raw_value: Any) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(raw_value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [dict(item) for item in parsed if isinstance(item, dict)]
+
+
+def _load_blueprint_profile_from_db(site: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not site:
+        return None
+
+    blueprint_name = str(site.get("blueprint_name") or "").strip()
+    if not blueprint_name:
+        return None
+
+    raw_profile = site.get("_blueprint_profile")
+    if isinstance(raw_profile, dict):
+        return dict(raw_profile)
+
+    has_json_payload = any(
+        site.get(key) not in (None, "")
+        for key in (
+            "blueprint_required_mode_ids_json",
+            "blueprint_known_unavailable_mode_ids_json",
+            "blueprint_blocked_items_json",
+        )
+    )
+    if not has_json_payload:
+        return None
+
+    return {
+        "blueprint_name": blueprint_name,
+        "required_mode_ids": _parse_int_tuple(site.get("blueprint_required_mode_ids_json")),
+        "known_unavailable_mode_ids": _parse_int_tuple(site.get("blueprint_known_unavailable_mode_ids_json")),
+        "blocked_items": _parse_blocked_items(site.get("blueprint_blocked_items_json")),
+    }
+
+
 def _site_matches_twsaimahui(site: dict[str, Any] | None) -> bool:
     if not site:
         return False
@@ -262,6 +316,9 @@ def _site_matches_twcaibawang(site: dict[str, Any] | None) -> bool:
 
 
 def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
+    profile = _load_blueprint_profile_from_db(site)
+    if profile:
+        return tuple(int(item) for item in profile.get("required_mode_ids") or ())
     if _site_matches_twsaimahui(site):
         return TWSAIMAHUI_REQUIRED_MODE_IDS
     if _site_matches_twcaibawang(site):
@@ -270,6 +327,9 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
 
 
 def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
+    profile = _load_blueprint_profile_from_db(site)
+    if profile:
+        return tuple(int(item) for item in profile.get("known_unavailable_mode_ids") or ())
     if _site_matches_twsaimahui(site):
         return TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS
     if _site_matches_twcaibawang(site):
@@ -278,6 +338,9 @@ def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tupl
 
 
 def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, Any]]:
+    profile = _load_blueprint_profile_from_db(site)
+    if profile:
+        return [dict(item) for item in profile.get("blocked_items") or []]
     if _site_matches_twsaimahui(site):
         return [dict(item) for item in TWSAIMAHUI_BLOCKED_ITEMS]
     if _site_matches_twcaibawang(site):
@@ -286,6 +349,9 @@ def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, An
 
 
 def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
+    profile = _load_blueprint_profile_from_db(site)
+    if profile:
+        return str(profile.get("blueprint_name") or "default")
     if _site_matches_twsaimahui(site):
         return "twsaimahui"
     if _site_matches_twcaibawang(site):

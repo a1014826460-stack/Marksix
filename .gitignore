@@ -52,16 +52,17 @@ tmp_*.json
 *.zip
 
 # 爬虫采集数据
-data/lottery_data/
-data/Images/mode_474/prediction
-data/Images/mode_475/prediction
-data/Images/mode_476/prediction
-data/Images/mode_477/prediction
-data/Images/mode_478/prediction
+backend/data/lottery_data/
+backend/data/Images/mode_474/prediction
+backend/data/Images/mode_475/prediction
+backend/data/Images/mode_476/prediction
+backend/data/Images/mode_477/prediction
+backend/data/Images/mode_478/prediction
 
 # API 缓存数据
-data/api_data/
+backend/data/api_data/
 
 # Python 缓存
 __pycache__/
 *.pyc
+

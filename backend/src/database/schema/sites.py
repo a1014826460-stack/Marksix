@@ -31,7 +31,7 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
     rows = conn.execute(
         """
         SELECT id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-               manage_url_template, modes_data_url, token, request_limit, request_delay,
+               manage_url_template, modes_data_url, token, blueprint_name, request_limit, request_delay,
                announcement, notes, created_at, updated_at
         FROM managed_sites
         WHERE web_id IS NOT NULL AND id <> web_id
@@ -55,10 +55,10 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
             """
             INSERT INTO managed_sites (
                 id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-                manage_url_template, modes_data_url, token, request_limit, request_delay,
+                manage_url_template, modes_data_url, token, blueprint_name, request_limit, request_delay,
                 announcement, notes, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_site_id,
@@ -72,6 +72,7 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
                 row["manage_url_template"],
                 row["modes_data_url"],
                 row["token"],
+                row["blueprint_name"],
                 row["request_limit"],
                 row["request_delay"],
                 row["announcement"],
@@ -117,6 +118,7 @@ def ensure_site_tables(conn: Any, pk_sql: str) -> None:
             manage_url_template TEXT NOT NULL,
             modes_data_url TEXT NOT NULL,
             token TEXT,
+            blueprint_name TEXT,
             request_limit INTEGER NOT NULL DEFAULT 250,
             request_delay REAL NOT NULL DEFAULT 0.5,
             announcement TEXT,
@@ -131,6 +133,7 @@ def ensure_site_tables(conn: Any, pk_sql: str) -> None:
     add_column_if_missing(conn, "managed_sites", "lottery_type_id", "INTEGER")
     add_column_if_missing(conn, "managed_sites", "announcement", "TEXT")
     add_column_if_missing(conn, "managed_sites", "web_id", "INTEGER")
+    add_column_if_missing(conn, "managed_sites", "blueprint_name", "TEXT")
     # 为已有站点回填 web_id：用 start_web_id 作为默认值
     conn.execute(
         "UPDATE managed_sites SET web_id = start_web_id WHERE web_id IS NULL"

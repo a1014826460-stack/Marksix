@@ -18,9 +18,10 @@
 
 ## 概览
 
-系统由 5 个容器组成：
+系统由 6 个容器组成：
 
 - `postgres`
+- `pgbouncer`
 - `python-api`
 - `backend-admin`
 - `frontend`
@@ -39,6 +40,7 @@
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/api/health`
 - `127.0.0.1:5432`
+- `127.0.0.1:6432`
 
 ## 两种部署模式
 
@@ -163,6 +165,10 @@ nano .env
 
 ```ini
 POSTGRES_PASSWORD=请设置强密码
+POSTGRES_POOL_MAX_SIZE=120
+POSTGRES_POOL_TIMEOUT=15
+PGBOUNCER_MAX_CLIENT_CONN=1200
+PGBOUNCER_DEFAULT_POOL_SIZE=50
 LOTTERY_SITE_ID=1
 
 # 构建镜像源（网络不稳时建议配置）
@@ -174,6 +180,10 @@ APT_MIRROR=mirrors.aliyun.com
 
 ```ini
 POSTGRES_PASSWORD=请设置强密码
+POSTGRES_POOL_MAX_SIZE=120
+POSTGRES_POOL_TIMEOUT=15
+PGBOUNCER_MAX_CLIENT_CONN=1200
+PGBOUNCER_DEFAULT_POOL_SIZE=50
 LOTTERY_SITE_ID=1
 
 NGINX_CONF_SOURCE=./deploy/nginx.conf
@@ -186,6 +196,10 @@ NGINX_EXPECT_HTTPS=0
 
 ```ini
 POSTGRES_PASSWORD=请设置强密码
+POSTGRES_POOL_MAX_SIZE=120
+POSTGRES_POOL_TIMEOUT=15
+PGBOUNCER_MAX_CLIENT_CONN=1200
+PGBOUNCER_DEFAULT_POOL_SIZE=50
 LOTTERY_SITE_ID=1
 
 NGINX_CONF_SOURCE=./deploy/nginx.conf.local
@@ -197,10 +211,18 @@ NGINX_EXPECT_HTTPS=1
 补充说明：
 
 - `POSTGRES_PASSWORD` 必改
+- `POSTGRES_POOL_MAX_SIZE` 建议先保持 120，适合 6 个站点共用一套后端
+- `PGBOUNCER_DEFAULT_POOL_SIZE` 决定 PgBouncer 后端复用规模
 - `LOTTERY_SITE_ID` 决定前台默认站点
 - `PUBLIC_HOST` 供 `deploy/verify.sh` 做访问验证
 - `PUBLIC_SCHEME` 必须与实际暴露协议一致
 - `NGINX_EXPECT_HTTPS=1` 时，验证脚本会按 HTTPS 检查
+
+连接池说明：
+
+- `POSTGRES_POOL_MAX_SIZE` 是 `python-api` 进程内连接池上限，控制应用最多同时持有多少条到 PgBouncer 的连接
+- `PGBOUNCER_DEFAULT_POOL_SIZE` 是 PgBouncer 到 PostgreSQL 的后端连接池大小，控制数据库实际承载的长连接规模
+- 当前默认值适合多个站点共用同一后端接口的场景；若未来流量明显上升，再结合 `pg_stat_activity` 和 PgBouncer 指标继续调整
 
 ## 快速部署
 
@@ -271,21 +293,21 @@ docker compose logs --tail 200 nginx
 ```bash
 docker compose exec python-api python /app/src/tools/import_fixed_data.py \
   --fixed-data-path /app/data/fixed_data.json \
-  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
+  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@pgbouncer:6432/liuhecai"
 ```
 
 ### 规范化 `mode_payload_*`
 
 ```bash
 docker compose exec python-api python /app/src/utils/normalize_payload_tables.py \
-  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
+  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@pgbouncer:6432/liuhecai"
 ```
 
 ### 生成文本历史映射
 
 ```bash
 docker compose exec python-api python /app/src/utils/build_text_history_mappings.py \
-  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/liuhecai"
+  --db-path "postgresql://postgres:${POSTGRES_PASSWORD}@pgbouncer:6432/liuhecai"
 ```
 
 ## 无域名部署说明
@@ -610,6 +632,7 @@ VERIFY_HOST=www.twsaimahui.com ./deploy/verify.sh
 - `frontend`：容器内 `http://127.0.0.1:3000/health`
 - `backend-admin`：容器内 `http://127.0.0.1:3002/fackyou/health`
 - `nginx`：对外 `/health`
+- `pgbouncer`：`127.0.0.1:6432`
 
 说明：
 

@@ -59,6 +59,7 @@ echo ""
 
 echo "[容器状态]"
 check_service_running "postgres"
+check_service_running "pgbouncer"
 check_service_running "python-api"
 check_service_running "backend-admin"
 check_service_running "frontend"
@@ -119,6 +120,10 @@ fi
 check "PostgreSQL 可连接" \
     "docker compose exec postgres pg_isready -U postgres -d liuhecai 2>&1" \
     "accepting"
+
+check "PgBouncer 可连接 PostgreSQL" \
+    "docker compose exec pgbouncer sh -lc 'PGPASSWORD=\"${POSTGRES_PASSWORD}\" psql -h 127.0.0.1 -p 6432 -U postgres -d liuhecai -tAc \"SELECT 1\"'" \
+    "1"
 
 check "python-api 内可用 pg_dump" \
     "docker compose exec python-api sh -lc 'command -v pg_dump >/dev/null && pg_dump --version'" \

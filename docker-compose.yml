@@ -4,7 +4,6 @@
 # ============================================================
 
 services:
-  # PostgreSQL 数据库
   postgres:
     image: postgres:17
     container_name: liuhecai-postgres
@@ -15,9 +14,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/data:/data:ro  # 只读挂载，用于数据迁移
+      - ./backend/data:/data:ro
     ports:
-      - "127.0.0.1:5432:5432"  # 仅本地访问
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d liuhecai"]
       interval: 10s
@@ -26,7 +25,29 @@ services:
     networks:
       - liuhecai-network
 
-  # Python API 服务（核心后端）
+  pgbouncer:
+    image: bitnami/pgbouncer:latest
+    container_name: liuhecai-pgbouncer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_USERNAME: postgres
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRESQL_DATABASE: liuhecai
+      PGBOUNCER_PORT: "6432"
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: "${PGBOUNCER_MAX_CLIENT_CONN:-1200}"
+      PGBOUNCER_DEFAULT_POOL_SIZE: "${PGBOUNCER_DEFAULT_POOL_SIZE:-50}"
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "127.0.0.1:6432:6432"
+    networks:
+      - liuhecai-network
+
   python-api:
     build:
       context: .
@@ -36,17 +57,19 @@ services:
     container_name: liuhecai-python-api
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      pgbouncer:
+        condition: service_started
     environment:
-      LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/liuhecai"
-      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/liuhecai"
+      LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
+      POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
       LOTTERY_API_HOST: "0.0.0.0"
       LOTTERY_API_PORT: "8000"
     ports:
-      - "127.0.0.1:8000:8000"  # 仅本地访问，通过 Nginx 代理
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./backend/data:/app/data  # SQLite 数据和图片
+      - ./backend/data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; resp = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); assert resp.status == 200\""]
       interval: 15s
@@ -56,7 +79,6 @@ services:
     networks:
       - liuhecai-network
 
-  # Next.js 后端管理界面 (port 3002)
   backend-admin:
     build:
       context: .
@@ -81,7 +103,6 @@ services:
     networks:
       - liuhecai-network
 
-  # Next.js 前端站点 (port 3000)
   frontend:
     build:
       context: .
@@ -107,7 +128,6 @@ services:
     networks:
       - liuhecai-network
 
-  # Nginx 反向代理（统一入口）
   nginx:
     image: nginx:1.27-alpine
     container_name: liuhecai-nginx
@@ -124,7 +144,7 @@ services:
       - "443:443"
     volumes:
       - ${NGINX_CONF_SOURCE:-./deploy/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
-      - ./deploy/ssl:/etc/nginx/ssl:ro  # SSL 证书目录（可选）
+      - ./deploy/ssl:/etc/nginx/ssl:ro
     networks:
       - liuhecai-network
 
