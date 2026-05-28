@@ -41,10 +41,70 @@ public/vendor/admin-history/
 - 原始静态入口：`/vendor/twsaimahui/index.html`
 - 真实资源目录：`public/vendor/twsaimahui/**`
 
+### `twcaibawang`
+
+- 入口：`/twcaibawang`
+- 原始静态入口：`/vendor/twcaibawang.com/index.html`
+- 真实资源目录：`public/vendor/twcaibawang.com/**`
+
 ### `admin-history`
 
 - 用途：开奖历史页静态资源
 - 真实资源目录：`public/vendor/admin-history/**`
+
+## `web/type` 一致性
+
+这套前端的一个高风险点是：`lib/sites.ts` 里的默认 `web_id` 只代表站点入口默认值，不代表旧静态页运行时一定还会继续用同一个 `web` 发请求。
+
+本仓库已经确认过的现状：
+
+- `shengshi8800`
+  - `lib/sites.ts` 默认入口是 `embed.html?type=3&web=4`
+  - 旧版 `embed.html` 曾经在运行时把 `type=1/2/3` 映射成 `web=1/2/4`
+  - 这会导致页面虽然从 `web=4` 入口打开，但切换彩种后实际请求落到别的 `web`
+  - 2026-05 已修正为运行时统一发送 `web=4`
+- `twsaimahui`
+  - 运行时彩种切换集中在 `static/js/lottery_config.js` 与 `index.html`
+  - 当前 `taiwan/macau/hongkong` 三个彩种都固定使用 `web=6`
+  - 未发现和 `shengshi8800` 类似的运行时 `web` 漂移
+- `twcaibawang`
+  - 当前首页开奖 iframe 直接复用 `/vendor/shengshi8800/kj/local.html`
+  - 这不一定立即出错，但属于跨站复用旧资源的潜在耦合点
+  - 后续如果 `shengshi8800` 的开奖页逻辑或 `web/type` 规则变更，`twcaibawang` 可能被联动影响
+
+新增站点、迁移旧站，或修改彩种切换逻辑时，必须同时检查下面几层：
+
+1. `lib/sites.ts`
+   - `defaultWebId`
+   - `defaultLotteryTypeId`
+   - `vendorIndexPath` / `embedPath`
+2. 旧静态页入口
+   - `index.html`
+   - `embed.html`
+   - 是否在运行时重写 `window.web` / `window.type`
+3. 彩种配置脚本
+   - `static/js/lottery_config.js`
+   - 是否存在按 `type` 改写 `web` 的映射
+4. 旧 JS 兼容层
+   - 是否直接读取全局 `window.web`
+   - 是否把写入 `window.web` 反向解释为切换 `type`
+5. 嵌套 iframe / 复用资源
+   - 是否引用了其他站点的 `local.html`、`index.html`、`static/js/*`
+   - 是否依赖其他站点的默认 `web/type` 规则
+
+必须避免的错误：
+
+- 只改 `lib/sites.ts` 的 `defaultWebId`，却没有同步检查旧页运行时脚本
+- 默认入口是 `web=A`，但运行时切换后偷偷请求 `web=B`
+- 在一个站点里直接复用另一个站点的开奖页或 API 参数映射，却没有记录这种耦合
+- 后端已经按显式 `web` 严格隔离，但前端还在继续发送错误的 `web`
+
+推荐自检方式：
+
+1. 打开站点首页，分别切换所有彩种 Tab
+2. 在浏览器 Network 中确认 `/api/kaijiang/*`、`/api/post/*`、`/api/index/*` 请求里的 `web/type`
+3. 对照 `lib/sites.ts` 的站点默认配置，确认“默认入口值”和“运行时实际请求值”是否一致
+4. 如果刻意设计为不一致，必须在本文档里明确记录原因
 
 ## 关键配置
 

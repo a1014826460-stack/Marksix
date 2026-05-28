@@ -115,6 +115,44 @@ frontend/public/vendor/admin-history/
 - 真实目录：`frontend/public/vendor/admin-history/`
 - 分类：附属静态资源，不算独立站点
 
+## `web/type` 一致性红线
+
+`frontend/lib/sites.ts` 中的 `defaultWebId` 和 `defaultLotteryTypeId` 只代表站点入口默认值，不代表旧站运行时一定会继续按这个值发请求。
+
+接入新站、迁移旧站、修改彩种切换逻辑时，必须同时检查：
+
+1. `frontend/lib/sites.ts`
+   - `defaultWebId`
+   - `defaultLotteryTypeId`
+   - `vendorIndexPath` / `embedPath`
+2. 旧站入口页
+   - `index.html`
+   - `embed.html`
+   - 是否在运行时读写 `window.web` / `window.type`
+3. 彩种配置脚本
+   - `static/js/lottery_config.js`
+   - 是否按 `type` 改写 `web`
+4. 旧 JS 兼容逻辑
+   - 是否把 `window.web` 当作唯一数据源
+   - 是否把设置 `window.web` 反向映射回彩种切换
+5. 跨站复用资源
+   - 是否引用了其他站点的 `local.html`、`index.html`、`static/js/*`
+   - 是否隐式继承了其他站点的默认 `web/type`
+
+必须避免：
+
+- 只改入口默认值，不查运行时脚本
+- 默认入口 `web=A`，但真实请求变成 `web=B`
+- 一个站点直接复用另一个站点的开奖 iframe 或脚本，却没有在文档中记录
+- 误以为后端已经严格按显式 `web` 隔离，前端发错 `web` 也无所谓
+
+推荐验证方式：
+
+1. 打开站点首页并切换全部彩种 Tab
+2. 在浏览器 Network 中检查 `/api/kaijiang/*`、`/api/post/*`、`/api/index/*` 的真实 `web/type`
+3. 对照 `lib/sites.ts` 与旧站脚本，确认“入口默认值”和“运行时真实请求值”一致
+4. 如果业务就是刻意不一致，必须把原因和影响记录到 `frontend/README.md` 与本文档
+
 ## 新站点接入流程
 
 1. 复制已有旧站到 `frontend/public/vendor/<site_key>/`
@@ -123,6 +161,7 @@ frontend/public/vendor/admin-history/
 4. 如需独立入口，新增 `frontend/app/<site_key>/page.tsx`
 5. 在本地用目标域名或路径联调
 6. 检查兼容 API 是否覆盖旧站请求
+7. 用浏览器 Network 验证真实请求的 `web/type` 没有漂移
 
 ## 已明确不再使用的结构
 
@@ -137,6 +176,7 @@ frontend/public/vendor/admin-history/
 3. 不要把 `admin-history` 当成普通站点复制接入
 4. 不要把某个站点的样式全局注入到所有页面
 5. 新站点接入后要同步更新 README 与本文档
+6. 发现跨站 iframe、脚本或 `web/type` 例外规则时，必须显式记录
 
 ## 开发运行约定
 

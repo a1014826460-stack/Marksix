@@ -102,6 +102,40 @@ window.LOTTERY_CONFIGS = {
 }
 ```
 
+### 5.1 强制检查 `web/type` 一致性
+
+这里必须区分两层含义：
+
+- `lib/sites.ts` 里的 `defaultWebId/defaultLotteryTypeId` 只是站点入口默认值
+- 旧站 HTML/JS 运行时真正发出去的 `/api/*` 请求参数，才是最终生效值
+
+至少同时检查下面几层：
+
+1. `frontend/lib/sites.ts`
+   - `defaultWebId`
+   - `defaultLotteryTypeId`
+   - `vendorIndexPath` / `embedPath`
+2. 旧站入口页
+   - `index.html`
+   - `embed.html`
+   - 是否在运行时重写 `window.web` / `window.type`
+3. 彩种配置脚本
+   - `static/js/lottery_config.js`
+   - 是否存在“按 `type` 改写 `web`”的映射
+4. 旧 JS 全局兼容逻辑
+   - 是否直接读取 `window.web`
+   - 是否把写入 `window.web` 反向解释成切换 `type`
+5. 嵌套 iframe / 复用资源
+   - 是否直接引用其他站点的 `local.html`、`index.html`、`static/js/*`
+   - 是否隐式继承了其他站点的 `web/type` 规则
+
+必须避免的错误：
+
+- 只改 `lib/sites.ts` 的 `defaultWebId`，却没有检查旧站运行时脚本
+- 默认入口是 `web=A`，但页面切换彩种后偷偷请求 `web=B`
+- 一个站点复用另一个站点的开奖页或脚本，却没有记录这层耦合
+- 以为后端严格按显式 `web` 隔离之后，前端发错 `web` 也会“自动正常”
+
 ## 6. 兼容 API 层
 
 优先检查：
@@ -122,7 +156,8 @@ window.LOTTERY_CONFIGS = {
    - `/api/index/notice?web={web_id}`
 3. 一个通用预测模块
 4. 一个特殊旧路径模块
-5. 页面整体打开后检查控制台是否存在 404、500、JSON 解析错误
+5. 切换所有彩种 Tab，检查浏览器 Network 中实际发出的 `/api/kaijiang/*`、`/api/post/*`、`/api/index/*` 的 `web/type`
+6. 页面整体打开后检查控制台是否存在 404、500、JSON 解析错误
 
 ## 8. 最常见问题
 
@@ -158,7 +193,8 @@ window.LOTTERY_CONFIGS = {
 3. 模块生成流程可执行
 4. `mode_payload_*` 里有对应 `web/type` 数据
 5. `lottery_config.js` 的 `apiBase/web/type` 正确
-6. 页面能看到图片、公告和至少几个预测模块
+6. 浏览器 Network 里实际请求出去的 `web/type` 与站点预期一致
+7. 页面能看到图片、公告和至少几个预测模块
 
 ## 10. 参考文档
 
