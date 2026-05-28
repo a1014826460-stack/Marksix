@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy source code
 COPY backend/src/ /app/src/
+COPY backend/config/ /app/config/
 
 # Copy data directory (SQLite, images, etc.)
 COPY backend/data/ /app/data/
