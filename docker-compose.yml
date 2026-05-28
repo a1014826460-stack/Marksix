@@ -38,6 +38,7 @@ services:
       POSTGRESQL_USERNAME: postgres
       POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
       POSTGRESQL_DATABASE: liuhecai
+      PGBOUNCER_DATABASE: liuhecai
       PGBOUNCER_PORT: "6432"
       PGBOUNCER_POOL_MODE: transaction
       PGBOUNCER_MAX_CLIENT_CONN: "${PGBOUNCER_MAX_CLIENT_CONN:-1200}"
