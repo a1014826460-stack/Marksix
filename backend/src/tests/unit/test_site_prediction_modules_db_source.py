@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from db import connect
 from tables import ensure_admin_tables
 from domains.prediction.generation_service import (
@@ -269,3 +271,24 @@ def test_bootstrap_seeds_twjinniu_managed_site(tmp_path):
     assert str(row["domain"] or "") == "www.twjinniu.com"
     assert str(row["blueprint_name"] or "") == "twjinniu"
     assert int(row["lottery_type_id"] or 0) > 0
+
+
+def test_bootstrap_seeds_expanded_twjinniu_blueprint_profile(tmp_path):
+    db_path = str(tmp_path / "twjinniu_blueprint.sqlite3")
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT required_mode_ids_json
+            FROM site_blueprint_profiles
+            WHERE blueprint_name = 'twjinniu'
+            """
+        ).fetchone()
+
+    assert row is not None
+    required_mode_ids = tuple(int(item) for item in json.loads(str(row["required_mode_ids_json"] or "[]")))
+    assert 474 in required_mode_ids
+    assert 476 in required_mode_ids
+    assert 484 in required_mode_ids
+    assert len(required_mode_ids) == 47

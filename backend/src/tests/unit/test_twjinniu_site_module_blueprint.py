@@ -33,25 +33,49 @@ def test_twjinniu_site_uses_dedicated_blueprint_by_web_id():
         12,
         14,
         20,
+        15,
         26,
+        31,
         38,
+        43,
         47,
         48,
+        49,
+        50,
         53,
         56,
         66,
+        72,
         74,
+        77,
+        78,
+        79,
+        81,
+        83,
+        103,
+        108,
+        110,
+        117,
+        123,
         132,
+        142,
         143,
         144,
+        151,
+        173,
+        180,
         198,
+        219,
         279,
         472,
+        474,
+        476,
         479,
         480,
         481,
         482,
         483,
+        484,
     )
 
 
@@ -69,9 +93,14 @@ def test_twjinniu_blocked_items_are_exposed_for_admin_audit():
 def test_twjinniu_confirmed_mode_configs_are_registered():
     assert int(get_prediction_config("3tou").default_modes_id or 0) == 12
     assert int(get_prediction_config("title_14").default_modes_id or 0) == 14
+    assert int(get_prediction_config("danshuang4xiao").default_modes_id or 0) == 31
+    assert int(get_prediction_config("pt2xiao").default_modes_id or 0) == 43
+    assert int(get_prediction_config("9xzt").default_modes_id or 0) == 49
+    assert int(get_prediction_config("yijuzhenyan").default_modes_id or 0) == 50
     assert int(get_prediction_config("juesha1wei").default_modes_id or 0) == 20
     assert int(get_prediction_config("3hang").default_modes_id or 0) == 53
     assert int(get_prediction_config("pt1xiao").default_modes_id or 0) == 56
+    assert int(get_prediction_config("dxztt1").default_modes_id or 0) == 108
     assert int(get_prediction_config("title_47").default_modes_id or 0) == 47
     assert int(get_prediction_config("title_48").default_modes_id or 0) == 48
     assert int(get_prediction_config("title_66").default_modes_id or 0) == 66
@@ -80,6 +109,9 @@ def test_twjinniu_confirmed_mode_configs_are_registered():
     assert int(get_prediction_config("title_198").default_modes_id or 0) == 198
     assert int(get_prediction_config("title_279").default_modes_id or 0) == 279
     assert int(get_prediction_config("title_74").default_modes_id or 0) == 74
+    assert int(get_prediction_config("sxztu").default_modes_id or 0) == 474
+    assert int(get_prediction_config("pmtj_image").default_modes_id or 0) == 476
+    assert int(get_prediction_config("liuxiao18ma").default_modes_id or 0) == 484
     assert int(get_prediction_config("xiongjiliuxiao").default_modes_id or 0) == 480
 
 
