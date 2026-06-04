@@ -88,7 +88,7 @@ def test_partial_site_modules_are_topped_up_from_blueprint(tmp_path):
             """
             INSERT INTO managed_sites (
                 id, name, domain, lottery_type_id, web_id, blueprint_name
-            ) VALUES (7, 'twjinniu', 'www.twjinniu.com', 3, 7, 'twjinniu')
+            ) VALUES (7, 'twjinniu', 'www.twtongtian.com', 3, 7, 'twjinniu')
             """
         )
         conn.execute(
@@ -268,7 +268,7 @@ def test_bootstrap_seeds_twjinniu_managed_site(tmp_path):
     assert int(row["id"]) == 7
     assert int(row["web_id"]) == 7
     assert str(row["name"] or "") == "台湾金牛论坛"
-    assert str(row["domain"] or "") == "www.twjinniu.com"
+    assert str(row["domain"] or "") == "www.twtongtian.com"
     assert str(row["blueprint_name"] or "") == "twjinniu"
     assert int(row["lottery_type_id"] or 0) > 0
 

@@ -12,7 +12,7 @@ from predict.mechanisms import get_prediction_config
 
 def test_twjinniu_site_uses_dedicated_blueprint_by_domain():
     site = {
-        "domain": "www.twjinniu.com",
+        "domain": "www.twtongtian.com",
         "web_id": 7,
         "lottery_type_id": 3,
     }
@@ -81,7 +81,7 @@ def test_twjinniu_site_uses_dedicated_blueprint_by_web_id():
 
 def test_twjinniu_blocked_items_are_exposed_for_admin_audit():
     site = {
-        "domain": "twjinniu.com",
+        "domain": "twtongtian.com",
         "web_id": 7,
         "lottery_type_id": 3,
     }

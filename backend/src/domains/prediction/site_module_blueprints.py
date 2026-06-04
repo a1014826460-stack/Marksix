@@ -371,7 +371,7 @@ def _site_matches_twjinniu(site: dict[str, Any] | None) -> bool:
         return False
 
     domain = _normalize_domain(site.get("domain"))
-    if domain in {"www.twjinniu.com", "twjinniu.com"}:
+    if domain in {"www.twtongtian.com", "twtongtian.com", "www.twjinniu.com", "twjinniu.com"}:
         return True
 
     try:

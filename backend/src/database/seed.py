@@ -493,7 +493,7 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
                 7,
                 7,
                 "台湾金牛论坛",
-                "www.twjinniu.com",
+                "www.twtongtian.com",
                 taiwan_lottery_id,
                 "twjinniu",
                 "",

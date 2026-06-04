@@ -87,7 +87,12 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     siteKey: "twjinniu",
     routePath: "/twjinniu",
     vendorIndexPath: "/vendor/twjinniu/index.html",
-    domains: ["www.twjinniu.com", "twjinniu.com"],
+    domains: [
+      "www.twtongtian.com",
+      "twtongtian.com",
+      "www.twjinniu.com",
+      "twjinniu.com",
+    ],
     legacyPublicBasePath: "/vendor/twjinniu",
     defaultGame: "taiwan",
     defaultWebId: 7,
