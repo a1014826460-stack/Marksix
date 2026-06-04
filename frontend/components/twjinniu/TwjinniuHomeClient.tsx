@@ -106,7 +106,7 @@ export function TwjinniuHomeClient() {
       <iframe
         ref={frameRef}
         className="twjinniu-frame"
-        title="台湾金牛论坛"
+        title="台湾通天网"
         src={VENDOR_HOME_URL}
         scrolling="no"
         style={{ height: `${frameHeight}px` }}

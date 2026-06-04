@@ -69,3 +69,6 @@ __pycache__/
 frontend/Zz_www.kh6s.com/
 frontend/public/vendor/twjinniu/static/picture/
 frontend/public/vendor/twjinniu/static/file/
+frontend/public/data/Images/mode_474/animals/
+# Junction to backend/data/ — not real files, ignore entirely
+frontend/public/data/

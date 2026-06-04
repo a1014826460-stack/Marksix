@@ -28,6 +28,8 @@ from predict.common import (
     special_zodiac_from_number_map,
 )
 from predict.mechanisms import (
+    TEXT_HISTORY_MAPPING_TABLE,
+    _text_history_row_payload,
     ensure_prediction_configs_loaded,
     format_zodiac_two_codes,
     get_prediction_config,
@@ -493,19 +495,94 @@ def _load_recent_rows(
         if "content" not in created_columns:
             return []
         created_table = f"{CREATED_SCHEMA_NAME}.{table_name}"
+        selected_columns = [column for column in ("title", "content", "jiexi") if column in created_columns]
+        if not selected_columns:
+            return []
         existing = conn.execute(
-            f"SELECT content FROM {created_table} "
+            f"SELECT {', '.join(selected_columns)} FROM {created_table} "
             f"WHERE type = ? AND web = ? AND modes_id = ? "
             f"ORDER BY year DESC, term DESC LIMIT 10",
             (str(lottery_type), str(site_web_id), mode_id),
         ).fetchall()
-        return [{"content": row["content"]} for row in existing]
+        return [{column: row[column] for column in selected_columns} for row in existing]
     except Exception:
         conn.rollback()
         return []
 
 
 # ── 单期行生成（按 mode_id 分发）────────────────────────
+
+
+def _text_prediction_signature(row_like: dict[str, Any] | None) -> tuple[str, str, str] | None:
+    if not row_like:
+        return None
+    signature = tuple(str(row_like.get(key) or "").strip() for key in ("title", "content", "jiexi"))
+    return signature if any(signature) else None
+
+
+def _load_text_history_candidate_payloads(conn: Any, mode_id: int) -> list[dict[str, Any]]:
+    if mode_id <= 0 or not conn.table_exists(TEXT_HISTORY_MAPPING_TABLE):
+        return []
+
+    columns = set(conn.table_columns(TEXT_HISTORY_MAPPING_TABLE))
+    mode_column = "mode_id" if "mode_id" in columns else ("modes_id" if "modes_id" in columns else "")
+    if not mode_column:
+        return []
+
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM {TEXT_HISTORY_MAPPING_TABLE}
+        WHERE {mode_column} = ?
+        ORDER BY RANDOM()
+        LIMIT 50
+        """,
+        (int(mode_id),),
+    ).fetchall()
+    return [
+        payload for payload in (_text_history_row_payload(row) for row in rows)
+        if _text_prediction_signature(payload)
+    ]
+
+
+def _repair_text_prediction_diversity(
+    conn: Any,
+    *,
+    mode_id: int,
+    row_data: dict[str, Any],
+    recent_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Ensure adjacent text predictions are not fully identical."""
+    result = dict(row_data)
+    current_signature = _text_prediction_signature(result)
+    if not current_signature:
+        return result
+
+    recent_signature = None
+    for recent_row in recent_rows or []:
+        recent_signature = _text_prediction_signature(recent_row)
+        if recent_signature:
+            break
+    if not recent_signature or current_signature != recent_signature:
+        return result
+
+    for payload in _load_text_history_candidate_payloads(conn, mode_id):
+        candidate = dict(result)
+        for key in ("title", "content", "jiexi"):
+            if payload.get(key) not in (None, ""):
+                candidate[key] = payload[key]
+        candidate_signature = _text_prediction_signature(candidate)
+        if not candidate_signature:
+            continue
+        if candidate_signature in {current_signature, recent_signature}:
+            continue
+        return candidate
+
+    result["_diversity_warning"] = (
+        f"mode_id={mode_id}: unable to find alternative text payload; "
+        f"adjacent signature remains duplicated"
+    )
+    return result
 
 
 def _resolve_safe_res_code(draw: dict[str, Any], draw_key: tuple, safety_map: dict) -> str | None:
@@ -1230,6 +1307,12 @@ def _process_single_module(
                 mode_id=mode_id, row_data=row_data,
                 recent_rows=recent_rows, config=config,
             )
+            row_data = _repair_text_prediction_diversity(
+                conn,
+                mode_id=mode_id,
+                row_data=row_data,
+                recent_rows=recent_rows,
+            )
             diversity_warning = row_data.pop("_diversity_warning", None)
             if diversity_warning:
                 module_report["warnings"].append(str(diversity_warning))
@@ -1242,10 +1325,18 @@ def _process_single_module(
             )
             if stored.get("action") == "inserted":
                 module_report["inserted"] += 1
-                recent_rows.insert(0, {"content": row_data.get("content")})
+                recent_rows.insert(0, {
+                    "title": row_data.get("title"),
+                    "content": row_data.get("content"),
+                    "jiexi": row_data.get("jiexi"),
+                })
             elif stored.get("action") == "updated":
                 module_report["updated"] += 1
-                recent_rows.insert(0, {"content": row_data.get("content")})
+                recent_rows.insert(0, {
+                    "title": row_data.get("title"),
+                    "content": row_data.get("content"),
+                    "jiexi": row_data.get("jiexi"),
+                })
             else:
                 module_report["skipped_existing"] += 1
         except Exception as exc:

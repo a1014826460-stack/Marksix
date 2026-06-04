@@ -28,6 +28,7 @@ _alert_logger = logging.getLogger("alert.service")
 # key: 报警标识符 → value: 上次发送时间戳 (time.time())
 _alert_last_sent: dict[str, float] = {}
 _DEFAULT_COOLDOWN_SECONDS = 3600  # 默认冷却 1 小时
+_DRAW_STALENESS_STATE_KEY = "alert._draw_staleness_state"
 
 
 def _is_alert_suppressed(alert_key: str, db_path, default_cooldown: int = _DEFAULT_COOLDOWN_SECONDS) -> bool:
@@ -67,6 +68,48 @@ def _draw_staleness_repair_hint(lottery_type_id: int) -> str:
     if lottery_type_id == 3:
         return "后台手工录入开奖记录，随后重跑日常预测"
     return "检查对应彩种的采集/录入入口"
+
+
+def _draw_staleness_state_for_item(item: dict[str, Any]) -> dict[str, str]:
+    return {
+        "issue": str(item.get("issue") or ""),
+        "next_time_utc": str(item.get("next_time_utc") or ""),
+        "next_time_ms": str(item.get("next_time_ms") or ""),
+    }
+
+
+def _load_draw_staleness_state(conn: Any) -> dict[str, dict[str, str]]:
+    raw = get_config_from_conn(conn, _DRAW_STALENESS_STATE_KEY, {})
+    if not isinstance(raw, dict):
+        return {}
+
+    state: dict[str, dict[str, str]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        lt_key = str(key).strip()
+        if not lt_key:
+            continue
+        state[lt_key] = {
+            "issue": str(value.get("issue") or ""),
+            "next_time_utc": str(value.get("next_time_utc") or ""),
+            "next_time_ms": str(value.get("next_time_ms") or ""),
+        }
+    return state
+
+
+def _save_draw_staleness_state(db_path: str | Path, state: dict[str, dict[str, str]]) -> None:
+    try:
+        upsert_system_config(
+            db_path,
+            key=_DRAW_STALENESS_STATE_KEY,
+            value=state,
+            value_type="json",
+            changed_by="alert_service",
+            change_reason="更新开奖滞后报警状态",
+        )
+    except Exception as exc:
+        _alert_logger.warning("Failed to persist draw staleness state: %s", exc)
 
 
 # ── 爬虫失败计数管理 ─────────────────────────────────────
@@ -319,17 +362,20 @@ def alert_draw_staleness(
     判定条件：最新已开奖记录的 next_time 已过北京时间现在，
     但还没有更晚一期的已开奖数据入库。
 
-    :return: True 如果存在滞后并发送了报警
+    :return: True 如果当前仍存在滞后问题（即使同一问题已被去重抑制）
     """
-    triggered = False
     now_utc = datetime.now(timezone.utc)
     now_beijing_str = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S 北京时间")
 
     lt_ids = [lottery_type_id] if lottery_type_id else [1, 2, 3]
     stale_items: list[dict[str, Any]] = []
+    previous_state: dict[str, dict[str, str]] = {}
+    current_state: dict[str, dict[str, str]] = {}
+    checked_lt_keys = {str(int(lt)) for lt in lt_ids}
 
     try:
         with connect(db_path) as conn:
+            previous_state = _load_draw_staleness_state(conn)
             for lt in lt_ids:
                 row = conn.execute(
                     """
@@ -372,57 +418,78 @@ def alert_draw_staleness(
                         "lottery_type_id": lt,
                         "lottery_name": lt_name,
                         "issue": issue,
+                        "next_time_ms": str(next_ms),
                         "next_time_utc": next_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
                         "lag_minutes": max(1, (lag_seconds + 59) // 60),
                         "repair_hint": _draw_staleness_repair_hint(lt),
                     })
-                    triggered = True
-
-        if triggered:
-            if _is_alert_suppressed("draw_staleness", db_path):
-                _alert_logger.info("Draw staleness alert suppressed by cooldown")
-                return triggered
-
-            from alerts.email_service import send_alert_async
-            subject_names = " / ".join(item["lottery_name"] for item in stale_items) or "开奖数据"
-            rows_html = "".join(
-                f"""
-                <tr>
-                    <td>{escape(str(item["lottery_name"]))}</td>
-                    <td>{escape(str(item["issue"]))}</td>
-                    <td>{escape(str(item["next_time_utc"]))}</td>
-                    <td style="color:red"><b>{escape(str(item["lag_minutes"]))} 分钟</b></td>
-                    <td>{escape(str(item["repair_hint"]))}</td>
-                </tr>
-                """
-                for item in stale_items
-            )
-            send_alert_async(
-                db_path,
-                subject=f"[六合彩报警] {subject_names}开奖数据可能滞后",
-                body_html=f"""
-                <h2>开奖数据滞后报警</h2>
-                <p>以下彩种的最新已开奖期已超出当前 UTC 时间，但暂未看到更晚一期入库。</p>
-                <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
-                    <tr style="background:#f5f5f5">
-                        <th>彩种</th><th>期号</th><th>next_time (UTC)</th><th>滞后</th><th>快速修复</th>
-                    </tr>
-                    {rows_html}
-                </table>
-                <p>触发时间: {escape(now_beijing_str)}</p>
-                <p><b>快速修复顺序</b></p>
-                <ol>
-                    <li>香港彩: 直接调用 <code>POST /api/admin/crawler/run-hk</code></li>
-                    <li>澳门彩: 直接调用 <code>POST /api/admin/crawler/run-macau</code></li>
-                    <li>台湾彩: 到后台手工录入开奖记录，然后重跑日常预测</li>
-                </ol>
-                <p>如果数据已恢复但邮件仍重复，请优先检查 <code>crawler.scheduler</code> 日志和 <code>lottery_draws</code> 最新记录。</p>
-                """,
-            )
+                    current_state[str(lt)] = _draw_staleness_state_for_item(stale_items[-1])
     except Exception as exc:
         _alert_logger.error("Draw staleness check failed: %s", exc)
+        return False
 
-    return triggered
+    next_state = {
+        key: value
+        for key, value in previous_state.items()
+        if key not in checked_lt_keys
+    }
+    next_state.update(current_state)
+    if next_state != previous_state:
+        _save_draw_staleness_state(db_path, next_state)
+
+    if not stale_items:
+        return False
+
+    changed_items = [
+        item
+        for item in stale_items
+        if previous_state.get(str(item["lottery_type_id"])) != _draw_staleness_state_for_item(item)
+    ]
+    if not changed_items:
+        _alert_logger.info(
+            "Draw staleness alert suppressed: same active issue still pending for lt=%s",
+            ", ".join(sorted(current_state.keys())),
+        )
+        return True
+
+    from alerts.email_service import send_alert_async
+
+    subject_names = " / ".join(item["lottery_name"] for item in stale_items) or "开奖数据"
+    rows_html = "".join(
+        f"""
+        <tr>
+            <td>{escape(str(item["lottery_name"]))}</td>
+            <td>{escape(str(item["issue"]))}</td>
+            <td>{escape(str(item["next_time_utc"]))}</td>
+            <td style="color:red"><b>{escape(str(item["lag_minutes"]))} 分钟</b></td>
+            <td>{escape(str(item["repair_hint"]))}</td>
+        </tr>
+        """
+        for item in stale_items
+    )
+    send_alert_async(
+        db_path,
+        subject=f"[{subject_names}] 开奖数据滞后报警",
+        body_html=f"""
+        <h2>开奖数据滞后报警</h2>
+        <p>以下彩种的最新已开奖期已超出当前 UTC 时间，但暂未看到更晚一期入库。</p>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            <tr style="background:#f5f5f5">
+                <th>彩种</th><th>期号</th><th>next_time (UTC)</th><th>滞后</th><th>快速修复</th>
+            </tr>
+            {rows_html}
+        </table>
+        <p>触发时间: {escape(now_beijing_str)}</p>
+        <p><b>快速修复顺序</b></p>
+        <ol>
+            <li>香港彩: 直接调用 <code>POST /api/admin/crawler/run-hk</code></li>
+            <li>澳门彩: 直接调用 <code>POST /api/admin/crawler/run-macau</code></li>
+            <li>台湾彩: 到后台手工录入开奖记录，然后重跑日常预测</li>
+        </ol>
+        <p>如果数据已恢复但邮件仍重复，请优先检查 <code>crawler.scheduler</code> 日志和 <code>lottery_draws</code> 最新记录。</p>
+        """,
+    )
+    return True
 
 
 def alert_precise_draw_mismatch(

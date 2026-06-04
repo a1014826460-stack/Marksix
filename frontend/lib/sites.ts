@@ -92,9 +92,9 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultGame: "taiwan",
     defaultWebId: 7,
     defaultLotteryTypeId: 3,
-    forumTitle: "台湾金牛论坛",
-    metadataTitle: "台湾金牛论坛",
-    metadataDescription: "台湾金牛论坛",
+    forumTitle: "台湾通天网",
+    metadataTitle: "台湾通天网",
+    metadataDescription: "台湾通天网",
     pageCssPaths: [
       "/vendor/twjinniu/static/css/main.css",
       "/vendor/twjinniu/static/css/custom.css",

@@ -68,8 +68,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const title = article?.title || articleId
 
   return {
-    title: `${title} | 台湾金牛论坛`,
-    description: `${title} - 台湾金牛论坛`,
+    title: `${title} | 台湾通天网`,
+    description: `${title} - 台湾通天网`,
   }
 }
 
@@ -186,7 +186,7 @@ export default async function TwjinniuArticlePage({ params, searchParams }: Page
                             </span>
                           </span>{" "}
                           <span style={{ textDecoration: "none" }}>
-                            <span style={{ color: "#000000", fontSize: "16pt" }}>资料网99988111.com</span>
+                            <span style={{ color: "#000000", fontSize: "16pt" }}>资料网www.twtongtian.com</span>
                           </span>
                         </strong>
                       </span>
@@ -200,7 +200,7 @@ export default async function TwjinniuArticlePage({ params, searchParams }: Page
           <div className="title">
             <b>
               <span style={{ color: "#FF0000", fontFamily: "Microsoft YaHei" }}>【{article.title}】</span>
-              <span style={{ color: "#0000FF" }}>金牛论坛</span>
+              <span style={{ color: "#0000FF" }}>台湾通天网</span>
             </b>
           </div>
 
@@ -243,7 +243,7 @@ export default async function TwjinniuArticlePage({ params, searchParams }: Page
               柬埔寨六加一六合彩免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责，
               浏览或使用者须自行承担有关责任，本网站恕不负责。
             </p>
-            <p>【柬埔寨六加一】易记域名：99988111.com</p>
+            <p>【柬埔寨六加一】易记域名：www.twtongtian.com</p>
             <p style={{ margin: "0px", height: 0, overflow: "hidden" }}>
               <a href="https://www.tuku325.cc/">搭建六合彩开奖论坛</a>
               <a href="https://www.tuku325.cc/?cate=3">搭建六合彩图库</a>

@@ -103,3 +103,43 @@ def test_generate_mode_331_row_persists_x7m14(monkeypatch):
         re.fullmatch(r"(鼠|牛|虎|兔|龙|蛇|马|羊|猴|鸡|狗|猪)\|\d{2},\d{2}", item)
         for item in parsed
     )
+
+
+def test_repair_text_prediction_diversity_replaces_adjacent_duplicate(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "_load_text_history_candidate_payloads",
+        lambda conn, mode_id: [
+            {"title": "旧标题", "content": "旧内容", "jiexi": "旧解析"},
+            {"title": "新标题", "content": "新内容", "jiexi": "新解析"},
+        ],
+    )
+
+    result = service._repair_text_prediction_diversity(
+        object(),
+        mode_id=50,
+        row_data={"title": "旧标题", "content": "旧内容", "jiexi": "旧解析"},
+        recent_rows=[{"title": "旧标题", "content": "旧内容", "jiexi": "旧解析"}],
+    )
+
+    assert result["title"] == "新标题"
+    assert result["content"] == "新内容"
+    assert result["jiexi"] == "新解析"
+
+
+def test_repair_text_prediction_diversity_keeps_non_duplicate_row(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "_load_text_history_candidate_payloads",
+        lambda conn, mode_id: [{"title": "新标题", "content": "新内容", "jiexi": "新解析"}],
+    )
+
+    row_data = {"title": "当前标题", "content": "当前内容", "jiexi": "当前解析"}
+    result = service._repair_text_prediction_diversity(
+        object(),
+        mode_id=50,
+        row_data=row_data,
+        recent_rows=[{"title": "上期标题", "content": "上期内容", "jiexi": "上期解析"}],
+    )
+
+    assert result == row_data

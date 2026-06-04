@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from db import auto_increment_primary_key
 from runtime_config import get_bootstrap_config_value
+
+from database.yijuzhenyan_seed_rows import YIJUZHENYAN_TEXT_POOL_ROWS
 
 HK_NAMES = ("香港彩", "六肖彩")
 MACAU_NAME = "澳门彩"
 TAIWAN_NAME = "台湾彩"
+
+
+YIJUZHENYAN_TABLE = "mode_payload_50"
+YIJUZHENYAN_MAPPING_TABLE = "text_history_mappings"
+YIJUZHENYAN_METADATA_TABLE = "mode_payload_tables"
+YIJUZHENYAN_SEED_WEB = "seed_pool"
+YIJUZHENYAN_SEED_TYPE = "yijuzhenyan"
+YIJUZHENYAN_SEED_YEAR = "0"
+YIJUZHENYAN_MODE_ID = 50
 
 
 def _merge_lottery_type_alias(conn: Any, canonical_name: str, *aliases: str) -> None:
@@ -68,6 +80,274 @@ def _merge_lottery_type_alias(conn: Any, canonical_name: str, *aliases: str) -> 
             (canonical_name, int(first_alias["id"])),
         )
         canonical = {"id": int(first_alias["id"])}
+
+
+def _ensure_yijuzhenyan_source_table(conn: Any) -> None:
+    if conn.table_exists(YIJUZHENYAN_TABLE):
+        return
+
+    pk_sql = auto_increment_primary_key("id", conn.engine)
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {YIJUZHENYAN_TABLE} (
+            {pk_sql},
+            web TEXT,
+            type TEXT,
+            year TEXT,
+            term TEXT,
+            res_code TEXT,
+            res_sx TEXT,
+            res_color TEXT,
+            status INTEGER,
+            title TEXT,
+            content TEXT,
+            jiexi TEXT
+        )
+        """
+    )
+
+
+def _ensure_mode_payload_metadata_table(conn: Any) -> None:
+    if conn.table_exists(YIJUZHENYAN_METADATA_TABLE):
+        return
+
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {YIJUZHENYAN_METADATA_TABLE} (
+            modes_id INTEGER,
+            title TEXT,
+            filename TEXT,
+            table_name TEXT,
+            record_count INTEGER,
+            created_at TEXT,
+            is_image INTEGER,
+            is_text INTEGER
+        )
+        """
+    )
+
+
+def _sync_yijuzhenyan_metadata(conn: Any, *, now: str) -> bool:
+    _ensure_mode_payload_metadata_table(conn)
+    total_rows = int(
+        conn.execute(f"SELECT COUNT(*) AS total FROM {YIJUZHENYAN_TABLE}").fetchone()["total"] or 0
+    )
+    existing = conn.execute(
+        f"""
+        SELECT modes_id, title, table_name, record_count, is_text, is_image
+        FROM {YIJUZHENYAN_METADATA_TABLE}
+        WHERE modes_id = ?
+        LIMIT 1
+        """,
+        (YIJUZHENYAN_MODE_ID,),
+    ).fetchone()
+
+    desired = {
+        "title": "一句真言",
+        "table_name": YIJUZHENYAN_TABLE,
+        "record_count": total_rows,
+        "is_text": 1,
+        "is_image": 0,
+    }
+    if existing:
+        current = {
+            "title": str(existing["title"] or ""),
+            "table_name": str(existing["table_name"] or ""),
+            "record_count": int(existing["record_count"] or 0),
+            "is_text": int(existing["is_text"] or 0),
+            "is_image": int(existing["is_image"] or 0),
+        }
+        if current == desired:
+            return False
+        conn.execute(
+            f"""
+            UPDATE {YIJUZHENYAN_METADATA_TABLE}
+            SET title = ?, table_name = ?, record_count = ?, is_text = ?, is_image = ?
+            WHERE modes_id = ?
+            """,
+            (
+                desired["title"],
+                desired["table_name"],
+                desired["record_count"],
+                desired["is_text"],
+                desired["is_image"],
+                YIJUZHENYAN_MODE_ID,
+            ),
+        )
+        return True
+
+    columns = set(conn.table_columns(YIJUZHENYAN_METADATA_TABLE))
+    insert_columns = ["modes_id", "title", "table_name", "record_count", "is_text", "is_image"]
+    values: list[Any] = [
+        YIJUZHENYAN_MODE_ID,
+        desired["title"],
+        desired["table_name"],
+        desired["record_count"],
+        desired["is_text"],
+        desired["is_image"],
+    ]
+    if "filename" in columns:
+        insert_columns.append("filename")
+        values.append("")
+    if "created_at" in columns:
+        insert_columns.append("created_at")
+        values.append(now)
+
+    placeholders = ", ".join("?" for _ in insert_columns)
+    conn.execute(
+        f"""
+        INSERT INTO {YIJUZHENYAN_METADATA_TABLE} ({", ".join(insert_columns)})
+        VALUES ({placeholders})
+        """,
+        values,
+    )
+    return True
+
+
+def _rebuild_text_history_mappings(conn: Any) -> None:
+    from utils.rebuild_text_mappings import (
+        get_text_mode_tables,
+        insert_from_mode_table,
+        rebuild_mapping_table,
+    )
+
+    target_modes = get_text_mode_tables(conn)
+    rebuild_mapping_table(conn)
+    for mode in target_modes:
+        table_name = str(mode["table_name"] or "")
+        modes_id = int(mode["modes_id"] or 0)
+        if not table_name or modes_id <= 0 or not conn.table_exists(table_name):
+            continue
+        insert_from_mode_table(conn, modes_id, table_name)
+
+
+def seed_yijuzhenyan_text_pool(conn: Any, *, now: str) -> dict[str, Any]:
+    _ensure_yijuzhenyan_source_table(conn)
+
+    inserted = 0
+    updated = 0
+    columns = set(conn.table_columns(YIJUZHENYAN_TABLE))
+    next_id = 0
+    if "id" in columns:
+        max_row = conn.execute(
+            f"SELECT MAX(CAST(id AS INTEGER)) AS max_id FROM {YIJUZHENYAN_TABLE}"
+        ).fetchone()
+        next_id = int(max_row["max_id"] or 0) + 1
+
+    for index, row in enumerate(YIJUZHENYAN_TEXT_POOL_ROWS, start=1):
+        term = str(9000 + index)
+        existing = conn.execute(
+            f"""
+            SELECT id, title, content, jiexi, status
+            FROM {YIJUZHENYAN_TABLE}
+            WHERE web = ? AND type = ? AND year = ? AND term = ?
+            LIMIT 1
+            """,
+            (
+                YIJUZHENYAN_SEED_WEB,
+                YIJUZHENYAN_SEED_TYPE,
+                YIJUZHENYAN_SEED_YEAR,
+                term,
+            ),
+        ).fetchone()
+        if existing:
+            current = (
+                str(existing["title"] or ""),
+                str(existing["content"] or ""),
+                str(existing["jiexi"] or ""),
+                int(existing["status"] or 0),
+            )
+            desired = (
+                str(row["title"] or ""),
+                str(row["content"] or ""),
+                str(row["jiexi"] or ""),
+                1,
+            )
+            if current != desired:
+                conn.execute(
+                    f"""
+                    UPDATE {YIJUZHENYAN_TABLE}
+                    SET status = 1, title = ?, content = ?, jiexi = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        desired[0],
+                        desired[1],
+                        desired[2],
+                        existing["id"],
+                    ),
+                )
+                updated += 1
+            continue
+
+        if "id" in columns:
+            conn.execute(
+                f"""
+                INSERT INTO {YIJUZHENYAN_TABLE} (
+                    id, web, type, year, term,
+                    res_code, res_sx, res_color, status,
+                    title, content, jiexi
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    next_id,
+                    YIJUZHENYAN_SEED_WEB,
+                    YIJUZHENYAN_SEED_TYPE,
+                    YIJUZHENYAN_SEED_YEAR,
+                    term,
+                    "",
+                    "",
+                    "",
+                    1,
+                    str(row["title"] or ""),
+                    str(row["content"] or ""),
+                    str(row["jiexi"] or ""),
+                ),
+            )
+            next_id += 1
+        else:
+            conn.execute(
+                f"""
+                INSERT INTO {YIJUZHENYAN_TABLE} (
+                    web, type, year, term,
+                    res_code, res_sx, res_color, status,
+                    title, content, jiexi
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    YIJUZHENYAN_SEED_WEB,
+                    YIJUZHENYAN_SEED_TYPE,
+                    YIJUZHENYAN_SEED_YEAR,
+                    term,
+                    "",
+                    "",
+                    "",
+                    1,
+                    str(row["title"] or ""),
+                    str(row["content"] or ""),
+                    str(row["jiexi"] or ""),
+                ),
+            )
+        inserted += 1
+
+    metadata_changed = _sync_yijuzhenyan_metadata(conn, now=now)
+    needs_rebuild = (
+        inserted > 0
+        or updated > 0
+        or metadata_changed
+        or not conn.table_exists(YIJUZHENYAN_MAPPING_TABLE)
+    )
+    if needs_rebuild:
+        _rebuild_text_history_mappings(conn)
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "metadata_changed": metadata_changed,
+        "rebuilt_mappings": needs_rebuild,
+    }
 
 
 def seed_default_lottery_types(conn: Any, *, now: str) -> None:
@@ -224,3 +504,4 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
         )
 
     _sync_modules(conn)
+    seed_yijuzhenyan_text_pool(conn, now=now)
