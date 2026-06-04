@@ -1,15 +1,25 @@
-"""managed_sites / site_fetch_runs 表 —— 托管站点与抓取运行记录。"""
+"""managed_sites / site_fetch_runs tables."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from database.connection import quote_identifier
-from database.migrations import add_column_if_missing
+from database.migrations import add_column_if_missing, drop_column_if_exists
+
+
+RETIRED_MANAGED_SITE_COLUMNS = (
+    "start_web_id",
+    "end_web_id",
+    "manage_url_template",
+    "modes_data_url",
+    "token",
+    "request_limit",
+    "request_delay",
+)
 
 
 def _sync_site_id_related_tables(conn: Any, old_site_id: int, new_site_id: int) -> None:
-    """Move child-table references from an old site id to its web_id-aligned id."""
     related_tables = ("site_fetch_runs", "site_prediction_modules", "scheduler_tasks", "error_logs")
     for table_name in related_tables:
         if not conn.table_exists(table_name):
@@ -24,15 +34,14 @@ def _sync_site_id_related_tables(conn: Any, old_site_id: int, new_site_id: int) 
 
 
 def align_managed_site_ids_with_web_ids(conn: Any) -> None:
-    """Ensure managed_sites.id matches managed_sites.web_id for existing rows."""
+    """Align existing managed_sites rows so id matches web_id when possible."""
     if not conn.table_exists("managed_sites"):
         return
 
     rows = conn.execute(
         """
-        SELECT id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-               manage_url_template, modes_data_url, token, blueprint_name, request_limit, request_delay,
-               announcement, notes, created_at, updated_at
+        SELECT id, web_id, name, domain, lottery_type_id, enabled,
+               blueprint_name, announcement, notes, created_at, updated_at
         FROM managed_sites
         WHERE web_id IS NOT NULL AND id <> web_id
         ORDER BY id
@@ -54,11 +63,10 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
         conn.execute(
             """
             INSERT INTO managed_sites (
-                id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-                manage_url_template, modes_data_url, token, blueprint_name, request_limit, request_delay,
-                announcement, notes, created_at, updated_at
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_site_id,
@@ -67,14 +75,7 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
                 row["domain"],
                 row["lottery_type_id"],
                 row["enabled"],
-                row["start_web_id"],
-                row["end_web_id"],
-                row["manage_url_template"],
-                row["modes_data_url"],
-                row["token"],
                 row["blueprint_name"],
-                row["request_limit"],
-                row["request_delay"],
                 row["announcement"],
                 row["notes"],
                 row["created_at"],
@@ -86,9 +87,7 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
 
     if rows and getattr(conn, "engine", "") == "postgres":
         seq_row = conn.execute(
-            """
-            SELECT pg_get_serial_sequence('managed_sites', 'id') AS seq_name
-            """
+            "SELECT pg_get_serial_sequence('managed_sites', 'id') AS seq_name"
         ).fetchone()
         seq_name = str(seq_row["seq_name"] or "") if seq_row else ""
         if seq_name:
@@ -96,31 +95,42 @@ def align_managed_site_ids_with_web_ids(conn: Any) -> None:
                 "SELECT COALESCE(MAX(id), 1) AS max_id FROM managed_sites"
             ).fetchone()
             max_id = int(max_row["max_id"] or 1) if max_row else 1
-            conn.execute(
-                "SELECT setval(?::regclass, ?, true)",
-                (seq_name, max_id),
-            )
+            conn.execute("SELECT setval(?::regclass, ?, true)", (seq_name, max_id))
+
+
+def _ensure_web_id_backfill(conn: Any) -> None:
+    if not conn.table_exists("managed_sites"):
+        return
+
+    columns = set(conn.table_columns("managed_sites"))
+    if "web_id" not in columns:
+        return
+
+    if "start_web_id" in columns:
+        conn.execute(
+            "UPDATE managed_sites SET web_id = COALESCE(web_id, start_web_id, id)"
+        )
+    else:
+        conn.execute("UPDATE managed_sites SET web_id = COALESCE(web_id, id)")
+
+
+def _drop_retired_columns(conn: Any) -> None:
+    for column_name in RETIRED_MANAGED_SITE_COLUMNS:
+        drop_column_if_exists(conn, "managed_sites", column_name)
 
 
 def ensure_site_tables(conn: Any, pk_sql: str) -> None:
-    """创建站点相关表：managed_sites、site_fetch_runs。"""
+    """Create managed_sites and site_fetch_runs."""
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS managed_sites (
             {pk_sql},
-            web_id INTEGER,
+            web_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             domain TEXT,
             lottery_type_id INTEGER,
             enabled INTEGER NOT NULL DEFAULT 1,
-            start_web_id INTEGER NOT NULL DEFAULT 1,
-            end_web_id INTEGER NOT NULL DEFAULT 10,
-            manage_url_template TEXT NOT NULL,
-            modes_data_url TEXT NOT NULL,
-            token TEXT,
             blueprint_name TEXT,
-            request_limit INTEGER NOT NULL DEFAULT 250,
-            request_delay REAL NOT NULL DEFAULT 0.5,
             announcement TEXT,
             notes TEXT,
             created_at TEXT NOT NULL,
@@ -134,11 +144,11 @@ def ensure_site_tables(conn: Any, pk_sql: str) -> None:
     add_column_if_missing(conn, "managed_sites", "announcement", "TEXT")
     add_column_if_missing(conn, "managed_sites", "web_id", "INTEGER")
     add_column_if_missing(conn, "managed_sites", "blueprint_name", "TEXT")
-    # 为已有站点回填 web_id：用 start_web_id 作为默认值
-    conn.execute(
-        "UPDATE managed_sites SET web_id = start_web_id WHERE web_id IS NULL"
-    )
+    add_column_if_missing(conn, "managed_sites", "notes", "TEXT")
+
+    _ensure_web_id_backfill(conn)
     align_managed_site_ids_with_web_ids(conn)
+    _drop_retired_columns(conn)
 
     conn.execute(
         f"""

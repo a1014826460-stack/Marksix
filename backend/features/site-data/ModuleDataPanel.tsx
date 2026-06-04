@@ -493,7 +493,7 @@ export function ModuleDataPanel({
           <p>
             确定要删除{" "}
             <span className="font-medium text-foreground">
-              id={confirmDeleteRow?.id}
+              id={String(confirmDeleteRow?.id ?? "")}
             </span>{" "}
             的记录吗？此操作不可撤销。
           </p>

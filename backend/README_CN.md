@@ -287,7 +287,7 @@ git ls-files -- backend/src/utils/import_lottery_data.py
 
 - `admin_users`：管理员账号
 - `admin_sessions`：登录会话和过期时间
-- `managed_sites`：被管理站点的元数据和采集配置
+- `managed_sites`：被管理站点的元数据与 `web_id` 隔离配置；旧版爬虫字段不再保留
 - `site_fetch_runs`：站点采集执行记录
 - `lottery_types`：彩票元数据、开奖时间、数据源 URL、自动化状态
 - `lottery_draws`：开奖记录和开奖状态

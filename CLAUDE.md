@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-六合彩 (Mark Six Lottery) platform with three active components:
+彩票 (Mark Six Lottery) platform with three active components:
 
 - **Python API** — lightweight stdlib HTTP server for data fetching, normalization, prediction, and backend business APIs
 - **Backend Admin UI** — Next.js app for CMS/admin workflows

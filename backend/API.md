@@ -422,8 +422,7 @@ const data = await res.json()
     "name": "盛世台湾六合彩",
     "domain": "example.com",
     "lottery_type_id": 3,
-    "start_web_id": 4,
-    "end_web_id": 4,
+    "web_id": 4,
     "enabled": true
   },
   "draw": {
@@ -1177,21 +1176,17 @@ const res = await fetch("/fackyou/api/python/admin/draws?limit=50", {
 | `domain` | string | 公开站点域名 |
 | `lottery_type_id` | int | 绑定彩种 |
 | `enabled` | bool/int | 是否启用 |
-| `start_web_id` | int | 抓取起始 web_id |
-| `end_web_id` | int | 抓取结束 web_id |
-| `manage_url_template` | string | 站点后台列表地址模板，必须包含 `{web_id}` 或 `{id}` |
-| `modes_data_url` | string | 玩法详情数据接口 |
-| `request_limit` | int | 单次抓取页大小 |
-| `request_delay` | float | 请求间隔秒数 |
+| `web_id` | int | 站点业务 ID，对应旧站请求里的 `web` |
+| `blueprint_name` | string | 预测模块蓝图 |
 | `announcement` | string | 公告 |
 | `notes` | string | 备注 |
-| `token_present` | bool | 是否已配置 token |
-| `token_preview` | string | token 前 8 位预览，不返回明文 |
+
 
 说明：
 
 - 当前站点表主键是 `id`
-- `start_web_id / end_web_id` 是抓取来源范围
+- `managed_sites.web_id` 是站点隔离的核心业务 ID
+- `managed_sites` 不再保存旧版爬虫字段：`manage_url_template`、`start_web_id`、`end_web_id`、`modes_data_url`、`token`、`request_limit`、`request_delay`
 - 不要把 `web_id` 与 `managed_sites.id` 混为一谈
 
 ### GET `/api/admin/sites`
@@ -1208,10 +1203,8 @@ const res = await fetch("/fackyou/api/python/admin/draws?limit=50", {
       "lottery_type_id": 3,
       "lottery_name": "台湾彩",
       "enabled": true,
-      "start_web_id": 4,
-      "end_web_id": 4,
-      "token_present": true,
-      "token_preview": "abcd1234..."
+      "web_id": 4,
+      "blueprint_name": "default"
     }
   ]
 }
@@ -1251,13 +1244,8 @@ const res = await fetch("/fackyou/api/python/admin/sites", {
   "domain": "example.com",
   "lottery_type_id": 3,
   "enabled": true,
-  "start_web_id": 4,
-  "end_web_id": 4,
-  "manage_url_template": "https://example.com/index.php?c=manage&a=modes_list&id={web_id}",
-  "modes_data_url": "https://example.com/index.php?c=api&a=modes_data",
-  "token": "secret-token",
-  "request_limit": 250,
-  "request_delay": 0.5,
+  "web_id": 4,
+  "blueprint_name": "default",
   "announcement": "",
   "notes": ""
 }
@@ -1271,8 +1259,7 @@ const res = await fetch("/fackyou/api/python/admin/sites", {
     "id": 5,
     "name": "盛世台湾六合彩",
     "enabled": true,
-    "token_present": true,
-    "token_preview": "secret-t..."
+    "web_id": 4
   }
 }
 ```
@@ -1280,7 +1267,7 @@ const res = await fetch("/fackyou/api/python/admin/sites", {
 注意：
 
 - 新建站点后，后端会尝试复制 `site_id=1` 的预测模块配置到新站点
-- `token` 会保存到 PostgreSQL，但普通查询不会返回明文
+- 旧版爬虫字段已废弃，不再通过 `managed_sites` 保存。
 
 ## 17. 抓取与后处理接口
 
@@ -2628,9 +2615,9 @@ python -m pytest tests/ →  94 collected: 88 passed, 8 skipped (0 failed)
 
 因为代码里会执行 `ensure_generation_permission(...)`，必须登录且角色满足权限要求。
 
-### 25.3 为什么站点接口不返回 token 明文
+### 25.3 为什么站点接口不再返回旧爬虫 token
 
-因为 `get_site()` 和 `list_sites()` 默认使用脱敏输出，只返回 `token_present` 和 `token_preview`。
+`managed_sites` 已移除旧版爬虫字段，站点接口只返回站点元数据、`web_id` 和预测模块相关配置。
 
 ### 25.4 为什么公开接口不直接暴露未开奖期结果
 

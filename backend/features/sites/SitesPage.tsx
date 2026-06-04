@@ -41,7 +41,7 @@ export function SitesPage() {
   }
 
   useEffect(() => {
-    load()
+    void load()
   }, [])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -52,25 +52,15 @@ export function SitesPage() {
       domain: formValue(form, "domain"),
       lottery_type_id: Number(formValue(form, "lottery_type_id")),
       enabled: boolValue(form, "enabled"),
-      start_web_id: Number(formValue(form, "start_web_id")),
-      end_web_id: Number(formValue(form, "end_web_id")),
-      manage_url_template: formValue(form, "manage_url_template"),
-      modes_data_url: formValue(form, "modes_data_url"),
-      token: formValue(form, "token"),
-      request_limit: Number(formValue(form, "request_limit")),
-      request_delay: Number(formValue(form, "request_delay")),
+      web_id: Number(formValue(form, "web_id")),
       announcement: formValue(form, "announcement"),
       notes: formValue(form, "notes"),
     }
-    if (!payload.token) delete payload.token
     try {
-      await adminApi(
-        editing ? `/admin/sites/${editing.id}` : "/admin/sites",
-        {
-          method: editing ? "PUT" : "POST",
-          body: jsonBody(payload),
-        },
-      )
+      await adminApi(editing ? `/admin/sites/${editing.id}` : "/admin/sites", {
+        method: editing ? "PUT" : "POST",
+        body: jsonBody(payload),
+      })
       setEditing(null)
       setFormOpen(false)
       form.reset()
@@ -81,25 +71,19 @@ export function SitesPage() {
     }
   }
 
-  function formatDate(iso: string) {
+  function formatDate(iso: string | undefined) {
     if (!iso) return "-"
-    return iso.replace("T", " ").replace(/-/g, ":").slice(0, 19)
+    return iso.replace("T", " ").slice(0, 19)
   }
 
   function siteLink(site: Site) {
-    if (site.domain) return `https://${site.domain}`
-    if (site.manage_url_template)
-      return site.manage_url_template
-        .replace("{web_id}", String(site.start_web_id || 1))
-        .replace("{id}", String(site.start_web_id || 1))
-    if (site.modes_data_url) return site.modes_data_url
-    return ""
+    return site.domain ? `https://${site.domain}` : ""
   }
 
   return (
     <AdminShell
       title="站点管理"
-      description="维护站点名称、域名、彩种、公告、状态和采集接口。"
+      description="维护站点名称、域名、彩种、公告、状态和 web_id。"
     >
       <AdminNotice message={message} />
       <div className="space-y-4">
@@ -117,19 +101,15 @@ export function SitesPage() {
         </Button>
 
         <div
-          className={`overflow-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"}`}
+          className={`overflow-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[1400px] opacity-100" : "max-h-0 opacity-0"}`}
         >
           <Card key={editing?.id || "new"} className="p-4">
             <h2 className="mb-3 text-base font-semibold">
               {editing ? "修改站点" : "新增站点"}
             </h2>
-            <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={submit}>
+            <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit}>
               <Field label="站点名称" className="col-span-2">
-                <Input
-                  name="name"
-                  defaultValue={editing?.name || ""}
-                  required
-                />
+                <Input name="name" defaultValue={editing?.name || ""} required />
               </Field>
               <Field label="域名" className="col-span-2">
                 <Input
@@ -141,9 +121,7 @@ export function SitesPage() {
               <Field label="彩种" className="col-span-2">
                 <select
                   name="lottery_type_id"
-                  defaultValue={
-                    editing?.lottery_type_id || lotteries[0]?.id || 1
-                  }
+                  defaultValue={editing?.lottery_type_id || lotteries[0]?.id || 1}
                   className="h-9 w-full rounded-md border bg-background px-3 text-sm"
                 >
                   {lotteries.map((item) => (
@@ -163,53 +141,12 @@ export function SitesPage() {
                   <option value="0">停用</option>
                 </select>
               </Field>
-              <Field label="web_id 起止">
+              <Field label="web_id">
                 <Input
-                  name="start_web_id"
+                  name="web_id"
                   type="number"
-                  defaultValue={editing?.start_web_id || 1}
-                />
-              </Field>
-              <Field label="web_id 结束">
-                <Input
-                  name="end_web_id"
-                  type="number"
-                  defaultValue={editing?.end_web_id || 10}
-                />
-              </Field>
-              <Field label="分页 limit">
-                <Input
-                  name="request_limit"
-                  type="number"
-                  defaultValue={editing?.request_limit || 250}
-                />
-              </Field>
-              <Field label="请求间隔(秒)">
-                <Input
-                  name="request_delay"
-                  type="number"
-                  step="0.1"
-                  defaultValue={editing?.request_delay || 0.5}
-                />
-              </Field>
-              <Field label="modes 页面地址模板" className="col-span-2">
-                <Input
-                  name="manage_url_template"
-                  defaultValue={editing?.manage_url_template || ""}
-                />
-              </Field>
-              <Field label="all_data API 地址" className="col-span-2">
-                <Input
-                  name="modes_data_url"
-                  defaultValue={editing?.modes_data_url || ""}
-                />
-              </Field>
-              <Field label="Token" className="col-span-2">
-                <Input
-                  name="token"
-                  placeholder={
-                    editing?.token_present ? "留空保持原 token" : ""
-                  }
+                  defaultValue={editing?.web_id || editing?.id || 1}
+                  required
                 />
               </Field>
               <Field label="网站公告" className="col-span-2">
@@ -219,10 +156,7 @@ export function SitesPage() {
                 />
               </Field>
               <Field label="备注" className="col-span-2">
-                <Textarea
-                  name="notes"
-                  defaultValue={editing?.notes || ""}
-                />
+                <Textarea name="notes" defaultValue={editing?.notes || ""} />
               </Field>
               <div className="col-span-2 flex gap-2">
                 <Button type="submit" size="sm">
@@ -249,55 +183,21 @@ export function SitesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead
-                  className="min-w-[60px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  ID
-                </TableHead>
-                <TableHead
-                  className="min-w-[120px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  站点名称
-                </TableHead>
-                <TableHead
-                  className="min-w-[140px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  域名
-                </TableHead>
-                <TableHead
-                  className="min-w-[80px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  彩种
-                </TableHead>
-                <TableHead
-                  className="min-w-[60px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  状态
-                </TableHead>
-                <TableHead
-                  className="min-w-[150px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  创建时间
-                </TableHead>
-                <TableHead
-                  className="min-w-[240px]"
-                  style={{ resize: "horizontal", overflow: "hidden" }}
-                >
-                  操作
-                </TableHead>
+                <TableHead className="min-w-[60px]">ID</TableHead>
+                <TableHead className="min-w-[80px]">web_id</TableHead>
+                <TableHead className="min-w-[120px]">站点名称</TableHead>
+                <TableHead className="min-w-[140px]">域名</TableHead>
+                <TableHead className="min-w-[80px]">彩种</TableHead>
+                <TableHead className="min-w-[60px]">状态</TableHead>
+                <TableHead className="min-w-[150px]">创建时间</TableHead>
+                <TableHead className="min-w-[240px]">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-8 text-center text-muted-foreground"
                   >
                     暂无站点数据
@@ -309,6 +209,7 @@ export function SitesPage() {
                 return (
                   <TableRow key={row.id}>
                     <TableCell>{row.id}</TableCell>
+                    <TableCell>{row.web_id}</TableCell>
                     <TableCell className="font-medium">{row.name}</TableCell>
                     <TableCell>
                       {link ? (
@@ -319,7 +220,7 @@ export function SitesPage() {
                           className="block max-w-[200px] truncate text-blue-600 underline hover:text-blue-800"
                           title={link}
                         >
-                          {row.domain || link}
+                          {row.domain}
                         </a>
                       ) : (
                         "-"
@@ -336,16 +237,12 @@ export function SitesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() =>
-                          alert(row.announcement || "暂无公告")
-                        }
-                      >
+                          onClick={() => alert(row.announcement || "暂无公告")}
+                        >
                         网站公告
                       </Button>
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/sites/${row.id}/data`}>
-                          站点数据
-                        </Link>
+                        <Link href={`/sites/${row.id}/data`}>站点数据</Link>
                       </Button>
                       <Button
                         variant="outline"

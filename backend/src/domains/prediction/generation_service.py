@@ -208,7 +208,12 @@ def get_site_prediction_module_blueprint_by_key(
 
 
 def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
-    """Initialize empty site_prediction_modules from blueprint; do not override DB-managed sites."""
+    """Keep site_prediction_modules aligned with the site's blueprint.
+
+    Existing rows remain the database source of truth. The sync only inserts
+    blueprint modules that are missing, which lets a partially initialized site
+    pick up newly confirmed modules without losing local status/sort choices.
+    """
     site_query = """
         SELECT id
         FROM managed_sites
@@ -223,22 +228,52 @@ def sync_site_prediction_modules(conn: Any, site_id: int | None = None) -> None:
         current_site_id = int(site_row["id"])
         site_data = _load_site_sync_context(conn, current_site_id) or {"id": current_site_id}
         existing_rows = _load_site_module_rows(conn, current_site_id)
-        if existing_rows:
-            blocked_items = get_blocked_items_for_site(site_data)
-            if blocked_items:
-                _logger.info(
-                    "site_id=%s runtime modules come from database; blocked frontend items remain informational: %s",
-                    current_site_id,
-                    [str(item.get("page_title") or item.get("frontend_module") or "") for item in blocked_items],
+        if not existing_rows:
+            initialize_site_prediction_modules_from_blueprint(conn, site_data)
+        else:
+            existing_keys = {
+                str(row.get("mechanism_key") or "").strip()
+                for row in existing_rows
+                if str(row.get("mechanism_key") or "").strip()
+            }
+            now = utc_now()
+            inserted = 0
+            for item in get_site_prediction_module_blueprints(site_data, conn=conn):
+                mechanism_key = str(item["key"])
+                if mechanism_key in existing_keys:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO site_prediction_modules (
+                        site_id, mechanism_key, mode_id, status, sort_order, created_at, updated_at, title
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(site_id, mechanism_key) DO NOTHING
+                    """,
+                    (
+                        current_site_id,
+                        mechanism_key,
+                        int(item["mode_id"]),
+                        1,
+                        int(item["sort_order"]),
+                        now,
+                        now,
+                        str(item.get("title") or ""),
+                    ),
                 )
-            continue
-
-        initialize_site_prediction_modules_from_blueprint(conn, site_data)
+                inserted += 1
+            if inserted:
+                _logger.info(
+                    "site_id=%s blueprint=%s inserted %s missing prediction modules",
+                    current_site_id,
+                    get_blueprint_name_for_site(site_data),
+                    inserted,
+                )
 
         blocked_items = get_blocked_items_for_site(site_data)
         if blocked_items:
             _logger.info(
-                "site_id=%s blueprint=%s keeping blocked frontend items out of site_prediction_modules: %s",
+                "site_id=%s blueprint=%s keeping blocked frontend items informational: %s",
                 current_site_id,
                 get_blueprint_name_for_site(site_data),
                 [str(item.get("page_title") or item.get("frontend_module") or "") for item in blocked_items],
@@ -356,5 +391,12 @@ def build_generated_prediction_row_data(
         row_data["content"] = json.dumps(generated_content, ensure_ascii=False)
     else:
         row_data["content"] = str(generated_content or "")
+
+    if int(mode_id or 0) == 198:
+        label = str(generated_content or "").strip()
+        if label in {"大数", "小数", "家禽", "野兽"}:
+            row_data["dx"] = label
+        elif label in {"单数", "双数"}:
+            row_data["ds"] = label
 
     return row_data

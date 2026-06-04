@@ -54,6 +54,14 @@ def summarize_prediction_text(row: dict[str, Any]) -> str:
     """把不同玩法的历史字段归一成可读文本，避免前端猜测每张源表的结构。"""
     if row.get("content"):
         return str(row["content"])
+    jia = str(row.get("jia") or "").strip()
+    ye = str(row.get("ye") or "").strip()
+    if jia or ye:
+        return f"家禽|{jia};野兽|{ye}"
+    dx = str(row.get("dx") or "").strip()
+    ds = str(row.get("ds") or "").strip()
+    if dx or ds:
+        return dx or ds
     xiao_values = [str(row.get("xiao_1") or "").strip(), str(row.get("xiao_2") or "").strip()]
     joined_xiao = " / ".join(value for value in xiao_values if value)
     if joined_xiao:
@@ -301,8 +309,8 @@ def get_public_site_page_data(
                 history_limit,
                 mode_id=int(row["mode_id"] or 0),
                 lottery_type_id=effective_lottery_type_id,
-                web_start=int(site.get("start_web_id") or 0),
-                web_end=int(site.get("end_web_id") or 0),
+                web_start=int(site.get("web_id") or 0),
+                web_end=int(site.get("web_id") or 0),
             )
         except Exception as exc:
             logger.warning(

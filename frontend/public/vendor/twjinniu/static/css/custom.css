@@ -1,0 +1,27 @@
+﻿/* INTERLINKS BLINK */
+#Interlinks > li:first-child > a {
+    -webkit-animation: textColorBlink 1.5s ease-in-out infinite alternate;
+    font-weight: bold;
+}
+
+@keyframes textColorBlink {
+    0% {
+        color: #00ff00;
+    }
+    33% {
+        color: #00ff00;
+    }
+    34% {
+        color: red;
+    }
+    66% {
+        color: red;
+    }
+    67% {
+        color: yellow;
+    }
+    100% {
+        color: yellow;
+    }
+}
+/* INTERLINKS BLINK */

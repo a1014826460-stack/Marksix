@@ -1,4 +1,4 @@
-"""站点领域数据访问层（Repository）。"""
+"""Managed site repository."""
 
 from __future__ import annotations
 
@@ -93,12 +93,11 @@ def insert_site(conn: Any, fields: dict[str, Any], now: str) -> dict[str, Any]:
     row = conn.execute(
         """
         INSERT INTO managed_sites (
-            id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-            manage_url_template, modes_data_url, token, blueprint_name, request_limit,
-            request_delay, announcement, notes,
+            id, web_id, name, domain, lottery_type_id, enabled,
+            blueprint_name, announcement, notes,
             created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         """,
         (
@@ -108,14 +107,7 @@ def insert_site(conn: Any, fields: dict[str, Any], now: str) -> dict[str, Any]:
             fields["domain"],
             fields["lottery_type_id"],
             fields["enabled"],
-            fields["start_web_id"],
-            fields["end_web_id"],
-            fields["manage_url_template"],
-            fields["modes_data_url"],
-            fields["token"],
             fields["blueprint_name"],
-            fields["request_limit"],
-            fields["request_delay"],
             fields["announcement"],
             fields["notes"],
             now,
@@ -130,9 +122,7 @@ def update_site(conn: Any, site_id: int, fields: dict[str, Any], now: str) -> di
         """
         UPDATE managed_sites
         SET name = ?, domain = ?, lottery_type_id = ?, enabled = ?,
-            start_web_id = ?, end_web_id = ?,
-            manage_url_template = ?, modes_data_url = ?, token = ?,
-            blueprint_name = ?, request_limit = ?, request_delay = ?,
+            web_id = ?, blueprint_name = ?,
             announcement = ?, notes = ?,
             updated_at = ?
         WHERE id = ?
@@ -143,14 +133,8 @@ def update_site(conn: Any, site_id: int, fields: dict[str, Any], now: str) -> di
             fields["domain"],
             fields["lottery_type_id"],
             fields["enabled"],
-            fields["start_web_id"],
-            fields["end_web_id"],
-            fields["manage_url_template"],
-            fields["modes_data_url"],
-            fields["token"],
+            fields["web_id"],
             fields["blueprint_name"],
-            fields["request_limit"],
-            fields["request_delay"],
             fields["announcement"],
             fields["notes"],
             now,
@@ -166,13 +150,9 @@ def delete_site_by_id(conn: Any, site_id: int) -> bool:
 
 
 def get_site_web_id(conn: Any, site_id: int) -> int | None:
-    row = conn.execute(
-        "SELECT web_id FROM managed_sites WHERE id = ?", (site_id,)
-    ).fetchone()
+    row = conn.execute("SELECT web_id FROM managed_sites WHERE id = ?", (site_id,)).fetchone()
     return int(row["web_id"]) if row and row["web_id"] is not None else None
 
 
 def backfill_site_web_ids(conn: Any) -> None:
-    conn.execute(
-        "UPDATE managed_sites SET web_id = start_web_id WHERE web_id IS NULL"
-    )
+    conn.execute("UPDATE managed_sites SET web_id = COALESCE(web_id, id)")

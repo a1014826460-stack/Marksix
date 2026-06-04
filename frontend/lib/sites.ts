@@ -20,6 +20,14 @@ export type FrontendSiteConfig = {
   pageCssPaths?: readonly `/${string}`[]
 }
 
+export type SiteRequestMatch = {
+  site: FrontendSiteConfig
+  refererPath: string
+  refererUrl: URL | null
+  matchedByHost: boolean
+  matchedByRefererHost: boolean
+}
+
 const SITE_CONFIGS: FrontendSiteConfig[] = [
   {
     siteKey: "shengshi8800",
@@ -75,6 +83,23 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       "/vendor/twcaibawang.com/static/css/nystyle.css",
     ],
   },
+  {
+    siteKey: "twjinniu",
+    routePath: "/twjinniu",
+    vendorIndexPath: "/vendor/twjinniu/index.html",
+    domains: ["www.twjinniu.com", "twjinniu.com"],
+    legacyPublicBasePath: "/vendor/twjinniu",
+    defaultGame: "taiwan",
+    defaultWebId: 7,
+    defaultLotteryTypeId: 3,
+    forumTitle: "台湾金牛论坛",
+    metadataTitle: "台湾金牛论坛",
+    metadataDescription: "台湾金牛论坛",
+    pageCssPaths: [
+      "/vendor/twjinniu/static/css/main.css",
+      "/vendor/twjinniu/static/css/custom.css",
+    ],
+  },
 ]
 
 export function getAllSiteConfigs() {
@@ -118,6 +143,46 @@ export function findSiteByHost(host: string | null | undefined) {
       site.domains.some((domain) => normalizeHost(domain) === normalized)
     ) || null
   )
+}
+
+export function safeParseUrl(value: string | null | undefined) {
+  if (!value) return null
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
+}
+
+export function matchSiteRequest(
+  request: Request,
+  siteKey: string
+): SiteRequestMatch | null {
+  const site = getSiteConfig(siteKey)
+  if (!site) return null
+
+  const host = normalizeHost(request.headers.get("host"))
+  const refererUrl = safeParseUrl(request.headers.get("referer"))
+  const refererHost = normalizeHost(refererUrl?.host)
+  const refererPath = refererUrl?.pathname || ""
+  const matchedByHost = findSiteByHost(host)?.siteKey === siteKey
+  const matchedByRefererHost = findSiteByHost(refererHost)?.siteKey === siteKey
+  const matchedByPath =
+    refererPath === site.legacyPublicBasePath ||
+    refererPath.startsWith(`${site.legacyPublicBasePath}/`) ||
+    refererPath.startsWith(site.routePath)
+
+  if (!matchedByHost && !matchedByRefererHost && !matchedByPath) {
+    return null
+  }
+
+  return {
+    site,
+    refererPath,
+    refererUrl,
+    matchedByHost,
+    matchedByRefererHost,
+  }
 }
 
 export function buildLegacyEmbedUrl(

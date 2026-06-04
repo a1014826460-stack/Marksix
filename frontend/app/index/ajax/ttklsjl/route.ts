@@ -1,27 +1,9 @@
 import { NextResponse } from "next/server"
 import { backendFetchJson } from "@/lib/backend-api"
 import type { DrawHistoryResponse } from "@/lib/draw-history"
-import { findSiteByHost, getSiteConfig, normalizeHost } from "@/lib/sites"
+import { matchSiteRequest } from "@/lib/sites"
 
-const SITE_KEY = "twcaibawang"
 const DEFAULT_LOTTERY_TYPE = 1
-
-function isTwcaibawangRequest(request: Request) {
-  const host = normalizeHost(request.headers.get("host"))
-  const referer = request.headers.get("referer")
-  const refererUrl = referer ? new URL(referer) : null
-  const refererHost = normalizeHost(refererUrl?.host)
-  const refererPath = refererUrl?.pathname || ""
-  const matchedByHost = findSiteByHost(host)
-  const matchedByReferer = findSiteByHost(refererHost)
-
-  if (matchedByHost?.siteKey === SITE_KEY) return true
-  if (matchedByReferer?.siteKey === SITE_KEY) return true
-  if (refererPath.startsWith("/vendor/twcaibawang.com/")) return true
-  if (refererPath.startsWith("/twcaibawang")) return true
-
-  return false
-}
 
 function toLegacyOpenTime(value: string) {
   if (!value) return ""
@@ -35,14 +17,15 @@ function toLegacyOpenCode(item: DrawHistoryResponse["items"][number]) {
 }
 
 export async function GET(request: Request) {
-  if (!isTwcaibawangRequest(request)) {
+  const match =
+    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+  if (!match) {
     return new NextResponse("Not found", { status: 404 })
   }
 
   const { searchParams } = new URL(request.url)
   const requestedYear = Number(searchParams.get("year")) || new Date().getFullYear()
-  const site = getSiteConfig(SITE_KEY)
-  const lotteryType = site?.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
+  const lotteryType = match.site.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
 
   try {
     const history = await backendFetchJson<DrawHistoryResponse>("/public/draw-history", {

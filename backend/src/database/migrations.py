@@ -1,8 +1,4 @@
-"""轻量数据库迁移工具。
-
-提供不依赖独立迁移框架的列添加能力，
-在 bootstrap 阶段自动补齐缺失列。
-"""
+"""Lightweight schema migration helpers."""
 
 from __future__ import annotations
 
@@ -12,11 +8,7 @@ from database.connection import quote_identifier
 
 
 def add_column_if_missing(conn: Any, table_name: str, column_name: str, definition: str) -> None:
-    """PostgreSQL-compatible lightweight migration helper.
-
-    仅在列不存在时才添加，幂等安全。
-    是 ``ensure_admin_tables`` 所用的主要 schema 演进工具。
-    """
+    """Add a column only when it is missing."""
     columns = set(conn.table_columns(table_name))
     if column_name not in columns:
         conn.execute(
@@ -25,5 +17,21 @@ def add_column_if_missing(conn: Any, table_name: str, column_name: str, definiti
         )
 
 
-# 兼容别名
+def drop_column_if_exists(conn: Any, table_name: str, column_name: str) -> None:
+    """Drop a column only when it exists."""
+    columns = set(conn.table_columns(table_name))
+    if column_name not in columns:
+        return
+    if getattr(conn, "engine", "") == "postgres":
+        conn.execute(
+            f"ALTER TABLE {quote_identifier(table_name)} "
+            f"DROP COLUMN IF EXISTS {quote_identifier(column_name)}"
+        )
+        return
+    conn.execute(
+        f"ALTER TABLE {quote_identifier(table_name)} "
+        f"DROP COLUMN {quote_identifier(column_name)}"
+    )
+
+
 ensure_column = add_column_if_missing

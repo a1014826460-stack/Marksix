@@ -1,6 +1,9 @@
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
-export type AnyRecord = Record<string, JsonValue | undefined>
+export type AnyRecord = Record<string, JsonValue | undefined> & {
+  id?: string | number
+  data_source?: string
+}
 
 export type ApiSummary = {
   summary: Record<string, string | number>
@@ -53,22 +56,17 @@ export type Draw = {
 
 export type Site = {
   id: number
+  web_id: number
   name: string
   domain: string
   lottery_type_id: number
   lottery_name?: string
   enabled: boolean
-  start_web_id: number
-  end_web_id: number
-  manage_url_template: string
-  modes_data_url: string
-  request_limit: number
-  request_delay: number
+  blueprint_name?: string
   announcement?: string
   notes?: string
-  created_at: string
-  token_present?: boolean
-  token_preview?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export type NumberRow = {

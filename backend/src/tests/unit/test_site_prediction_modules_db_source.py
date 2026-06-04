@@ -19,8 +19,12 @@ def _setup_db(db_path: str) -> None:
                 domain TEXT,
                 lottery_type_id INTEGER,
                 web_id INTEGER,
-                start_web_id INTEGER,
-                end_web_id INTEGER
+                enabled INTEGER DEFAULT 1,
+                blueprint_name TEXT,
+                announcement TEXT,
+                notes TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
             """
         )
@@ -50,8 +54,8 @@ def test_existing_site_modules_are_database_source_of_truth(tmp_path):
         conn.execute(
             """
             INSERT INTO managed_sites (
-                id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
-            ) VALUES (5, 'twcaibawang', 'www.twcaibawang.com', 3, 5, 5, 5)
+                id, name, domain, lottery_type_id, web_id
+            ) VALUES (5, 'twcaibawang', 'www.twcaibawang.com', 3, 5)
             """
         )
         conn.execute(
@@ -70,7 +74,44 @@ def test_existing_site_modules_are_database_source_of_truth(tmp_path):
         ).fetchall()
 
     assert [item["key"] for item in before] == ["3tou"]
-    assert [(row["mechanism_key"], row["sort_order"]) for row in rows] == [("3tou", 999)]
+    assert ("3tou", 999) in [(row["mechanism_key"], row["sort_order"]) for row in rows]
+
+
+def test_partial_site_modules_are_topped_up_from_blueprint(tmp_path):
+    db_path = str(tmp_path / "site_modules_partial.sqlite3")
+    _setup_db(db_path)
+
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, name, domain, lottery_type_id, web_id, blueprint_name
+            ) VALUES (7, 'twjinniu', 'www.twjinniu.com', 3, 7, 'twjinniu')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO site_prediction_modules (
+                site_id, mechanism_key, status, sort_order, created_at, updated_at, mode_id, title
+            ) VALUES (7, 'qinqi', 1, 999, 'now', 'now', 26, 'custom qinqi')
+            """
+        )
+
+        sync_site_prediction_modules(conn, site_id=7)
+        rows = conn.execute(
+            """
+            SELECT mechanism_key, mode_id, sort_order
+            FROM site_prediction_modules
+            WHERE site_id = 7
+            ORDER BY sort_order, id
+            """
+        ).fetchall()
+
+    by_key = {str(row["mechanism_key"]): dict(row) for row in rows}
+    assert int(by_key["qinqi"]["sort_order"]) == 999
+    assert int(by_key["3tou"]["mode_id"]) == 12
+    assert int(by_key["title_198"]["mode_id"]) == 198
+    assert int(by_key["xiongjiliuxiao"]["mode_id"]) == 480
 
 
 def test_empty_site_modules_can_be_initialized_from_blueprint(tmp_path):
@@ -81,8 +122,8 @@ def test_empty_site_modules_can_be_initialized_from_blueprint(tmp_path):
         conn.execute(
             """
             INSERT INTO managed_sites (
-                id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
-            ) VALUES (8, 'new', '', 3, 8, 8, 8)
+                id, name, domain, lottery_type_id, web_id
+            ) VALUES (8, 'new', '', 3, 8)
             """
         )
 
@@ -127,7 +168,7 @@ def test_dynamic_title_module_rows_are_resolved_from_database_configs(tmp_path):
         conn.execute(
             """
             INSERT INTO mode_payload_tables (modes_id, table_name, title, record_count)
-            VALUES (251, 'mode_payload_251', '家野两肖', 1)
+            VALUES (251, 'mode_payload_251', 'custom title', 1)
             """
         )
         conn.execute(
@@ -135,26 +176,26 @@ def test_dynamic_title_module_rows_are_resolved_from_database_configs(tmp_path):
             INSERT INTO mode_payload_251 (year, term, web, type, content, xiao, code, res_code, res_sx)
             VALUES (
                 '2026', '1', 6, 3,
-                '["鼠|05,17,29,41","牛|04,16,28,40","虎|03,15,27,39","兔|02,14,26,38"]',
+                'content',
                 '',
                 '01,02,03,04',
                 '01,02,03,04,05,06,07',
-                '龙,鸡,马,羊,狗,鼠,牛'
+                'zodiac'
             )
             """
         )
         conn.execute(
             """
             INSERT INTO managed_sites (
-                id, name, domain, lottery_type_id, web_id, start_web_id, end_web_id
-            ) VALUES (6, 'twsaimahui', 'www.twsaimahui.com', 3, 6, 6, 6)
+                id, name, domain, lottery_type_id, web_id
+            ) VALUES (6, 'twsaimahui', 'www.twsaimahui.com', 3, 6)
             """
         )
         conn.execute(
             """
             INSERT INTO site_prediction_modules (
                 site_id, mechanism_key, status, sort_order, created_at, updated_at, mode_id, title
-            ) VALUES (6, 'title_251', 1, 10, 'now', 'now', 251, '家野两肖')
+            ) VALUES (6, 'title_251', 1, 10, 'now', 'now', 251, 'custom title')
             """
         )
         conn.commit()
@@ -181,14 +222,12 @@ def test_bootstrap_seeds_site_blueprint_profiles_and_site_assignment(tmp_path):
         conn.execute(
             """
             INSERT INTO managed_sites (
-                id, web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-                manage_url_template, modes_data_url, token, blueprint_name, request_limit,
-                request_delay, announcement, notes, created_at, updated_at
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
             )
             VALUES (
-                5, 5, '台湾彩霸王', 'www.twcaibawang.com', 3, 1, 5, 5,
-                'https://example.com/{web_id}', 'https://example.com/api', '',
-                'twcaibawang', 250, 0.5, '', '', 'now', 'now'
+                5, 5, 'twcaibawang', 'www.twcaibawang.com', 3, 1,
+                'twcaibawang', '', '', 'now', 'now'
             )
             ON CONFLICT(id) DO UPDATE SET blueprint_name = excluded.blueprint_name
             """
@@ -203,6 +242,30 @@ def test_bootstrap_seeds_site_blueprint_profiles_and_site_assignment(tmp_path):
         ).fetchone()
 
     assert "blueprint_name" in managed_site_columns
-    assert int(profile_count) >= 3
+    assert "start_web_id" not in managed_site_columns
+    assert "manage_url_template" not in managed_site_columns
+    assert int(profile_count) >= 4
     assert site["blueprint_name"] == "twcaibawang"
     assert str(site["blueprint_required_mode_ids_json"] or "").startswith("[")
+
+
+def test_bootstrap_seeds_twjinniu_managed_site(tmp_path):
+    db_path = str(tmp_path / "twjinniu_seed.sqlite3")
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id, web_id, name, domain, blueprint_name, lottery_type_id
+            FROM managed_sites
+            WHERE web_id = 7
+            """
+        ).fetchone()
+
+    assert row is not None
+    assert int(row["id"]) == 7
+    assert int(row["web_id"]) == 7
+    assert str(row["name"] or "") == "台湾金牛论坛"
+    assert str(row["domain"] or "") == "www.twjinniu.com"
+    assert str(row["blueprint_name"] or "") == "twjinniu"
+    assert int(row["lottery_type_id"] or 0) > 0

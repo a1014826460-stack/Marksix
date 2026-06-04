@@ -1,37 +1,80 @@
-"""默认数据播种：管理员、彩种、站点、预测模块同步。
-
-将 tables.py 中的 _seed_bootstrap_data 和 seed_default_lottery_types
-迁移到此文件，表结构与默认数据分离。
-"""
+"""Default bootstrap seed data."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from database.connection import connect, utc_now
-from runtime_config import (
-    get_bootstrap_config_value,
-    ensure_system_config_table,
-    seed_system_config_defaults,
-)
+from runtime_config import get_bootstrap_config_value
 
-# 彩种名称常量
 HK_NAMES = ("香港彩", "六肖彩")
 MACAU_NAME = "澳门彩"
 TAIWAN_NAME = "台湾彩"
 
 
-def seed_default_lottery_types(conn: Any, *, now: str) -> None:
-    """插入三个默认彩种（香港/澳门/台湾），缺失时自动创建。
+def _merge_lottery_type_alias(conn: Any, canonical_name: str, *aliases: str) -> None:
+    canonical = conn.execute(
+        "SELECT id FROM lottery_types WHERE name = ? ORDER BY id LIMIT 1",
+        (canonical_name,),
+    ).fetchone()
 
-    所有默认值（开奖时间、采集 URL）均从运行时配置系统读取，
-    确保 config.yaml 和 system_config 表是唯一可信源。
-    """
-    # 历史数据兼容：将 "六肖彩" 统一更名为 "香港彩"
-    conn.execute(
-        "UPDATE lottery_types SET name = ? WHERE name = ?",
-        (HK_NAMES[0], HK_NAMES[1]),
-    )
+    for alias in aliases:
+        alias_rows = conn.execute(
+            "SELECT id FROM lottery_types WHERE name = ? ORDER BY id",
+            (alias,),
+        ).fetchall()
+        if not alias_rows:
+            continue
+
+        if canonical:
+            canonical_id = int(canonical["id"])
+            for row in alias_rows:
+                alias_id = int(row["id"])
+                if alias_id == canonical_id:
+                    continue
+                if conn.table_exists("lottery_draws"):
+                    conn.execute(
+                        """
+                        DELETE FROM lottery_draws
+                        WHERE lottery_type_id = ?
+                          AND EXISTS (
+                              SELECT 1
+                              FROM lottery_draws canonical_draws
+                              WHERE canonical_draws.lottery_type_id = ?
+                                AND canonical_draws.year = lottery_draws.year
+                                AND canonical_draws.term = lottery_draws.term
+                          )
+                        """,
+                        (alias_id, canonical_id),
+                    )
+                    conn.execute(
+                        "UPDATE lottery_draws SET lottery_type_id = ? WHERE lottery_type_id = ?",
+                        (canonical_id, alias_id),
+                    )
+                for table_name in ("managed_sites", "scheduler_tasks", "error_logs"):
+                    if not conn.table_exists(table_name):
+                        continue
+                    if "lottery_type_id" not in set(conn.table_columns(table_name)):
+                        continue
+                    conn.execute(
+                        f"UPDATE {table_name} SET lottery_type_id = ? WHERE lottery_type_id = ?",
+                        (canonical_id, alias_id),
+                    )
+                conn.execute("DELETE FROM lottery_types WHERE id = ?", (alias_id,))
+            continue
+
+        first_alias = alias_rows[0]
+        conn.execute(
+            "UPDATE lottery_types SET name = ? WHERE id = ?",
+            (canonical_name, int(first_alias["id"])),
+        )
+        canonical = {"id": int(first_alias["id"])}
+
+
+def seed_default_lottery_types(conn: Any, *, now: str) -> None:
+    """Seed the built-in lottery types and normalize legacy English names."""
+    _merge_lottery_type_alias(conn, HK_NAMES[0], HK_NAMES[1], "Hong Kong", "Liuhecai")
+    _merge_lottery_type_alias(conn, MACAU_NAME, "Macau")
+    _merge_lottery_type_alias(conn, TAIWAN_NAME, "Taiwan")
     defaults = [
         (
             HK_NAMES[0],
@@ -67,27 +110,19 @@ def seed_default_lottery_types(conn: Any, *, now: str) -> None:
 
 
 def seed_bootstrap_data(conn: Any, now: str) -> None:
-    """播种引导数据：默认管理员、默认站点。
-
-    所有默认值均从运行时配置系统读取，不硬编码回退值。
-    """
+    """Seed the default admin, lottery types, site, and prediction modules."""
     from auth import hash_password as _hash_password
     from admin.prediction import sync_site_prediction_modules as _sync_modules
 
-    # ── 默认管理员 ──
-    if (
-        int(
-            conn.execute(
-                "SELECT COUNT(*) AS total FROM admin_users"
-            ).fetchone()["total"]
-            or 0
-        )
-        == 0
-    ):
-        _admin_user = str(get_bootstrap_config_value("admin.username", "admin"))
-        _admin_display = str(get_bootstrap_config_value("admin.display_name", "系统管理员"))
-        _admin_pass = str(get_bootstrap_config_value("admin.password", "admin123"))
-        _admin_role = str(get_bootstrap_config_value("admin.role", "super_admin"))
+    admin_count = int(
+        conn.execute("SELECT COUNT(*) AS total FROM admin_users").fetchone()["total"]
+        or 0
+    )
+    if admin_count == 0:
+        admin_user = str(get_bootstrap_config_value("admin.username", "admin"))
+        admin_display = str(get_bootstrap_config_value("admin.display_name", "系统管理员"))
+        admin_pass = str(get_bootstrap_config_value("admin.password", "admin123"))
+        admin_role = str(get_bootstrap_config_value("admin.role", "super_admin"))
         conn.execute(
             """
             INSERT INTO admin_users (
@@ -96,65 +131,58 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
             VALUES (?, ?, ?, ?, 1, ?, ?)
             """,
             (
-                _admin_user,
-                _admin_display,
-                _hash_password(_admin_pass),
-                _admin_role,
+                admin_user,
+                admin_display,
+                _hash_password(admin_pass),
+                admin_role,
                 now,
                 now,
             ),
         )
 
-    # ── 播种彩种 ──
     seed_default_lottery_types(conn, now=now)
 
-    # ── 默认托管站点 ──
     default_lottery_id = conn.execute(
         "SELECT id FROM lottery_types ORDER BY id LIMIT 1"
     ).fetchone()["id"]
+    taiwan_lottery_row = conn.execute(
+        "SELECT id FROM lottery_types WHERE name = ? ORDER BY id LIMIT 1",
+        (TAIWAN_NAME,),
+    ).fetchone()
+    taiwan_lottery_id = int(taiwan_lottery_row["id"]) if taiwan_lottery_row else int(default_lottery_id)
 
-    existing = int(
-        conn.execute(
-            "SELECT COUNT(*) AS total FROM managed_sites"
-        ).fetchone()["total"]
+    site_count = int(
+        conn.execute("SELECT COUNT(*) AS total FROM managed_sites").fetchone()["total"]
         or 0
     )
-    if existing == 0:
-        _site_name = str(get_bootstrap_config_value("site.default_site_name", "默认盛世站点"))
-        _site_domain = str(get_bootstrap_config_value("site.default_domain", "admin.shengshi8800.com"))
-        _site_url = str(get_bootstrap_config_value("site.manage_url_template", ""))
-        _site_data_url = str(get_bootstrap_config_value("site.modes_data_url", ""))
-        _site_token = str(get_bootstrap_config_value("site.default_token", ""))
-        _site_req_limit = int(get_bootstrap_config_value("site.request_limit", 250))
-        _site_req_delay = float(get_bootstrap_config_value("site.request_delay", 0.5))
-        _site_announcement = str(get_bootstrap_config_value("site.default_announcement", ""))
-        _site_notes = str(get_bootstrap_config_value("site.default_notes", ""))
-        _site_start = int(get_bootstrap_config_value("site.start_web_id", 1))
-        _site_end = int(get_bootstrap_config_value("site.end_web_id", 10))
+    if site_count == 0:
+        site_name = str(get_bootstrap_config_value("site.default_site_name", "默认站点"))
+        site_domain = str(get_bootstrap_config_value("site.default_domain", "admin.shengshi8800.com"))
+        site_announcement = str(get_bootstrap_config_value("site.default_announcement", ""))
+        site_notes = str(get_bootstrap_config_value("site.default_notes", ""))
+        site_web_id = int(
+            get_bootstrap_config_value(
+                "site.default_web_id",
+                get_bootstrap_config_value("site.start_web_id", 1),
+            )
+        )
         conn.execute(
             """
             INSERT INTO managed_sites (
-                web_id, name, domain, lottery_type_id, enabled, start_web_id, end_web_id,
-                manage_url_template, modes_data_url, token, request_limit, request_delay,
-                announcement, notes,
+                web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes,
                 created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
             """,
             (
-                _site_start,  # web_id 默认为 start_web_id
-                _site_name,
-                _site_domain,
+                site_web_id,
+                site_name,
+                site_domain,
                 default_lottery_id,
-                _site_start,
-                _site_end,
-                _site_url,
-                _site_data_url,
-                _site_token,
-                _site_req_limit,
-                _site_req_delay,
-                _site_announcement,
-                _site_notes,
+                "default",
+                site_announcement,
+                site_notes,
                 now,
                 now,
             ),
@@ -164,10 +192,35 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
             "UPDATE managed_sites SET lottery_type_id = COALESCE(lottery_type_id, ?)",
             (default_lottery_id,),
         )
-        # 回填已有站点的 web_id
         conn.execute(
-            "UPDATE managed_sites SET web_id = start_web_id WHERE web_id IS NULL"
+            "UPDATE managed_sites SET web_id = COALESCE(web_id, id) WHERE web_id IS NULL"
         )
 
-    # 同步站点预测模块（站点创建后执行）
+    twjinniu_exists = conn.execute(
+        "SELECT id FROM managed_sites WHERE web_id = ? LIMIT 1",
+        (7,),
+    ).fetchone()
+    if not twjinniu_exists:
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            """,
+            (
+                7,
+                7,
+                "台湾金牛论坛",
+                "www.twjinniu.com",
+                taiwan_lottery_id,
+                "twjinniu",
+                "",
+                "Seeded bootstrap site for twjinniu vendor integration.",
+                now,
+                now,
+            ),
+        )
+
     _sync_modules(conn)

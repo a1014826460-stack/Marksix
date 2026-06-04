@@ -346,7 +346,7 @@ def estimate_site_prediction_modules_bulk_delete(
         end_issue[1] - start_issue[1] + 1
     )
     lottery_type_id = int(site.get("lottery_type_id") or 0)
-    site_web_id = int(site.get("web_id") or site.get("start_web_id") or 0)
+    site_web_id = int(site.get("web_id") or 0)
     if site_web_id <= 0:
         raise ValidationError("当前站点缺少有效的 web_id 配置")
 
@@ -391,7 +391,7 @@ def bulk_delete_site_prediction_modules(
     period_range = payload.get("periodRange") or {}
     start_issue, end_issue = _build_issue_range(period_range)
     lottery_type_id = int(site.get("lottery_type_id") or 0)
-    site_web_id = int(site.get("web_id") or site.get("start_web_id") or 0)
+    site_web_id = int(site.get("web_id") or 0)
     if site_web_id <= 0:
         raise ValidationError("当前站点缺少有效的 web_id 配置")
 

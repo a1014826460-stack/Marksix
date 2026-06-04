@@ -125,20 +125,20 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
     mechanismKeys: string[]
     futureOnly: boolean
   }) {
-    const { job_id } = await adminApi<{
-      ok: boolean
-      job_id: string
-    }>(`/admin/sites/${params.siteId}/prediction-modules/generate-all`, {
-      method: "POST",
-      body: JSON.stringify({
-        lottery_type: params.lotteryType,
-        start_issue: params.startIssue,
-        end_issue: params.endIssue,
-        mechanism_keys: params.mechanismKeys,
-        future_periods: 1,
-        future_only: params.futureOnly,
-      }),
-    })
+    const { job_id } = await adminApi<{ ok: boolean; job_id: string }>(
+      `/admin/sites/${params.siteId}/prediction-modules/generate-all`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lottery_type: params.lotteryType,
+          start_issue: params.startIssue,
+          end_issue: params.endIssue,
+          mechanism_keys: params.mechanismKeys,
+          future_periods: 1,
+          future_only: params.futureOnly,
+        }),
+      },
+    )
 
     for (let index = 0; index < 120; index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 3000))
@@ -191,6 +191,13 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
   }
 
   const selectedModule = modules.find((item) => item.id === selectedModId) || null
+  const siteWebId = site?.web_id ? String(site.web_id) : ""
+  const webFilterOptions = siteWebId
+    ? [
+        { value: "", label: "全部" },
+        { value: siteWebId, label: `web_id=${siteWebId}` },
+      ]
+    : [{ value: "", label: "全部" }]
 
   return (
     <AdminShell
@@ -206,54 +213,30 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">站点:</span>
-        {[
-          "",
-          ...Array.from(
-            {
-              length: (site?.end_web_id || 10) - (site?.start_web_id || 1) + 1,
-            },
-            (_, index) => String((site?.start_web_id || 1) + index),
-          ),
-        ].map((webId) => (
+        {webFilterOptions.map((option) => (
           <button
-            key={webId}
-            onClick={() => setWebFilter(webId)}
+            key={option.value || "all"}
+            onClick={() => setWebFilter(option.value)}
             className={`rounded-full px-3 py-0.5 text-xs font-medium transition-all hover:scale-105 active:scale-95 ${
-              webFilter === webId
+              webFilter === option.value
                 ? "bg-primary text-primary-foreground shadow-md"
                 : "bg-muted text-muted-foreground hover:bg-muted/70"
             }`}
           >
-            {webId === "" ? "全部" : `web_id=${webId}`}
+            {option.label}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setBulkGenerateOpen(true)}
-            size="sm"
-            className="transition-all hover:scale-105 active:scale-95"
-          >
+          <Button variant="outline" onClick={() => setBulkGenerateOpen(true)} size="sm">
             <RefreshCw className="mr-1 h-4 w-4" />
             自动生成资料
           </Button>
-          <Button
-            variant="destructive"
-            onClick={() => setBulkDeleteOpen(true)}
-            size="sm"
-            className="transition-all hover:scale-105 active:scale-95"
-          >
+          <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)} size="sm">
             <Trash2 className="mr-1 h-4 w-4" />
             批量删除
           </Button>
-          <Button
-            onClick={() => setAddOpen((prev) => !prev)}
-            size="sm"
-            className="transition-all hover:scale-105 active:scale-95"
-          >
-            <Plus
-              className={`mr-1 h-4 w-4 transition-transform duration-300 ${addOpen ? "rotate-45" : ""}`}
-            />
+          <Button onClick={() => setAddOpen((prev) => !prev)} size="sm">
+            <Plus className={`mr-1 h-4 w-4 transition-transform duration-300 ${addOpen ? "rotate-45" : ""}`} />
             添加模块
           </Button>
         </div>
@@ -355,10 +338,7 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
         </Card>
       ) : (
         <>
-          <div
-            className="mb-3 flex flex-wrap gap-1.5 overflow-x-auto rounded-lg border bg-muted/20 p-2"
-            style={{ scrollbarWidth: "thin" }}
-          >
+          <div className="mb-3 flex flex-wrap gap-1.5 overflow-x-auto rounded-lg border bg-muted/20 p-2">
             {modules.map((module) => {
               const isSelected = module.id === selectedModId
               const name = getSitePredictionModuleName(module)
@@ -374,9 +354,7 @@ export function SiteDataPage({ siteId }: SiteDataPageProps) {
                 >
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full transition-colors ${
-                      module.status
-                        ? "bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
-                        : "bg-gray-300"
+                      module.status ? "bg-green-400" : "bg-gray-300"
                     }`}
                     title={module.status ? "启用" : "停用"}
                   />

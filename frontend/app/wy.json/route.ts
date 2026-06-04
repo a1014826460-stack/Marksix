@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { backendFetchJson } from "@/lib/backend-api"
 import type { DrawHistoryResponse } from "@/lib/draw-history"
-import { findSiteByHost, getSiteConfig, normalizeHost } from "@/lib/sites"
+import { matchSiteRequest } from "@/lib/sites"
 
 type LatestDrawResponse = {
   current_issue: string
@@ -25,13 +25,11 @@ type NextDrawDeadlineResponse = {
   server_time?: string | number | null
 }
 
-const SITE_KEY = "twcaibawang"
 const DEFAULT_LOTTERY_TYPE = 1
 const DEFAULT_NEXT_TIME_SUFFIX = "21:30:00"
 
 function normalizeIssue(issue: string | null | undefined) {
-  const normalized = String(issue || "").trim()
-  return normalized
+  return String(issue || "").trim()
 }
 
 function normalizeWave(color: string | null | undefined) {
@@ -45,7 +43,7 @@ function normalizeWave(color: string | null | undefined) {
 function normalizeZodiac(zodiac: string | null | undefined) {
   const raw = String(zodiac || "").trim()
   switch (raw) {
-    case "龍":
+    case "龙":
       return "龙"
     case "馬":
       return "马"
@@ -104,23 +102,6 @@ function fallbackNextTime(currentIssue: string, nextIssue: string) {
   return `${year}-${month}-${day} ${DEFAULT_NEXT_TIME_SUFFIX}`
 }
 
-function isTwcaibawangRequest(request: Request) {
-  const host = normalizeHost(request.headers.get("host"))
-  const referer = request.headers.get("referer")
-  const refererUrl = referer ? new URL(referer) : null
-  const refererHost = normalizeHost(refererUrl?.host)
-  const refererPath = refererUrl?.pathname || ""
-  const matchedByHost = findSiteByHost(host)
-  const matchedByReferer = findSiteByHost(refererHost)
-
-  if (matchedByHost?.siteKey === SITE_KEY) return true
-  if (matchedByReferer?.siteKey === SITE_KEY) return true
-  if (refererPath.startsWith("/vendor/twcaibawang.com/")) return true
-  if (refererPath.startsWith("/twcaibawang")) return true
-
-  return false
-}
-
 async function loadLatestDraw(lotteryType: number) {
   return backendFetchJson<LatestDrawResponse>("/public/latest-draw", {
     query: { lottery_type: lotteryType },
@@ -147,12 +128,13 @@ async function loadHistorySnapshot(lotteryType: number, issue: string) {
 }
 
 export async function GET(request: Request) {
-  if (!isTwcaibawangRequest(request)) {
+  const match =
+    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+  if (!match) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  const site = getSiteConfig(SITE_KEY)
-  const lotteryType = site?.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
+  const lotteryType = match.site.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
 
   try {
     const [latestDraw, nextDeadline] = await Promise.all([

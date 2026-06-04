@@ -1,37 +1,12 @@
 import { NextResponse } from "next/server"
-import { findSiteByHost, getSiteConfig, normalizeHost } from "@/lib/sites"
+import { matchSiteRequest } from "@/lib/sites"
 
-const SITE_KEY = "twcaibawang"
 const DEFAULT_SITE_ID = "xgttc-108"
 
-function safeParseUrl(value: string | null) {
-  if (!value) return null
-  try {
-    return new URL(value)
-  } catch {
-    return null
-  }
-}
-
-function isTwcaibawangRequest(request: Request) {
-  const host = normalizeHost(request.headers.get("host"))
-  const refererUrl = safeParseUrl(request.headers.get("referer"))
-  const refererHost = normalizeHost(refererUrl?.host)
-  const refererPath = refererUrl?.pathname || ""
-  const matchedByHost = findSiteByHost(host)
-  const matchedByReferer = findSiteByHost(refererHost)
-
-  if (matchedByHost?.siteKey === SITE_KEY) return true
-  if (matchedByReferer?.siteKey === SITE_KEY) return true
-  if (refererPath.startsWith("/vendor/twcaibawang.com/")) return true
-  if (refererPath.startsWith("/twcaibawang")) return true
-
-  return false
-}
-
 function resolveCurrentPage(request: Request) {
-  const refererUrl = safeParseUrl(request.headers.get("referer"))
-  const pathname = refererUrl?.pathname || ""
+  const match =
+    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+  const pathname = match?.refererPath || ""
 
   if (pathname.endsWith("/index/index/history.html") || pathname.endsWith("/wylhc.html")) {
     return "history"
@@ -45,18 +20,18 @@ function resolveCurrentPage(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isTwcaibawangRequest(request)) {
+  const match =
+    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+  if (!match) {
     return new NextResponse("Not found", { status: 404 })
   }
-
-  const site = getSiteConfig(SITE_KEY)
 
   const payload = {
     siteid: DEFAULT_SITE_ID,
     cur: resolveCurrentPage(request),
-    web_id: site?.defaultWebId || 5,
-    lottery_type: site?.defaultLotteryTypeId || 3,
-    site_key: SITE_KEY,
+    web_id: match.site.defaultWebId,
+    lottery_type: match.site.defaultLotteryTypeId,
+    site_key: match.site.siteKey,
   }
 
   return new NextResponse(`window.jy = Object.assign(${JSON.stringify(payload)}, window.jy || {});`, {

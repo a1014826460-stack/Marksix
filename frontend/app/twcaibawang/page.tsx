@@ -1,5 +1,6 @@
 import { TwcaibawangHomeClient } from "@/components/twcaibawang/TwcaibawangHomeClient"
 import { getPublicSitePageData, getVendorHomepageModules } from "@/lib/backend-api"
+import { buildPredictionModulesForSite } from "@/lib/prediction-adapters"
 import { getSiteConfig } from "@/lib/sites"
 
 export default async function TwcaibawangPage() {
@@ -28,6 +29,7 @@ export default async function TwcaibawangPage() {
       "tiandi_2xiao",
     ],
   })
+  const adapted = buildPredictionModulesForSite(siteData, homepageModules)
 
   return (
     <>
@@ -35,9 +37,9 @@ export default async function TwcaibawangPage() {
         <link key={href} rel="stylesheet" href={href} />
       ))}
       <TwcaibawangHomeClient
-        siteData={siteData}
-        homepageModules={homepageModules}
-        defaultLotteryTypeId={(siteData.site.lottery_type_id as 1 | 2 | 3) || site?.defaultLotteryTypeId || 3}
+        siteData={adapted.siteData}
+        homepageModules={adapted.homepageModules}
+        defaultLotteryTypeId={(adapted.siteData.site.lottery_type_id as 1 | 2 | 3) || site?.defaultLotteryTypeId || 3}
       />
     </>
   )

@@ -11,6 +11,7 @@ from database.migrations import add_column_if_missing
 DEFAULT_SITE_BLUEPRINT_NAME = "default"
 TWCAIBAWANG_BLUEPRINT_NAME = "twcaibawang"
 TWSAIMAHUI_BLUEPRINT_NAME = "twsaimahui"
+TWJINNIU_BLUEPRINT_NAME = "twjinniu"
 
 DEFAULT_REQUIRED_MODE_IDS = (
     2, 3, 5, 8, 9, 10, 12, 15, 20, 22, 24, 26, 27, 28, 30, 31, 34, 38, 39,
@@ -24,12 +25,17 @@ TWCAIBAWANG_REQUIRED_MODE_IDS = (
     12, 26, 34, 38, 49, 50, 52, 54, 56, 57, 58, 60, 197, 472, 479, 480, 481,
     482, 483, 484,
 )
+TWJINNIU_REQUIRED_MODE_IDS = (
+    5, 12, 14, 20, 26, 38, 47, 48, 53, 56, 66, 74, 132, 143, 144, 198, 279,
+    472, 479, 480, 481, 482, 483,
+)
 TWSAIMAHUI_REQUIRED_MODE_IDS = (
     3, 5, 8, 9, 10, 12, 15, 20, 22, 24, 26, 27, 28, 30, 31, 39, 41, 42, 45,
     46, 47, 48, 49, 50, 51, 54, 56, 57, 58, 61, 62, 63, 69, 88, 108, 116, 123,
     132, 141, 143, 144, 145, 147, 149, 151, 152, 155, 157, 158, 159, 197, 244,
     246, 251, 295, 336, 470, 471, 472, 473, 475, 476, 478,
 )
+TWJINNIU_BLOCKED_ITEMS = ()
 TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
     5, 9, 10, 15, 22, 24, 27, 30, 39, 41, 47, 48, 63, 88, 116, 123, 132, 141,
     143, 144, 145, 147, 149, 151, 152, 155, 157, 158, 159, 244, 246, 251, 295,
@@ -120,6 +126,12 @@ def _seed_site_blueprint_profiles(conn: Any) -> None:
             "known_unavailable_mode_ids": TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS,
             "blocked_items": TWSAIMAHUI_BLOCKED_ITEMS,
         },
+        {
+            "name": TWJINNIU_BLUEPRINT_NAME,
+            "required_mode_ids": TWJINNIU_REQUIRED_MODE_IDS,
+            "known_unavailable_mode_ids": (),
+            "blocked_items": TWJINNIU_BLOCKED_ITEMS,
+        },
     )
     for profile in profiles:
         conn.execute(
@@ -171,6 +183,15 @@ def _backfill_site_blueprint_names(conn: Any) -> None:
           AND web_id = 6
         """,
         (TWSAIMAHUI_BLUEPRINT_NAME,),
+    )
+    conn.execute(
+        """
+        UPDATE managed_sites
+        SET blueprint_name = ?
+        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+          AND web_id = 7
+        """,
+        (TWJINNIU_BLUEPRINT_NAME,),
     )
     conn.execute(
         """

@@ -69,6 +69,12 @@ TABLE_FIXED_MAPPING_KEYS: dict[str, str] = {
     "mode_payload_61": "四季肖",
 }
 
+DOMESTIC_WILD_LABELS = ("家禽", "野兽")
+DOMESTIC_WILD_FALLBACK = {
+    "家禽": ("牛", "狗", "猪", "羊", "马", "鸡"),
+    "野兽": ("兔", "猴", "虎", "蛇", "鼠", "龙"),
+}
+
 
 def labels_from_fixed(mapping_key: str, fallback: tuple[str, ...]):
     def loader(conn: sqlite3.Connection) -> tuple[str, ...]:
@@ -216,6 +222,48 @@ def special_wave_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
     return ""
 
 
+def _special_digit_sum(row: sqlite3.Row) -> int:
+    number = int(special_code_from_res_code(row["res_code"] or ""))
+    return (number // 10) + (number % 10)
+
+
+def special_combined_parity_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
+    return "合单" if _special_digit_sum(row) % 2 == 1 else "合双"
+
+
+def special_combined_size_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
+    return "合数大" if _special_digit_sum(row) >= 7 else "合数小"
+
+
+def load_domestic_wild_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]]:
+    for sign in ("家禽|野兽", "家野肖"):
+        mapping = load_fixed_value_map(conn, sign, DOMESTIC_WILD_LABELS)
+        if any(mapping.get(label) for label in DOMESTIC_WILD_LABELS):
+            return mapping
+    return {label: values for label, values in DOMESTIC_WILD_FALLBACK.items()}
+
+
+def special_domestic_wild_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    zodiac = special_zodiac_from_number_map(row, conn)
+    if not zodiac:
+        return ""
+    mapping = load_domestic_wild_value_map(conn)
+    for label in DOMESTIC_WILD_LABELS:
+        if zodiac in mapping.get(label, ()):
+            return label
+    return ""
+
+
+def special_fengmaibizhong_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    number = int(special_code_from_res_code(row["res_code"] or ""))
+    outcomes = (
+        "单数" if number % 2 == 1 else "双数",
+        "大数" if number >= 25 else "小数",
+        special_domestic_wild_from_row(row, conn),
+    )
+    return "|".join(label for label in outcomes if label)
+
+
 def special_number_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
     """24码直接以特码号码作为命中目标。"""
     return special_code_from_res_code(row["res_code"] or "")
@@ -346,6 +394,23 @@ def parse_wave_chars(content: str) -> tuple[str, ...]:
         if label not in labels:
             labels.append(label)
     return tuple(labels)
+
+
+def parse_literal_label_content(content: str) -> tuple[str, ...]:
+    """Parse plain single-label rows, tolerating JSON-array and `label|values` content."""
+    labels: list[str] = []
+    for item in parse_json_or_plain_content(content):
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if "|" in text:
+            text = text.split("|", 1)[0].strip()
+        if text and text not in labels:
+            labels.append(text)
+    if labels:
+        return tuple(labels)
+    text = str(content or "").strip()
+    return (text,) if text else ()
 
 
 def _find_fixed_data_sign_for_labels(
@@ -928,7 +993,27 @@ def format_xiongjiliuxiao_groups(labels: tuple[str, ...], conn: sqlite3.Connecti
         "凶丑": ("鼠", "牛", "虎", "猴", "狗", "猪"),
         "吉美": ("兔", "龙", "蛇", "马", "羊", "鸡"),
     }
-    return [f"{label}|{','.join(mapping.get(label, fallback.get(label, ())))}" for label in labels]
+    result: list[str] = []
+    for label in labels:
+        values = tuple(item for item in mapping.get(label, ()) if str(item).strip())
+        if not values:
+            values = fallback.get(label, ())
+        result.append(f"{label}|{','.join(values)}")
+    return result
+
+
+def format_domestic_wild_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
+    grouped = format_split_zodiac_columns(("jia", "ye"), (4, 4))(labels, conn)
+    jia = str(grouped.get("jia") or "")
+    ye = str(grouped.get("ye") or "")
+    return {
+        **grouped,
+        "content": f"家:{jia};野:{ye}",
+    }
+
+
+def format_literal_label(labels: tuple[str, ...], _: sqlite3.Connection) -> str:
+    return labels[0] if labels else ""
 
 
 TEXT_POOL_SOURCES: dict[str, tuple[str, str]] = {
@@ -1809,6 +1894,62 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "特码生肖落入预测生肖则命中。",
         ),
     ),
+    "title_47": PredictionConfig(
+        key="title_47",
+        title="4肖中特",
+        default_table="mode_payload_47",
+        default_modes_id=47,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=4,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_csv,
+        hit_checker=contains_hit,
+        explanation=(
+            "4肖中特按生肖组选处理，从 12 个生肖中选出 4 个生肖。",
+            "特码生肖落入预测生肖则命中。",
+        ),
+    ),
+    "title_14": PredictionConfig(
+        key="title_14",
+        title="家禽野兽",
+        default_table="mode_payload_14",
+        default_modes_id=14,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=8,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=parsed_columns_content_loader(("jia", "ye"), parse_zodiac_content),
+        content_parser=parse_zodiac_content,
+        content_formatter=format_domestic_wild_groups,
+        hit_checker=contains_hit,
+        selection_groups=(
+            DOMESTIC_WILD_FALLBACK["家禽"],
+            DOMESTIC_WILD_FALLBACK["野兽"],
+        ),
+        selection_widths=(4, 4),
+        explanation=(
+            "家禽野兽按家禽/野兽两列分组选出 8 个生肖，其中家列 4 个、野列 4 个。",
+            "命中判断按特码生肖是否落入两列合并后的候选生肖集合处理，输出阶段保留 jia/ye 原始列结构。",
+        ),
+    ),
+    "title_48": PredictionConfig(
+        key="title_48",
+        title="8肖中特",
+        default_table="mode_payload_48",
+        default_modes_id=48,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=8,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_one_code,
+        hit_checker=contains_hit,
+        explanation=(
+            "8肖中特按生肖组选处理，从 12 个生肖中选出 8 个生肖。",
+            "输出为生肖加对应代表号码，便于前端复用“无错八肖”展示。",
+        ),
+    ),
     "9xzt": PredictionConfig(
         key="9xzt",
         title="9肖中特",
@@ -1911,6 +2052,111 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "平特1尾选择 1 个尾数。",
             "特码尾数与预测尾数一致则命中。",
+        ),
+    ),
+    "title_66": PredictionConfig(
+        key="title_66",
+        title="5尾中特",
+        default_table="mode_payload_66",
+        default_modes_id=66,
+        labels=tuple(TAIL_NUMBER_MAP.keys()),
+        label_count=5,
+        outcome_loader=special_tail_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_tail_digit_content,
+        content_formatter=format_tail_groups,
+        hit_checker=contains_hit,
+        labels_loader=lambda _conn: tuple(TAIL_NUMBER_MAP.keys()),
+        explanation=(
+            "5尾中特按尾数玩法处理，从 0-9 中选出 5 个尾数。",
+            "特码尾数落入预测尾数组则命中。",
+        ),
+    ),
+    "title_132": PredictionConfig(
+        key="title_132",
+        title="合数单双",
+        default_table="mode_payload_132",
+        default_modes_id=132,
+        labels=("合单", "合双"),
+        label_count=1,
+        outcome_loader=special_combined_parity_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_literal_label_content,
+        content_formatter=format_literal_label,
+        hit_checker=contains_hit,
+        explanation=(
+            "合数单双按特码十位与个位之和的奇偶归类为合单/合双。",
+            "例如 38 的合数为 11，因此归类为合单。",
+        ),
+    ),
+    "title_143": PredictionConfig(
+        key="title_143",
+        title="一波中特",
+        default_table="mode_payload_143",
+        default_modes_id=143,
+        labels=("红波", "蓝波", "绿波"),
+        label_count=1,
+        outcome_loader=special_wave_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_literal_label_content,
+        content_formatter=format_literal_label,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("波色", ("红波", "蓝波", "绿波")),
+        explanation=(
+            "一波中特按特码波色单选处理，预测红波/蓝波/绿波中的 1 个标签。",
+            "特码波色与预测标签一致则命中。",
+        ),
+    ),
+    "title_198": PredictionConfig(
+        key="title_198",
+        title="逢买必中",
+        default_table="mode_payload_198",
+        default_modes_id=198,
+        labels=("单数", "双数", "大数", "小数", "家禽", "野兽"),
+        label_count=1,
+        outcome_loader=special_fengmaibizhong_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_literal_label_content,
+        content_formatter=format_literal_label,
+        hit_checker=mixed_dimension_contains_hit,
+        explanation=(
+            "逢买必中属于混合分类单选玩法，候选标签覆盖单双、大小、家禽/野兽三类维度。",
+            "开奖后以特码真实分类落点作为命中目标，预测阶段只输出 1 个候选标签。",
+        ),
+    ),
+    "title_279": PredictionConfig(
+        key="title_279",
+        title="合数大小",
+        default_table="mode_payload_279",
+        default_modes_id=279,
+        labels=("合数大", "合数小"),
+        label_count=1,
+        outcome_loader=special_combined_size_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_literal_label_content,
+        content_formatter=format_literal_label,
+        hit_checker=contains_hit,
+        explanation=(
+            "合数大小按特码十位与个位之和归类，7-13 为合数大，0-6 为合数小。",
+            "例如 42 的合数为 6，因此归类为合数小。",
+        ),
+    ),
+    "title_74": PredictionConfig(
+        key="title_74",
+        title="必中7尾",
+        default_table="mode_payload_74",
+        default_modes_id=74,
+        labels=tuple(TAIL_NUMBER_MAP.keys()),
+        label_count=7,
+        outcome_loader=special_tail_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_tail_digit_content,
+        content_formatter=format_tail_groups,
+        hit_checker=contains_hit,
+        labels_loader=lambda _conn: tuple(TAIL_NUMBER_MAP.keys()),
+        explanation=(
+            "必中7尾按尾数玩法处理，从 0-9 中选出 7 个尾数。",
+            "特码尾数落入预测尾数组则命中。",
         ),
     ),
     "pt1xiao": PredictionConfig(

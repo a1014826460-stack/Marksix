@@ -128,6 +128,31 @@ TWCAIBAWANG_REQUIRED_MODE_IDS = (
     483,
     484,
 )
+TWJINNIU_REQUIRED_MODE_IDS = (
+    5,
+    12,
+    14,
+    20,
+    26,
+    38,
+    47,
+    48,
+    53,
+    56,
+    66,
+    74,
+    132,
+    143,
+    144,
+    198,
+    279,
+    472,
+    479,
+    480,
+    481,
+    482,
+    483,
+)
 
 TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
     5,
@@ -166,6 +191,7 @@ TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
     336,
 )
 TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS = ()
+TWJINNIU_KNOWN_UNAVAILABLE_MODE_IDS = ()
 
 TWCAIBAWANG_BLOCKED_ITEMS = (
     {
@@ -218,6 +244,7 @@ TWCAIBAWANG_BLOCKED_ITEMS = (
         "status": "blocked_unconfirmed_mode_id",
     },
 )
+TWJINNIU_BLOCKED_ITEMS = ()
 
 
 def _normalize_domain(value: Any) -> str:
@@ -292,7 +319,7 @@ def _site_matches_twsaimahui(site: dict[str, Any] | None) -> bool:
     except (TypeError, ValueError):
         lottery_type_id = 0
     try:
-        web_id = int(site.get("web_id") or site.get("start_web_id") or 0)
+        web_id = int(site.get("web_id") or 0)
     except (TypeError, ValueError):
         web_id = 0
 
@@ -308,11 +335,27 @@ def _site_matches_twcaibawang(site: dict[str, Any] | None) -> bool:
         return True
 
     try:
-        web_id = int(site.get("web_id") or site.get("start_web_id") or 0)
+        web_id = int(site.get("web_id") or 0)
     except (TypeError, ValueError):
         web_id = 0
 
     return web_id == 5
+
+
+def _site_matches_twjinniu(site: dict[str, Any] | None) -> bool:
+    if not site:
+        return False
+
+    domain = _normalize_domain(site.get("domain"))
+    if domain in {"www.twjinniu.com", "twjinniu.com"}:
+        return True
+
+    try:
+        web_id = int(site.get("web_id") or 0)
+    except (TypeError, ValueError):
+        web_id = 0
+
+    return web_id == 7
 
 
 def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
@@ -323,6 +366,8 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
         return TWSAIMAHUI_REQUIRED_MODE_IDS
     if _site_matches_twcaibawang(site):
         return TWCAIBAWANG_REQUIRED_MODE_IDS
+    if _site_matches_twjinniu(site):
+        return TWJINNIU_REQUIRED_MODE_IDS
     return DEFAULT_REQUIRED_MODE_IDS
 
 
@@ -334,6 +379,8 @@ def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tupl
         return TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS
     if _site_matches_twcaibawang(site):
         return TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS
+    if _site_matches_twjinniu(site):
+        return TWJINNIU_KNOWN_UNAVAILABLE_MODE_IDS
     return DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS
 
 
@@ -345,6 +392,8 @@ def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, An
         return [dict(item) for item in TWSAIMAHUI_BLOCKED_ITEMS]
     if _site_matches_twcaibawang(site):
         return [dict(item) for item in TWCAIBAWANG_BLOCKED_ITEMS]
+    if _site_matches_twjinniu(site):
+        return [dict(item) for item in TWJINNIU_BLOCKED_ITEMS]
     return []
 
 
@@ -356,4 +405,6 @@ def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
         return "twsaimahui"
     if _site_matches_twcaibawang(site):
         return "twcaibawang"
+    if _site_matches_twjinniu(site):
+        return "twjinniu"
     return "default"
