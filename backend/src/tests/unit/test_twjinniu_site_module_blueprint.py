@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from db import connect
 from domains.prediction.site_module_blueprints import (
     get_blocked_items_for_site,
     get_blueprint_name_for_site,
     get_required_mode_ids_for_site,
 )
+from tables import ensure_admin_tables
+from predict.mechanisms import ensure_prediction_configs_loaded
 from predict.mechanisms import get_prediction_config
 
 
@@ -109,6 +112,13 @@ def test_twjinniu_confirmed_mode_configs_are_registered():
     assert int(get_prediction_config("title_198").default_modes_id or 0) == 198
     assert int(get_prediction_config("title_279").default_modes_id or 0) == 279
     assert int(get_prediction_config("title_74").default_modes_id or 0) == 74
+    assert int(get_prediction_config("sanxiao15ma").default_modes_id or 0) == 72
+    assert int(get_prediction_config("shisi_mazhong").default_modes_id or 0) == 77
+    assert int(get_prediction_config("sixiao_sima").default_modes_id or 0) == 78
+    assert int(get_prediction_config("shiwu_mazhong").default_modes_id or 0) == 81
+    assert int(get_prediction_config("sanxiao_siwei_xiao").default_modes_id or 0) == 117
+    assert int(get_prediction_config("sanxiao_siwei_wei").default_modes_id or 0) == 123
+    assert int(get_prediction_config("qianhou_texiao").default_modes_id or 0) == 219
     assert int(get_prediction_config("sxztu").default_modes_id or 0) == 474
     assert int(get_prediction_config("pmtj_image").default_modes_id or 0) == 476
     assert int(get_prediction_config("liuxiao18ma").default_modes_id or 0) == 484
@@ -123,3 +133,22 @@ def test_twjinniu_frontend_site_defaults_match_backend_target():
     assert "routePath: \"/twjinniu\"" in source
     assert "defaultWebId: 7" in source
     assert "defaultLotteryTypeId: 3" in source
+
+
+def test_twjinniu_bootstrap_populates_missing_homepage_modes(tmp_path):
+    db_path = str(tmp_path / "twjinniu_bootstrap.sqlite3")
+    ensure_admin_tables(db_path)
+    ensure_prediction_configs_loaded(db_path)
+
+    with connect(db_path) as conn:
+        mode_rows = conn.execute(
+            """
+            SELECT mode_id
+            FROM site_prediction_modules
+            WHERE site_id = 7
+            ORDER BY sort_order, id
+            """
+        ).fetchall()
+
+    seeded_mode_ids = {int(row["mode_id"] or 0) for row in mode_rows}
+    assert {43, 72, 77, 78, 81, 117, 123, 219, 474, 476, 484}.issubset(seeded_mode_ids)

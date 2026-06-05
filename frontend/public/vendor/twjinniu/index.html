@@ -25,6 +25,7 @@
     .refresh { width: 40px; height: 40px; line-height: 40px; text-align: center; color: #fff; font-size: 14px; border-radius: 40px; box-sizing: unset; border: solid 4px rgba(255,255,255,.8); background: rgba(255,0,0,8); position: fixed; right: 10px; bottom: 60px; z-index: 1; cursor: pointer; }
 </style>
 <div class="page">
+    <div id="fhdb"></div>
     <script>window.iframeResize = function (h) { document.getElementById('TopicListContainerIframe').height = h; }</script>
     <style>
         img { max-width: 100% }
@@ -56,47 +57,95 @@
     <!-- Module Navigation -->
     <div id="nav2" class="nav2 font1" data-fixed="">
         <ul>
-            <li><a value="#gpjx">高手精解</a></li>
-            <li><a value="#jsmb">极限特码</a></li>
-            <li><a value="#jxtx">精选特肖</a></li>
-            <li><a value="#gszl">高手资料</a></li>
-            <li><a value="#pmzq">平码专区</a></li>
+            <li><a href="#twjinniu-formula-ptx">高手精解</a></li>
+            <li><a href="#twjinniu-jixian-texiao">极限特码</a></li>
+            <li><a href="#jxtx">精选特肖</a></li>
+            <li><a href="#twjinniu-live-article-list">高手资料</a></li>
+            <li><a href="#pmzq">平码专区</a></li>
         </ul>
         <ul>
-            <li><a value="#yhym">一肖一码</a></li>
-            <li><a value="#xjt">极限特码</a></li>
-            <li><a value="#pt2m">平特二码</a></li>
-            <li><a value="#yyah">业余爱好</a></li>
-            <li><a value="#cfsb">财富双波</a></li>
+            <li><a href="#twjinniu-yixiao-yima">一肖一码</a></li>
+            <li><a href="#twjinniu-jixian-texiao">极限特码</a></li>
+            <li><a href="#twjinniu-pingte-erma">平特二码</a></li>
+            <li><a href="#twjinniu-fivea-dagongkai">业余爱好</a></li>
+            <li><a href="#twjinniu-danshuang-liangxiao">财富双波</a></li>
         </ul>
         <ul>
-            <li><a value="#sxbm">四肖八码</a></li>
-            <li><a value="#bcpw">必出平尾</a></li>
-            <li><a value="#3qjh">三期计划</a></li>
-            <li><a value="#dnmh">独奶灭火</a></li>
-            <li><a value="#qnzl">前年资料</a></li>
+            <li><a href="#sxbm">四肖八码</a></li>
+            <li><a href="#twjinniu-sixiao-sima">必出平尾</a></li>
+            <li><a href="#twjinniu-qianhou-24ma">三期计划</a></li>
+            <li><a href="#twjinniu-baxiao-shiliuma">独奶灭火</a></li>
+            <li><a href="#twjinniu-article-blocks">前年资料</a></li>
         </ul>
         <ul>
-            <li><a value="#zbtk">主播图库</a></li>
-            <li><a value="#sha">绝杀一码</a></li>
-            <li><a value="#zbxj">主播学究</a></li>
-            <li><a value="#yqsx">一清二楚</a></li>
-            <li><a value="#tabzzhlzmzm2x">高手专区</a></li>
+            <li><a href="#twjinniu-pmtj-image1">主播图库</a></li>
+            <li><a href="#twjinniu-live-article-list">绝杀一码</a></li>
+            <li><a href="#twjinniu-sxztu-image">主播学究</a></li>
+            <li><a href="#twjinniu-yixiao-sanma">一清二楚</a></li>
+            <li><a href="#twjinniu-article-blocks">高手专区</a></li>
         </ul>
     </div>
+    <div id="nav2-placeholder" class="nav2-placeholder"></div>
     <style>
         .nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff; }
+        .nav2-placeholder { display: none; width: 100%; max-width: 800px; margin: 0 auto; }
         .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between; }
         .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px; }
         .nav2 ul li a { display: block; padding: 4px 0; text-align: center; color: #fff; border-radius: 50px; background: #0a5cda; }
         .nav2 ul li a:hover { background: #da183b; }
-        #nav2[data-fixed="fixed"] { position: fixed; top: 0; left: 0; right: 0; margin: auto; z-index: 9; box-shadow: 0 5px 10px rgba(0,0,0,.1); }
+        #nav2[data-fixed="fixed"] { position: fixed; top: 0; left: 0; right: 0; margin: auto; z-index: 99; box-shadow: 0 5px 10px rgba(0,0,0,.1); }
         @media screen and (min-width: 800px) { .nav2 { padding: 4px; font-size: 14px; } .nav2 ul { padding: 2px 0; } .nav2 ul li { padding: 0 4px; } .nav2 ul li a { padding: 8px 0; cursor: pointer; } }
     </style>
     <script>
         var obj = document.getElementById("nav2");
-        var ot = obj.offsetTop;
-        document.onscroll = function () { var st = document.body.scrollTop || document.documentElement.scrollTop; obj.setAttribute("data-fixed", st >= ot ? "fixed" : ""); }
+        var navPlaceholder = document.getElementById("nav2-placeholder");
+        function syncNavPlaceholder() {
+            if (!obj || !navPlaceholder) { return; }
+            navPlaceholder.style.height = obj.offsetHeight + "px";
+        }
+        function updateNavFixedState() {
+            if (!obj) { return; }
+            var st = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            var triggerTop = navPlaceholder ? navPlaceholder.offsetTop : obj.offsetTop;
+            var fixed = st >= triggerTop;
+            obj.setAttribute("data-fixed", fixed ? "fixed" : "");
+            if (navPlaceholder) {
+                navPlaceholder.style.display = fixed ? "block" : "none";
+                syncNavPlaceholder();
+            }
+        }
+        function scrollToNavTarget(selector) {
+            if (!selector) { return; }
+            var target = document.querySelector(selector);
+            if (!target) { return; }
+            var offset = obj ? obj.offsetHeight + 8 : 8;
+            var top = target.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0) - offset;
+            window.scrollTo({ top: top < 0 ? 0 : top, behavior: "smooth" });
+        }
+        if (obj) {
+            var navLinks = obj.querySelectorAll("a[href^='#']");
+            for (var navIndex = 0; navIndex < navLinks.length; navIndex++) {
+                navLinks[navIndex].addEventListener("click", function (event) {
+                    var selector = this.getAttribute("href");
+                    var target = selector ? document.querySelector(selector) : null;
+                    if (!target) { return; }
+                    event.preventDefault();
+                    scrollToNavTarget(selector);
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, "", selector);
+                    } else {
+                        window.location.hash = selector;
+                    }
+                });
+            }
+            window.addEventListener("scroll", updateNavFixedState, { passive: true });
+            window.addEventListener("resize", function () {
+                syncNavPlaceholder();
+                updateNavFixedState();
+            });
+            syncNavPlaceholder();
+            updateNavFixedState();
+        }
     </script>
     <!-- Site Announcement -->
     <div class="white-box">
@@ -429,6 +478,44 @@ function setHomepageHtml(element, html) { if (!element) { return; } element.inne
     loadLiveModules(currentLotteryType);
 })();
     </script>
+    <!--图库---->
+    <div class='box pad' id='legacy-attribute-anchor'>
+        <style>
+            .foot-img { padding: 10px 0 4px; text-align: center; }
+            .copyright { margin: 8px 0; line-height: 1.8; color: #333; font-size: 14px; }
+        </style>
+        <div class='list-title'>属性知识</div>
+        <div id="legacy-attribute-gallery"></div>
+        <script>
+            let img1 = httpApi + '/uploads/image/20250322/1742580086567063.png';
+            let img2 = httpApi + '/uploads/image/20250322/1742580119746508.jpg';
+            let img3 = httpApi + '/uploads/image/20250322/1742580130762983.jpg';
+            var galleryHtml = `<img src="${img1}" width="100%"/>` +
+                `<img src="${img2}" width="100%"/>` +
+                `<img src="${img3}" width="100%"/>`;
+            var galleryEl = document.getElementById("legacy-attribute-gallery");
+            if (galleryEl) {
+                galleryEl.innerHTML = galleryHtml;
+            }
+        </script>
+    </div>
+    <div class='box pad'>
+        <div class='foot-img'>
+            <p class='copyright'>说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
+            <p class='copyright'>论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
+            <p class='copyright'>【台湾通天网】域名：www.twtongtian.com
+                <br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾通天网
+                <br>
+            </p>
+        </div>
+    </div>
+    <a href='#fhdb'>
+        <p align='center'>
+            <span style='font-weight:700'>
+                <font size='6' face='微软雅黑'>返回顶部</font>
+            </span>
+        </p>
+    </a>
     <div style="height: 20px;"></div>
 </div>
 </body>

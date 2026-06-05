@@ -732,6 +732,23 @@ def format_xiao_code_columns(
     return formatter
 
 
+def format_qianhou_texiao_columns(
+    xiao_column: str = "xiao",
+    content_column: str = "content",
+):
+    """Build the minimal `content+xiao` structure used by 前后特肖."""
+
+    def formatter(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
+        selected = list(labels[:2])
+        prefix = "前肖" if selected else "后肖"
+        return {
+            xiao_column: ",".join(selected),
+            content_column: f"{prefix}|{','.join(selected)}",
+        }
+
+    return formatter
+
+
 def xiao_column_content_loader(column: str = "xiao"):
     """读取最终生肖候选列。
     `content+xiao` 结构中，content 通常是分类及分类内生肖列表，xiao 才是最终候选生肖。
@@ -1703,6 +1720,110 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "输出沿用分类+生肖列表结构，优先读取 fixed_data 中的凶丑吉美生肖映射。",
         ),
     ),
+    "sanxiao15ma": PredictionConfig(
+        key="sanxiao15ma",
+        title="三肖15码中特",
+        default_table="mode_payload_72",
+        default_modes_id=72,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=9,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=xiao_code_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_xiao_code_columns("xiao", "code", 15),
+        hit_checker=contains_hit,
+        explanation=(
+            "三肖15码中特沿用 xiao/code 双列结构，生成 9 个生肖与 15 个号码。",
+            "前端会按 7 肖、5 肖、3 肖和 15 码递进展示同一条预测。",
+        ),
+    ),
+    "shisi_mazhong": PredictionConfig(
+        key="shisi_mazhong",
+        title="14码中特",
+        default_table="mode_payload_77",
+        default_modes_id=77,
+        labels=tuple(f"{number:02d}" for number in range(1, 50)),
+        label_count=14,
+        outcome_loader=special_number_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_number_content,
+        content_formatter=format_24_numbers,
+        hit_checker=contains_hit,
+        explanation=(
+            "14码中特按号码类玩法处理，输出 14 个候选号码。",
+            "特码号码落入候选号码集合即记为命中。",
+        ),
+    ),
+    "sixiao_sima": PredictionConfig(
+        key="sixiao_sima",
+        title="四肖四码",
+        default_table="mode_payload_78",
+        default_modes_id=78,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=4,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_one_code,
+        hit_checker=contains_hit,
+        explanation=(
+            "四肖四码输出 4 组 `生肖|代表号码` 结构。",
+            "特码生肖落入候选生肖集合即记为命中。",
+        ),
+    ),
+    "shiwu_mazhong": PredictionConfig(
+        key="shiwu_mazhong",
+        title="15码中特",
+        default_table="mode_payload_81",
+        default_modes_id=81,
+        labels=tuple(TAIL_NUMBER_MAP.keys()),
+        label_count=5,
+        outcome_loader=special_tail_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_tail_digit_content,
+        content_formatter=format_tail_groups,
+        hit_checker=contains_hit,
+        labels_loader=lambda _conn: tuple(TAIL_NUMBER_MAP.keys()),
+        explanation=(
+            "15码中特沿用尾数分组结构，输出 5 组尾数及其固定号码。",
+            "特码尾数落入候选尾数组合即记为命中。",
+        ),
+    ),
+    "sanxiao_siwei_xiao": PredictionConfig(
+        key="sanxiao_siwei_xiao",
+        title="三肖四尾",
+        default_table="mode_payload_117",
+        default_modes_id=117,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=3,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=default_content_from_row,
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_one_code,
+        hit_checker=contains_hit,
+        explanation=(
+            "三肖四尾中的生肖半区输出 3 组 `生肖|代表号码`。",
+            "特码生肖落入候选生肖集合即记为命中。",
+        ),
+    ),
+    "sanxiao_siwei_wei": PredictionConfig(
+        key="sanxiao_siwei_wei",
+        title="四尾八码",
+        default_table="mode_payload_123",
+        default_modes_id=123,
+        labels=tuple(TAIL_NUMBER_MAP.keys()),
+        label_count=4,
+        outcome_loader=special_tail_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_tail_digit_content,
+        content_formatter=format_tail_groups,
+        hit_checker=contains_hit,
+        labels_loader=lambda _conn: tuple(TAIL_NUMBER_MAP.keys()),
+        explanation=(
+            "三肖四尾中的尾数半区输出 4 组尾数与固定号码。",
+            "特码尾数落入候选尾数组合即记为命中。",
+        ),
+    ),
     "wensha10ma": PredictionConfig(
         key="wensha10ma",
         title="稳杀10码",
@@ -2139,6 +2260,23 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "合数大小按特码十位与个位之和归类，7-13 为合数大，0-6 为合数小。",
             "例如 42 的合数为 6，因此归类为合数小。",
+        ),
+    ),
+    "qianhou_texiao": PredictionConfig(
+        key="qianhou_texiao",
+        title="前后特肖",
+        default_table="mode_payload_219",
+        default_modes_id=219,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=2,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=xiao_column_content_loader("xiao"),
+        content_parser=parse_zodiac_content,
+        content_formatter=format_qianhou_texiao_columns("xiao", "content"),
+        hit_checker=contains_hit,
+        explanation=(
+            "前后特肖保留 `content+xiao` 结构，其中 xiao 为最终候选特肖。",
+            "前端会直接读取 xiao 列展示两个特肖候选。",
         ),
     ),
     "title_74": PredictionConfig(

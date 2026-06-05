@@ -130,6 +130,21 @@ function cleanText(value: unknown) {
   return String(value ?? "").trim()
 }
 
+function normalizeImageUrl(value: unknown) {
+  const raw = cleanText(value)
+  if (!raw) return ""
+  if (raw.startsWith("/uploads/") || raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw
+  }
+  const normalized = raw.replaceAll("\\", "/")
+  const marker = "/data/Images/"
+  const index = normalized.indexOf(marker)
+  if (index >= 0) {
+    return `/uploads/${normalized.slice(index + marker.length)}`
+  }
+  return raw
+}
+
 function parseJsonStringArray(value: unknown) {
   const text = cleanText(value)
   if (!text) return [] as string[]
@@ -1486,7 +1501,10 @@ function renderPmtjImage(rows: LegacyModeRow[]) {
   if (!latest) {
     return renderMissingTable('<font color="#FFFF00">台湾通天网</font><font color="#FFFFFF">【跑马图解】</font>')
   }
-  const url = latest.image_url || ''
+  const url = normalizeImageUrl(latest.image_url)
+  if (!url) {
+    return renderMissingTable('<font color="#FFFF00">台湾通天网</font><font color="#FFFFFF">【跑马图解】</font>')
+  }
   return `<div class="box amplIMG"><img src="${escapeHtml(url)}" style="width: 100%" title="跑马图解" loading="lazy" decoding="async"></div>`
 }
 

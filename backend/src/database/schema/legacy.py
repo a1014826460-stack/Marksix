@@ -497,6 +497,11 @@ def ensure_brain_teaser_prediction_payload_table(
 def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
     """Bootstrap isolated payload tables for site-only prediction modules."""
     definitions: Iterable[tuple[int, str]] = (
+        (77, "14码中特"),
+        (78, "四肖四码"),
+        (81, "15码中特"),
+        (117, "三肖四尾"),
+        (123, "四尾八码"),
         (470, "平特3肖"),
         (471, "两头中特"),
         (472, "绝杀1肖"),
@@ -504,6 +509,16 @@ def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
     )
     for modes_id, title in definitions:
         ensure_basic_prediction_payload_table(
+            conn,
+            pk_sql,
+            modes_id=modes_id,
+            title=title,
+        )
+    for modes_id, title in (
+        (72, "三肖15码中特"),
+        (219, "前后特肖"),
+    ):
+        ensure_xiao_code_prediction_payload_table(
             conn,
             pk_sql,
             modes_id=modes_id,

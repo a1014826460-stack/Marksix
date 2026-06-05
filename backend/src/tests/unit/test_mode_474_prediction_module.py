@@ -64,11 +64,17 @@ def test_generate_mode_474_row_sets_image_url(monkeypatch):
     )
     monkeypatch.setattr(
         service,
+        "_load_previous_opened_numbers_for_issue",
+        lambda *args, **kwargs: "01,02,03,04,05,06,07",
+    )
+    monkeypatch.setattr(
+        service,
         "render_mode_474_prediction_image",
         lambda **kwargs: type(
             "FakeMode474RenderResult",
             (),
             {
+                "title": "123期四不像中特图",
                 "relative_url": "/data/Images/mode_474/prediction/mode_474_type3_2026123_web4.jpg",
                 "source_record_id": "2022_140_amsbx",
             },
@@ -97,7 +103,7 @@ def test_generate_mode_474_row_sets_image_url(monkeypatch):
         conn=object(),
     )
 
-    assert row_data["title"] == "四不像中特图"
+    assert row_data["title"] == "123期四不像中特图"
     assert row_data["content"] == "鼠,牛,虎"
     assert row_data["image_url"] == "/data/Images/mode_474/prediction/mode_474_type3_2026123_web4.jpg"
     assert row_data["source_record_id"] == "2022_140_amsbx"
