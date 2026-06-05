@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
 import path from "node:path"
 
-const LEGACY_IMAGES_DIR = path.resolve(process.cwd(), "..", "backend", "data", "Images")
+const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000/api"
+const LEGACY_IMAGE_DIR_CANDIDATES = [
+  path.resolve(process.cwd(), "backend", "data", "Images"),
+  path.resolve(process.cwd(), "..", "backend", "data", "Images"),
+]
 
 function contentTypeFor(filename: string) {
   const ext = path.extname(filename).toLowerCase()
@@ -42,7 +47,17 @@ export async function GET(
     return new Response("Not Found", { status: 404 })
   }
 
-  const filePath = path.join(LEGACY_IMAGES_DIR, kind, modeDir, filename)
+  const proxied = await proxyUpload([kind, modeDir, filename])
+  if (proxied) {
+    return proxied
+  }
+
+  const localBaseDir = LEGACY_IMAGE_DIR_CANDIDATES.find((candidate) => existsSync(candidate))
+  if (!localBaseDir) {
+    return new Response("Not Found", { status: 404 })
+  }
+
+  const filePath = path.join(localBaseDir, kind, modeDir, filename)
   try {
     const body = await readFile(filePath)
     return new Response(body, {
@@ -54,5 +69,33 @@ export async function GET(
     })
   } catch {
     return new Response("Not Found", { status: 404 })
+  }
+}
+
+function resolveBackendOrigin() {
+  const raw = (process.env.LOTTERY_BACKEND_BASE_URL || DEFAULT_BACKEND_BASE_URL).trim()
+  const normalized = raw.replace(/\/+$/, "")
+  return new URL(normalized)
+}
+
+async function proxyUpload(pathSegments: string[]) {
+  try {
+    const safePath = pathSegments.map((segment) => encodeURIComponent(segment)).join("/")
+    const backendUrl = new URL(`/uploads/${safePath}`, resolveBackendOrigin())
+    const response = await fetch(backendUrl, { cache: "no-store" })
+    if (!response.ok) {
+      return null
+    }
+
+    const filename = pathSegments.at(-1) || ""
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        "Content-Type": response.headers.get("content-type") || contentTypeFor(filename),
+        "Cache-Control": response.headers.get("cache-control") || "public, max-age=86400",
+      },
+    })
+  } catch {
+    return null
   }
 }

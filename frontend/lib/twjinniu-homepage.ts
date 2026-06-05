@@ -6,6 +6,7 @@ import { getSiteConfig } from "@/lib/sites"
 const SITE = getSiteConfig("twjinniu")
 const DEFAULT_WEB_ID = SITE?.defaultWebId ?? 7
 const HISTORY_LIMIT = 8
+const SANXIAO_SIWEI_SOURCE_LIMIT = 32
 
 export type TwjinniuLotteryType = 1 | 2 | 3
 
@@ -109,6 +110,12 @@ type YixiaoYimaRow = {
   code14: string[]
   result: ParsedResult
   isCorrect: boolean | null
+}
+
+type SanxiaoSiweiRow = {
+  row: LegacyModeRow
+  xiaoEntries: LabelCodeEntry[]
+  weiEntries: LabelCodeEntry[]
 }
 
 function escapeHtml(value: unknown) {
@@ -418,33 +425,62 @@ function buildSixiaoBamaTable(body: string) {
   `
 }
 
-function renderSanxiaoSiwei(xiaoRows: LegacyModeRow[], weiRows: LegacyModeRow[]) {
-  const weiByIssue = new Map<string, LegacyModeRow>(
-    weiRows.map((row) => [`${cleanText(row.year)}-${cleanText(row.term)}`, row] as const)
-  )
+function buildSanxiaoSiweiRows(
+  xiaoRows: LegacyModeRow[],
+  weiRows: LegacyModeRow[],
+  limit = HISTORY_LIMIT
+) {
+  const weiByIssue = new Map<string, LegacyModeRow[]>()
+  for (const row of sortRowsByTermDesc(weiRows)) {
+    const issue = `${cleanText(row.year)}-${cleanText(row.term)}`
+    const bucket = weiByIssue.get(issue)
+    if (bucket) {
+      bucket.push(row)
+    } else {
+      weiByIssue.set(issue, [row])
+    }
+  }
 
-  const mergedRows = xiaoRows
-    .map((xiaoRow) => {
-      const issue = `${cleanText(xiaoRow.year)}-${cleanText(xiaoRow.term)}`
-      const weiRow = weiByIssue.get(issue)
-      if (!weiRow) return null
-      const xiaoEntries = parseLabelCodeEntries(xiaoRow.content).slice(0, 3)
-      const weiEntries = parseLabelCodeEntries(weiRow.content).slice(0, 4)
-      if (!xiaoEntries.length || !weiEntries.length) return null
-      return { row: xiaoRow, xiaoEntries, weiEntries }
-    })
-    .filter(
-      (
-        item
-      ): item is { row: LegacyModeRow; xiaoEntries: LabelCodeEntry[]; weiEntries: LabelCodeEntry[] } =>
-        Boolean(item)
+  const mergedRows: SanxiaoSiweiRow[] = []
+  for (const xiaoRow of sortRowsByTermDesc(xiaoRows)) {
+    const issue = `${cleanText(xiaoRow.year)}-${cleanText(xiaoRow.term)}`
+    const weiCandidates = weiByIssue.get(issue)
+    if (!weiCandidates?.length) {
+      continue
+    }
+
+    const xiaoEntries = parseLabelCodeEntries(xiaoRow.content).slice(0, 3)
+    if (!xiaoEntries.length) {
+      continue
+    }
+
+    const selectedWeiRow = weiCandidates.find(
+      (candidate) => parseLabelCodeEntries(candidate.content).length >= 4
     )
+    if (!selectedWeiRow) {
+      continue
+    }
 
-  if (!mergedRows.length) {
+    const weiEntries = parseLabelCodeEntries(selectedWeiRow.content).slice(0, 4)
+    if (weiEntries.length < 4) {
+      continue
+    }
+
+    mergedRows.push({ row: xiaoRow, xiaoEntries, weiEntries })
+    if (mergedRows.length >= limit) {
+      break
+    }
+  }
+
+  return mergedRows
+}
+
+function renderSanxiaoSiwei(rows: SanxiaoSiweiRow[]) {
+  if (!rows.length) {
     return renderMissingTable('<font color="#FFFF00">台湾通天网</font><font color="#FFFFFF">『三肖四尾』</font>')
   }
 
-  const body = mergedRows
+  const body = rows
     .map(({ row, xiaoEntries, weiEntries }) => {
       const result = resolveResult(row)
       const hitZodiac = result.isOpened ? xiaoEntries.some((entry) => entry.label === result.zodiac) : false
@@ -1519,8 +1555,8 @@ export async function getTwjinniuHomepageModules(
   const mode56Rows = await loadLegacyModeRows(56, lotteryType)
   const mode49Rows = await loadLegacyModeRows(49, lotteryType)
   const mode151Rows = await loadLegacyModeRows(151, lotteryType)
-  const mode117Rows = await loadLegacyModeRows(117, lotteryType)
-  const mode123Rows = await loadLegacyModeRows(123, lotteryType)
+  const mode117Rows = await loadLegacyModeRows(117, lotteryType, SANXIAO_SIWEI_SOURCE_LIMIT)
+  const mode123Rows = await loadLegacyModeRows(123, lotteryType, SANXIAO_SIWEI_SOURCE_LIMIT)
   const mode110Rows = await loadLegacyModeRows(110, lotteryType)
   const mode72Rows = await loadLegacyModeRows(72, lotteryType)
   const mode77Rows = await loadLegacyModeRows(77, lotteryType)
@@ -1544,6 +1580,7 @@ export async function getTwjinniuHomepageModules(
   const mode474Rows = await loadLegacyModeRows(474, lotteryType, 1)
 
   const yixiaoYimaRows = buildYixiaoYimaRows(mode49Rows, mode151Rows)
+  const sanxiaoSiweiRows = buildSanxiaoSiweiRows(mode117Rows, mode123Rows)
 
   const modules: Record<HomepageModuleKey, TwjinniuHomepageModulePayload> = {
     formula_ptx: {
@@ -1569,13 +1606,15 @@ export async function getTwjinniuHomepageModules(
     sanxiao_siwei: {
       key: "sanxiao_siwei",
       title: "三肖四尾",
-      status: mode117Rows.length && mode123Rows.length ? "ok" : "missing_data",
-      html: renderSanxiaoSiwei(mode117Rows, mode123Rows),
+      status: sanxiaoSiweiRows.length ? "ok" : "missing_data",
+      html: renderSanxiaoSiwei(sanxiaoSiweiRows),
       mappedModeIds: [117, 123],
       notes:
-        mode117Rows.length && mode123Rows.length
+        sanxiaoSiweiRows.length
           ? []
-          : ["已按 modes_id 117/123 查询，本地 PostgreSQL 当前彩种无可渲染的历史数据。"],
+          : mode117Rows.length && mode123Rows.length
+            ? ["已按 modes_id 117/123 查询到原始行，但当前返回窗口内没有可按期号配对渲染的记录。"]
+            : ["已按 modes_id 117/123 查询，本地 PostgreSQL 当前彩种无可渲染的历史数据。"],
     },
     qianhou_24ma: {
       key: "qianhou_24ma",

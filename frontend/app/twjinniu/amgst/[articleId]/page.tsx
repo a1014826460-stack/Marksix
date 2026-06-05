@@ -245,13 +245,13 @@ export default async function TwjinniuArticlePage({ params, searchParams }: Page
             </p>
             <p>【柬埔寨六加一】易记域名：www.twtongtian.com</p>
             <p style={{ margin: "0px", height: 0, overflow: "hidden" }}>
-              <a href="https://www.tuku325.cc/">搭建六合彩开奖论坛</a>
-              <a href="https://www.tuku325.cc/?cate=3">搭建六合彩图库</a>
-              <a href="https://www.telegrbm.com/">Telegram中文版下载</a>
-              <a href="https://www.zhuan1818.cc/">偏门赚钱项目</a>
-              <a href="https://cp567.cc/">搭建六合信用盘</a>
-              <a href="https://www.telagran.top/">电报中文版下载</a>
-              <a href="https://www.telegranim.com/">Telegram官网下载</a>
+              <a href="https://www.tw8800.com/">搭建六合彩开奖论坛</a>
+              <a href="https://www.twsaimahui.com/">搭建六合彩图库</a>
+              <a href="https://www.twcaibawang.com/">Telegram中文版下载</a>
+              <a href="https://www.tw8800.com/">偏门赚钱项目</a>
+              <a href="https://www.twsaimahui.com/">搭建六合信用盘</a>
+              <a href="https://www.twcaibawang.com/">电报中文版下载</a>
+              <a href="https://www.tw8800.com/">Telegram官网下载</a>
             </p>
           </div>
         </div>

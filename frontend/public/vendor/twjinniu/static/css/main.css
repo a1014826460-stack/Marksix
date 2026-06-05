@@ -2099,15 +2099,15 @@ html {
 font-size: 16px;
 }
 
-.paogou1 { height: 732px; display: flex; background: url(https://www.290123.com/images/paogou1-bg.jpg) 0 0 no-repeat; background-size: 100% 100%;}
+.paogou1 { height: 732px; display: flex; background: linear-gradient(180deg, #0a5cda 0%, #0c35f5 100%);}
 .paogou1-l { width: 248px; margin-top: 40px; padding-left: 50px; box-sizing: border-box;}
 .paogou1-l ul {}
 .paogou1-l ul li {}
-.paogou1-l ul li a { width: 160px; height: 44px; line-height: 44px; margin-bottom: 14px; text-align: center; font-size: 20px; font-weight: bold; color: #fff; display: inline-block; background: url(https://www.290123.com/images/paogou-a.png) 0 0 no-repeat; background-size: 100% 100%;}
+.paogou1-l ul li a { width: 160px; height: 44px; line-height: 44px; margin-bottom: 14px; text-align: center; font-size: 20px; font-weight: bold; color: #fff; display: inline-block; background: linear-gradient(180deg, #1b78f2 0%, #0c35f5 100%); background-size: 100% 100%;}
 .paogou1-l ul li a:hover { color: #ff0;}
-.paogou1-r { width: 537px; height: 649px; margin-top: 26px; background: url(https://www.290123.com/images/paogou-pic.png) 0 0 no-repeat; background-size: 100% 100%;}
+.paogou1-r { width: 537px; height: 649px; margin-top: 26px; background: rgba(255,255,255,0.12); background-size: 100% 100%;}
 .paogou1-r a{display: none;}
-.paogou1-r img {width: 410px; height: 564px; margin-left: 34px; margin-top: 41px; background: url(https://www.290123.com/images/loading.gif) center center no-repeat;}
+.paogou1-r img {width: 410px; height: 564px; margin-left: 34px; margin-top: 41px; background: #f5f5f5 center center no-repeat;}
 @media screen and (max-width:800px) {
     .paogou1 { height: 7.32rem;}
     .paogou1-l { width: 2.8rem; margin-top: 0.4rem; padding-left: 0.6rem;}
@@ -2120,7 +2120,7 @@ font-size: 16px;
 
 .paogou2 {padding: 0 45px 40px 45px; color: #fff; font-size: 16px; background: #096d60; position: relative;}
 #paogou_jie_1, #paogou_jie_2, #paogou_jie_3, #paogou_jie_4, #paogou_jie_5, #paogou_jie_6, #paogou_jie_7, #paogou_jie_8, #paogou_jie_9, #paogou_jie_10, #paogou_jie_11 {display: none;}
-.paogou2:after { content:""; display: block; width: 100%; height: 95px; background: url(https://www.290123.com/images/paogou2-shadow.png) 0 0 repeat-x; position: absolute; left: 0; bottom: 0;}
+.paogou2:after { content:""; display: block; width: 100%; height: 95px; background: linear-gradient(180deg, rgba(9,109,96,0) 0%, rgba(0,0,0,0.2) 100%); position: absolute; left: 0; bottom: 0;}
 .paogou2-tit { font-size: 18px; font-weight: bold; color: #ff0; position: relative; z-index: 1;}
 .paogou2-box { position: relative; z-index: 1;}
 @media screen and (max-width:800px) {
