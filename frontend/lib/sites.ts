@@ -99,11 +99,29 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultLotteryTypeId: 3,
     forumTitle: "台湾通天网",
     metadataTitle: "台湾通天网",
-    metadataDescription: "台湾通天网 | 聚合全网最齐六合彩高手",
+    metadataDescription: "台湾通天网 | 聚合全网高手",
     faviconPath: "/vendor/twjinniu/static/favicon.ico",
     pageCssPaths: [
       "/vendor/twjinniu/static/css/main.css",
       "/vendor/twjinniu/static/css/custom.css",
+    ],
+  },
+  {
+    siteKey: "twcf888",
+    routePath: "/twcf888",
+    vendorIndexPath: "/vendor/twcf888.com/index.html",
+    domains: ["www.twcf888.com", "twcf888.com"],
+    legacyPublicBasePath: "/vendor/twcf888.com",
+    defaultGame: "taiwan",
+    defaultWebId: 8,
+    defaultLotteryTypeId: 3,
+    forumTitle: "台湾创富网",
+    metadataTitle: "台湾创富网",
+    metadataDescription: "台湾创富网 | 聚合全网高手资料",
+    pageCssPaths: [
+      "/vendor/twcf888.com/static/css/main.css",
+      "/vendor/twcf888.com/static/css/custom.css",
+      "/vendor/twcf888.com/static/css/style.css",
     ],
   },
 ]
@@ -148,6 +166,27 @@ export function findSiteByHost(host: string | null | undefined) {
     SITE_CONFIGS.find((site) =>
       site.domains.some((domain) => normalizeHost(domain) === normalized)
     ) || null
+  )
+}
+
+export function findSiteByPathname(pathname: string | null | undefined) {
+  const normalized = String(pathname || "").trim()
+  if (!normalized.startsWith("/")) {
+    return null
+  }
+
+  return (
+    SITE_CONFIGS.find((site) => {
+      const routeMatch =
+        site.routePath !== "/" &&
+        (normalized === site.routePath || normalized.startsWith(`${site.routePath}/`))
+      const legacyMatch =
+        normalized === site.legacyPublicBasePath ||
+        normalized.startsWith(`${site.legacyPublicBasePath}/`)
+      const vendorPath = site.vendorIndexPath.split("?", 1)[0]
+      const vendorMatch = normalized === vendorPath || normalized.startsWith(`${vendorPath}/`)
+      return routeMatch || legacyMatch || vendorMatch
+    }) || null
   )
 }
 
