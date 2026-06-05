@@ -30,6 +30,23 @@ from utils.created_prediction_store import (
 _logger = logging.getLogger("domains.prediction.generation")
 
 
+def _resolve_config_from_row(
+    configs_by_key: dict[str, dict[str, Any]],
+    configs_by_mode_id: dict[int, dict[str, Any]],
+    mechanism_key: str,
+    mode_id: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    normalized_key = str(mechanism_key or "").strip()
+    config = configs_by_key.get(normalized_key)
+    if config:
+        return config, False
+
+    fallback = configs_by_mode_id.get(int(mode_id or 0))
+    if fallback:
+        return dict(fallback), True
+    return None, False
+
+
 def _load_site_sync_context(conn: Any, site_id: int | None) -> dict[str, Any] | None:
     if site_id is None:
         return None
@@ -127,10 +144,22 @@ def get_site_prediction_modules_from_db_or_blueprint(
                     str(item["key"]): dict(item)
                     for item in _list_prediction_configs_for_runtime(conn)
                 }
+                configs_by_mode_id = {}
+                for item in configs_by_key.values():
+                    try:
+                        configs_by_mode_id[int(item["default_modes_id"])] = dict(item)
+                    except (TypeError, ValueError):
+                        continue
                 resolved: list[dict[str, Any]] = []
                 for row in existing_rows:
                     mechanism_key = str(row.get("mechanism_key") or "").strip()
-                    config = configs_by_key.get(mechanism_key)
+                    mode_id = int(row.get("mode_id") or 0)
+                    config, used_fallback = _resolve_config_from_row(
+                        configs_by_key,
+                        configs_by_mode_id,
+                        mechanism_key,
+                        mode_id,
+                    )
                     if not config:
                         _logger.warning(
                             "site_id=%s has site_prediction_modules row with unknown mechanism_key=%s",
@@ -138,6 +167,14 @@ def get_site_prediction_modules_from_db_or_blueprint(
                             mechanism_key,
                         )
                         continue
+                    if used_fallback:
+                        _logger.warning(
+                            "site_id=%s remapped legacy mechanism_key=%s to key=%s by mode_id=%s",
+                            site_id,
+                            mechanism_key,
+                            str(config.get("key") or ""),
+                            mode_id,
+                        )
                     payload = dict(config)
                     payload["mode_id"] = int(row.get("mode_id") or config["default_modes_id"] or 0)
                     payload["sort_order"] = int(row.get("sort_order") or 0)

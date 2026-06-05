@@ -33,6 +33,7 @@ from predict.mechanisms import (
     ensure_prediction_configs_loaded,
     format_zodiac_two_codes,
     get_prediction_config,
+    list_prediction_configs,
 )
 from predict.number_maps import SIZE_NUMBER_MAP
 from prediction_generation.brain_teaser import (
@@ -109,6 +110,32 @@ _MODE_478_FALLBACK_CONFIG = PredictionConfig(
         "当动态机制 title_22 未加载时，使用内置兜底配置保证后台可生成。",
     ),
 )
+
+
+def _resolve_prediction_config_with_mode_fallback(
+    mechanism_key: str,
+    mode_id: int,
+    db_path: str | Path | None = None,
+) -> tuple[PredictionConfig, str, bool]:
+    normalized_key = str(mechanism_key or "").strip()
+    try:
+        return get_prediction_config(normalized_key), normalized_key, False
+    except Exception:
+        pass
+
+    for item in list_prediction_configs(db_path):
+        try:
+            if int(item.get("default_modes_id") or 0) != int(mode_id or 0):
+                continue
+        except (TypeError, ValueError):
+            continue
+
+        fallback_key = str(item.get("key") or "").strip()
+        if not fallback_key:
+            continue
+        return get_prediction_config(fallback_key), fallback_key, True
+
+    return get_prediction_config(normalized_key), normalized_key, False
 
 
 # ── 配置读取 ────────────────────────────────────────────
@@ -1263,7 +1290,17 @@ def _process_single_module(
     }
 
     try:
-        config = get_prediction_config(mechanism_key)
+        config, resolved_mechanism_key, used_fallback_key = _resolve_prediction_config_with_mode_fallback(
+            mechanism_key,
+            mode_id,
+            db_path,
+        )
+        if used_fallback_key:
+            module_report["warnings"].append(
+                f"mechanism_key {mechanism_key} is legacy/unknown; fallback to {resolved_mechanism_key} by mode_id={mode_id}"
+            )
+            mechanism_key = resolved_mechanism_key
+            module_report["mechanism_key"] = mechanism_key
         table_name = resolve_prediction_table_for_mode(conn, mode_id, config.default_table)
         module_report["table_name"] = table_name
     except Exception as exc:

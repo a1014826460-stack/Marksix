@@ -1337,13 +1337,19 @@ def random_text_pool_row(conn: sqlite3.Connection, mapping_key: str) -> dict[str
     selected_columns = [
         column for column in ("title", "content", "jiexi", "code") if column in columns
     ]
+    if not selected_columns:
+        return None
+
+    distinct_columns = ", ".join(quote_identifier(column) for column in selected_columns)
     row = conn.execute(
         f"""
-        SELECT {", ".join(quote_identifier(column) for column in selected_columns)}
-        FROM {quote_identifier(table_name)}
-        WHERE {quote_identifier(text_column)} IS NOT NULL
-          AND {quote_identifier(text_column)} != ''
-        GROUP BY {quote_identifier(text_column)}
+        SELECT {distinct_columns}
+        FROM (
+            SELECT DISTINCT {distinct_columns}
+            FROM {quote_identifier(table_name)}
+            WHERE {quote_identifier(text_column)} IS NOT NULL
+              AND {quote_identifier(text_column)} != ''
+        ) AS text_pool
         ORDER BY RANDOM()
         LIMIT 1
         """
