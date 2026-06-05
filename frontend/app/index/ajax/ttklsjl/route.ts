@@ -18,7 +18,9 @@ function toLegacyOpenCode(item: DrawHistoryResponse["items"][number]) {
 
 export async function GET(request: Request) {
   const match =
-    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+    matchSiteRequest(request, "twcaibawang") ||
+    matchSiteRequest(request, "twjinniu") ||
+    matchSiteRequest(request, "twcf888")
   if (!match) {
     return new NextResponse("Not found", { status: 404 })
   }

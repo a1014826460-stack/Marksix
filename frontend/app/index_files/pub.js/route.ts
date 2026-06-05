@@ -5,7 +5,9 @@ const DEFAULT_SITE_ID = "xgttc-108"
 
 function resolveCurrentPage(request: Request) {
   const match =
-    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+    matchSiteRequest(request, "twcaibawang") ||
+    matchSiteRequest(request, "twjinniu") ||
+    matchSiteRequest(request, "twcf888")
   const pathname = match?.refererPath || ""
 
   if (pathname.endsWith("/index/index/history.html") || pathname.endsWith("/wylhc.html")) {
@@ -21,7 +23,9 @@ function resolveCurrentPage(request: Request) {
 
 export async function GET(request: Request) {
   const match =
-    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+    matchSiteRequest(request, "twcaibawang") ||
+    matchSiteRequest(request, "twjinniu") ||
+    matchSiteRequest(request, "twcf888")
   if (!match) {
     return new NextResponse("Not found", { status: 404 })
   }

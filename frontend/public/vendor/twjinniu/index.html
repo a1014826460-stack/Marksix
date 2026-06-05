@@ -301,6 +301,20 @@
         pmtjImage1: document.getElementById("twjinniu-pmtj-image1"),
         sxztuImage: document.getElementById("twjinniu-sxztu-image")
     };
+    function appendClassName(element, className) {
+        if (!element || !className) { return; }
+        if (element.classList) {
+            element.classList.add(className);
+            return;
+        }
+        var current = element.className || "";
+        if ((" " + current + " ").indexOf(" " + className + " ") === -1) {
+            element.className = current ? current + " " + className : className;
+        }
+    }
+    Object.keys(homepageEls).forEach(function (key) {
+        appendClassName(homepageEls[key], "twjinniu-prediction-module");
+    });
     if (!listEl || !kjFrame) { return; }
     function escapeHtml(value) { return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
     function resolveInitialType() {
@@ -332,6 +346,8 @@
 
     // ---- Article Prediction Blocks: full history below Article List ----
     var articleBlocksContainer = document.getElementById("twjinniu-article-blocks");
+    appendClassName(articleBlocksContainer, "twjinniu-prediction-module");
+    appendClassName(articleBlocksContainer, "twjinniu-article-module-list");
 
     // Parse prediction_text into a compact display label
     function formatPredictionLabel(predText) {

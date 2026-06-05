@@ -2128,3 +2128,108 @@ font-size: 16px;
     .paogou2-tit { font-size: 0.3rem;}
 }
 
+@media screen and (max-width:800px) {
+    .twjinniu-prediction-module {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .twjinniu-prediction-module table {
+        width: 100% !important;
+        max-width: 100% !important;
+        table-layout: fixed;
+    }
+
+    .twjinniu-prediction-module td,
+    .twjinniu-prediction-module th {
+        height: auto !important;
+        min-height: 0 !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        vertical-align: middle;
+    }
+
+    .twjinniu-prediction-module p,
+    .twjinniu-prediction-module span,
+    .twjinniu-prediction-module strong,
+    .twjinniu-prediction-module b,
+    .twjinniu-prediction-module font,
+    .twjinniu-prediction-module div,
+    .twjinniu-prediction-module a {
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .twjinniu-prediction-module p {
+        line-height: 1.55 !important;
+    }
+
+    .twjinniu-prediction-module img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 20pt"],
+    .twjinniu-prediction-module [style*="font-size:20pt"] {
+        font-size: 15pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 18pt"],
+    .twjinniu-prediction-module [style*="font-size:18pt"] {
+        font-size: 14pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 16pt"],
+    .twjinniu-prediction-module [style*="font-size:16pt"] {
+        font-size: 13pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 14pt"],
+    .twjinniu-prediction-module [style*="font-size:14pt"] {
+        font-size: 12pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 13pt"],
+    .twjinniu-prediction-module [style*="font-size:13pt"] {
+        font-size: 11.5pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="font-size: 12pt"],
+    .twjinniu-prediction-module [style*="font-size:12pt"] {
+        font-size: 11pt !important;
+    }
+
+    .twjinniu-prediction-module [style*="line-height:200%"] {
+        line-height: 1.6 !important;
+    }
+
+    .twjinniu-prediction-module [style*="line-height:2.2"] {
+        line-height: 1.7 !important;
+    }
+
+    .twjinniu-prediction-module [style*="line-height:2;"] {
+        line-height: 1.6 !important;
+    }
+
+    .twjinniu-prediction-module [height="150"],
+    .twjinniu-prediction-module [height="60"],
+    .twjinniu-prediction-module [height="50"],
+    .twjinniu-prediction-module [style*="height: 150"],
+    .twjinniu-prediction-module [style*="height:150"],
+    .twjinniu-prediction-module [style*="height: 60"],
+    .twjinniu-prediction-module [style*="height:60"],
+    .twjinniu-prediction-module [style*="height: 50"],
+    .twjinniu-prediction-module [style*="height:50"] {
+        height: auto !important;
+    }
+
+    .twjinniu-article-module-list > div {
+        margin: 6px 0 !important;
+    }
+}
+

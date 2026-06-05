@@ -129,7 +129,9 @@ async function loadHistorySnapshot(lotteryType: number, issue: string) {
 
 export async function GET(request: Request) {
   const match =
-    matchSiteRequest(request, "twcaibawang") || matchSiteRequest(request, "twjinniu")
+    matchSiteRequest(request, "twcaibawang") ||
+    matchSiteRequest(request, "twjinniu") ||
+    matchSiteRequest(request, "twcf888")
   if (!match) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
