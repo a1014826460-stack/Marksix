@@ -99,7 +99,8 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     defaultLotteryTypeId: 3,
     forumTitle: "台湾通天网",
     metadataTitle: "台湾通天网",
-    metadataDescription: "台湾通天网",
+    metadataDescription: "台湾通天网 | 聚合全网最齐六合彩高手",
+    faviconPath: "/vendor/twjinniu/static/favicon.ico",
     pageCssPaths: [
       "/vendor/twjinniu/static/css/main.css",
       "/vendor/twjinniu/static/css/custom.css",

@@ -55,95 +55,82 @@
         </ul>
     </div>
     <!-- Module Navigation -->
+    <div id="nav2-sentinel" class="nav2-sentinel" aria-hidden="true"></div>
+    <div id="nav2-placeholder" class="nav2-placeholder" aria-hidden="true"></div>
     <div id="nav2" class="nav2 font1" data-fixed="">
         <ul>
-            <li><a href="#twjinniu-formula-ptx">高手精解</a></li>
-            <li><a href="#twjinniu-jixian-texiao">极限特码</a></li>
+            <li><a href="#gpjx">高手精解</a></li>
+            <li><a href="#jsmb">极限特码</a></li>
             <li><a href="#jxtx">精选特肖</a></li>
-            <li><a href="#twjinniu-live-article-list">高手资料</a></li>
+            <li><a href="#gszl">高手资料</a></li>
             <li><a href="#pmzq">平码专区</a></li>
         </ul>
         <ul>
-            <li><a href="#twjinniu-yixiao-yima">一肖一码</a></li>
-            <li><a href="#twjinniu-jixian-texiao">极限特码</a></li>
-            <li><a href="#twjinniu-pingte-erma">平特二码</a></li>
-            <li><a href="#twjinniu-fivea-dagongkai">业余爱好</a></li>
-            <li><a href="#twjinniu-danshuang-liangxiao">财富双波</a></li>
+            <li><a href="#yhym">一肖一码</a></li>
+            <li><a href="#xjt">极限特码</a></li>
+            <li><a href="#pt2m">平特二码</a></li>
+            <li><a href="#yyah">业余爱好</a></li>
+            <li><a href="#cfsb">财富双波</a></li>
         </ul>
         <ul>
             <li><a href="#sxbm">四肖八码</a></li>
-            <li><a href="#twjinniu-sixiao-sima">必出平尾</a></li>
-            <li><a href="#twjinniu-qianhou-24ma">三期计划</a></li>
-            <li><a href="#twjinniu-baxiao-shiliuma">独奶灭火</a></li>
-            <li><a href="#twjinniu-article-blocks">前年资料</a></li>
+            <li><a href="#bcpw">必出平尾</a></li>
+            <li><a href="#3qjh">三期计划</a></li>
+            <li><a href="#dnmh">独奶灭火</a></li>
+            <li><a href="#qnzl">前年资料</a></li>
         </ul>
         <ul>
-            <li><a href="#twjinniu-pmtj-image1">主播图库</a></li>
-            <li><a href="#twjinniu-live-article-list">绝杀一码</a></li>
-            <li><a href="#twjinniu-sxztu-image">主播学究</a></li>
-            <li><a href="#twjinniu-yixiao-sanma">一清二楚</a></li>
-            <li><a href="#twjinniu-article-blocks">高手专区</a></li>
+            <li><a href="#zbtk">主播图库</a></li>
+            <li><a href="#sha">绝杀一码</a></li>
+            <li><a href="#zbxj">主播学究</a></li>
+            <li><a href="#yqsx">一清二楚</a></li>
+            <li><a href="#tabzzhlzmzm2x">高手专区</a></li>
         </ul>
     </div>
-    <div id="nav2-placeholder" class="nav2-placeholder"></div>
     <style>
+        html { scroll-behavior: smooth; }
         .nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff; }
+        .nav2-sentinel { display: block; width: 100%; height: 1px; visibility: hidden; pointer-events: none; }
         .nav2-placeholder { display: none; width: 100%; max-width: 800px; margin: 0 auto; }
+        .nav-anchor { display: block; height: 88px; margin-top: -88px; visibility: hidden; pointer-events: none; }
         .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between; }
         .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px; }
         .nav2 ul li a { display: block; padding: 4px 0; text-align: center; color: #fff; border-radius: 50px; background: #0a5cda; }
         .nav2 ul li a:hover { background: #da183b; }
-        #nav2[data-fixed="fixed"] { position: fixed; top: 0; left: 0; right: 0; margin: auto; z-index: 99; box-shadow: 0 5px 10px rgba(0,0,0,.1); }
+        #nav2[data-fixed="fixed"] { position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: var(--nav-fixed-width, 100%); max-width: 800px; z-index: 99; box-shadow: 0 5px 10px rgba(0,0,0,.1); }
         @media screen and (min-width: 800px) { .nav2 { padding: 4px; font-size: 14px; } .nav2 ul { padding: 2px 0; } .nav2 ul li { padding: 0 4px; } .nav2 ul li a { padding: 8px 0; cursor: pointer; } }
     </style>
     <script>
         var obj = document.getElementById("nav2");
+        var navSentinel = document.getElementById("nav2-sentinel");
         var navPlaceholder = document.getElementById("nav2-placeholder");
-        function syncNavPlaceholder() {
-            if (!obj || !navPlaceholder) { return; }
-            navPlaceholder.style.height = obj.offsetHeight + "px";
+        function syncNavMetrics() {
+            if (!obj) { return; }
+            obj.style.setProperty("--nav-fixed-width", ((navPlaceholder && navPlaceholder.offsetWidth) || obj.offsetWidth) + "px");
+            if (navPlaceholder) {
+                navPlaceholder.style.height = obj.offsetHeight + "px";
+            }
         }
         function updateNavFixedState() {
-            if (!obj) { return; }
-            var st = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-            var triggerTop = navPlaceholder ? navPlaceholder.offsetTop : obj.offsetTop;
-            var fixed = st >= triggerTop;
-            obj.setAttribute("data-fixed", fixed ? "fixed" : "");
+            if (!obj || !navSentinel) { return; }
+            var shouldFix = navSentinel.getBoundingClientRect().top <= 0;
+            obj.setAttribute("data-fixed", shouldFix ? "fixed" : "");
             if (navPlaceholder) {
-                navPlaceholder.style.display = fixed ? "block" : "none";
-                syncNavPlaceholder();
+                navPlaceholder.style.display = shouldFix ? "block" : "none";
+                navPlaceholder.style.height = shouldFix ? (obj.offsetHeight + "px") : "0px";
             }
-        }
-        function scrollToNavTarget(selector) {
-            if (!selector) { return; }
-            var target = document.querySelector(selector);
-            if (!target) { return; }
-            var offset = obj ? obj.offsetHeight + 8 : 8;
-            var top = target.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0) - offset;
-            window.scrollTo({ top: top < 0 ? 0 : top, behavior: "smooth" });
         }
         if (obj) {
-            var navLinks = obj.querySelectorAll("a[href^='#']");
-            for (var navIndex = 0; navIndex < navLinks.length; navIndex++) {
-                navLinks[navIndex].addEventListener("click", function (event) {
-                    var selector = this.getAttribute("href");
-                    var target = selector ? document.querySelector(selector) : null;
-                    if (!target) { return; }
-                    event.preventDefault();
-                    scrollToNavTarget(selector);
-                    if (window.history && window.history.replaceState) {
-                        window.history.replaceState(null, "", selector);
-                    } else {
-                        window.location.hash = selector;
-                    }
-                });
-            }
             window.addEventListener("scroll", updateNavFixedState, { passive: true });
             window.addEventListener("resize", function () {
-                syncNavPlaceholder();
+                syncNavMetrics();
                 updateNavFixedState();
             });
-            syncNavPlaceholder();
+            window.addEventListener("load", function () {
+                syncNavMetrics();
+                updateNavFixedState();
+            });
+            syncNavMetrics();
             updateNavFixedState();
         }
     </script>
@@ -187,29 +174,39 @@
     </div>
     <!-- ===== PostgreSQL Dynamic Module Placeholders ===== -->
     <!-- TODO: 以下模块待后续补全数据后启用 -->
+    <div id="gpjx" class="nav-anchor"></div>
     <div id="twjinniu-formula-ptx" style="display:none;"><!-- PostgreSQL: formula_ptx (modes_id=56) --></div>
+    <div id="3qjh" class="nav-anchor"></div>
     <div id="twjinniu-qianhou-24ma" style="display:none;"><!-- PostgreSQL: qianhou_24ma (modes_id=110) --></div>
+    <div id="yhym" class="nav-anchor"></div>
     <div id="twjinniu-yixiao-yima" style="display:none;"><!-- PostgreSQL: yixiao_yima (modes_id=49+151) --></div>
     <div id="twjinniu-sanxiao-siwei" style="display:none;"><!-- PostgreSQL: sanxiao_siwei (modes_id=117+123) --></div>
+    <div id="zbtk" class="nav-anchor"></div>
     <div class="box amplIMG" id="twjinniu-pmtj-image1"><!-- PostgreSQL: pmtj_image (modes_id=476) --></div>
     <!-- TODO: 以下模块待后续补全数据后启用 -->
     <div class="box pad" id="sxbm" style="margin:0px;display:none;"><!-- PostgreSQL: sixiao_bama (modes_id=83) --></div>
     <div class="box pad" id="dssxbm" style="margin:0px;display:none;"><!-- PostgreSQL: danshuang_sixiao_bama (modes_id=31) --></div>
     <div id="twjinniu-sanxiao-15ma" style="display:none;"><!-- PostgreSQL: sanxiao_15ma (modes_id=72) --></div>
     <div id="twjinniu-shisi-mazhong" style="display:none;"><!-- PostgreSQL: shisi_mazhong (modes_id=77) --></div>
+    <div id="pt2m" class="nav-anchor"></div>
     <div id="twjinniu-pingte-erma" style="display:none;"><!-- PostgreSQL: pingte_erma (modes_id=79) --></div>
     <style>.bjbj { background-color: #ffffff; } .a1 td { border-bottom: solid 1px #c0c0c0; }</style>
+    <div id="bcpw" class="nav-anchor"></div>
     <div class="a1" id="twjinniu-sixiao-sima" style="display:none;"><!-- PostgreSQL: sixiao_sima (modes_id=78) --></div>
     <div class="a1" id="pmzq" style="display:none;"><!-- PostgreSQL: pingte_xiao+pingte_wei (modes_id=103+173) --></div>
+    <div id="yqsx" class="nav-anchor"></div>
     <div id="twjinniu-yixiao-sanma" style="display:none;"><!-- PostgreSQL: yixiao_sanma (modes_id=484) --></div>
     <!-- Marquee Announcement -->
     <table style="margin:0px;width:100%;height:50px;" class="ke-zeroborder" border="0" cellspacing="1" bordercolor="#006600" width="100%" background="index_files/gonggao.jpg" align="center" height="50">
         <tbody><tr><td><div align="center"><marquee style="filter:glow(color=red);line-height:1;width:100%;font-family:楷体;height:30px;color:#ffff00;font-size:25pt;" onmouseover="stop()" scrollamount="10" onmouseout="start()"><b><font size="6"><font color="#FF0000">每日精选推荐：本期会开什么呢？欢迎到本站和大家分享你的想法，共同交流获得最好的资料！互帮互助，拒绝低质量推荐！本站收到多起投诉：冒充台湾通天网名义进行诈骗，请各位彩友提高警惕！</font></font></b></marquee></div></td></tr></tbody>
     </table>
     <!-- ===== 四不像图（图片模块 mode_id=474） ===== -->
+    <div id="zbxj" class="nav-anchor"></div>
     <div class="box amplIMG" id="twjinniu-sxztu-image"><!-- PostgreSQL: sxztu_image (modes_id=474) --></div>
     <!-- ===== Article List (Dynamic) ===== -->
     <div class="box">
+        <div id="gszl" class="nav-anchor"></div>
+        <div id="sha" class="nav-anchor"></div>
         <div class="abox-tita" id="jxtx"><font size="5" color="#008000">本站精品推荐</font></div>
         <ul class="list1" id="twjinniu-live-article-list"><!-- PostgreSQL: dynamic article list --></ul>
         <!-- 文章预测数据完整展示区（与详情页一致） -->
@@ -226,16 +223,23 @@
             .abox-tita:after { vertical-align: middle; content: ''; display: inline-block; width: 67px; height: 19px; margin-left: 5px; background: url(index_files/line-r.png) no-repeat; background-size: 100% 100%; }
         </style>
         <!-- TODO: 以下模块待后续补全数据后启用 -->
+        <div id="jsmb" class="nav-anchor"></div>
+        <div id="xjt" class="nav-anchor"></div>
         <div class="box pad" id="twjinniu-jixian-texiao" style="margin:0px;display:none;"><!-- PostgreSQL: jixian_texiao (modes_id=43) --></div>
         <div class="box" id="twjinniu-baxiao-shiliuma" style="display:none;"><!-- PostgreSQL: baxiao_shiliuma (modes_id=180) --></div>
+        <div id="dnmh" class="nav-anchor"></div>
+        <div id="yyah" class="nav-anchor"></div>
         <div class="box" id="twjinniu-fivea-dagongkai" style="display:none;"><!-- PostgreSQL: fivea_dagongkai (modes_id=151) --></div>
         <div class="box pad" id="twjinniu-wenzhuan-baxiao" style="margin:0px;display:none;"><!-- PostgreSQL: wenzhuan_baxiao (modes_id=180) --></div>
         <div class="box" id="twjinniu-shiwu-mazhong" style="display:none;"><!-- PostgreSQL: shiwu_mazhong (modes_id=81) --></div>
+        <div id="cfsb" class="nav-anchor"></div>
         <div id="twjinniu-danshuang-liangxiao" style="display:none;"><!-- PostgreSQL: danshuang_liangxiao (modes_id=15) --></div>
         <div id="twjinniu-jiaye-liangxiao" style="display:none;"><!-- PostgreSQL: jiaye_liangxiao (modes_id=142) --></div>
         <div class="a1" id="twjinniu-yijuhua-zhongtema" style="display:none;"><!-- PostgreSQL: yijuhua_zhongtema (modes_id=50) --></div>
         <div id="twjinniu-qianhou-texiao" style="display:none;"><!-- PostgreSQL: qianhou_texiao (modes_id=219) --></div>
         <div id="twjinniu-daxiao-yitou" style="display:none;"><!-- PostgreSQL: daxiao_yitou (modes_id=108) --></div>
+        <div id="qnzl" class="nav-anchor"></div>
+        <div id="tabzzhlzmzm2x" class="nav-anchor"></div>
         <div id="sb" class="box pad" style="margin:0px;display:none;"><!-- PostgreSQL: heshu_daxiao (modes_id=279) --></div>
     </div>
     <!-- ===== Core JavaScript: Dynamic Prediction Data Loading ===== -->
@@ -487,9 +491,9 @@ function setHomepageHtml(element, html) { if (!element) { return; } element.inne
         <div class='list-title'>属性知识</div>
         <div id="legacy-attribute-gallery"></div>
         <script>
-            let img1 = httpApi + '/uploads/image/20250322/1742580086567063.png';
-            let img2 = httpApi + '/uploads/image/20250322/1742580119746508.jpg';
-            let img3 = httpApi + '/uploads/image/20250322/1742580130762983.jpg';
+            let img1 = '/uploads/image/20250322/1742580086567063.png';
+            let img2 = '/uploads/image/20250322/1742580119746508.jpg';
+            let img3 = '/uploads/image/20250322/1742580130762983.jpg';
             var galleryHtml = `<img src="${img1}" width="100%"/>` +
                 `<img src="${img2}" width="100%"/>` +
                 `<img src="${img3}" width="100%"/>`;
