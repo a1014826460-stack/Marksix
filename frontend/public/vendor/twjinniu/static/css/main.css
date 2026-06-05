@@ -2328,5 +2328,39 @@ font-size: 16px;
         padding-left: 2px;
         padding-right: 2px;
     }
+
+    /* ---- 前后24码移动端排版 ---- */
+    #twjinniu-qianhou-24ma .qianhou-static-numbers {
+        font-size: 10pt !important;
+        line-height: 1.8 !important;
+        word-spacing: -1px;
+        letter-spacing: -0.5px;
+    }
+
+    #twjinniu-qianhou-24ma .qianhou-star {
+        font-size: 14pt !important;
+    }
+
+    #twjinniu-qianhou-24ma td p font,
+    #twjinniu-qianhou-24ma td p span {
+        font-size: 11pt !important;
+    }
+
+    /* ---- 一肖一码移动端排版 ---- */
+    #twjinniu-yixiao-yima td:first-child {
+        width: 18% !important;
+        min-width: 40px;
+    }
+
+    #twjinniu-yixiao-yima td:last-child {
+        width: 82% !important;
+    }
+
+    /* 特码行的14个数字需要在移动端自动换行 */
+    #twjinniu-yixiao-yima .yima-code-line {
+        font-size: 11pt !important;
+        word-break: break-all;
+        overflow-wrap: anywhere;
+    }
 }
 

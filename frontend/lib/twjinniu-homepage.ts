@@ -1099,7 +1099,7 @@ function renderYixiaoYima(rows: YixiaoYimaRow[]) {
               ? `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(code)}</span>`
               : `<font>${escapeHtml(code)}</font>`
           )
-          .join(".")
+          .join(".<wbr>")
       const bestXiao = row.isCorrect
         ? `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(row.bestXiao)}</span>`
         : `<font>${escapeHtml(row.bestXiao)}</font>`
@@ -1117,7 +1117,7 @@ function renderYixiaoYima(rows: YixiaoYimaRow[]) {
             </tr>
             <tr style="height: 48.5278px;">
               <td style="width: 17.4815%; text-align: center; height: 48.5278px;"><strong><span style="font-size: 12pt; color: #0000ff; font-weight: bold; font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft Yahei', 'Hiragino Sans GB', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif;">特码</span></strong></td>
-              <td style="width: 82.51%; text-align: left; height: 48.5278px;"><p><span style="font-size: 13pt; color: #ff0000;"><strong>${renderCodeLine()}</strong></span></p></td>
+              <td style="width: 82.51%; text-align: left; height: 48.5278px;"><p><span class="yima-code-line" style="font-size: 13pt; color: #ff0000;"><strong>${renderCodeLine()}</strong></span></p></td>
             </tr>
             <tr style="height: 33.5972px;">
               <td style="width: 17.4815%; text-align: center; height: 33.5972px;"><strong><span style="font-size: 12pt; color: #0000ff; font-weight: bold; font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft Yahei', 'Hiragino Sans GB', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif;">一肖</span></strong></td>
@@ -1314,14 +1314,14 @@ function renderQianhou24ma(rows: LegacyModeRow[]) {
   const staticSection = `
     <table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td style="padding:8px;background:#fff;border:1px solid #ccc;">
       <p style="text-align:center;color:#FF0000;font-weight:700;font-size:14pt;margin:6px 0;">前后落码【永久固定】</p>
-      <p style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
-      <p style="text-align:center;font-weight:700;font-size:13pt;margin:4px 0;line-height:2;">
+      <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
+      <p class="qianhou-static-numbers" style="text-align:center;font-weight:700;font-size:13pt;margin:4px 0;line-height:2;">
         <span style="color:#FF0000;">前落码：</span>01 02 03 04 05 06 07 08 17 18 19 20 21 22 23<br>
         　　　　24 33 34 35 36 37 38 39 40<br>
         <span style="color:#008000;">后落码：</span>09 10 11 12 13 14 15 16 25 26 27 28 29 30 31 32<br>
         　　　　41 42 43 44 45 46 47 48 49
       </p>
-      <p style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
+      <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
     </td></tr></tbody></table>`
 
   // ---- Dynamic section: per-issue prediction rows ----
