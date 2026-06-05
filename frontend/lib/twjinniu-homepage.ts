@@ -1311,16 +1311,24 @@ function renderQianhouTexiao(rows: LegacyModeRow[]) {
 
 function renderQianhou24ma(rows: LegacyModeRow[]) {
   // ---- Static section: permanent fixed number mapping ----
+  // Wrap each number in a <span> so the browser can reflow them on
+  // narrow screens instead of overflowing a single long line.
+  const renderStaticNumbers = (numbers: number[]) =>
+    numbers.map((n) => `<span class="qianhou-num">${String(n).padStart(2, "0")}</span>`).join("")
+
+  const frontNumbers1 = renderStaticNumbers([1,2,3,4,5,6,7,8,17,18,19,20,21,22,23])
+  const frontNumbers2 = renderStaticNumbers([24,33,34,35,36,37,38,39,40])
+  const backNumbers1 = renderStaticNumbers([9,10,11,12,13,14,15,16,25,26,27,28,29,30,31,32])
+  const backNumbers2 = renderStaticNumbers([41,42,43,44,45,46,47,48,49])
+
   const staticSection = `
     <table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td style="padding:8px;background:#fff;border:1px solid #ccc;">
       <p style="text-align:center;color:#FF0000;font-weight:700;font-size:14pt;margin:6px 0;">前后落码【永久固定】</p>
       <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
-      <p class="qianhou-static-numbers" style="text-align:center;font-weight:700;font-size:13pt;margin:4px 0;line-height:2;">
-        <span style="color:#FF0000;">前落码：</span>01 02 03 04 05 06 07 08 17 18 19 20 21 22 23<br>
-        　　　　24 33 34 35 36 37 38 39 40<br>
-        <span style="color:#008000;">后落码：</span>09 10 11 12 13 14 15 16 25 26 27 28 29 30 31 32<br>
-        　　　　41 42 43 44 45 46 47 48 49
-      </p>
+      <div class="qianhou-static-numbers" style="text-align:center;font-weight:700;font-size:13pt;margin:4px 0;line-height:2.2;">
+        <div class="qianhou-group"><span class="qianhou-label" style="color:#FF0000;">前落码：</span><span class="qianhou-row">${frontNumbers1}</span><span class="qianhou-row">${frontNumbers2}</span></div>
+        <div class="qianhou-group"><span class="qianhou-label" style="color:#008000;">后落码：</span><span class="qianhou-row">${backNumbers1}</span><span class="qianhou-row">${backNumbers2}</span></div>
+      </div>
       <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
     </td></tr></tbody></table>`
 
