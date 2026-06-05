@@ -1314,7 +1314,7 @@ function renderQianhou24ma(rows: LegacyModeRow[]) {
   // Wrap each number in a <span> so the browser can reflow them on
   // narrow screens instead of overflowing a single long line.
   const renderStaticNumbers = (numbers: number[]) =>
-    numbers.map((n) => `<span class="qianhou-num">${String(n).padStart(2, "0")}</span>`).join("")
+    numbers.map((n) => `<span class="qianhou-num">${String(n).padStart(2, "0")}</span>`).join(" ")
 
   const frontNumbers1 = renderStaticNumbers([1,2,3,4,5,6,7,8,17,18,19,20,21,22,23])
   const frontNumbers2 = renderStaticNumbers([24,33,34,35,36,37,38,39,40])
