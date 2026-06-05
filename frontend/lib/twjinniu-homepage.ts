@@ -705,29 +705,48 @@ function renderPingteErma(rows: LegacyModeRow[]) {
   const body = rows
     .map((row) => {
       const entries = parseLabelCodeEntries(row.content)
-      if (!entries.length) return ""
       const result = resolveResult(row)
-      const entry = entries[0]
-      const codes = entry.codes.slice(0, 2)
-      const isCorrect =
-        result.isOpened &&
-        (entry.label === result.zodiac || codes.includes(result.code))
-      const labelHtml =
-        isCorrect && entry.label === result.zodiac
-          ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
-          : escapeHtml(entry.label)
-      const codeHtml = codes
-        .map((code) =>
-          isCorrect && code === result.code
-            ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
-            : escapeHtml(code)
+      if (entries.length) {
+        const entry = entries[0]
+        const codes = entry.codes.slice(0, 2)
+        const isCorrect =
+          result.isOpened &&
+          (entry.label === result.zodiac || codes.includes(result.code))
+        const labelHtml =
+          isCorrect && entry.label === result.zodiac
+            ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
+            : escapeHtml(entry.label)
+        const codeHtml = codes
+          .map((code) =>
+            isCorrect && code === result.code
+              ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
+              : escapeHtml(code)
+          )
+          .join(".")
+
+        return `
+          <tr>
+            <td height="46" bgcolor="#FFFFFF">
+              <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独平</font><font color="#FF3300" size="3">【${labelHtml}${codeHtml}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
+          </tr>
+        `
+      }
+
+      const plainLabels = splitPredictionTokens(row.content).slice(0, 2)
+      if (!plainLabels.length) return ""
+      const isCorrect = result.isOpened && plainLabels.includes(result.zodiac)
+      const labelHtml = plainLabels
+        .map((label) =>
+          isCorrect && label === result.zodiac
+            ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
+            : escapeHtml(label)
         )
-        .join(".")
+        .join("")
 
       return `
         <tr>
           <td height="46" bgcolor="#FFFFFF">
-            <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独平</font><font color="#FF3300" size="3">【${labelHtml}${codeHtml}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
+            <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独平</font><font color="#FF3300" size="3">【${labelHtml}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
         </tr>
       `
     })
@@ -1669,10 +1688,14 @@ export async function getTwjinniuHomepageModules(
     pingte_erma: {
       key: "pingte_erma",
       title: "平特二码",
-      status: mode79Rows.length ? "ok" : "missing_data",
+      status: mode79Rows.some((row) => parseLabelCodeEntries(row.content).length >= 1 || splitPredictionTokens(row.content).length >= 2) ? "ok" : (mode79Rows.length ? "missing_mapping" : "missing_data"),
       html: renderPingteErma(mode79Rows),
       mappedModeIds: [79],
-      notes: mode79Rows.length ? [] : ["已确认该模块对应 modes_id 79（平特1肖2码），但当前本地 PostgreSQL 当前彩种没有历史行。"],
+      notes: mode79Rows.some((row) => parseLabelCodeEntries(row.content).length >= 1 || splitPredictionTokens(row.content).length >= 2)
+        ? []
+        : mode79Rows.length
+          ? ["已确认该模块对应 modes_id 79，但当前最新历史行不是可渲染的 1肖2码 / 2肖 结构。"]
+          : ["已确认该模块对应 modes_id 79（平特1肖2码），但当前本地 PostgreSQL 当前彩种没有历史行。"],
     },
     sixiao_sima: {
       key: "sixiao_sima",
