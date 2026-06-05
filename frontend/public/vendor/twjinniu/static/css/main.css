@@ -2231,5 +2231,102 @@ font-size: 16px;
     .twjinniu-article-module-list > div {
         margin: 6px 0 !important;
     }
+
+    #twjinniu-yixiao-yima table {
+        table-layout: auto !important;
+    }
+
+    #twjinniu-yixiao-yima td {
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }
+
+    #twjinniu-yixiao-yima td:first-child {
+        width: 22% !important;
+        min-width: 54px;
+        text-align: center !important;
+    }
+
+    #twjinniu-yixiao-yima td:last-child {
+        width: 78% !important;
+        text-align: left !important;
+    }
+
+    #twjinniu-yixiao-yima td:last-child p,
+    #twjinniu-yixiao-yima td:last-child strong,
+    #twjinniu-yixiao-yima td:last-child span {
+        text-align: left !important;
+    }
+
+    #twjinniu-pingte-erma td,
+    #twjinniu-sixiao-sima td,
+    #twjinniu-sanxiao-15ma td,
+    #twjinniu-shiwu-mazhong td,
+    #twjinniu-yixiao-sanma td,
+    #twjinniu-wenzhuan-baxiao td,
+    #twjinniu-baxiao-shiliuma td,
+    #twjinniu-danshuang-liangxiao td,
+    #twjinniu-jiaye-liangxiao td,
+    #pmzq td {
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+    }
+
+    #twjinniu-pingte-erma p,
+    #twjinniu-sixiao-sima p,
+    #twjinniu-sanxiao-15ma p,
+    #twjinniu-shiwu-mazhong p,
+    #twjinniu-yixiao-sanma p,
+    #twjinniu-wenzhuan-baxiao p,
+    #twjinniu-baxiao-shiliuma p,
+    #twjinniu-danshuang-liangxiao p,
+    #twjinniu-jiaye-liangxiao p,
+    #pmzq p {
+        margin: 4px 0 !important;
+        line-height: 1.65 !important;
+    }
+
+    #twjinniu-pingte-erma p b font {
+        display: block;
+        margin: 2px 0;
+    }
+
+    #twjinniu-danshuang-liangxiao p > font,
+    #twjinniu-jiaye-liangxiao p > font {
+        display: block;
+    }
+
+    #twjinniu-danshuang-liangxiao p > font > b > font,
+    #twjinniu-jiaye-liangxiao p > font > b > font {
+        display: block;
+        margin: 2px 0;
+    }
+
+    #twjinniu-shiwu-mazhong td,
+    #twjinniu-yixiao-sanma td,
+    #twjinniu-wenzhuan-baxiao td,
+    #twjinniu-sanxiao-15ma td {
+        text-align: left !important;
+    }
+
+    #twjinniu-shiwu-mazhong td span,
+    #twjinniu-yixiao-sanma td span,
+    #twjinniu-wenzhuan-baxiao td span,
+    #twjinniu-sanxiao-15ma td span {
+        text-align: left !important;
+    }
+
+    #twjinniu-sixiao-sima td,
+    #twjinniu-pingte-erma td,
+    #pmzq td {
+        text-align: center !important;
+    }
+
+    #twjinniu-sixiao-sima td p,
+    #twjinniu-pingte-erma td p,
+    #pmzq td p {
+        padding-left: 2px;
+        padding-right: 2px;
+    }
 }
 

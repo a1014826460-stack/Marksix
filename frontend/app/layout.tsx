@@ -6,24 +6,36 @@ import "./globals.css"
 const DEFAULT_METADATA: Metadata = {
   title: "全网最准尽在台湾六合彩论坛",
   description: "全网最准尽在台湾六合彩论坛",
-  icons: {
-    icon: "/favicon.ico",
-  },
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const headerStore = await headers()
   const forwardedHost = headerStore.get("x-forwarded-host")
   const host = forwardedHost || headerStore.get("host")
-  const pathname =
+  const rawPathname =
+    headerStore.get("x-pathname") ||
     headerStore.get("x-invoke-path") ||
     headerStore.get("x-matched-path") ||
     headerStore.get("next-url")
-  const normalizedHost = String(host || "").trim().toLowerCase().replace(/:\d+$/, "")
-  const matchedSite =
-    (normalizedHost === "localhost" || normalizedHost === "127.0.0.1"
-      ? findSiteByPathname(pathname)
-      : null) || findSiteByHost(host)
+
+  // Normalise the pathname: Next.js headers may carry a full URL (e.g.
+  // "http://127.0.0.1:3000/twjinniu") in some environments.  Extract the
+  // path portion so findSiteByPathname can match it.
+  let pathname = rawPathname
+  if (pathname && pathname.startsWith("http")) {
+    try {
+      pathname = new URL(pathname).pathname
+    } catch {
+      // If parsing fails, keep the original value – findSiteByPathname
+      // gracefully returns null for non-path strings.
+    }
+  }
+
+  // Pathname-based matching takes precedence in all environments so that
+  // child routes like /twjinniu are correctly identified even in dev mode.
+  // Host-based matching is the fallback for production domains that hit "/"
+  // with a site-specific Host header (e.g. www.twtongtian.com).
+  const matchedSite = findSiteByPathname(pathname) || findSiteByHost(host)
 
   if (!matchedSite) {
     return DEFAULT_METADATA

@@ -697,56 +697,34 @@ function renderPingteWei(rows: LegacyModeRow[]) {
   `
 }
 
+/**
+ * 独胆 / 平特一肖
+ *
+ * mode_id = 79 当前返回的是单个生肖内容（如"猪""牛""兔"），而不是
+ * "1肖2码 / 2肖" 结构。这里按独胆/平特一肖样式逐行渲染，每个 content
+ * 只取第一个 token 作为预测生肖。
+ */
 function renderPingteErma(rows: LegacyModeRow[]) {
   if (!rows.length) {
-    return renderMissingTable('<font color="#FFFF00">钱包空了</font><font color="#FFFFFF">【平特二码】</font>')
+    return renderMissingTable('<font color="#FFFF00">钱包空了</font><font color="#FFFFFF">【独胆/平特一肖】</font>')
   }
 
   const body = rows
     .map((row) => {
-      const entries = parseLabelCodeEntries(row.content)
       const result = resolveResult(row)
-      if (entries.length) {
-        const entry = entries[0]
-        const codes = entry.codes.slice(0, 2)
-        const isCorrect =
-          result.isOpened &&
-          (entry.label === result.zodiac || codes.includes(result.code))
-        const labelHtml =
-          isCorrect && entry.label === result.zodiac
-            ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
-            : escapeHtml(entry.label)
-        const codeHtml = codes
-          .map((code) =>
-            isCorrect && code === result.code
-              ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
-              : escapeHtml(code)
-          )
-          .join(".")
+      // content 是单个生肖名（如 "猪"），取第一个空白分隔 token
+      const label = splitPredictionTokens(row.content).at(0)
+      if (!label) return ""
 
-        return `
-          <tr>
-            <td height="46" bgcolor="#FFFFFF">
-              <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独平</font><font color="#FF3300" size="3">【${labelHtml}${codeHtml}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
-          </tr>
-        `
-      }
-
-      const plainLabels = splitPredictionTokens(row.content).slice(0, 2)
-      if (!plainLabels.length) return ""
-      const isCorrect = result.isOpened && plainLabels.includes(result.zodiac)
-      const labelHtml = plainLabels
-        .map((label) =>
-          isCorrect && label === result.zodiac
-            ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
-            : escapeHtml(label)
-        )
-        .join("")
+      const isCorrect = result.isOpened && label === result.zodiac
+      const displayLabel = isCorrect
+        ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
+        : escapeHtml(label)
 
       return `
         <tr>
           <td height="46" bgcolor="#FFFFFF">
-            <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独平</font><font color="#FF3300" size="3">【${labelHtml}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
+            <p align="center"><b><font size="3" color="#000000">${escapeHtml(row.term)}期：独胆</font><font color="#FF3300" size="3">【${displayLabel}】</font><font color="#000000" size="3">开${renderResultJudge(result, isCorrect, "?????")}</font><font color="#000000"></font></b></p></td>
         </tr>
       `
     })
@@ -754,14 +732,14 @@ function renderPingteErma(rows: LegacyModeRow[]) {
     .join("")
 
   if (!body) {
-    return renderMissingTable('<font color="#FFFF00">钱包空了</font><font color="#FFFFFF">【平特二码】</font>')
+    return renderMissingTable('<font color="#FFFF00">钱包空了</font><font color="#FFFFFF">【独胆/平特一肖】</font>')
   }
 
   return `
     <table border="1" width="100%" bgcolor="#ffffff">
       <tbody>
         <tr>
-          <td style="border:10px double #00f; height: 50px;" bgcolor="#0000FF"><p align="center"><b><font color="#FFFF00" face="楷体" style="font-size: 20pt">钱包空了</font><font color="#FFFFFF" face="楷体" style="font-size: 20pt">【平特二码】</font></b></p></td>
+          <td style="border:10px double #00f; height: 50px;" bgcolor="#0000FF"><p align="center"><b><font color="#FFFF00" face="楷体" style="font-size: 20pt">钱包空了</font><font color="#FFFFFF" face="楷体" style="font-size: 20pt">【独胆/平特一肖】</font></b></p></td>
         </tr>
       </tbody>
     </table>
@@ -1687,15 +1665,15 @@ export async function getTwjinniuHomepageModules(
     },
     pingte_erma: {
       key: "pingte_erma",
-      title: "平特二码",
-      status: mode79Rows.some((row) => parseLabelCodeEntries(row.content).length >= 1 || splitPredictionTokens(row.content).length >= 2) ? "ok" : (mode79Rows.length ? "missing_mapping" : "missing_data"),
+      title: "独胆/平特一肖",
+      status: mode79Rows.some((row) => splitPredictionTokens(row.content).length >= 1) ? "ok" : (mode79Rows.length ? "missing_mapping" : "missing_data"),
       html: renderPingteErma(mode79Rows),
       mappedModeIds: [79],
-      notes: mode79Rows.some((row) => parseLabelCodeEntries(row.content).length >= 1 || splitPredictionTokens(row.content).length >= 2)
-        ? []
+      notes: mode79Rows.some((row) => splitPredictionTokens(row.content).length >= 1)
+        ? ["mode_id=79 当前按独胆/平特一肖渲染（原始 content 为单个生肖名，如'猪''牛'）。"]
         : mode79Rows.length
-          ? ["已确认该模块对应 modes_id 79，但当前最新历史行不是可渲染的 1肖2码 / 2肖 结构。"]
-          : ["已确认该模块对应 modes_id 79（平特1肖2码），但当前本地 PostgreSQL 当前彩种没有历史行。"],
+          ? ["已确认该模块对应 modes_id 79，但当前最新历史行无可渲染的生肖内容。"]
+          : ["已确认该模块对应 modes_id 79（独胆/平特一肖），但当前本地 PostgreSQL 当前彩种没有历史行。"],
     },
     sixiao_sima: {
       key: "sixiao_sima",
