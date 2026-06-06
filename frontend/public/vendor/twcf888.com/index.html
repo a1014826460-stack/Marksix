@@ -1515,10 +1515,43 @@
             buildGroupPredictionsSection(homepagePayload, moduleMap, lotteryType, "gs");
     }
 
-    function loadDynamicHomepage(lotteryType) {
+    // ── 数据缓存：按彩种缓存首页数据，避免刷新时重复请求 ──
+    var pageCache = {};
+    var CACHE_TTL_MS = 12000000; // 缓存有效期 200 分钟
+
+    function loadDynamicHomepage(lotteryType, forceRefresh) {
         currentLotteryType = lotteryType;
         setActiveTab(lotteryType);
         updateDrawFrame(lotteryType);
+
+        var cached = pageCache[lotteryType];
+        var cacheValid = cached && (Date.now() - cached.ts < CACHE_TTL_MS);
+
+        // 缓存命中：立即渲染，后台静默更新
+        if (cacheValid && !forceRefresh) {
+            if (root) {
+                root.innerHTML = buildHomepageMarkup(cached.homepagePayload, cached.sitePagePayload, lotteryType);
+            }
+            // 后台静默刷新（跳过加载动画）
+            var token = requestToken + 1;
+            requestToken = token;
+            Promise.all([
+                fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))),
+                fetchJson("/api/twcf888/site-page?lottery_type=" + encodeURIComponent(String(lotteryType)) + "&history_limit=8")
+            ]).then(function (results) {
+                if (token !== requestToken) { return; }
+                pageCache[lotteryType] = { homepagePayload: results[0], sitePagePayload: results[1], ts: Date.now() };
+                // 数据有变化时才更新 DOM
+                if (root) {
+                    root.innerHTML = buildHomepageMarkup(results[0], results[1], lotteryType);
+                }
+            }).catch(function () {
+                // 静默失败，缓存数据仍在使用
+            });
+            return;
+        }
+
+        // 缓存未命中或强制刷新：显示加载动画
         if (root) {
             root.innerHTML = buildLoadingMarkup();
         }
@@ -1528,15 +1561,17 @@
             fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))),
             fetchJson("/api/twcf888/site-page?lottery_type=" + encodeURIComponent(String(lotteryType)) + "&history_limit=8")
         ]).then(function (results) {
-            if (token !== requestToken || !root) {
-                return;
-            }
+            if (token !== requestToken || !root) { return; }
+            pageCache[lotteryType] = { homepagePayload: results[0], sitePagePayload: results[1], ts: Date.now() };
             root.innerHTML = buildHomepageMarkup(results[0], results[1], lotteryType);
         }).catch(function () {
-            if (token !== requestToken || !root) {
-                return;
+            if (token !== requestToken || !root) { return; }
+            // 如果有过期缓存，降级使用
+            if (cached) {
+                root.innerHTML = buildHomepageMarkup(cached.homepagePayload, cached.sitePagePayload, lotteryType);
+            } else {
+                root.innerHTML = buildErrorMarkup();
             }
-            root.innerHTML = buildErrorMarkup();
         });
     }
 
@@ -1553,7 +1588,7 @@
             return;
         }
         if (data.kind === "legacy-draw-reveal-complete" && Number(data.lotteryType || 0) === currentLotteryType) {
-            loadDynamicHomepage(currentLotteryType);
+            loadDynamicHomepage(currentLotteryType, true);
         }
     });
 
