@@ -789,9 +789,15 @@
             '</style>';
     }
 
-    function buildPanelHeader(title) {
+    function getRegionLabel(lotteryType) {
+        var labels = { 1: "香港", 2: "澳门", 3: "台湾" };
+        return labels[lotteryType] || "台湾";
+    }
+
+    function buildPanelHeader(title, lotteryType) {
+        var region = getRegionLabel(lotteryType);
         return '' +
-            '<table border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td style="border:10px double #237575;height:50px;" bgcolor="#237575"><p align="center"><b><font face="楷体" style="font-size:16pt"><font color="#FFFF00">台湾创富网</font><font color="#FFFFFF">『' +
+            '<table border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td style="border:10px double #237575;height:50px;" bgcolor="#237575"><p align="center"><b><font face="楷体" style="font-size:16pt"><font color="#FFFF00">台湾创富网</font><font color="#FFFFFF"> ' + escapeHtml(region) + '『' +
             escapeHtml(title) +
             '』</font></font></b></p></td></tr></tbody></table>';
     }
@@ -855,7 +861,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<div class="twcf888-grid"><ul>' + items.join("") + "</ul></div></div>";
     }
 
@@ -879,7 +885,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section twcf888-essence" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            '<div class="zzhlamenu"><ul><li><span>台湾创富网精华区</span></li></ul></div>' +
+            '<div class="zzhlamenu"><ul><li><span>台湾创富网 ' + escapeHtml(getRegionLabel(lotteryType)) + '精华区</span></li></ul></div>' +
             '<div class="zzhla-list"><ul>' + items.join("") + "</ul></div></div>";
     }
 
@@ -903,7 +909,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section twcf888-formula" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             items.join("") +
             "</div>";
     }
@@ -918,20 +924,20 @@
         return buildGridSection(meta, cards, siteIssue, lotteryType);
     }
 
-    function buildTopBlockedSection(meta) {
+    function buildTopBlockedSection(meta, lotteryType) {
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
             '<style>.neimu { line-height: 1.5; font-size: 18px; font-weight: bold;} .neimu table { color: #0F0; background: #000;} .neimu table thead th { padding: 5px 10px; font-size: 24px; color: #f00; background: #ff0;} .neimu table td { padding: 5px 10px;} @media screen and (max-width:800px){ .neimu { font-size: 16px;} .neimu table thead th { font-size: 20px;} }</style>' +
-            '<div class="neimu"><table width="100%" border="1"><thead><tr><th align="left" style="background-color:#FFFFCC"><p align="center"><font face="微软雅黑"><font size="4">台湾创富网（公开一肖一码）www.twcf888.com</font></font></p></th></tr></thead><tbody><tr><td style="text-align:left" bgcolor="#FFFFFF"><font face="微软雅黑"><font color="#000000">当前说明：</font><font color="#FF0000">首页已移除旧静态预测数据</font><font color="#0000FF">，该栏目待确认统一 live 模块后再接通。</font></font></td></tr><tr><td style="text-align:left" bgcolor="#FFFFFF"><font face="微软雅黑"><font color="#000000">接线状态：</font><font color="#FF0000">' + escapeHtml(meta.message) + '</font></font></td></tr></tbody></table></div></div>';
+            '<div class="neimu"><table width="100%" border="1"><thead><tr><th align="left" style="background-color:#FFFFCC"><p align="center"><font face="微软雅黑"><font size="4">台湾创富网 ' + escapeHtml(getRegionLabel(lotteryType)) + '（公开一肖一码）www.twcf888.com</font></font></p></th></tr></thead><tbody><tr><td style="text-align:left" bgcolor="#FFFFFF"><font face="微软雅黑"><font color="#000000">当前说明：</font><font color="#FF0000">首页已移除旧静态预测数据</font><font color="#0000FF">，该栏目待确认统一 live 模块后再接通。</font></font></td></tr><tr><td style="text-align:left" bgcolor="#FFFFFF"><font face="微软雅黑"><font color="#000000">接线状态：</font><font color="#FF0000">' + escapeHtml(meta.message) + '</font></font></td></tr></tbody></table></div></div>';
     }
 
-    function buildPlaceholderSection(meta) {
+    function buildPlaceholderSection(meta, lotteryType) {
         if (meta.id === "db1x") {
-            return buildTopBlockedSection(meta);
+            return buildTopBlockedSection(meta, lotteryType);
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td>' +
             '<div class="twcf888-placeholder">' + escapeHtml(meta.message) + "</div>" +
             "</td></tr></tbody></table></div>";
@@ -943,7 +949,7 @@
                 id: meta.id,
                 title: meta.title,
                 message: "当前彩种缺少对应数据库预测记录。"
-            });
+            }, lotteryType);
         }
         var lines = [];
         for (var index = 0; index < module.history.length; index++) {
@@ -956,7 +962,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '">' +
-            '<table border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td style="border:10px double #237575; height: 50px;" bgcolor="#237575"><p align="center"><b><font face="楷体" style="font-size:18pt"><font color="#FFFF00">【码友一家亲】微信群资料统计</font></font></b></p></td></tr></tbody></table>' +
+            '<table border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td style="border:10px double #237575; height: 50px;" bgcolor="#237575"><p align="center"><b><font face="楷体" style="font-size:18pt"><font color="#FFFF00">台湾创富网 ' + escapeHtml(getRegionLabel(lotteryType)) + '【码友一家亲】微信群资料统计</font></font></b></p></td></tr></tbody></table>' +
             '<table width="100%" cellspacing="3" cellpadding="0" height="110"><tbody><tr><td height="40"><p align="center"><b><font color="#0000FF" face="微软雅黑" style="font-size:16pt">码友一（三肖中特）</font><font face="隶书" size="5" color="#000000"><br></font><font face="隶书" size="5" class="twcf888-hit-list">' +
             lines.join("") +
             '</font></b></p></td></tr></tbody></table></div>';
@@ -968,7 +974,7 @@
                 id: meta.id,
                 title: meta.title,
                 message: "当前彩种缺少对应数据库预测记录。"
-            });
+            }, lotteryType);
         }
         var rows = [];
         for (var index = 0; index < module.history.length; index++) {
@@ -985,7 +991,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table style="border-collapse:collapse" border="1" width="100%" bgcolor="#ffffff"><tbody>' +
             rows.join("") +
             "</tbody></table></div>";
@@ -1266,7 +1272,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody>' +
             rows.join("") +
             "</tbody></table></div>";
@@ -1306,7 +1312,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody>' +
             rows.join("") +
             "</tbody></table></div>";
@@ -1316,7 +1322,7 @@
         if (!module || !module.history || !module.history.length) {
             return '' +
                 '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-                buildPanelHeader(meta.title) +
+                buildPanelHeader(meta.title, lotteryType) +
                 '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td>' +
                 '<div class="twcf888-placeholder">当前彩种缺少对应数据库预测记录。</div>' +
                 "</td></tr></tbody></table></div>";
@@ -1354,7 +1360,7 @@
         }
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody>' +
             rows.join("") +
             "</tbody></table></div>";
@@ -1400,7 +1406,7 @@
             !sizeModule || !sizeModule.history || !sizeModule.history.length) {
             return '' +
                 '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-                buildPanelHeader(meta.title) +
+                buildPanelHeader(meta.title, lotteryType) +
                 '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody><tr><td>' +
                 '<div class="twcf888-placeholder">当前彩种缺少对应数据库预测记录（需要 mode 28 单双 + mode 57 大小）。</div>' +
                 "</td></tr></tbody></table></div>";
@@ -1454,7 +1460,7 @@
 
         return '' +
             '<div class="box pad twcf888-section" id="' + escapeHtml(meta.id) + '" style="margin:0px;">' +
-            buildPanelHeader(meta.title) +
+            buildPanelHeader(meta.title, lotteryType) +
             '<table class="twcf888-module-table" border="1" width="100%" bgcolor="#ffffff"><tbody>' +
             rows.join("") +
             "</tbody></table></div>";
