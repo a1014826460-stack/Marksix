@@ -1577,13 +1577,13 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         label_count=3,
         outcome_loader=qinqi_outcome_from_row,
         content_loader=title_content_from_row,
-        content_parser=parse_zodiac_content,
+        content_parser=parse_literal_label_content,
         content_formatter=format_qinqi_content,
         hit_checker=contains_hit,
         labels_loader=labels_from_fixed("四艺生肖", ("琴", "棋", "书", "画")),
         explanation=(
             "琴棋书画把生肖分为琴、棋、书、画四类，每次选择三类。",
-            "该表 title 存预测标签，content 存按标签展开的生肖；脚本用 title/content 还原映射。",
+            "该表 title 存预测标签（如 画,琴,棋），content 存按标签展开的生肖。",
         ),
     ),
     "danshuangtema": PredictionConfig(
@@ -2036,6 +2036,40 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "4肖中特按生肖组选处理，从 12 个生肖中选出 4 个生肖。",
             "特码生肖落入预测生肖则命中。",
+        ),
+    ),
+    "title_5": PredictionConfig(
+        key="title_5",
+        title="天地生肖（天地选1，生肖选2）",
+        default_table="mode_payload_5",
+        default_modes_id=5,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=2,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=xiao_or_content_content_loader("xiao", "content"),
+        content_parser=parse_zodiac_content,
+        content_formatter=format_content_xiao_columns("mode_payload_5", "xiao", "content"),
+        hit_checker=contains_hit,
+        explanation=(
+            "天地生肖按天肖/地肖分类，content 存储分类标签与生肖池，xiao 列存储最终候选生肖。",
+            "特码生肖落入 xiao 列的候选生肖则命中。",
+        ),
+    ),
+    "title_15": PredictionConfig(
+        key="title_15",
+        title="单双公式",
+        default_table="mode_payload_15",
+        default_modes_id=15,
+        labels=tuple(ZODIAC_ORDER),
+        label_count=2,
+        outcome_loader=special_zodiac_from_number_map,
+        content_loader=xiao_column_content_loader("xiao"),
+        content_parser=parse_zodiac_content,
+        content_formatter=format_zodiac_csv,
+        hit_checker=contains_hit,
+        explanation=(
+            "单双公式从 content 存储的分类（单生肖/双生肖）中选出一组，xiao 列存储最终候选生肖。",
+            "特码生肖落入 xiao 列的候选生肖则命中。",
         ),
     ),
     "title_14": PredictionConfig(
@@ -2513,6 +2547,22 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         ),
     ),
 }
+
+# ---------------------------------------------------------------------------
+# 站点别名 — 前端页面和测试可能使用与 PREDICTION_CONFIGS 不同的 key 名。
+# 这些别名不创建新机制，仅将已存在的 PredictionConfig 对象注册到其他 key。
+# ---------------------------------------------------------------------------
+_PREDICTION_CONFIG_ALIASES: dict[str, str] = {
+    # twcf888 / twjinniu / twcaibawang 常用别名
+    "qqsh":              "qinqi",           # 琴棋书画 (mode 26)
+    "title_38":          "shuangbo",        # 双波中特 (mode 38)
+    "title_45":          "heibai3xiao",     # 黑白中特 (mode 45)
+    "sanxiaozhongte":    "3zxt",            # 三肖中特 (mode 69)
+    "4tou":              "sitouzhongte",    # 四头中特 (mode 483)
+}
+for _alias_key, _target_key in _PREDICTION_CONFIG_ALIASES.items():
+    if _target_key in PREDICTION_CONFIGS and _alias_key not in PREDICTION_CONFIGS:
+        PREDICTION_CONFIGS[_alias_key] = PREDICTION_CONFIGS[_target_key]
 
 
 def _extract_first_int(pattern: str, text: str) -> int | None:

@@ -503,5 +503,32 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
             ),
         )
 
+    twcf888_exists = conn.execute(
+        "SELECT id FROM managed_sites WHERE web_id = ? LIMIT 1",
+        (8,),
+    ).fetchone()
+    if not twcf888_exists:
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            """,
+            (
+                8,
+                8,
+                "?????",
+                "www.twcf888.com",
+                taiwan_lottery_id,
+                "twcf888",
+                "",
+                "Seeded bootstrap site for twcf888 vendor integration.",
+                now,
+                now,
+            ),
+        )
+
     _sync_modules(conn)
     seed_yijuzhenyan_text_pool(conn, now=now)

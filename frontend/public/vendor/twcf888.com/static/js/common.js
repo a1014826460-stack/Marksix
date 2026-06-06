@@ -1,4 +1,9 @@
-﻿$('.content').css('margin-bottom','50px')
+﻿// 默认值：防止外部脚本(pub.js/gg.js)缺失时报错
+var jy = window.jy || { siteid: '', cur: '' };
+var pt = window.pt || { link: '#', name: '投注' };
+var popMore = window.popMore || '';
+
+$('.content').css('margin-bottom','50px')
 
 function setIframeHeight(iframe) {
   if (iframe) {

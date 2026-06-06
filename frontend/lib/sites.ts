@@ -118,7 +118,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     forumTitle: "台湾创富网",
     metadataTitle: "台湾创富网",
     metadataDescription: "台湾创富网 | 聚合全网高手资料",
-    faviconPath: "/favicon.ico",
+    faviconPath: "/vendor/twcf888.com/static/favicon.ico",
     pageCssPaths: [
       "/vendor/twcf888.com/static/css/main.css",
       "/vendor/twcf888.com/static/css/custom.css",

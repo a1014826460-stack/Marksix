@@ -12,6 +12,7 @@ DEFAULT_SITE_BLUEPRINT_NAME = "default"
 TWCAIBAWANG_BLUEPRINT_NAME = "twcaibawang"
 TWSAIMAHUI_BLUEPRINT_NAME = "twsaimahui"
 TWJINNIU_BLUEPRINT_NAME = "twjinniu"
+TWCF888_BLUEPRINT_NAME = "twcf888"
 
 DEFAULT_REQUIRED_MODE_IDS = (
     2, 3, 5, 8, 9, 10, 12, 15, 20, 22, 24, 26, 27, 28, 30, 31, 34, 38, 39,
@@ -37,6 +38,26 @@ TWSAIMAHUI_REQUIRED_MODE_IDS = (
     246, 251, 295, 336, 470, 471, 472, 473, 475, 476, 478,
 )
 TWJINNIU_BLOCKED_ITEMS = ()
+# twcf888 v1 is intentionally conservative: only confirmed live mappings are
+# required. Everything else stays blocked or snapshot-only.
+TWCF888_REQUIRED_MODE_IDS = (
+    2, 5, 12, 14, 15, 20, 26, 27, 28, 38, 41, 42, 43, 45, 47, 49, 50, 51,
+    53, 54, 57, 66, 69, 74, 88, 95, 98, 100, 103, 122, 132, 143, 180, 197,
+    198, 224, 226, 279, 470, 472, 473, 482, 483,
+)
+
+TWCF888_BLOCKED_ITEMS = ()
+
+# Override the initial conservative v1 set with the currently confirmed live
+# mappings. Keeping the redefinition here avoids touching older mojibake rows
+# one-by-one while still making the runtime/profile data deterministic.
+TWCF888_REQUIRED_MODE_IDS = (
+    2, 5, 12, 14, 15, 20, 26, 27, 28, 38, 41, 42, 43, 45, 47, 49, 50, 51,
+    53, 54, 57, 66, 69, 74, 88, 95, 98, 100, 103, 122, 132, 143, 180, 197,
+    198, 224, 226, 279, 470, 472, 473, 482, 483,
+)
+
+TWCF888_BLOCKED_ITEMS = ()
 TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS = (
     5, 9, 10, 15, 22, 24, 27, 30, 39, 41, 47, 48, 63, 88, 116, 123, 132, 141,
     143, 144, 145, 147, 149, 151, 152, 155, 157, 158, 159, 244, 246, 251, 295,
@@ -133,6 +154,12 @@ def _seed_site_blueprint_profiles(conn: Any) -> None:
             "known_unavailable_mode_ids": (),
             "blocked_items": TWJINNIU_BLOCKED_ITEMS,
         },
+        {
+            "name": TWCF888_BLUEPRINT_NAME,
+            "required_mode_ids": TWCF888_REQUIRED_MODE_IDS,
+            "known_unavailable_mode_ids": (),
+            "blocked_items": TWCF888_BLOCKED_ITEMS,
+        },
     )
     for profile in profiles:
         conn.execute(
@@ -193,6 +220,15 @@ def _backfill_site_blueprint_names(conn: Any) -> None:
           AND web_id = 7
         """,
         (TWJINNIU_BLUEPRINT_NAME,),
+    )
+    conn.execute(
+        """
+        UPDATE managed_sites
+        SET blueprint_name = ?
+        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+          AND web_id = 8
+        """,
+        (TWCF888_BLUEPRINT_NAME,),
     )
     conn.execute(
         """

@@ -15,6 +15,7 @@ from helpers import (
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
     merge_preferred_mode_payload_rows, split_csv,
 )
+from predict.common import PredictionConfig
 from predict.mechanisms import get_prediction_config
 from admin.prediction import resolve_prediction_table_for_mode
 from utils.created_prediction_store import (
@@ -73,20 +74,127 @@ def summarize_prediction_text(row: dict[str, Any]) -> str:
     return ""
 
 
-def _check_prediction_correct(prediction_text: str, special: dict[str, Any]) -> bool | None:
-    """判断预测是否命中特码结果。未开奖时返回 None。"""
+# 五行元素映射（与 public.fixed_data 中 "五行肖" sign 一致）
+_ELEMENT_MAP: dict[str, str] = {}
+_ELEMENT_BY_GROUP = {
+    "金": ("10", "11", "22", "23", "34", "35", "46", "47"),
+    "木": ("04", "05", "16", "17", "28", "29", "40", "41"),
+    "水": ("07", "08", "19", "20", "31", "32", "43", "44"),
+    "火": ("01", "02", "13", "14", "25", "26", "37", "38"),
+    "土": ("03", "06", "09", "12", "15", "18", "21", "24", "27", "30", "33", "36", "39", "42", "45", "48"),
+}
+for _el, _codes in _ELEMENT_BY_GROUP.items():
+    for _c in _codes:
+        _ELEMENT_MAP[_c] = _el
+
+
+def _compute_outcome_from_row(row: dict[str, Any]) -> str:
+    """从行数据计算所有可能的特码分类标签，供 hit_checker 使用。
+
+    输出为 `|` 分隔的标签串，覆盖单双、大小、头、尾、波色、合数单双、
+    合数大小、家禽野兽、特码生肖、号码、以及五行元素。
+    """
+    codes = split_csv(row.get("res_code"))
+    zodiacs = split_csv(row.get("res_sx"))
+    colors = split_csv(row.get("res_color"))
+    if not codes:
+        return ""
+    code = codes[-1]
+    zodiac = zodiacs[-1] if zodiacs else ""
+    color = colors[-1].lower() if colors else ""
+    number = int(code)
+    digit_sum = number // 10 + number % 10
+
+    domestic = {"牛", "狗", "猪", "羊", "马", "鸡"}
+    wave_map = {"red": "红波", "blue": "蓝波", "green": "绿波"}
+    # 五行元素映射（与 public.fixed_data 中 "五行肖" sign 一致）
+    element = _ELEMENT_MAP.get(code, "")
+    # 琴棋书画映射
+    _QQSH_ZODIAC_MAP = {
+        "兔": "琴", "蛇": "琴", "鸡": "琴",
+        "鼠": "棋", "牛": "棋", "狗": "棋",
+        "虎": "书", "龙": "书", "马": "书",
+        "羊": "画", "猴": "画", "猪": "画",
+    }
+    qqsh_label = _QQSH_ZODIAC_MAP.get(zodiac, "")
+    outcomes = [
+        "单数" if number % 2 == 1 else "双数",
+        "大数" if number >= 25 else "小数",
+        "单" if number % 2 == 1 else "双",
+        "大" if number >= 25 else "小",
+        f"{number // 10}头",
+        f"{number % 10}尾",
+        wave_map.get(color, ""),
+        "合单" if digit_sum % 2 == 1 else "合双",
+        "合数大" if digit_sum >= 7 else "合数小",
+        "家禽" if zodiac in domestic else "野兽",
+        zodiac,
+        code,
+        element,
+        qqsh_label,
+    ]
+    return "|".join(o for o in outcomes if o)
+
+
+def _check_correct_by_mechanism(
+    prediction_text: str, row: dict[str, Any], config: "PredictionConfig"
+) -> bool | None:
+    """用机制专属的 hit_checker 判断预测是否正确。
+
+    _compute_outcome_from_row 返回 ``|`` 分隔的复合标签串（单双/大小/头/尾/
+    波色/合数/家禽野兽/生肖/号码），而 content_parser 提取的是单个维度标签。
+    标准 contains_hit/excludes_hit 做的是单值精确匹配，因此需要逐标签检查而非
+    把整串复合 outcome 直接传给 hit_checker。
+    """
+    from predict.common import contains_hit as _std_contains, excludes_hit as _std_excludes
+
+    special = extract_special_result(row)
     if not special["code"]:
         return None
-    targets = [special["zodiac"], special["code"], special["color"]]
-    return any(target and target in prediction_text for target in targets)
+    outcome = _compute_outcome_from_row(row)
+    content_labels = config.content_parser(prediction_text)
+    if not content_labels:
+        return None
+    # 标准命中检查：复合 outcome 中包含预测标签即为命中
+    if config.hit_checker is _std_contains:
+        return any(label in outcome for label in content_labels)
+    # 标准绝杀检查：复合 outcome 中不包含任何预测标签即为命中
+    if config.hit_checker is _std_excludes:
+        return not any(label in outcome for label in content_labels)
+    # 自定义 hit_checker（如 mixed_dimension_*）自己处理复合 outcome
+    return config.hit_checker(outcome, content_labels)
 
 
-def serialize_public_history_row(row: dict[str, Any]) -> dict[str, Any]:
+def serialize_public_history_row(
+    row: dict[str, Any],
+    config: "PredictionConfig | None" = None,
+) -> dict[str, Any]:
     special = extract_special_result(row)
     issue = f"{row.get('year') or ''}{row.get('term') or ''}".strip()
     prediction_text = summarize_prediction_text(row)
     draw_is_opened = row.get("draw_is_opened")
     is_opened = bool(draw_is_opened) if draw_is_opened is not None else bool(special["code"])
+    is_correct = None
+    if is_opened and special["code"]:
+        if config is not None:
+            # 用机制的 content_loader 提取正确的预测来源字段
+            # （例如天地生肖用 xiao 列而非 content 列）
+            try:
+                check_text = config.content_loader(row)
+            except Exception:
+                check_text = ""
+            # 回退：content_loader 返回空时（如逢买必中 ds 列），用 prediction_text
+            if not check_text:
+                check_text = prediction_text
+            is_correct = _check_correct_by_mechanism(check_text, row, config)
+        else:
+            # 兜底：简单字符串匹配（含 xiao 列增强）
+            check_text = prediction_text
+            xiao = str(row.get("xiao") or "").strip()
+            if xiao:
+                check_text = check_text + "," + xiao
+            targets = [special["zodiac"], special["code"], special["color"]]
+            is_correct = any(target and target in check_text for target in targets)
     return {
         "issue": issue,
         "year": str(row.get("year") or ""),
@@ -95,7 +203,7 @@ def serialize_public_history_row(row: dict[str, Any]) -> dict[str, Any]:
         "image_url": _normalize_public_image_url(row.get("image_url")),
         "result_text": (f"{special['zodiac']}{special['code']}".strip() if is_opened and special["code"] else "待开奖"),
         "is_opened": is_opened,
-        "is_correct": _check_prediction_correct(prediction_text, special) if is_opened else None,
+        "is_correct": is_correct,
         "source_web_id": row.get("web_id"),
         "raw": row,
     }
@@ -180,7 +288,7 @@ def load_public_module_history(
         "history_table": history_table,
         "history_schema": history_schema,
         "history_sources": history_sources,
-        "history": [serialize_public_history_row(row) for row in rows],
+        "history": [serialize_public_history_row(row, config) for row in rows],
     }
 
 

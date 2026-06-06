@@ -78,7 +78,7 @@ def save_site(db_path: str | Path, payload: dict[str, Any], site_id: int | None 
                 raise ValidationError(f"web_id={fields['web_id']} 已被其他站点占用")
             row = insert_site(conn, fields, now)
             new_site_id = int(row["id"])
-            template_site_id = int(payload.get("template_site_id") or 4)
+            template_site_id = int(payload.get("template_site_id") or 1)
             template_exists = conn.execute(
                 "SELECT id FROM managed_sites WHERE id = ?",
                 (template_site_id,),

@@ -270,6 +270,171 @@ TWCAIBAWANG_BLOCKED_ITEMS = (
 )
 TWJINNIU_BLOCKED_ITEMS = ()
 
+# twcf888 v1 is intentionally conservative: only confirmed live mappings are
+# required. Everything else stays blocked or snapshot-only.
+TWCF888_REQUIRED_MODE_IDS = (
+    2,
+    5,
+    12,
+    14,
+    15,
+    20,
+    26,
+    27,
+    38,
+    41,
+    42,
+    43,
+    45,
+    47,
+    49,
+    50,
+    53,
+    54,
+    57,
+    66,
+    69,
+    74,
+    88,
+    103,
+    132,
+    143,
+    198,
+    279,
+    470,
+    482,
+    472,
+    473,
+    483,
+)
+
+TWCF888_KNOWN_UNAVAILABLE_MODE_IDS = ()
+
+TWCF888_BLOCKED_ITEMS = (
+    {
+        "frontend_module": "稳料四肖中",
+        "page_title": "稳料四肖中",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "6尾中特",
+        "page_title": "6尾中特",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "3肖防3码",
+        "page_title": "3肖防3码",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "准杀7码",
+        "page_title": "准杀7码",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "绝杀一行",
+        "page_title": "绝杀一行",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "绝杀二尾",
+        "page_title": "绝杀二尾",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "稳中七肖",
+        "page_title": "稳中七肖",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "内幕资料",
+        "page_title": "内幕资料",
+        "reason": "Prediction/article boundary is still unconfirmed, so v1 keeps it out of live mapping.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "18码中特",
+        "page_title": "18码中特",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "广东5兄弟",
+        "page_title": "广东5兄弟",
+        "reason": "Prediction/article boundary is still unconfirmed, so v1 keeps it out of live mapping.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "双波10码",
+        "page_title": "双波10码",
+        "reason": "Prediction-style module, but the backend mechanism and exact mode_id are still unconfirmed.",
+        "status": "blocked_requires_backend_work",
+    },
+    {
+        "frontend_module": "官方图库",
+        "page_title": "官方图库",
+        "reason": "Gallery content is not a prediction module and remains available only as static snapshot content.",
+        "status": "snapshot_only",
+    },
+)
+
+# Override the initial conservative v1 set with the currently confirmed live
+# mappings. Keeping the redefinition here avoids touching older mojibake rows
+# one-by-one while still making the blueprint deterministic.
+TWCF888_REQUIRED_MODE_IDS = (
+    2,
+    5,
+    12,
+    14,
+    15,
+    20,
+    26,
+    27,
+    28,
+    38,
+    41,
+    42,
+    43,
+    45,
+    47,
+    49,
+    50,
+    51,
+    53,
+    54,
+    57,
+    66,
+    69,
+    74,
+    88,
+    95,
+    98,
+    100,
+    103,
+    122,
+    132,
+    143,
+    180,
+    197,
+    198,
+    224,
+    226,
+    279,
+    470,
+    472,
+    473,
+    482,
+    483,
+)
+
+TWCF888_BLOCKED_ITEMS = ()
 
 def _normalize_domain(value: Any) -> str:
     return str(value or "").strip().lower()
@@ -382,6 +547,22 @@ def _site_matches_twjinniu(site: dict[str, Any] | None) -> bool:
     return web_id == 7
 
 
+def _site_matches_twcf888(site: dict[str, Any] | None) -> bool:
+    if not site:
+        return False
+
+    domain = _normalize_domain(site.get("domain"))
+    if domain in {"www.twcf888.com", "twcf888.com"}:
+        return True
+
+    try:
+        web_id = int(site.get("web_id") or 0)
+    except (TypeError, ValueError):
+        web_id = 0
+
+    return web_id == 8
+
+
 def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
     profile = _load_blueprint_profile_from_db(site)
     if profile:
@@ -392,6 +573,8 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
         return TWCAIBAWANG_REQUIRED_MODE_IDS
     if _site_matches_twjinniu(site):
         return TWJINNIU_REQUIRED_MODE_IDS
+    if _site_matches_twcf888(site):
+        return TWCF888_REQUIRED_MODE_IDS
     return DEFAULT_REQUIRED_MODE_IDS
 
 
@@ -405,6 +588,8 @@ def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tupl
         return TWCAIBAWANG_KNOWN_UNAVAILABLE_MODE_IDS
     if _site_matches_twjinniu(site):
         return TWJINNIU_KNOWN_UNAVAILABLE_MODE_IDS
+    if _site_matches_twcf888(site):
+        return TWCF888_KNOWN_UNAVAILABLE_MODE_IDS
     return DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS
 
 
@@ -418,6 +603,8 @@ def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, An
         return [dict(item) for item in TWCAIBAWANG_BLOCKED_ITEMS]
     if _site_matches_twjinniu(site):
         return [dict(item) for item in TWJINNIU_BLOCKED_ITEMS]
+    if _site_matches_twcf888(site):
+        return [dict(item) for item in TWCF888_BLOCKED_ITEMS]
     return []
 
 
@@ -431,4 +618,6 @@ def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
         return "twcaibawang"
     if _site_matches_twjinniu(site):
         return "twjinniu"
+    if _site_matches_twcf888(site):
+        return "twcf888"
     return "default"

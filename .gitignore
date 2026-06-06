@@ -70,3 +70,7 @@ frontend/Zz_www.kh6s.com/
 frontend/public/data/Images/mode_474/animals/
 # Junction to backend/data/ — not real files, ignore entirely
 frontend/public/data/
+backend/data/logs/app.log.3
+backend/data/logs/app.log.2
+backend/data/logs/app.log.1
+
