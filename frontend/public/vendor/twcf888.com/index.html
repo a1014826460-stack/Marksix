@@ -239,6 +239,8 @@
     <div style="margin:0px;border:3px solid #237575">
         <!--LOGO-->
         <img src="static/picture/ef3903102310fd69852125bd8a24044a.png" width="100%">
+        <div id="nav2-sentinel" class="nav2-sentinel" aria-hidden="true"></div>
+        <div id="nav2-placeholder" class="nav2-placeholder" aria-hidden="true"></div>
         <div id="nav2" class="nav2" data-fixed="">
     <!---->
     <ul>
@@ -275,15 +277,82 @@
             <a href="#qqsh">琴棋书画</a></li>
     </ul>
 </div>
-<style>.nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff;} .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between;} .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px;} .nav2 ul li a { display: block; padding: 3px 0; text-align: center; color: #fff; border-radius: 50px; background: #237575;} .nav2 ul li a:hover { background: #da183b;} #nav2[data-fixed="fixed"]{ position: fixed; top:0; left: 0; right: 0; margin: auto; z-index: 1; box-shadow: 0 5px 10px rgba(0,0,0,.1);} .nav-img { text-align: center; background: #000;} .nav-img img { width: auto; height: 50px;} @media screen and (max-width:800px) { .nav-img img { height: 70px;} } @media screen and (min-width:800px) { .nav2 { padding: 4px; font-size: 16px;} .nav2 ul { padding: 4px 0;} .nav2 ul li { padding: 0 4px;} .nav2 ul li a { padding: 5px 0; cursor: pointer;} }</style>
+<style>.nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff;} .nav2-sentinel { display: block; width: 100%; height: 1px; visibility: hidden; pointer-events: none;} .nav2-placeholder { display: none; width: 100%; max-width: 800px; margin: 0 auto;} .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between;} .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px;} .nav2 ul li a { display: block; padding: 3px 0; text-align: center; color: #fff; border-radius: 50px; background: #237575;} .nav2 ul li a:hover { background: #da183b;} #nav2[data-fixed="fixed"]{ position: fixed; top:0; left: 50%; transform: translateX(-50%); width: var(--nav-fixed-width, 100%); max-width: 800px; z-index: 1000; box-shadow: 0 5px 10px rgba(0,0,0,.1);} .nav-img { text-align: center; background: #000;} .nav-img img { width: auto; height: 50px;} @media screen and (max-width:800px) { .nav-img img { height: 70px;} } @media screen and (min-width:800px) { .nav2 { padding: 4px; font-size: 16px;} .nav2 ul { padding: 4px 0;} .nav2 ul li { padding: 0 4px;} .nav2 ul li a { padding: 5px 0; cursor: pointer;} }</style>
 <script>
     var obj = document.getElementById("nav2");
-    var ot = obj.offsetTop;
-    document.onscroll = function() {
-        var st = document.body.scrollTop || document.documentElement.scrollTop;
-        obj.setAttribute("data-fixed", st >= ot ? "fixed": "")
+    var navSentinel = document.getElementById("nav2-sentinel");
+    var navPlaceholder = document.getElementById("nav2-placeholder");
+
+    function getScrollTop() {
+        return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     }
-;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc4MDcxNzgyMTA2Niljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzE3NDQnKTs='))}();</script>
+
+    function syncNavMetrics() {
+        if (!obj) {
+            return;
+        }
+        obj.style.setProperty("--nav-fixed-width", ((navPlaceholder && navPlaceholder.offsetWidth) || obj.offsetWidth) + "px");
+        if (navPlaceholder) {
+            navPlaceholder.style.height = obj.offsetHeight + "px";
+        }
+    }
+
+    function updateNavFixedState() {
+        if (!obj || !navSentinel) {
+            return;
+        }
+        var shouldFix = navSentinel.getBoundingClientRect().top <= 0;
+        obj.setAttribute("data-fixed", shouldFix ? "fixed" : "");
+        if (navPlaceholder) {
+            navPlaceholder.style.display = shouldFix ? "block" : "none";
+            navPlaceholder.style.height = shouldFix ? (obj.offsetHeight + "px") : "0px";
+        }
+    }
+
+    function scrollToNavTarget(hash) {
+        if (!hash || hash.charAt(0) !== "#") {
+            return;
+        }
+        var target = document.getElementById(hash.slice(1));
+        if (!target) {
+            return;
+        }
+        var top = target.getBoundingClientRect().top + getScrollTop() - (obj ? obj.offsetHeight + 8 : 8);
+        window.scrollTo({
+            top: Math.max(0, top),
+            behavior: "smooth"
+        });
+    }
+
+    if (obj) {
+        var navLinks = obj.querySelectorAll('a[href^="#"]');
+        for (var navIndex = 0; navIndex < navLinks.length; navIndex++) {
+            navLinks[navIndex].addEventListener("click", function(event) {
+                var hash = this.getAttribute("href") || "";
+                var target = hash ? document.getElementById(hash.slice(1)) : null;
+                if (!target) {
+                    return;
+                }
+                event.preventDefault();
+                scrollToNavTarget(hash);
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, "", hash);
+                }
+            });
+        }
+        window.addEventListener("scroll", updateNavFixedState, { passive: true });
+        window.addEventListener("resize", function() {
+            syncNavMetrics();
+            updateNavFixedState();
+        });
+        window.addEventListener("load", function() {
+            syncNavMetrics();
+            updateNavFixedState();
+        });
+        syncNavMetrics();
+        updateNavFixedState();
+    }
+    ;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc4MDcxNzgyMTA2Niljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzE3NDQnKTs='))}();</script>
         <div class="box">
             <p><img src="static/picture/49-1.png"></p>        </div>
         <!--备用start-->
@@ -1520,6 +1589,10 @@
             }
             var modeIdNum = Number(card.mode_id);
             var meta = { id: "pred-" + groupKey + "-" + card.mode_id, title: card.title, state: "live", modeId: modeIdNum };
+            var anchorId = getLegacyAnchorId(groupKey, card);
+            if (anchorId) {
+                parts.push(buildAnchorSentinel(anchorId));
+            }
 
             if (modeIdNum === 0) {
                 parts.push(buildCompositeParitySizeSection(meta, moduleMap, lotteryType));
@@ -1547,6 +1620,41 @@
         return lines.join("");
     }
 
+    function buildAnchorSentinel(anchorId) {
+        if (!anchorId) {
+            return "";
+        }
+        return '<div id="' + escapeHtml(anchorId) + '" class="twcf888-anchor-sentinel" style="height:1px;margin:0;padding:0"></div>';
+    }
+
+    function getLegacyAnchorId(groupKey, card) {
+        if (!card) {
+            return "";
+        }
+        var title = String(card.title || "");
+        if (groupKey === "jsb" && title.indexOf("绝杀") !== -1) {
+            return "jslist";
+        }
+        if (groupKey === "amgst") {
+            if (title.indexOf("三肖中特") !== -1) return "ss3xzt";
+            if (title.indexOf("三期计划") !== -1) return "sqjsh";
+            if (title.indexOf("四肖八码") !== -1) return "sx8m";
+            if (title.indexOf("双波10码") !== -1) return "sb10m";
+            if (title.indexOf("天地") !== -1) return "tdzt";
+            if (title.indexOf("18码") !== -1) return "18mzt";
+            if (title.indexOf("一尾") !== -1) return "ptyw";
+            if (title.indexOf("琴棋书画") !== -1) return "qqsh";
+            if (title.indexOf("顶部一肖") !== -1 || title.indexOf("平特一肖") !== -1) return "db1x";
+        }
+        if (groupKey === "jhq" && title.indexOf("精华") !== -1) {
+            return "tabzzhla";
+        }
+        if (groupKey === "gs") {
+            return "djgs";
+        }
+        return "";
+    }
+
     function buildHomepageShellMarkup(homepagePayload, lotteryType) {
         var siteIssue = homepagePayload && homepagePayload.site ? homepagePayload.site.current_issue : "";
         var sections = {
@@ -1563,7 +1671,17 @@
             var cards = section && section.cards ? section.cards : [];
             parts.push(buildArticleSection(meta, cards, siteIssue, lotteryType));
             parts.push('<div id="twcf888-group-' + escapeHtml(groupKey) + '-modules">' +
-                buildPredictionSkeletonSection(meta.title, lotteryType, Math.max(1, getGroupModeIds(homepagePayload, groupKey).length)) +
+                (function () {
+                    var skeletonParts = [];
+                    for (var j = 0; j < cards.length; j++) {
+                        var anchorId = getLegacyAnchorId(groupKey, cards[j]);
+                        if (anchorId) {
+                            skeletonParts.push(buildAnchorSentinel(anchorId));
+                        }
+                    }
+                    skeletonParts.push(buildPredictionSkeletonSection(meta.title, lotteryType, Math.max(1, getGroupModeIds(homepagePayload, groupKey).length)));
+                    return skeletonParts.join("");
+                })() +
                 '</div>');
         }
         return parts.join("");
