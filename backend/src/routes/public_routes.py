@@ -30,6 +30,19 @@ def site_page(ctx: RequestContext) -> None:
     site_id = ctx.query_value("site_id")
     history_limit = int(ctx.query_value("history_limit", "8") or 8)
     lottery_type = ctx.query_value("lottery_type")
+    raw_mode_ids = str(ctx.query_value("mode_ids", "") or "").strip()
+    mode_ids = []
+    if raw_mode_ids:
+        for item in raw_mode_ids.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                parsed = int(item)
+            except ValueError:
+                continue
+            if parsed > 0:
+                mode_ids.append(parsed)
     ctx.send_json(
         get_public_site_page_data(
             ctx.db_path,
@@ -37,6 +50,7 @@ def site_page(ctx: RequestContext) -> None:
             domain=ctx.query_value("domain"),
             history_limit=history_limit,
             lottery_type_id=int(lottery_type) if lottery_type not in (None, "") else None,
+            mode_ids=mode_ids or None,
         )
     )
 

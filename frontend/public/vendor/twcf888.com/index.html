@@ -369,6 +369,7 @@
         jhq: { id: "tabzzhla", title: "精华区", kind: "essence" },
         gs: { id: "djgs", title: "独家公式", kind: "formula" }
     };
+    var GROUP_RENDER_ORDER = ["amgst", "jsb", "jhq", "gs"];
 
     var MODULE_SECTION_META = [
         { id: "db1x", title: "顶部一肖", state: "live", modeId: 103 },
@@ -450,6 +451,39 @@
             }
             return response.json();
         });
+    }
+
+    function uniqueNumberList(values) {
+        var map = {};
+        var list = [];
+        for (var i = 0; i < (values || []).length; i++) {
+            var value = Number(values[i] || 0);
+            if (!value || map[value]) {
+                continue;
+            }
+            map[value] = true;
+            list.push(value);
+        }
+        return list;
+    }
+
+    function getGroupModeIds(homepagePayload, groupKey) {
+        var section = findSection(homepagePayload, groupKey);
+        var cards = section && section.cards ? section.cards : [];
+        var ids = [];
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            if (!card || card.mode_id == null || card.data_status === "snapshot" || card.data_status === "blocked") {
+                continue;
+            }
+            var modeIdNum = Number(card.mode_id);
+            if (modeIdNum === 0) {
+                ids.push(28, 57);
+            } else {
+                ids.push(modeIdNum);
+            }
+        }
+        return uniqueNumberList(ids);
     }
 
     function normalizeIssueDigits(issue) {
@@ -785,6 +819,15 @@
             '#twcf888-dynamic-homepage .twcf888-hit-list .body{font-family:隶书;font-size:24px;color:#000}' +
             '#twcf888-dynamic-homepage .twcf888-nine-row{padding:5px 0}' +
             '#twcf888-dynamic-homepage .twcf888-loading{padding:18px 10px;text-align:center;color:#333;background:#fff;border:1px solid #ccc}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton{position:relative;overflow:hidden;background:#fff;border:1px solid #d9e0e6}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.7),rgba(255,255,255,0));animation:twcf888Shimmer 1.4s infinite}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton-panel{padding:0;background:#f7f9fb}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton-line{height:18px;margin:12px 14px;border-radius:9px;background:linear-gradient(90deg,#e6edf3,#f2f6fa,#e6edf3);background-size:200% 100%;animation:twcf888Pulse 1.6s ease-in-out infinite}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton-line.short{width:38%}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton-line.mid{width:62%}' +
+            '#twcf888-dynamic-homepage .twcf888-skeleton-line.long{width:86%}' +
+            '@keyframes twcf888Shimmer{100%{transform:translateX(100%)}}' +
+            '@keyframes twcf888Pulse{0%{background-position:200% 0}100%{background-position:-200% 0}}' +
             '@media screen and (max-width:600px){#twcf888-dynamic-homepage .twcf888-grid li,#twcf888-dynamic-homepage .twcf888-essence .zzhla-list li{width:100%}}' +
             '</style>';
     }
@@ -1488,6 +1531,44 @@
         return parts.join("");
     }
 
+    function buildPredictionSkeletonSection(title, lotteryType, count) {
+        var lines = [];
+        var total = count && count > 0 ? count : 1;
+        for (var i = 0; i < total; i++) {
+            lines.push('' +
+                '<div class="twcf888-skeleton twcf888-section" aria-hidden="true">' +
+                buildPanelHeader(title, lotteryType) +
+                '<div class="twcf888-skeleton-panel">' +
+                '<div class="twcf888-skeleton-line long"></div>' +
+                '<div class="twcf888-skeleton-line mid"></div>' +
+                '<div class="twcf888-skeleton-line short"></div>' +
+                "</div></div>");
+        }
+        return lines.join("");
+    }
+
+    function buildHomepageShellMarkup(homepagePayload, lotteryType) {
+        var siteIssue = homepagePayload && homepagePayload.site ? homepagePayload.site.current_issue : "";
+        var sections = {
+            amgst: findSection(homepagePayload, "amgst"),
+            jsb: findSection(homepagePayload, "jsb"),
+            jhq: findSection(homepagePayload, "jhq"),
+            gs: findSection(homepagePayload, "gs")
+        };
+        var parts = [buildStyles()];
+        for (var i = 0; i < GROUP_RENDER_ORDER.length; i++) {
+            var groupKey = GROUP_RENDER_ORDER[i];
+            var meta = ARTICLE_SECTION_META[groupKey];
+            var section = sections[groupKey];
+            var cards = section && section.cards ? section.cards : [];
+            parts.push(buildArticleSection(meta, cards, siteIssue, lotteryType));
+            parts.push('<div id="twcf888-group-' + escapeHtml(groupKey) + '-modules">' +
+                buildPredictionSkeletonSection(meta.title, lotteryType, Math.max(1, getGroupModeIds(homepagePayload, groupKey).length)) +
+                '</div>');
+        }
+        return parts.join("");
+    }
+
     function buildHomepageMarkup(homepagePayload, sitePagePayload, lotteryType) {
         var siteIssue = homepagePayload && homepagePayload.site ? homepagePayload.site.current_issue : "";
         var moduleList = sitePagePayload && sitePagePayload.data && sitePagePayload.data.site_page && sitePagePayload.data.site_page.modules
@@ -1515,6 +1596,92 @@
             buildGroupPredictionsSection(homepagePayload, moduleMap, lotteryType, "gs");
     }
 
+    function buildSitePageUrl(lotteryType, historyLimit, modeIds) {
+        var url = "/api/twcf888/site-page?lottery_type=" + encodeURIComponent(String(lotteryType)) + "&history_limit=" + encodeURIComponent(String(historyLimit || 8));
+        var normalizedModeIds = uniqueNumberList(modeIds);
+        if (normalizedModeIds.length) {
+            url += "&mode_ids=" + encodeURIComponent(normalizedModeIds.join(","));
+        }
+        return url;
+    }
+
+    function patchGroupModules(homepagePayload, sitePagePayload, lotteryType, groupKey, token) {
+        if (token !== requestToken) {
+            return;
+        }
+        var container = document.getElementById("twcf888-group-" + groupKey + "-modules");
+        if (!container) {
+            return;
+        }
+        var moduleList = sitePagePayload && sitePagePayload.data && sitePagePayload.data.site_page && sitePagePayload.data.site_page.modules
+            ? sitePagePayload.data.site_page.modules
+            : [];
+        var moduleMap = {};
+        for (var i = 0; i < moduleList.length; i++) {
+            moduleMap[String(moduleList[i].default_modes_id)] = moduleList[i];
+        }
+        container.innerHTML = buildGroupPredictionsSection(homepagePayload, moduleMap, lotteryType, groupKey);
+    }
+
+    function prefetchGroupModules(homepagePayload, lotteryType, token, options) {
+        options = options || {};
+        var background = !!options.background;
+        var groups = options.groups && options.groups.length ? options.groups.slice() : GROUP_RENDER_ORDER.slice();
+        var pending = [];
+        for (var i = 0; i < groups.length; i++) {
+            var groupKey = groups[i];
+            var modeIds = getGroupModeIds(homepagePayload, groupKey);
+            if (!modeIds.length) {
+                patchGroupModules(homepagePayload, { data: { site_page: { modules: [] } } }, lotteryType, groupKey, token);
+                continue;
+            }
+            pending.push({ groupKey: groupKey, modeIds: modeIds });
+        }
+        if (!pending.length) {
+            return;
+        }
+
+        function runQueue(index) {
+            if (index >= pending.length || token !== requestToken) {
+                return;
+            }
+            var entry = pending[index];
+            var startFetch = function () {
+                if (token !== requestToken) {
+                    return;
+                }
+                fetchJson(buildSitePageUrl(lotteryType, 8, entry.modeIds)).then(function (payload) {
+                    patchGroupModules(homepagePayload, payload, lotteryType, entry.groupKey, token);
+                    var cacheEntry = pageCache[lotteryType];
+                    if (cacheEntry) {
+                        cacheEntry.groupPayloads = cacheEntry.groupPayloads || {};
+                        cacheEntry.groupPayloads[entry.groupKey] = payload;
+                    }
+                }).catch(function () {
+                    patchGroupModules(homepagePayload, { data: { site_page: { modules: [] } } }, lotteryType, entry.groupKey, token);
+                }).finally(function () {
+                    if (background) {
+                        setTimeout(function () {
+                            runQueue(index + 1);
+                        }, 16);
+                    } else {
+                        runQueue(index + 1);
+                    }
+                });
+            };
+
+            if (background && window.requestIdleCallback) {
+                window.requestIdleCallback(function () {
+                    startFetch();
+                }, { timeout: 1200 });
+            } else {
+                setTimeout(startFetch, background ? 60 : 0);
+            }
+        }
+
+        runQueue(0);
+    }
+
     // ── 数据缓存：按彩种缓存首页数据，避免刷新时重复请求 ──
     var pageCache = {};
     var CACHE_TTL_MS = 12000000; // 缓存有效期 200 分钟
@@ -1526,49 +1693,69 @@
 
         var cached = pageCache[lotteryType];
         var cacheValid = cached && (Date.now() - cached.ts < CACHE_TTL_MS);
+        var token = requestToken + 1;
+        requestToken = token;
 
         // 缓存命中：立即渲染，后台静默更新
         if (cacheValid && !forceRefresh) {
             if (root) {
-                root.innerHTML = buildHomepageMarkup(cached.homepagePayload, cached.sitePagePayload, lotteryType);
+                root.innerHTML = buildHomepageShellMarkup(cached.homepagePayload, lotteryType);
             }
-            // 后台静默刷新（跳过加载动画）
-            var token = requestToken + 1;
-            requestToken = token;
-            Promise.all([
-                fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))),
-                fetchJson("/api/twcf888/site-page?lottery_type=" + encodeURIComponent(String(lotteryType)) + "&history_limit=8")
-            ]).then(function (results) {
-                if (token !== requestToken) { return; }
-                pageCache[lotteryType] = { homepagePayload: results[0], sitePagePayload: results[1], ts: Date.now() };
-                // 数据有变化时才更新 DOM
-                if (root) {
-                    root.innerHTML = buildHomepageMarkup(results[0], results[1], lotteryType);
+            for (var i = 0; i < GROUP_RENDER_ORDER.length; i++) {
+                var cachedGroupKey = GROUP_RENDER_ORDER[i];
+                if (cached.groupPayloads && cached.groupPayloads[cachedGroupKey]) {
+                    patchGroupModules(cached.homepagePayload, cached.groupPayloads[cachedGroupKey], lotteryType, cachedGroupKey, token);
                 }
+            }
+            prefetchGroupModules(cached.homepagePayload, lotteryType, token, {
+                groups: GROUP_RENDER_ORDER,
+                background: true
+            });
+            fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))).then(function (homepagePayload) {
+                if (token !== requestToken) { return; }
+                pageCache[lotteryType] = {
+                    homepagePayload: homepagePayload,
+                    ts: Date.now(),
+                    groupPayloads: cached.groupPayloads || {}
+                };
+                if (root) {
+                    root.innerHTML = buildHomepageShellMarkup(homepagePayload, lotteryType);
+                }
+                prefetchGroupModules(homepagePayload, lotteryType, token, {
+                    groups: GROUP_RENDER_ORDER,
+                    background: true
+                });
             }).catch(function () {
                 // 静默失败，缓存数据仍在使用
             });
             return;
         }
 
-        // 缓存未命中或强制刷新：显示加载动画
+        // 缓存未命中或强制刷新：先只拉轻量首页框架，再静默补预测模块
         if (root) {
             root.innerHTML = buildLoadingMarkup();
         }
-        var token = requestToken + 1;
-        requestToken = token;
-        Promise.all([
-            fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))),
-            fetchJson("/api/twcf888/site-page?lottery_type=" + encodeURIComponent(String(lotteryType)) + "&history_limit=8")
-        ]).then(function (results) {
+        fetchJson("/api/twcf888/homepage-modules?lottery_type=" + encodeURIComponent(String(lotteryType))).then(function (homepagePayload) {
             if (token !== requestToken || !root) { return; }
-            pageCache[lotteryType] = { homepagePayload: results[0], sitePagePayload: results[1], ts: Date.now() };
-            root.innerHTML = buildHomepageMarkup(results[0], results[1], lotteryType);
+            pageCache[lotteryType] = {
+                homepagePayload: homepagePayload,
+                ts: Date.now(),
+                groupPayloads: {}
+            };
+            root.innerHTML = buildHomepageShellMarkup(homepagePayload, lotteryType);
+            prefetchGroupModules(homepagePayload, lotteryType, token, {
+                groups: GROUP_RENDER_ORDER,
+                background: false
+            });
         }).catch(function () {
             if (token !== requestToken || !root) { return; }
             // 如果有过期缓存，降级使用
-            if (cached) {
-                root.innerHTML = buildHomepageMarkup(cached.homepagePayload, cached.sitePagePayload, lotteryType);
+            if (cached && cached.homepagePayload) {
+                root.innerHTML = buildHomepageShellMarkup(cached.homepagePayload, lotteryType);
+                prefetchGroupModules(cached.homepagePayload, lotteryType, token, {
+                    groups: GROUP_RENDER_ORDER,
+                    background: true
+                });
             } else {
                 root.innerHTML = buildErrorMarkup();
             }

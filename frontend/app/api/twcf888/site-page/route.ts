@@ -1,5 +1,6 @@
 import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
-import { getPublicSitePageData } from "@/lib/backend-api"
+import { backendFetchJson } from "@/lib/backend-api"
+import type { PublicSitePageData } from "@/lib/site-page"
 import { getTwcf888ArticleCatalog } from "@/lib/twcf888-articles"
 import { getSiteConfig } from "@/lib/sites"
 
@@ -16,6 +17,17 @@ function parsePositiveInt(value: string | null, fallback: number) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseModeIds(value: string | null) {
+  if (!value) return undefined
+
+  const modeIds = value
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isInteger(item) && item > 0)
+
+  return modeIds.length ? modeIds : undefined
+}
+
 export async function GET(request: Request) {
   try {
     const site = getSiteConfig("twcf888")
@@ -28,11 +40,15 @@ export async function GET(request: Request) {
     const webId = parsePositiveInt(searchParams.get("web_id") || searchParams.get("web"), site.defaultWebId)
     const siteId = parsePositiveInt(searchParams.get("site_id"), webId)
     const lotteryType = parsePositiveInt(searchParams.get("lottery_type"), site.defaultLotteryTypeId)
+    const modeIds = parseModeIds(searchParams.get("mode_ids"))
 
-    const sitePage = await getPublicSitePageData({
-      siteId,
-      lotteryType,
-      historyLimit,
+    const sitePage = await backendFetchJson<PublicSitePageData>("/public/site-page", {
+      query: {
+        site_id: siteId,
+        history_limit: historyLimit,
+        lottery_type: lotteryType,
+        mode_ids: modeIds?.join(","),
+      },
     })
 
     const liveModeMap = new Map(

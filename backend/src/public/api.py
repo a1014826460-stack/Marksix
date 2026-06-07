@@ -389,6 +389,7 @@ def get_public_site_page_data(
     domain: str | None = None,
     history_limit: int = 8,
     lottery_type_id: int | None = None,
+    mode_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """公开页数据按站点模块配置读取历史记录，不在这里主动生成预测。"""
     site = resolve_public_site(db_path, site_id=site_id, domain=domain)
@@ -406,6 +407,14 @@ def get_public_site_page_data(
             """,
             (int(site["id"]),),
         ).fetchall()
+
+    allowed_mode_ids = {
+        int(mode_id)
+        for mode_id in (mode_ids or [])
+        if isinstance(mode_id, int) and mode_id > 0
+    }
+    if allowed_mode_ids:
+        rows = [row for row in rows if int(row["mode_id"] or 0) in allowed_mode_ids]
 
     modules = []
     for row in rows:
