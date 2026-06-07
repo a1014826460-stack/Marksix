@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,12 +43,27 @@ def _parse_json_array(value: Any) -> list[Any]:
     try:
         parsed = json.loads(raw)
     except Exception:
+        if raw.startswith("[") and raw.endswith("]"):
+            inner = raw[1:-1]
+            quoted_items = re.findall(r'"([^"]+)"', inner)
+            if quoted_items:
+                return quoted_items
         return []
     return parsed if isinstance(parsed, list) else []
 
 
 def _split_labels(value: Any) -> list[str]:
-    return [item.strip() for item in split_csv(value) if str(item).strip()]
+    items = [item.strip() for item in split_csv(value) if str(item).strip()]
+    if items and not (len(items) == 1 and re.fullmatch(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]+", items[0])):
+        return items
+
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if "|" in text:
+        text = text.split("|", 1)[0].strip()
+    zodiacs = re.findall(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]", text)
+    return zodiacs if zodiacs else ([text] if text else [])
 
 
 def _split_codes_from_text(value: Any) -> list[str]:
@@ -84,7 +100,22 @@ def _parse_label_code_pairs(value: Any) -> list[tuple[str, list[str]]]:
         pieces = _split_labels(text)
         if pieces:
             pairs.append((pieces[0], []))
-    return pairs
+    if pairs:
+        return pairs
+
+    text = str(value or "").strip()
+    if not text:
+        return []
+
+    pair_matches = re.findall(r"([鼠牛虎兔龙蛇马羊猴鸡狗猪])\|([0-9,\s]+)", text)
+    if pair_matches:
+        return [
+            (label, _split_codes_from_text(codes_raw))
+            for label, codes_raw in pair_matches
+        ]
+
+    return [(label, []) for label in _split_labels(text)]
+    
 
 
 def _pick_result(row: dict[str, Any]) -> dict[str, Any]:
