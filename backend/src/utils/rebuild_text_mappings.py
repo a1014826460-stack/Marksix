@@ -25,6 +25,9 @@ if str(SRC_ROOT) not in sys.path:
 
 from db import auto_increment_primary_key  # pyright: ignore[reportMissingImports]
 from db import connect, default_postgres_target  # pyright: ignore[reportMissingImports]
+from database.yiyupotianji_seed_rows import (  # pyright: ignore[reportMissingImports]
+    YIYUPOTIANJI_TEXT_POOL_CONTENTS,
+)
 
 def _get_default_db_path():
     try:
@@ -34,6 +37,8 @@ def _get_default_db_path():
 DEFAULT_DB_PATH = _get_default_db_path()
 MAPPING_TABLE = "text_history_mappings"
 TEXT_COLUMNS = ("content", "jiexi", "title")
+MODE_244_ID = 244
+MODE_244_TABLE = "mode_payload_244"
 
 
 def quote_identifier(name: str) -> str:
@@ -137,6 +142,57 @@ def insert_from_mode_table(conn: Any, modes_id: int, table_name: str) -> int:
     return after_count - before_count
 
 
+def insert_mode_244_content_pool(conn: Any) -> int:
+    """Backfill mode_id=244 text mappings from source content and curated pool.
+
+    mode_payload_244 currently stores only `content` rows and is not marked as
+    `is_text=1` in mode_payload_tables, so the generic rebuild path skips it.
+    We explicitly mirror its unique content into text_history_mappings and add a
+    curated text pool to improve variety for the text-history formatter.
+    """
+    if not conn.table_exists(MODE_244_TABLE):
+        return 0
+
+    before_row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
+    ).fetchone()
+    before_count = int(before_row["cnt"] or 0) if before_row else 0
+
+    conn.execute(
+        f"""
+        INSERT INTO {quote_identifier(MAPPING_TABLE)} (mode_id, content, jiexi, title)
+        SELECT DISTINCT
+            {MODE_244_ID} AS mode_id,
+            COALESCE(CAST(content AS TEXT), '') AS content,
+            '' AS jiexi,
+            '' AS title
+        FROM {quote_identifier(MODE_244_TABLE)}
+        WHERE COALESCE(CAST(content AS TEXT), '') != ''
+        ON CONFLICT (mode_id, content, jiexi, title) DO NOTHING
+        """
+    )
+
+    for content in YIYUPOTIANJI_TEXT_POOL_CONTENTS:
+        text = str(content or "").strip()
+        if not text:
+            continue
+        conn.execute(
+            f"""
+            INSERT INTO {quote_identifier(MAPPING_TABLE)} (mode_id, content, jiexi, title)
+            VALUES (?, ?, '', '')
+            ON CONFLICT (mode_id, content, jiexi, title) DO NOTHING
+            """,
+            (MODE_244_ID, text),
+        )
+    conn.commit()
+
+    after_row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
+    ).fetchone()
+    after_count = int(after_row["cnt"] or 0) if after_row else 0
+    return after_count - before_count
+
+
 def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, Any]:
     with connect(db_path) as conn:
         target_modes = get_text_mode_tables(conn)
@@ -167,6 +223,10 @@ def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, A
             inserted += delta
             print(f"[OK] modes_id={modes_id}: inserted {delta} rows")
 
+        mode_244_inserted = insert_mode_244_content_pool(conn)
+        if mode_244_inserted > 0:
+            print(f"[OK] modes_id=244: inserted {mode_244_inserted} rows from source+seed pool")
+
         total_row = conn.execute(
             f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
         ).fetchone()
@@ -177,7 +237,8 @@ def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, A
         "scanned_tables": scanned_tables,
         "missing_tables": missing_tables,
         "skipped_without_text_columns": skipped_without_text_columns,
-        "inserted": inserted,
+        "inserted": inserted + mode_244_inserted,
+        "mode_244_inserted": mode_244_inserted,
         "total_after_dedup": total,
     }
 
