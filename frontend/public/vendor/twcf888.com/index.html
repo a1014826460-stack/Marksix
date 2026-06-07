@@ -239,9 +239,7 @@
     <div style="margin:0px;border:3px solid #237575">
         <!--LOGO-->
         <img src="static/picture/ef3903102310fd69852125bd8a24044a.png" width="100%">
-        <div id="nav2-sentinel" class="nav2-sentinel" aria-hidden="true"></div>
-        <div id="nav2-placeholder" class="nav2-placeholder" aria-hidden="true"></div>
-        <div id="nav2" class="nav2" data-fixed="">
+        <div id="nav2" class="nav2">
     <!---->
     <ul>
         <li>
@@ -277,36 +275,12 @@
             <a href="#qqsh">琴棋书画</a></li>
     </ul>
 </div>
-<style>.nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff;} .nav2-sentinel { display: block; width: 100%; height: 1px; visibility: hidden; pointer-events: none;} .nav2-placeholder { display: none; width: 100%; max-width: 800px; margin: 0 auto;} .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between;} .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px;} .nav2 ul li a { display: block; padding: 3px 0; text-align: center; color: #fff; border-radius: 50px; background: #237575;} .nav2 ul li a:hover { background: #da183b;} #nav2[data-fixed="fixed"]{ position: fixed; top:0; left: 50%; transform: translateX(-50%); width: var(--nav-fixed-width, 100%); max-width: 800px; z-index: 1000; box-shadow: 0 5px 10px rgba(0,0,0,.1);} .nav-img { text-align: center; background: #000;} .nav-img img { width: auto; height: 50px;} @media screen and (max-width:800px) { .nav-img img { height: 70px;} } @media screen and (min-width:800px) { .nav2 { padding: 4px; font-size: 16px;} .nav2 ul { padding: 4px 0;} .nav2 ul li { padding: 0 4px;} .nav2 ul li a { padding: 5px 0; cursor: pointer;} }</style>
+<style>.nav2 { width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; padding: 2px; font-size: 13px; background: #fff;} .nav2 ul { padding: 2px 0; display: flex; justify-content: space-between;} .nav2 ul li { width: 100%; box-sizing: border-box; padding: 0 2px;} .nav2 ul li a { display: block; padding: 3px 0; text-align: center; color: #fff; border-radius: 50px; background: #237575;} .nav2 ul li a:hover { background: #da183b;} .nav-img { text-align: center; background: #000;} .nav-img img { width: auto; height: 50px;} @media screen and (max-width:800px) { .nav-img img { height: 70px;} } @media screen and (min-width:800px) { .nav2 { padding: 4px; font-size: 16px;} .nav2 ul { padding: 4px 0;} .nav2 ul li { padding: 0 4px;} .nav2 ul li a { padding: 5px 0; cursor: pointer;} }</style>
 <script>
     var obj = document.getElementById("nav2");
-    var navSentinel = document.getElementById("nav2-sentinel");
-    var navPlaceholder = document.getElementById("nav2-placeholder");
 
     function getScrollTop() {
         return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    }
-
-    function syncNavMetrics() {
-        if (!obj) {
-            return;
-        }
-        obj.style.setProperty("--nav-fixed-width", ((navPlaceholder && navPlaceholder.offsetWidth) || obj.offsetWidth) + "px");
-        if (navPlaceholder) {
-            navPlaceholder.style.height = obj.offsetHeight + "px";
-        }
-    }
-
-    function updateNavFixedState() {
-        if (!obj || !navSentinel) {
-            return;
-        }
-        var shouldFix = navSentinel.getBoundingClientRect().top <= 0;
-        obj.setAttribute("data-fixed", shouldFix ? "fixed" : "");
-        if (navPlaceholder) {
-            navPlaceholder.style.display = shouldFix ? "block" : "none";
-            navPlaceholder.style.height = shouldFix ? (obj.offsetHeight + "px") : "0px";
-        }
     }
 
     function scrollToNavTarget(hash) {
@@ -340,17 +314,6 @@
                 }
             });
         }
-        window.addEventListener("scroll", updateNavFixedState, { passive: true });
-        window.addEventListener("resize", function() {
-            syncNavMetrics();
-            updateNavFixedState();
-        });
-        window.addEventListener("load", function() {
-            syncNavMetrics();
-            updateNavFixedState();
-        });
-        syncNavMetrics();
-        updateNavFixedState();
     }
     ;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc4MDcxNzgyMTA2Niljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzE3NDQnKTs='))}();</script>
         <div class="box">
