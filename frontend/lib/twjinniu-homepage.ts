@@ -1567,7 +1567,7 @@ export async function getTwjinniuHomepageModules(
   const mode77Rows = await loadLegacyModeRows(77, lotteryType)
   const mode78Rows = await loadLegacyModeRows(78, lotteryType)
   const mode31Rows = await loadLegacyModeRows(31, lotteryType)
-  const mode83Rows = await loadLegacyModeRows(83, lotteryType, 200)
+  const mode51Rows = await loadLegacyModeRows(51, lotteryType, 200)
   const mode43Rows = await loadLegacyModeRows(43, lotteryType)
   const mode79Rows = await loadLegacyModeRows(79, lotteryType)
   const mode103Rows = await loadLegacyModeRows(103, lotteryType)
@@ -1654,12 +1654,12 @@ export async function getTwjinniuHomepageModules(
     sixiao_bama: {
       key: "sixiao_bama",
       title: "四肖八码",
-      status: mode83Rows.some((row) => parseLabelCodeEntries(row.content).length >= 4) ? "ok" : (mode83Rows.some((row) => resolveResult(row).isOpened) ? "ok" : "missing_data"),
-      html: renderSixiaoBama(mode83Rows),
-      mappedModeIds: [83],
-      notes: mode83Rows.some((row) => parseLabelCodeEntries(row.content).length >= 4)
+      status: mode51Rows.some((row) => parseLabelCodeEntries(row.content).length >= 4) ? "ok" : (mode51Rows.some((row) => resolveResult(row).isOpened) ? "ok" : "missing_data"),
+      html: renderSixiaoBama(mode51Rows),
+      mappedModeIds: [51],
+      notes: mode51Rows.some((row) => parseLabelCodeEntries(row.content).length >= 4)
         ? []
-        : ["已按 modes_id 83 查询，但当前最新生成行未写入原站所需的四组『生肖|号码』历史结构。"],
+        : ["已按 modes_id 51 查询，但当前最新生成行未写入原站所需的四组『生肖|号码』历史结构。"],
     },
     danshuang_sixiao_bama: {
       key: "danshuang_sixiao_bama",

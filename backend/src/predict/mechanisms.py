@@ -2065,7 +2065,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         outcome_loader=special_zodiac_from_number_map,
         content_loader=xiao_column_content_loader("xiao"),
         content_parser=parse_zodiac_content,
-        content_formatter=format_zodiac_csv,
+        content_formatter=format_content_xiao_columns("mode_payload_15", "xiao", "content"),
         hit_checker=contains_hit,
         explanation=(
             "单双公式从 content 存储的分类（单生肖/双生肖）中选出一组，xiao 列存储最终候选生肖。",
@@ -2312,7 +2312,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         outcome_loader=special_zodiac_from_number_map,
         content_loader=xiao_column_content_loader("xiao"),
         content_parser=parse_zodiac_content,
-        content_formatter=format_qianhou_texiao_columns("xiao", "content"),
+        content_formatter=format_content_xiao_columns("mode_payload_219", "xiao", "content"),
         hit_checker=contains_hit,
         explanation=(
             "前后特肖保留 `content+xiao` 结构，其中 xiao 为最终候选特肖。",
