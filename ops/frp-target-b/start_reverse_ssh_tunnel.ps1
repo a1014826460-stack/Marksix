@@ -1,7 +1,7 @@
 param(
     [string]$RemoteUser = "root",
-    [string]$RemoteHost = "103.203.48.178",
-    [int]$RemotePort = 19789,
+    [string]$RemoteHost = "8.163.93.151",
+    [int]$RemotePort = 22,
     [string]$LocalHost = "127.0.0.1",
     [int]$LocalPort = 22,
     [string]$KeyFile = "C:\ProgramData\ReverseSshTunnel\id_rsa",

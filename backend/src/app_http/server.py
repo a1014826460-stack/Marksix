@@ -19,7 +19,7 @@ from crawler.crawler_service import CrawlerScheduler
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
 from logger import init_logging
 from predict.mechanisms import ensure_prediction_configs_loaded
-from runtime_config import get_bootstrap_config_value
+from runtime_config import get_bootstrap_config_value, has_insecure_bootstrap_admin_password
 from tables import database_summary, ensure_admin_tables
 
 from .auth import get_current_user, require_authenticated
@@ -111,6 +111,17 @@ def build_router() -> Router:
 ROUTER = build_router()
 
 _DEBUG = os.environ.get("LOTTERY_DEBUG", "").strip() in ("1", "true", "yes", "on")
+
+
+def _log_startup_risk_warnings(db_path: str | Path) -> None:
+    logger = logging.getLogger("app.startup")
+    if has_insecure_bootstrap_admin_password():
+        logger.warning(
+            "Bootstrap admin password is still the default value; change it before exposing the service."
+        )
+    logger.warning(
+        "CrawlerScheduler runs in-process and is suitable for a single active backend instance only."
+    )
 
 
 def _dispatch_error_response(ctx: RequestContext, exc: Exception, logger: logging.Logger) -> None:
@@ -213,6 +224,7 @@ def run_server(host: str, port: int, db_path: str | Path) -> None:
     print(f"CMS admin page: http://{host}:{port}/admin")
     print(f"Database engine: {detect_database_engine(db_path)} (formal runtime requires PostgreSQL)")
     print(f"Database target: {db_path}")
+    _log_startup_risk_warnings(db_path)
     scheduler = CrawlerScheduler(db_path)
     scheduler.start()
     try:

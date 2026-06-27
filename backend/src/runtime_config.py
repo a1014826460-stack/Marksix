@@ -1354,6 +1354,12 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
     # 字符串类型不做校验
     return True, ""
 
+
+def has_insecure_bootstrap_admin_password() -> bool:
+    """Return True when the bootstrap admin password still uses the default value."""
+    value = CONFIG_DEFAULTS.get("admin.password", {}).get("value")
+    return str(value or "") == "admin123"
+
 # ── 彩种下一期开奖时间映射 ────────────────────────────
 
 # 彩种 ID 到 system_config 配置键的映射，

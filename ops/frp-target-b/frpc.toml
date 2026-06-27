@@ -1,4 +1,4 @@
-serverAddr = "103.203.48.178"
+serverAddr = "8.163.93.151"
 serverPort = 7000
 auth.method = "token"
 auth.token = "094b849eecfa4873a3bc374c5a82dddd"

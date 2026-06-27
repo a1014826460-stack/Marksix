@@ -6,13 +6,13 @@
 
 当前运行架构使用两层配置：
 
-1. `backend/src/config.yaml`  
-   作为启动配置使用，使服务能够启动并连接数据库。
+1. `DATABASE_URL` / 启动参数 / `runtime_config.py` 中的引导默认值  
+   作为启动期配置来源，使服务能够启动并连接 PostgreSQL。
 
 2. `system_config` 表  
    作为运行时大多数常量和运维参数的真实配置来源。
 
-运行时会优先读取数据库中的配置；如果某个配置项缺失，或数据库不可用，则回退到 `config.yaml`。
+运行时会优先读取数据库中的配置；如果某个配置项缺失，或数据库不可用，则回退到 `runtime_config.py` 中的默认值。数据库连接目标本身仍需通过 `DATABASE_URL` 或启动参数提供。
 
 ---
 
@@ -22,7 +22,8 @@
 
 ```
 backend/src/
-├── app.py                          # 主入口（兼容，逐步变薄）
+├── main.py                         # 规范入口（canonical entry）
+├── app.py                          # 兼容入口（薄壳，转发到 main/app_http）
 ├── tables.py                       # 兼容导出 → database/
 ├── db.py                           # 数据库适配器（SQLite/PostgreSQL 双引擎）
 │
@@ -48,7 +49,7 @@ backend/src/
 │       ├── legacy.py               # legacy_image_assets
 │       └── indexes.py              # 性能索引
 │
-├── http/                           # HTTP 框架层
+├── app_http/                       # HTTP 框架层
 │   ├── request_context.py          # 请求上下文（含 request_id、body 缓存）
 │   ├── router.py                   # 轻量 URL 路由 + 分发
 │   ├── auth.py                     # HTTP 层鉴权（require_admin 等）
@@ -114,7 +115,7 @@ backend/src/
 |------|------|------|
 | **core/** | 统一异常、时间工具、全局常量 | 不感知业务/HTTP/数据库 |
 | **database/** | 连接管理、Schema 定义、播种、迁移 | 不写业务逻辑 |
-| **http/** | HTTP 适配、路由分发、鉴权、SiteContext | 不写 SQL |
+| **app_http/** | HTTP 适配、路由分发、鉴权、SiteContext | 不写 SQL |
 | **routes/** | 参数解析、鉴权调用、JSON 返回 | 不写复杂 SQL/业务细节 |
 | **domains/** | 业务逻辑（service）、数据访问（repository） | repository 写 SQL，service 不写 |
 | **predict_engine/** | 预测算法 | 不感知 HTTP/用户/站点权限 |
@@ -140,11 +141,13 @@ backend/src/
 
 ## 启动流程
 
-主入口：
+规范入口：
 
 ```txt
-backend/src/app.py
+backend/src/main.py
 ```
+
+兼容入口 `backend/src/app.py` 仍可启动服务，但内部会直接转发到 `backend/src/app_http/server.py` 中的唯一服务实现。
 
 本地通过 `restart-backend.ps1` 启动时，还会一并启动后台管理界面（`3002`）。
 
@@ -205,7 +208,8 @@ python -m pytest tests/integration/ -v
 
 当前项目中，`8000` 端口对应的 Python 服务是正式入口，不是废弃接口。
 
-- 主入口文件：`backend/src/app.py`
+- 规范入口文件：`backend/src/main.py`
+- 兼容入口文件：`backend/src/app.py`
 - 默认监听端口：`8000`
 - 前端 `3000` 的旧站兼容接口最终会转发到这里
 - Docker / Nginx / 健康检查也都依赖该端口
@@ -236,7 +240,7 @@ Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' } | Sele
 
 ### 3. 排查时不要同时拉起多个 Python 后端
 
-如果本机同时存在多个 `python backend/src/app.py` 进程，会导致：
+如果本机同时存在多个 `python backend/src/main.py` 或 `python backend/src/app.py` 进程，会导致：
 
 - 很难确认当前到底是哪一个在响应 `8000`
 - 旧进程可能继续占用端口，返回过期逻辑
@@ -347,8 +351,8 @@ backend/src/auth.py
 典型流程：
 
 1. HTTP 请求进入 `ApiHandler.dispatch()` → `Router.dispatch()`
-2. 路由根据需要执行认证（`http/auth.py`）
-3. 站点相关接口解析 `SiteContext`（`http/site_context.py`）
+2. 路由根据需要执行认证（`app_http/auth.py`）
+3. 站点相关接口解析 `SiteContext`（`app_http/site_context.py`）
 4. 请求体由 `RequestContext.read_json()` 解析
 5. routes 调用 `domains/*/service.py` 中的业务函数
 6. service 通过 `domains/*/repository.py` 执行 SQL
@@ -428,8 +432,13 @@ backend/src/auth.py
 文件：
 
 ```txt
-backend/src/crawler/crawler_service.py
+backend/src/crawler/scheduler.py
 ```
+
+说明：
+
+- `backend/src/crawler/crawler_service.py` 当前是兼容导出层
+- `CrawlerScheduler` 的真实实现位于 `backend/src/crawler/scheduler.py`
 
 职责：
 
@@ -473,7 +482,7 @@ backend/src/crawler/crawler_service.py
 
 - `backend/src/crawler/HK_history_crawler.py`
 - `backend/src/crawler/Macau_history_crawler.py`
-- `backend/src/crawler/crawler_service.py`
+- `backend/src/crawler/scheduler.py`
 
 ### 精确开奖期号检查（HK / Macau）
 
@@ -533,7 +542,7 @@ backend/src/crawler/crawler_service.py
 - 公共预测 API：`routes/admin_prediction_routes.py`
 - 批量生成：`domains/prediction/service.py::bulk_generate_site_predictions`
 - 共享生成器：`prediction_generation/service.py::generate_prediction_batch`
-- 延迟自动化：`crawler/crawler_service.py::_run_auto_prediction`
+- 延迟自动化：`crawler/scheduler.py::_run_auto_prediction`
 
 预测安全机制：
 
@@ -578,7 +587,7 @@ backend/src/admin/prediction.py
 文件：
 
 - `backend/src/utils/data_fetch.py`
-- `backend/src/app.py::fetch_site_data`
+- `backend/src/routes/common.py::fetch_site_data`
 
 流程：
 
@@ -647,7 +656,8 @@ backend/src/logger.py
 
 运行时配置存储：
 
-- 启动配置：`backend/src/config.yaml`
+- 启动期数据库目标：`DATABASE_URL` 或 `main.py` / `app.py` 的 `--db-path`
+- 启动期默认值：`backend/src/runtime_config.py`
 - 运行时配置：`system_config`
 
 核心文件：
@@ -675,7 +685,7 @@ backend/src/runtime_config.py
 
 数据库连接的启动参数不能只存在数据库中。
 
-因此 PostgreSQL DSN 仍然需要从 `config.yaml` 或环境变量中启动读取。
+因此 PostgreSQL DSN 仍然需要从环境变量 `DATABASE_URL` 或启动参数中读取；运行时普通配置则由 `system_config` 与 `runtime_config.py` 默认值共同提供。
 
 ---
 
@@ -741,9 +751,9 @@ user_id, duration_ms, request_params, stack_trace
 
 1. **环境变量**（最高优先级）— 主要用于数据库连接等敏感部署配置
 2. **数据库 system_config 表** — 管理员通过后台页面可修改的运行配置
-3. **config.yaml** — 默认值和初始化兜底
+3. **`runtime_config.py` 默认值** — 默认值和初始化兜底
 
-运行时优先级：先读数据库 `system_config`，缺失时回退到 `config.yaml` 默认值。
+运行时优先级：先读数据库 `system_config`，缺失时回退到 `runtime_config.py` 默认值。
 
 ### 配置分组
 
@@ -801,18 +811,18 @@ GET  /api/admin/configs/history          → 配置变更历史（可按 key 筛
 当前剩余风险：
 
 - 调度器仍然是单进程、内存型调度器，不适合多实例部署下的持久化调度。
-- 启动阶段仍然依赖 `config.yaml` 来完成首次数据库连接。
+- 启动阶段仍然需要通过 `DATABASE_URL` 或启动参数提供数据库连接目标。
 - 主管理后台运行流程之外的一些旧脚本和工具文件，可能仍然包含本地默认值。如果这些脚本用于生产流程，需要进一步对齐配置。
 
 ---
 
 ## 推荐部署实践
 
-1. 在生产环境中明确设置 `DATABASE_URL`，或在 `config.yaml` 中提供 PostgreSQL DSN。
+1. 在生产环境中明确设置 `DATABASE_URL`，或在启动命令中显式传入 PostgreSQL DSN。
 2. 对外暴露前，修改启动默认管理员密码。
 3. 首次启动后，检查 `system_config` 中的配置值。
 4. 使用日志管理页面定期检查错误日志，关注 ERROR 和 WARNING 级别日志。
-5. 通过配置管理页面统一管理运行参数，避免直接修改 config.yaml。
+5. 通过配置管理页面统一管理运行参数，避免直接修改 `runtime_config.py` 中的默认值。
 6. 监控 `/api/health` 和 `error_logs`。
 7. 使用受监管的进程管理方式运行服务，以便服务崩溃后可以自动重启恢复。
 

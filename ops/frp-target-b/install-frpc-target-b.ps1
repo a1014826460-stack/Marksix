@@ -12,7 +12,7 @@ Expand-Archive -Path $Zip -DestinationPath $env:TEMP -Force
 Copy-Item "$env:TEMP\frp_${Version}_windows_amd64\frpc.exe" "$InstallDir\frpc.exe" -Force
 
 @'
-serverAddr = "103.203.48.178"
+serverAddr = "8.163.93.151"
 serverPort = 7000
 auth.method = "token"
 auth.token = "094b849eecfa4873a3bc374c5a82dddd"
