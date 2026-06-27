@@ -1,0 +1,456 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from db import connect
+from tables import ensure_admin_tables
+
+
+def test_admin_crud_lottery_compat_delegates_to_domain_service(monkeypatch):
+    from admin import crud
+
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def fake_list_lottery_types(*args, **kwargs):
+        calls.append(("list_types", args + (kwargs,)))
+        return [{"id": 3, "status": True}]
+
+    def fake_save_lottery_type(*args, **kwargs):
+        calls.append(("save_type", args + (kwargs,)))
+        return {"id": 3, "name": "taiwan", "status": True}
+
+    def fake_delete_lottery_type(*args, **kwargs):
+        calls.append(("delete_type", args + (kwargs,)))
+        return None
+
+    def fake_list_draws(*args, **kwargs):
+        calls.append(("list_draws", args + (kwargs,)))
+        return {"draws": [], "total": 0, "page": 1, "page_size": 20, "total_pages": 1}
+
+    def fake_save_draw(*args, **kwargs):
+        calls.append(("save_draw", args + (kwargs,)))
+        return {"id": 88, "status": True, "is_opened": True}
+
+    def fake_delete_draw(*args, **kwargs):
+        calls.append(("delete_draw", args + (kwargs,)))
+        return None
+
+    monkeypatch.setattr("domains.lottery.service.list_lottery_types", fake_list_lottery_types)
+    monkeypatch.setattr("domains.lottery.service.save_lottery_type", fake_save_lottery_type)
+    monkeypatch.setattr("domains.lottery.service.delete_lottery_type", fake_delete_lottery_type)
+    monkeypatch.setattr("domains.lottery.service.list_draws", fake_list_draws)
+    monkeypatch.setattr("domains.lottery.service.save_draw", fake_save_draw)
+    monkeypatch.setattr("domains.lottery.service.delete_draw", fake_delete_draw)
+
+    db_path = Path("delegation-only.sqlite3")
+
+    assert crud.list_lottery_types(db_path) == [{"id": 3, "status": True}]
+    assert crud.save_lottery_type(db_path, {"name": "taiwan"}, lottery_id=3) == {
+        "id": 3,
+        "name": "taiwan",
+        "status": True,
+    }
+    assert crud.delete_lottery_type(db_path, 3) is None
+    assert crud.list_draws(db_path, limit=20, offset=40, lottery_type_id=3) == {
+        "draws": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+        "total_pages": 1,
+    }
+    assert crud.save_draw(db_path, {"term": 188}, draw_id=88) == {
+        "id": 88,
+        "status": True,
+        "is_opened": True,
+    }
+    assert crud.delete_draw(db_path, 88) is None
+    assert calls == [
+        ("list_types", (db_path, {})),
+        ("save_type", (db_path, {"name": "taiwan"}, {"lottery_id": 3})),
+        ("delete_type", (db_path, 3, {})),
+        ("list_draws", (db_path, {"limit": 20, "offset": 40, "lottery_type_id": 3})),
+        ("save_draw", (db_path, {"term": 188}, {"draw_id": 88})),
+        ("delete_draw", (db_path, 88, {})),
+    ]
+
+
+def test_admin_crud_save_draw_preserves_legacy_ensure_admin_tables_patch_point(monkeypatch, tmp_path):
+    from admin import crud
+    from domains.lottery import service
+
+    db_path = tmp_path / "legacy-patch.sqlite3"
+    patched_calls: list[Path] = []
+
+    def fake_admin_tables(path):
+        patched_calls.append(Path(path))
+
+    def fake_save_draw(path, payload, draw_id=None):
+        service.ensure_admin_tables(path)
+        return {"id": draw_id or 1, "payload": payload}
+
+    monkeypatch.setattr(crud, "ensure_admin_tables", fake_admin_tables)
+    monkeypatch.setattr(service, "save_draw", fake_save_draw)
+
+    result = crud.save_draw(db_path, {"term": 132}, draw_id=7)
+
+    assert result == {"id": 7, "payload": {"term": 132}}
+    assert patched_calls == [db_path]
+
+
+def test_lottery_service_list_lottery_types_preserves_effective_next_time(tmp_path):
+    from domains.lottery import service
+    from helpers import draw_time_to_unix_ms
+
+    db_path = tmp_path / "lottery_service.sqlite3"
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE lottery_types
+            SET next_time = ?
+            WHERE id = ?
+            """,
+            ("stale-next-time", 3),
+        )
+        conn.execute(
+            """
+            INSERT INTO lottery_draws (
+                lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                is_opened, next_term, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                3,
+                2026,
+                188,
+                "01,02,03,04,05,06,07",
+                "2026-06-27 22:30:00",
+                "1782570600000",
+                1,
+                1,
+                189,
+                "2026-06-27T14:30:00+00:00",
+                "2026-06-27T14:30:00+00:00",
+            ),
+        )
+
+    rows = service.list_lottery_types(db_path)
+
+    taiwan = next(row for row in rows if row["id"] == 3)
+    assert taiwan["status"] is True
+    expected_next_time = draw_time_to_unix_ms("2026-06-28 22:30:00")
+    assert taiwan["next_time"] == expected_next_time
+
+    with connect(db_path) as conn:
+        stored = conn.execute(
+            "SELECT next_time FROM lottery_types WHERE id = ?",
+            (3,),
+        ).fetchone()
+    assert stored["next_time"] == expected_next_time
+
+
+def test_lottery_service_save_lottery_type_preserves_admin_write_behavior(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "lottery_type_write.sqlite3"
+    ensure_admin_tables(db_path)
+
+    created = service.save_lottery_type(
+        db_path,
+        {
+            "name": "custom lottery",
+            "draw_time": "20:15",
+            "collect_url": "https://example.test/api",
+            "next_time": "ignored-by-service",
+            "status": False,
+        },
+    )
+
+    assert list(created.keys()) == [
+        "id",
+        "name",
+        "draw_time",
+        "collect_url",
+        "status",
+        "created_at",
+        "updated_at",
+        "next_time",
+        "last_auto_task_status",
+    ]
+    assert created["name"] == "custom lottery"
+    assert created["draw_time"] == "20:15"
+    assert created["collect_url"] == "https://example.test/api"
+    assert created["status"] is False
+    assert created["next_time"] == ""
+
+    updated = service.save_lottery_type(
+        db_path,
+        {
+            "name": "renamed lottery",
+            "draw_time": "21:30",
+            "collect_url": "https://example.test/next",
+            "next_time": "still-ignored",
+            "status": True,
+        },
+        lottery_id=created["id"],
+    )
+
+    assert updated["id"] == created["id"]
+    assert updated["name"] == "renamed lottery"
+    assert updated["draw_time"] == "21:30"
+    assert updated["collect_url"] == "https://example.test/next"
+    assert updated["status"] is True
+    assert updated["next_time"] == ""
+
+    service.delete_lottery_type(db_path, created["id"])
+
+    with connect(db_path) as conn:
+        deleted = conn.execute(
+            "SELECT id FROM lottery_types WHERE id = ?",
+            (created["id"],),
+        ).fetchone()
+    assert deleted is None
+
+
+def test_lottery_service_save_lottery_type_validates_name_and_missing_update(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "lottery_type_write_errors.sqlite3"
+    ensure_admin_tables(db_path)
+
+    try:
+        service.save_lottery_type(db_path, {"name": "   "})
+    except ValueError as exc:
+        assert str(exc)
+    else:
+        raise AssertionError("empty lottery name should fail")
+
+    try:
+        service.save_lottery_type(db_path, {"name": "missing"}, lottery_id=99999)
+    except KeyError as exc:
+        assert "99999" in str(exc)
+    else:
+        raise AssertionError("missing lottery id should fail")
+
+    try:
+        service.delete_lottery_type(db_path, 99999)
+    except KeyError as exc:
+        assert "99999" in str(exc)
+    else:
+        raise AssertionError("missing lottery id delete should fail")
+
+
+def test_lottery_service_list_draws_preserves_admin_payload_shape(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "lottery_draws.sqlite3"
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        for term in (188, 189):
+            conn.execute(
+                """
+                INSERT INTO lottery_draws (
+                    lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                    is_opened, next_term, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    3,
+                    2026,
+                    term,
+                    "01,02,03,04,05,06,07",
+                    f"2026-06-{term - 161:02d} 22:30:00",
+                    "1782570600000",
+                    1,
+                    term == 188,
+                    term + 1,
+                    "2026-06-27T14:30:00+00:00",
+                    "2026-06-27T14:30:00+00:00",
+                ),
+            )
+
+    payload = service.list_draws(db_path, limit=1, offset=1, lottery_type_id=3)
+
+    assert list(payload.keys()) == ["draws", "total", "page", "page_size", "total_pages"]
+    assert payload["total"] == 2
+    assert payload["page"] == 2
+    assert payload["page_size"] == 1
+    assert payload["total_pages"] == 2
+    assert len(payload["draws"]) == 1
+    assert payload["draws"][0]["term"] == 188
+    assert payload["draws"][0]["lottery_name"]
+    assert payload["draws"][0]["status"] is True
+    assert payload["draws"][0]["is_opened"] is True
+
+
+def test_lottery_service_delete_draw_preserves_admin_delete_behavior(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "delete_draw.sqlite3"
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            INSERT INTO lottery_draws (
+                lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                is_opened, next_term, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                3,
+                2026,
+                188,
+                "01,02,03,04,05,06,07",
+                "2026-06-27 22:30:00",
+                "1782570600000",
+                1,
+                1,
+                189,
+                "2026-06-27T14:30:00+00:00",
+                "2026-06-27T14:30:00+00:00",
+            ),
+        ).fetchone()
+        draw_id = int(row["id"])
+
+    service.delete_draw(db_path, draw_id)
+
+    with connect(db_path) as conn:
+        deleted = conn.execute(
+            "SELECT id FROM lottery_draws WHERE id = ?",
+            (draw_id,),
+        ).fetchone()
+    assert deleted is None
+
+    try:
+        service.delete_draw(db_path, draw_id)
+    except KeyError as exc:
+        assert str(draw_id) in str(exc)
+    else:
+        raise AssertionError("missing draw id delete should fail")
+
+
+def test_lottery_service_save_draw_preserves_admin_create_and_backfill_behavior(tmp_path):
+    from domains.lottery import service
+    from helpers import draw_time_to_unix_ms
+
+    db_path = tmp_path / "save_draw.sqlite3"
+    ensure_admin_tables(db_path)
+
+    previous_draw_time = "2026-06-25 22:30:00"
+    new_draw_time = "2026-06-26 22:30:00"
+    with connect(db_path) as conn:
+        previous = conn.execute(
+            """
+            INSERT INTO lottery_draws (
+                lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                is_opened, next_term, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                3,
+                2026,
+                188,
+                "01,02,03,04,05,06,07",
+                previous_draw_time,
+                draw_time_to_unix_ms(previous_draw_time),
+                1,
+                1,
+                189,
+                "2026-06-27T14:30:00+00:00",
+                "2026-06-27T14:30:00+00:00",
+            ),
+        ).fetchone()
+        previous_draw_id = int(previous["id"])
+
+    created = service.save_draw(
+        db_path,
+        {
+            "lottery_type_id": 3,
+            "year": 2026,
+            "term": 189,
+            "numbers": "08,09,10,11,12,13,14",
+            "draw_time": new_draw_time,
+            "next_time": "1782743400000",
+            "status": True,
+            "is_opened": True,
+            "next_term": 190,
+        },
+    )
+
+    assert list(created.keys()) == [
+        "id",
+        "lottery_type_id",
+        "year",
+        "term",
+        "numbers",
+        "draw_time",
+        "status",
+        "is_opened",
+        "next_term",
+        "created_at",
+        "updated_at",
+        "next_time",
+    ]
+    assert created["lottery_type_id"] == 3
+    assert created["year"] == 2026
+    assert created["term"] == 189
+    assert created["numbers"] == "08,09,10,11,12,13,14"
+    assert created["draw_time"] == new_draw_time
+    assert created["status"] is True
+    assert created["is_opened"] is True
+
+    with connect(db_path) as conn:
+        previous_after = conn.execute(
+            "SELECT next_time FROM lottery_draws WHERE id = ?",
+            (previous_draw_id,),
+        ).fetchone()
+        lottery_type = conn.execute(
+            "SELECT next_time FROM lottery_types WHERE id = ?",
+            (3,),
+        ).fetchone()
+
+    assert previous_after["next_time"] == draw_time_to_unix_ms(new_draw_time)
+    assert lottery_type["next_time"] == draw_time_to_unix_ms("2026-06-27 22:30:00")
+
+
+def test_lottery_service_save_draw_preserves_admin_validation_behavior(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "save_draw_errors.sqlite3"
+    ensure_admin_tables(db_path)
+
+    invalid_payload = {
+        "lottery_type_id": 3,
+        "year": 2026,
+        "term": 189,
+        "numbers": "01,02",
+        "draw_time": "2026-06-26 22:30:00",
+        "status": True,
+        "is_opened": True,
+    }
+
+    try:
+        service.save_draw(db_path, invalid_payload)
+    except ValueError as exc:
+        assert "2" in str(exc)
+    else:
+        raise AssertionError("invalid number count should fail")
+
+    unsupported_payload = dict(invalid_payload)
+    unsupported_payload["lottery_type_id"] = 1
+    unsupported_payload["numbers"] = "01,02,03,04,05,06,07"
+    try:
+        service.save_draw(db_path, unsupported_payload)
+    except ValueError as exc:
+        assert str(exc)
+    else:
+        raise AssertionError("unsupported lottery type should fail")

@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from helpers import REQUIRED_SITE_PREDICTION_MODE_IDS
+from database.schema.prediction import DEFAULT_REQUIRED_MODE_IDS as SCHEMA_DEFAULT_REQUIRED_MODE_IDS
 
 
-DEFAULT_REQUIRED_MODE_IDS = tuple(int(item) for item in REQUIRED_SITE_PREDICTION_MODE_IDS)
+DEFAULT_REQUIRED_MODE_IDS = tuple(int(item) for item in SCHEMA_DEFAULT_REQUIRED_MODE_IDS)
 DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS = (
     63,
     64,

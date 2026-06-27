@@ -26,8 +26,16 @@ def fetch_site_data(
     normalize_after: bool = True,
     build_text_mappings_after: bool = True,
 ) -> dict[str, Any]:
-    del db_path, site_id, normalize_after, build_text_mappings_after
-    raise RuntimeError(
+    del normalize_after, build_text_mappings_after
+    message = (
         "fetch_site_data is deprecated: managed_sites no longer stores legacy "
         "crawler fields. Use prediction-modules sync/generate endpoints instead."
     )
+    run_id = create_fetch_run(db_path, site_id)
+    finish_fetch_run(db_path, run_id, "error", message, 0, 0)
+    return {
+        "ok": False,
+        "run_id": run_id,
+        "status": "deprecated",
+        "message": message,
+    }
