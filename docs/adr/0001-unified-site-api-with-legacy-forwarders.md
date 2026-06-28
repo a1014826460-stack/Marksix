@@ -1,0 +1,3 @@
+# Unified Site API with Legacy Forwarders
+
+The frontend will add unified site API routes under `/api/sites/<siteKey>/...` for new site work while keeping existing site-specific routes as compatibility forwarders. Responses from the unified routes use a stable `{ ok, site, data, compatibility? }` envelope, and site-specific capabilities such as article detail providers are registered through site adapters instead of hard-coded route branching. This avoids breaking copied vendor assets and existing callers, while giving future sites one predictable API surface backed by shared site services and adapters.
