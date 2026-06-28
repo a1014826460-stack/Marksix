@@ -13,6 +13,7 @@ from public.api import (
 from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from domains.sites.service import get_public_notice
 
 
 def register(router: Router) -> None:
@@ -109,8 +110,6 @@ def notice(ctx: RequestContext) -> None:
     根据 web 参数查找对应站点公告，返回前端要求的 { code: 600, data: { content } } 格式。
     code 必须为 600，否则前端会跳过公告展示。
     """
-    from db import connect
-
     raw_web = ctx.query_value("web")
     web_id: int | None = None
     if raw_web not in (None, ""):
@@ -119,24 +118,4 @@ def notice(ctx: RequestContext) -> None:
         except (ValueError, TypeError):
             pass
 
-    announcement = ""
-    if web_id is not None:
-        with connect(ctx.db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT announcement
-                FROM managed_sites
-                WHERE enabled = 1
-                  AND (id = ? OR web_id = ?)
-                ORDER BY id
-                LIMIT 1
-                """,
-                (web_id, web_id),
-            ).fetchone()
-            if row:
-                announcement = str(row["announcement"] or "")
-
-    ctx.send_json({
-        "code": 600 if announcement else 200,
-        "data": {"content": announcement},
-    })
+    ctx.send_json(get_public_notice(ctx.db_path, web_id))

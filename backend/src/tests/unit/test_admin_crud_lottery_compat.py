@@ -74,6 +74,100 @@ def test_admin_crud_lottery_compat_delegates_to_domain_service(monkeypatch):
     ]
 
 
+def test_lottery_service_get_latest_opened_draw_result(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "latest-opened-draw.sqlite3"
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        rows = [
+            (3, 2026, 126, "01,02,03,04,05,06,07", "2026-06-25 22:30:00", 1),
+            (3, 2026, 127, "08,09,10,11,12,13,14", "2026-06-26 22:30:00", 1),
+            (3, 2026, 128, "15,16,17,18,19,20,21", "2026-06-27 22:30:00", 0),
+            (2, 2026, 200, "22,23,24,25,26,27,28", "2026-06-27 21:30:00", 1),
+        ]
+        for lottery_type_id, year, term, numbers, draw_time, is_opened in rows:
+            conn.execute(
+                """
+                INSERT INTO lottery_draws (
+                    lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                    is_opened, next_term, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lottery_type_id,
+                    year,
+                    term,
+                    numbers,
+                    draw_time,
+                    "",
+                    1,
+                    is_opened,
+                    term + 1,
+                    "2026-06-27T00:00:00+00:00",
+                    "2026-06-27T00:00:00+00:00",
+                ),
+            )
+
+    assert service.get_latest_opened_draw_result(db_path, 3) == {
+        "year": 2026,
+        "term": 127,
+        "numbers": "08,09,10,11,12,13,14",
+    }
+    assert service.get_latest_opened_draw_result(db_path, 1) is None
+
+
+def test_lottery_service_get_latest_opened_draw_term_preserves_admin_shape(tmp_path):
+    from domains.lottery import service
+
+    db_path = tmp_path / "latest-opened-draw-term.sqlite3"
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        rows = [
+            (3, 2026, 126, "2026-06-25 22:30:00", 1),
+            (3, 2026, 127, "2026-06-26 22:30:00", 1),
+            (3, 2026, 128, "2026-06-27 22:30:00", 0),
+            (2, 2026, 200, "2026-06-27 21:30:00", 1),
+        ]
+        for lottery_type_id, year, term, draw_time, is_opened in rows:
+            conn.execute(
+                """
+                INSERT INTO lottery_draws (
+                    lottery_type_id, year, term, numbers, draw_time, next_time, status,
+                    is_opened, next_term, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lottery_type_id,
+                    year,
+                    term,
+                    "01,02,03,04,05,06,07",
+                    draw_time,
+                    "",
+                    1,
+                    is_opened,
+                    term + 1,
+                    "2026-06-27T00:00:00+00:00",
+                    "2026-06-27T00:00:00+00:00",
+                ),
+            )
+
+    assert service.get_latest_opened_draw_term(db_path, 3) == {
+        "year": 2026,
+        "term": 127,
+        "draw_time": "2026-06-26 22:30:00",
+    }
+    assert service.get_latest_opened_draw_term(db_path, 1) == {
+        "year": 0,
+        "term": 0,
+        "draw_time": "",
+    }
+
+
 def test_admin_crud_save_draw_preserves_legacy_ensure_admin_tables_patch_point(monkeypatch, tmp_path):
     from admin import crud
     from domains.lottery import service

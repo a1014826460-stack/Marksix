@@ -185,6 +185,29 @@ def get_latest_draw(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]
         return find_latest_draw(conn, lottery_type_id)
 
 
+def get_latest_opened_draw_result(db_path: str | Path, lottery_type_id: int) -> dict[str, Any] | None:
+    """Return latest opened draw fields used by prediction backfill."""
+    from domains.lottery.repository import find_latest_opened_draw_result
+
+    with connect(db_path) as conn:
+        return find_latest_opened_draw_result(conn, lottery_type_id)
+
+
+def get_latest_opened_draw_term(db_path: str | Path, lottery_type_id: int) -> dict[str, Any]:
+    """Return admin latest-term payload shape for a lottery type."""
+    from domains.lottery.repository import find_latest_opened_draw_term
+
+    with connect(db_path) as conn:
+        row = find_latest_opened_draw_term(conn, lottery_type_id)
+    if not row:
+        return {"year": 0, "term": 0, "draw_time": ""}
+    return {
+        "year": int(row["year"]),
+        "term": int(row["term"]),
+        "draw_time": str(row["draw_time"] or ""),
+    }
+
+
 def list_draws(
     db_path: str | Path,
     limit: int = 200,

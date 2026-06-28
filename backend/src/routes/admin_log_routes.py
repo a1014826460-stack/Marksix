@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-from logger import (
-    export_error_logs,
-    get_error_log_detail,
-    get_log_levels,
-    get_log_modules,
-    get_log_stats,
-    query_error_logs,
-    trigger_cleanup,
-)
+from domains.logs import service as logs_service
 
 from http import HTTPStatus
 from app_http.request_context import RequestContext
@@ -26,24 +18,24 @@ def register(router: Router) -> None:
 
 
 def modules(ctx: RequestContext) -> None:
-    ctx.send_json({"modules": get_log_modules(ctx.db_path)})
+    ctx.send_json({"modules": logs_service.get_log_modules(ctx.db_path)})
 
 
 def levels(ctx: RequestContext) -> None:
-    ctx.send_json({"levels": get_log_levels(ctx.db_path)})
+    ctx.send_json({"levels": logs_service.get_log_levels(ctx.db_path)})
 
 
 def stats(ctx: RequestContext) -> None:
-    ctx.send_json(get_log_stats(ctx.db_path))
+    ctx.send_json(logs_service.get_log_stats(ctx.db_path))
 
 
 def cleanup(ctx: RequestContext) -> None:
-    result = trigger_cleanup()
+    result = logs_service.trigger_log_cleanup(ctx.db_path)
     ctx.send_json({"ok": True, **result})
 
 
 def export_logs(ctx: RequestContext) -> None:
-    rows = export_error_logs(
+    rows = logs_service.export_error_logs(
         ctx.db_path,
         level=ctx.query_value("level", "") or "",
         module=ctx.query_value("module", "") or "",
@@ -65,7 +57,7 @@ def log_detail(ctx: RequestContext) -> None:
     log_id_str = ctx.path.split("/")[-1]
     if not log_id_str.isdigit():
         raise KeyError("接口不存在")
-    detail = get_error_log_detail(ctx.db_path, int(log_id_str))
+    detail = logs_service.get_log_detail(ctx.db_path, int(log_id_str))
     if not detail:
         ctx.send_error_json(HTTPStatus.NOT_FOUND, f"log_id={log_id_str} 不存在")
         return
@@ -73,7 +65,7 @@ def log_detail(ctx: RequestContext) -> None:
 
 
 def list_logs(ctx: RequestContext) -> None:
-    result = query_error_logs(
+    result = logs_service.query_error_logs(
         ctx.db_path,
         page=int(ctx.query_value("page", "1") or 1),
         page_size=min(int(ctx.query_value("page_size", "30") or 30), 200),

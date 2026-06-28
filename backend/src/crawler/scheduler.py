@@ -37,8 +37,10 @@ from crawler.tasks import (  # noqa: F401 - 兼容导出
     ensure_daily_prediction_task,
     ensure_postgres_backup_tasks,
     ensure_taiwan_precise_open_task,
+    has_completed_daily_prediction_task,
     mark_scheduler_task_done,
     mark_scheduler_task_failed,
+    run_due_scheduler_tasks,
     upsert_scheduler_task,
 )
 from db import connect as db_connect
@@ -55,6 +57,7 @@ from alerts.alert_service import (
     alert_precise_draw_mismatch,
     reset_crawler_fail_count,
 )
+from domains.lottery import service as lottery_service
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
 _draw_mismatch_logger = logging.getLogger("draw.mismatch")
@@ -185,9 +188,11 @@ _upsert_scheduler_task = upsert_scheduler_task
 _acquire_due_scheduler_tasks = acquire_due_scheduler_tasks
 _mark_scheduler_task_done = mark_scheduler_task_done
 _mark_scheduler_task_failed = mark_scheduler_task_failed
+_run_due_scheduler_tasks = run_due_scheduler_tasks
 _ensure_taiwan_precise_open_task = ensure_taiwan_precise_open_task
 _ensure_daily_prediction_task = ensure_daily_prediction_task
 _ensure_postgres_backup_tasks = ensure_postgres_backup_tasks
+_has_completed_daily_prediction_task = has_completed_daily_prediction_task
 
 # HK/Macau 的 collector URL（优先读 lottery_types.collect_url，回退到此默认值）
 _PRECISE_DRAW_COLLECT_URLS: dict[int, str] = {
@@ -1129,19 +1134,12 @@ class CrawlerScheduler:
         # 检查今天是否已经执行过
         today_str = beijing_now.strftime("%Y-%m-%d")
         try:
-            with db_connect(self.db_path) as conn:
-                existing = conn.execute(
-                    f"SELECT 1 FROM {TASK_TABLE_NAME} "
-                    "WHERE task_type = ? AND status = 'done' AND payload_json LIKE ? "
-                    "ORDER BY run_at DESC LIMIT 1",
-                    (TASK_TYPE_DAILY_PREDICTION, f"%{today_str}%"),
-                ).fetchone()
-                if existing:
-                    _crawler_logger.info(
-                        "Daily prediction already completed for %s, skipping catch-up run",
-                        today_str,
-                    )
-                    return
+            if _has_completed_daily_prediction_task(self.db_path, today_str):
+                _crawler_logger.info(
+                    "Daily prediction already completed for %s, skipping catch-up run",
+                    today_str,
+                )
+                return
         except Exception:
             pass
 
@@ -1344,36 +1342,40 @@ class CrawlerScheduler:
         self._task_timer.start()
 
     def _run_due_tasks(self) -> None:
+        def on_task_acquired(task: dict[str, Any]) -> None:
+            _crawler_logger.info(
+                "Task acquired: type=%s key=%s run_at=%s",
+                task.get("task_type"), task.get("task_key"), task.get("run_at"),
+            )
+
+        def on_task_failed(task: dict[str, Any], exc: Exception) -> None:
+            if str(task.get("task_type") or "") == TASK_TYPE_POSTGRES_BACKUP:
+                try:
+                    from crawler.postgres_backup import send_backup_failure_alert
+
+                    attempt_no = int(task.get("attempt_count") or 0)
+                    max_attempts = int(task.get("max_attempts") or 2)
+                    send_backup_failure_alert(
+                        self.db_path,
+                        error_message=str(exc),
+                        attempt_no=attempt_no,
+                        final=attempt_no >= max_attempts,
+                    )
+                except Exception as alert_exc:
+                    _crawler_logger.error("PostgresBackup alert failed: %s", alert_exc)
+            _crawler_logger.exception("Scheduler task failed: %s", task.get("task_key"))
+
         try:
-            tasks = _acquire_due_scheduler_tasks(self.db_path, worker_id=self._worker_id, limit=10)
+            _run_due_scheduler_tasks(
+                self.db_path,
+                worker_id=self._worker_id,
+                execute_task=self._execute_task,
+                on_task_acquired=on_task_acquired,
+                on_task_failed=on_task_failed,
+                limit=10,
+            )
         except Exception as exc:
             _crawler_logger.error("Failed to acquire scheduler tasks: %s", exc)
-            return
-        for task in tasks:
-            try:
-                _crawler_logger.info(
-                    "Task acquired: type=%s key=%s run_at=%s",
-                    task.get("task_type"), task.get("task_key"), task.get("run_at"),
-                )
-                self._execute_task(task)
-                _mark_scheduler_task_done(self.db_path, int(task["id"]))
-            except Exception as exc:
-                _mark_scheduler_task_failed(self.db_path, task, exc)
-                if str(task.get("task_type") or "") == TASK_TYPE_POSTGRES_BACKUP:
-                    try:
-                        from crawler.postgres_backup import send_backup_failure_alert
-
-                        attempt_no = int(task.get("attempt_count") or 0)
-                        max_attempts = int(task.get("max_attempts") or 2)
-                        send_backup_failure_alert(
-                            self.db_path,
-                            error_message=str(exc),
-                            attempt_no=attempt_no,
-                            final=attempt_no >= max_attempts,
-                        )
-                    except Exception as alert_exc:
-                        _crawler_logger.error("PostgresBackup alert failed: %s", alert_exc)
-                _crawler_logger.exception("Scheduler task failed: %s", task.get("task_key"))
 
     def _execute_task(self, task: dict[str, Any]) -> None:
         task_type = str(task.get("task_type") or "")
@@ -1555,26 +1557,16 @@ def _backfill_latest_opened_prediction_results(
 ) -> None:
     """开奖后只回填最近一期已开奖结果，不立即生成下一期预测。"""
     try:
-        with db_connect(db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT year, term, numbers
-                FROM lottery_draws
-                WHERE lottery_type_id = ? AND is_opened = 1
-                ORDER BY year DESC, term DESC, id DESC
-                LIMIT 1
-                """,
-                (int(lottery_type_id),),
-            ).fetchone()
-            if not row:
-                _crawler_logger.warning(
-                    "TaiwanOpen backfill skipped: no opened draw found for lt=%s",
-                    lottery_type_id,
-                )
-                return
-            year = int(row["year"] or 0)
-            term = int(row["term"] or 0)
-            numbers_str = str(row["numbers"] or "")
+        row = lottery_service.get_latest_opened_draw_result(db_path, int(lottery_type_id))
+        if not row:
+            _crawler_logger.warning(
+                "TaiwanOpen backfill skipped: no opened draw found for lt=%s",
+                lottery_type_id,
+            )
+            return
+        year = int(row["year"] or 0)
+        term = int(row["term"] or 0)
+        numbers_str = str(row["numbers"] or "")
 
         result = _backfill_draw_to_predictions(
             db_path,

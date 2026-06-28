@@ -154,5 +154,20 @@ def get_site_web_id(conn: Any, site_id: int) -> int | None:
     return int(row["web_id"]) if row and row["web_id"] is not None else None
 
 
+def find_enabled_site_announcement_by_web_id(conn: Any, web_id: int) -> str:
+    row = conn.execute(
+        """
+        SELECT announcement
+        FROM managed_sites
+        WHERE enabled = 1
+          AND (id = ? OR web_id = ?)
+        ORDER BY id
+        LIMIT 1
+        """,
+        (web_id, web_id),
+    ).fetchone()
+    return str(row["announcement"] or "") if row else ""
+
+
 def backfill_site_web_ids(conn: Any) -> None:
     conn.execute("UPDATE managed_sites SET web_id = COALESCE(web_id, id)")

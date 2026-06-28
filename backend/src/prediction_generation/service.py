@@ -17,6 +17,15 @@ from pathlib import Path
 from typing import Any
 
 from db import connect
+from domains.prediction.category_service import classify_prediction_config
+from domains.prediction import generation_repository
+from domains.prediction.models import DrawContext, DrawTruth, PredictionRequest
+from domains.prediction.simulation_service import (
+    SimulationConfig,
+    SimulationResult,
+    SimulationState,
+    apply_simulation_control,
+)
 from helpers import load_fixed_data_maps
 from predict.common import (
     PredictionConfig,
@@ -68,7 +77,6 @@ from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
     find_existing_created_row,
     normalize_color_label,
-    table_column_names,
     upsert_created_prediction_row,
 )
 
@@ -143,6 +151,14 @@ def _resolve_prediction_config_with_mode_fallback(
 
 def _default_target_hit_rate(conn: Any) -> float:
     return float(get_config_from_conn(conn, "prediction.default_target_hit_rate", 0.65))
+
+
+def _simulation_config(conn: Any) -> SimulationConfig:
+    return SimulationConfig(
+        target_hit_rate=float(get_config_from_conn(conn, "prediction.simulation.target_hit_rate", 0.5)),
+        max_consecutive_hits=int(get_config_from_conn(conn, "prediction.simulation.max_consecutive_hits", 3)),
+        max_consecutive_misses=int(get_config_from_conn(conn, "prediction.simulation.max_consecutive_misses", 3)),
+    ).normalized()
 
 
 def _max_terms_per_year(conn: Any) -> int:
@@ -342,43 +358,12 @@ def list_opened_draws_in_issue_range(
     start_issue: tuple[int, int],
     end_issue: tuple[int, int],
 ) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT year, term, numbers
-        FROM lottery_draws
-        WHERE lottery_type_id = ?
-          AND is_opened = 1
-        ORDER BY year ASC, term ASC, id ASC
-        """,
-        (int(lottery_type_id),),
-    ).fetchall()
-
-    draws: list[dict[str, Any]] = []
-    for row in rows:
-        year = int(row["year"] or 0)
-        term = int(row["term"] or 0)
-        current = (year, term)
-        if current < start_issue or current > end_issue:
-            continue
-
-        normalized_numbers: list[str] = []
-        for raw_number in str(row["numbers"] or "").split(","):
-            text = raw_number.strip()
-            if not text:
-                continue
-            try:
-                normalized_numbers.append(f"{int(text):02d}")
-            except (TypeError, ValueError):
-                continue
-        if len(normalized_numbers) < 7:
-            continue
-
-        draws.append({
-            "year": year,
-            "term": term,
-            "numbers_str": ",".join(normalized_numbers),
-        })
-    return draws
+    return generation_repository.list_opened_draws_in_issue_range(
+        conn,
+        lottery_type_id=int(lottery_type_id),
+        start_issue=start_issue,
+        end_issue=end_issue,
+    )
 
 
 def find_latest_opened_draw_before_issue(
@@ -386,37 +371,11 @@ def find_latest_opened_draw_before_issue(
     lottery_type_id: int,
     target_issue: tuple[int, int],
 ) -> dict[str, Any] | None:
-    rows = conn.execute(
-        """
-        SELECT year, term, numbers
-        FROM lottery_draws
-        WHERE lottery_type_id = ?
-          AND is_opened = 1
-        ORDER BY year DESC, term DESC, id DESC
-        """,
-        (int(lottery_type_id),),
-    ).fetchall()
-
-    for row in rows:
-        year = int(row["year"] or 0)
-        term = int(row["term"] or 0)
-        if (year, term) >= target_issue:
-            continue
-
-        normalized_numbers: list[str] = []
-        for raw_number in str(row["numbers"] or "").split(","):
-            text = raw_number.strip()
-            if not text:
-                continue
-            try:
-                normalized_numbers.append(f"{int(text):02d}")
-            except (TypeError, ValueError):
-                continue
-        if len(normalized_numbers) < 7:
-            continue
-
-        return {"year": year, "term": term, "numbers_str": ",".join(normalized_numbers)}
-    return None
+    return generation_repository.find_latest_opened_draw_before_issue(
+        conn,
+        lottery_type_id=int(lottery_type_id),
+        target_issue=target_issue,
+    )
 
 
 def _load_previous_opened_numbers_for_issue(
@@ -473,19 +432,9 @@ def _build_future_draws(
 
 def _build_safety_draw_map(conn: Any, lottery_type: int) -> dict[tuple[int, int], bool]:
     """构建未开奖期号的安全映射（仅对 type=3）。"""
-    safety: dict[tuple[int, int], bool] = {}
     if int(lottery_type) != 3:
-        return safety
-    rows = conn.execute(
-        """
-        SELECT year, term, is_opened FROM lottery_draws
-        WHERE lottery_type_id = ? AND is_opened = 0
-        """,
-        (int(lottery_type),),
-    ).fetchall()
-    for row in rows:
-        safety[(int(row["year"]), int(row["term"]))] = True
-    return safety
+        return {}
+    return generation_repository.list_unopened_issue_keys(conn, lottery_type_id=int(lottery_type))
 
 
 # ── 站点上下文解析 ──────────────────────────────────────
@@ -517,24 +466,13 @@ def _load_recent_rows(
     mode_id: int,
 ) -> list[dict[str, Any]]:
     """加载指定模式最近已持久化的行，用于跨期多样性校验。"""
-    try:
-        created_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
-        if "content" not in created_columns:
-            return []
-        created_table = f"{CREATED_SCHEMA_NAME}.{table_name}"
-        selected_columns = [column for column in ("title", "content", "jiexi") if column in created_columns]
-        if not selected_columns:
-            return []
-        existing = conn.execute(
-            f"SELECT {', '.join(selected_columns)} FROM {created_table} "
-            f"WHERE type = ? AND web = ? AND modes_id = ? "
-            f"ORDER BY year DESC, term DESC LIMIT 10",
-            (str(lottery_type), str(site_web_id), mode_id),
-        ).fetchall()
-        return [{column: row[column] for column in selected_columns} for row in existing]
-    except Exception:
-        conn.rollback()
-        return []
+    return generation_repository.load_recent_created_rows(
+        conn,
+        table_name=table_name,
+        lottery_type=int(lottery_type),
+        site_web_id=int(site_web_id),
+        mode_id=int(mode_id),
+    )
 
 
 # ── 单期行生成（按 mode_id 分发）────────────────────────
@@ -548,24 +486,12 @@ def _text_prediction_signature(row_like: dict[str, Any] | None) -> tuple[str, st
 
 
 def _load_text_history_candidate_payloads(conn: Any, mode_id: int) -> list[dict[str, Any]]:
-    if mode_id <= 0 or not conn.table_exists(TEXT_HISTORY_MAPPING_TABLE):
-        return []
-
-    columns = set(conn.table_columns(TEXT_HISTORY_MAPPING_TABLE))
-    mode_column = "mode_id" if "mode_id" in columns else ("modes_id" if "modes_id" in columns else "")
-    if not mode_column:
-        return []
-
-    rows = conn.execute(
-        f"""
-        SELECT *
-        FROM {TEXT_HISTORY_MAPPING_TABLE}
-        WHERE {mode_column} = ?
-        ORDER BY RANDOM()
-        LIMIT 50
-        """,
-        (int(mode_id),),
-    ).fetchall()
+    rows = generation_repository.load_text_history_candidate_rows(
+        conn,
+        table_name=TEXT_HISTORY_MAPPING_TABLE,
+        mode_id=int(mode_id),
+        limit=50,
+    )
     return [
         payload for payload in (_text_history_row_payload(row) for row in rows)
         if _text_prediction_signature(payload)
@@ -612,6 +538,96 @@ def _repair_text_prediction_diversity(
     return result
 
 
+def _format_prediction_content_from_labels(
+    config: PredictionConfig,
+    labels: tuple[str, ...],
+    conn: Any,
+) -> tuple[Any, tuple[str, ...]]:
+    generated_content = config.content_formatter(labels, conn)
+    prediction_labels = tuple(labels)
+    if isinstance(generated_content, dict) and "_labels" in generated_content:
+        override_labels = generated_content.pop("_labels")
+        if isinstance(override_labels, (list, tuple)):
+            prediction_labels = tuple(str(label) for label in override_labels if str(label))
+        elif override_labels:
+            prediction_labels = (str(override_labels),)
+    return generated_content, prediction_labels
+
+
+def _apply_simulation_to_prediction_result(
+    *,
+    result: dict[str, Any],
+    config: PredictionConfig,
+    lottery_type: int,
+    site_id: int,
+    site_web_id: int,
+    draw: dict[str, Any],
+    is_future: bool,
+    truth: DrawTruth | None,
+    simulation_config: SimulationConfig | None,
+    simulation_state: SimulationState | None,
+    mechanism_key: str,
+    conn: Any,
+) -> tuple[Any, tuple[str, ...], SimulationResult | None]:
+    prediction = dict(result.get("prediction") or {})
+    labels = tuple(str(label) for label in prediction.get("labels") or () if str(label))
+    if not truth or not simulation_config or simulation_state is None:
+        return prediction.get("content"), labels, None
+
+    request = PredictionRequest(
+        category=classify_prediction_config(config),
+        context=DrawContext(
+            lottery_type_id=int(lottery_type),
+            year=int(draw["year"]),
+            term=int(draw["term"]),
+            is_future=bool(is_future),
+            site_id=int(site_id),
+            web_id=int(site_web_id),
+            mode_id=int(config.default_modes_id or 0),
+            mechanism_key=str(mechanism_key or config.key),
+        ),
+        config_key=str(config.key),
+        candidate_labels=tuple(
+            str(label)
+            for label in (result.get("mode") or {}).get("resolved_labels", config.labels)
+            if str(label)
+        ),
+        truth=truth,
+        hit_checker=getattr(config, "hit_checker", None),
+    )
+    controlled = apply_simulation_control(
+        request,
+        predicted_labels=labels,
+        config=simulation_config,
+        state=simulation_state,
+        seed=(
+            f"simulation:{site_id}:{site_web_id}:{lottery_type}:"
+            f"{config.default_modes_id}:{draw['year']}:{draw['term']}:{mechanism_key}"
+        ),
+    )
+    if controlled.should_hit is None:
+        return prediction.get("content"), labels, controlled
+    generated_content, _ = _format_prediction_content_from_labels(config, controlled.labels, conn)
+    return generated_content, tuple(controlled.labels), controlled
+
+
+def _advance_simulation_state(
+    state: SimulationState,
+    result: SimulationResult | None,
+) -> SimulationState:
+    if result is None or result.should_hit is None:
+        return state
+    if result.should_hit:
+        return SimulationState(
+            consecutive_hits=int(state.consecutive_hits or 0) + 1,
+            consecutive_misses=0,
+        )
+    return SimulationState(
+        consecutive_hits=0,
+        consecutive_misses=int(state.consecutive_misses or 0) + 1,
+    )
+
+
 def _resolve_safe_res_code(draw: dict[str, Any], draw_key: tuple, safety_map: dict) -> str | None:
     """解析安全开奖号码：若该期尚未开奖则返回 None，避免注入真实 res_code。"""
     if draw_key in safety_map:
@@ -625,9 +641,31 @@ def _generate_mode_65_row(
     lottery_type: int,
     site_web_id: int,
     build_row: Any,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=65：根据特码范围生成分组号码。"""
-    if is_future:
+    simulation_should_hit: bool | None = None
+    if is_future and truth and simulation_config and simulation_state is not None:
+        simulation_should_hit = _choose_should_hit_for_special_mode(
+            simulation_config,
+            simulation_state,
+            f"mode65:{site_id}:{site_web_id}:{lottery_type}:{draw['year']}:{draw['term']}:{mechanism_key}",
+        )
+        truth_code = int(str(truth.special_code or "0"))
+        if simulation_should_hit:
+            special_code = truth_code
+        else:
+            rng = _random.Random(_make_seed_int(f"mode65_miss:{draw['year']}{draw['term']:03d}:{site_web_id}"))
+            miss_pool = [
+                number for number in range(1, 50)
+                if _mode_65_segment(number) != _mode_65_segment(truth_code)
+            ]
+            special_code = rng.choice(miss_pool)
+    elif is_future:
         seed_int = _make_seed_int(f"{draw['year']}{draw['term']:03d}")
         _random.seed(seed_int)
         special_code = _random.randint(1, 49)
@@ -647,13 +685,70 @@ def _generate_mode_65_row(
     else:
         content = ",".join(f"{i:02d}" for i in range(37, 50))
 
-    return build_row(
+    row_data = build_row(
         mode_id=65, lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id),
-        res_code=_resolve_safe_res_code(draw, (draw["year"], draw["term"]), {}) or "",
+        res_code="" if is_future else (_resolve_safe_res_code(draw, (draw["year"], draw["term"]), {}) or ""),
         generated_content=content,
     )
+    if simulation_should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_should_hit
+    return row_data
+
+
+def _mode_65_segment(special_code: int) -> int:
+    value = int(special_code or 0)
+    if value <= 12:
+        return 1
+    if value <= 24:
+        return 2
+    if value <= 36:
+        return 3
+    return 4
+
+
+def _size_label_for_number(code: str) -> str:
+    normalized = f"{int(str(code or '0')):02d}"
+    for label, numbers in SIZE_NUMBER_MAP.items():
+        if normalized in {f"{int(number):02d}" for number in numbers}:
+            return str(label)
+    return ""
+
+
+def _choose_should_hit_for_special_mode(
+    config: SimulationConfig,
+    state: SimulationState,
+    seed: str,
+) -> bool:
+    request = PredictionRequest(
+        category=classify_prediction_config(_MODE_476_FALLBACK_CONFIG),
+        context=DrawContext(
+            lottery_type_id=3,
+            year=0,
+            term=0,
+            is_future=True,
+            site_id=0,
+            web_id=0,
+            mode_id=0,
+            mechanism_key="special",
+        ),
+        config_key="special",
+        candidate_labels=("truth", "other"),
+        truth=DrawTruth(
+            numbers=("01", "02", "03", "04", "05", "06", "07"),
+            special_code="07",
+            special_zodiac="truth",
+        ),
+    )
+    result = apply_simulation_control(
+        request,
+        predicted_labels=("other",),
+        config=config,
+        state=state,
+        seed=seed,
+    )
+    return bool(result.should_hit)
 
 
 def _generate_mode_108_row(
@@ -667,9 +762,30 @@ def _generate_mode_108_row(
     db_path: str | Path,
     default_target_hit_rate: float,
     build_row: Any,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=108：大小中特带1头。"""
-    if is_future:
+    simulation_should_hit: bool | None = None
+    if is_future and truth and simulation_config and simulation_state is not None:
+        simulation_should_hit = _choose_should_hit_for_special_mode(
+            simulation_config,
+            simulation_state,
+            f"mode108:{site_id}:{site_web_id}:{lottery_type}:{draw['year']}:{draw['term']}:{mechanism_key}",
+        )
+        truth_code = int(str(truth.special_code or "0"))
+        if simulation_should_hit:
+            chosen_number = f"{truth_code:02d}"
+        else:
+            truth_is_big = truth_code >= 25
+            rng = _random.Random(_make_seed_int(f"mode108_miss:{draw['year']}{draw['term']:03d}:{site_web_id}"))
+            pool = list(range(1, 25)) if truth_is_big else list(range(25, 50))
+            chosen_number = f"{rng.choice(pool):02d}"
+        predicted_size = _size_label_for_number(chosen_number)
+    elif is_future:
         result = predict(
             config=config, res_code=None, source_table=table_name,
             db_path=db_path, target_hit_rate=default_target_hit_rate,
@@ -701,7 +817,10 @@ def _generate_mode_108_row(
     else:
         head_text = "0头"
 
-    return build_row(
+    if simulation_should_hit is not None:
+        head_text = f"{num_val // 10}tou" if num_val >= 10 else "0tou"
+
+    row_data = build_row(
         mode_id=108, lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id), res_code=safe_res_code or "",
@@ -710,6 +829,9 @@ def _generate_mode_108_row(
             "tou": [head_text],
         },
     )
+    if simulation_should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_should_hit
+    return row_data
 
 
 def _generate_mode_246_row(
@@ -724,6 +846,12 @@ def _generate_mode_246_row(
     default_target_hit_rate: float,
     zodiac_map: dict,
     build_row: Any,
+    conn: Any = None,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=246：七肖七码（正常预测 + 随机平特生肖）。"""
     result = predict(
@@ -732,13 +860,30 @@ def _generate_mode_246_row(
         source_table=table_name, db_path=db_path,
         target_hit_rate=default_target_hit_rate,
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
+        conn=conn,
+    )
+    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key,
+        conn=conn,
     )
     row_data = build_row(
         mode_id=246, lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id), res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     if is_future:
         seed_int = _make_seed_int(f"ping_{draw['year']}{draw['term']:03d}")
         _random.seed(seed_int)
@@ -758,6 +903,12 @@ def _generate_mode_331_row(
     default_target_hit_rate: float,
     zodiac_map: dict,
     build_row: Any,
+    conn: Any = None,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=331: persist getPmxjcz-compatible x7m14 data into created rows."""
     result = predict(
@@ -766,15 +917,32 @@ def _generate_mode_331_row(
         source_table=table_name, db_path=db_path,
         target_hit_rate=default_target_hit_rate,
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
+        conn=conn,
+    )
+    generated_content, controlled_labels, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key,
+        conn=conn,
     )
     row_data = build_row(
         mode_id=331, lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id), res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     row_data["x7m14"] = _build_mode_331_x7m14(
-        result["prediction"].get("labels"),
+        controlled_labels or result["prediction"].get("labels"),
         zodiac_map,
         f"mode331:{draw['year']}{draw['term']:03d}:{site_web_id}:{lottery_type}",
     )
@@ -858,6 +1026,11 @@ def _generate_mode_474_row(
     default_target_hit_rate: float,
     build_row: Any,
     conn: Any = None,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=474: use normal prediction content plus a generated image_url."""
     result = predict(
@@ -869,6 +1042,20 @@ def _generate_mode_474_row(
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
         conn=conn,
     )
+    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key,
+        conn=conn,
+    )
     row_data = build_row(
         mode_id=MODE_474_ID,
         lottery_type=str(lottery_type),
@@ -876,8 +1063,10 @@ def _generate_mode_474_row(
         term=str(draw["term"]),
         web_value=str(site_web_id),
         res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     previous_numbers = _load_previous_opened_numbers_for_issue(
         conn,
         lottery_type_id=int(lottery_type),
@@ -912,6 +1101,11 @@ def _generate_mode_476_row(
     default_target_hit_rate: float,
     build_row: Any,
     conn: Any,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=476: reuse 跑马图解 7肖14码 text payload and add a generated image_url."""
     try:
@@ -927,6 +1121,20 @@ def _generate_mode_476_row(
         random_seed=f"mode476:{draw['year']}{draw['term']:03d}:{site_web_id}" if is_future else None,
         conn=conn,
     )
+    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=mode_22_config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key or str(getattr(mode_22_config, "key", "")),
+        conn=conn,
+    )
     row_data = build_row(
         mode_id=MODE_476_ID,
         lottery_type=str(lottery_type),
@@ -934,8 +1142,10 @@ def _generate_mode_476_row(
         term=str(draw["term"]),
         web_value=str(site_web_id),
         res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     row_data["title"] = MODE_476_TITLE
 
     previous_numbers = _load_previous_opened_numbers_for_issue(
@@ -966,6 +1176,11 @@ def _generate_mode_478_row(
     default_target_hit_rate: float,
     build_row: Any,
     conn: Any,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """mode_id=478: reuse 跑马图解 7肖14码 text payload and add the 台湾跑马图 image_url."""
     try:
@@ -981,6 +1196,20 @@ def _generate_mode_478_row(
         random_seed=f"mode478:{draw['year']}{draw['term']:03d}:{site_web_id}" if is_future else None,
         conn=conn,
     )
+    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=mode_22_config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key or str(getattr(mode_22_config, "key", "")),
+        conn=conn,
+    )
     row_data = build_row(
         mode_id=MODE_478_ID,
         lottery_type=str(lottery_type),
@@ -988,8 +1217,10 @@ def _generate_mode_478_row(
         term=str(draw["term"]),
         web_value=str(site_web_id),
         res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     row_data["title"] = MODE_478_TITLE
 
     previous_numbers = _load_previous_opened_numbers_for_issue(
@@ -1022,6 +1253,11 @@ def _generate_default_mode_row(
     lottery_type: int,
     site_web_id: int,
     conn: Any = None,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """通用模式：调用 predict() 生成预测内容。"""
     result = predict(
@@ -1032,13 +1268,30 @@ def _generate_default_mode_row(
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
         conn=conn,
     )
+    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+        result=result,
+        config=config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        is_future=is_future,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        mechanism_key=mechanism_key,
+        conn=conn,
+    )
+
     row_data = build_row(
         mode_id=config.default_modes_id,
         lottery_type=str(lottery_type),
         year=str(draw["year"]), term=str(draw["term"]),
         web_value=str(site_web_id), res_code=safe_res_code or "",
-        generated_content=result["prediction"]["content"],
+        generated_content=generated_content,
     )
+    if simulation_result is not None and simulation_result.should_hit is not None:
+        row_data["_simulation_should_hit"] = simulation_result.should_hit
     if int(config.default_modes_id or 0) == 251:
         row_data = _ensure_mode_251_xiao(row_data, result["prediction"]["content"])
     return row_data
@@ -1058,30 +1311,64 @@ def _generate_single_draw_row(
     zodiac_map: dict,
     build_row: Any,
     conn: Any = None,
+    truth: DrawTruth | None = None,
+    simulation_config: SimulationConfig | None = None,
+    simulation_state: SimulationState | None = None,
+    site_id: int = 0,
+    mechanism_key: str = "",
 ) -> dict[str, Any]:
     """根据 mode_id 分发生成单期预测行。"""
     if mode_id == 65:
-        return _generate_mode_65_row(draw, is_future, lottery_type, site_web_id, build_row)
+        return _generate_mode_65_row(
+            draw, is_future, lottery_type, site_web_id, build_row,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
+        )
     if mode_id == 108:
         return _generate_mode_108_row(
             draw, is_future, safe_res_code, lottery_type, site_web_id,
             config, table_name, db_path, default_target_hit_rate, build_row,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == 246:
         return _generate_mode_246_row(
             draw, is_future, safe_res_code, lottery_type, site_web_id,
             config, table_name, db_path, default_target_hit_rate, zodiac_map, build_row,
+            conn=conn,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == 331:
         return _generate_mode_331_row(
             draw, is_future, safe_res_code, lottery_type, site_web_id,
             config, table_name, db_path, default_target_hit_rate, zodiac_map, build_row,
+            conn=conn,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == MODE_474_ID:
         return _generate_mode_474_row(
             draw, is_future, safe_res_code, lottery_type, site_web_id,
             config, table_name, db_path, default_target_hit_rate, build_row,
             conn=conn,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == MODE_476_ID:
         return _generate_mode_476_row(
@@ -1094,6 +1381,11 @@ def _generate_single_draw_row(
             default_target_hit_rate=default_target_hit_rate,
             build_row=build_row,
             conn=conn,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == MODE_478_ID:
         return _generate_mode_478_row(
@@ -1106,6 +1398,11 @@ def _generate_single_draw_row(
             default_target_hit_rate=default_target_hit_rate,
             build_row=build_row,
             conn=conn,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            site_id=site_id,
+            mechanism_key=mechanism_key,
         )
     if mode_id == 475:
         row_data = _generate_mode_475_row(
@@ -1127,6 +1424,11 @@ def _generate_single_draw_row(
         draw, is_future, safe_res_code, config, table_name, db_path,
         default_target_hit_rate, build_row, lottery_type, site_web_id,
         conn=conn,
+        truth=truth,
+        simulation_config=simulation_config,
+        simulation_state=simulation_state,
+        site_id=site_id,
+        mechanism_key=mechanism_key,
     )
 
 
@@ -1260,9 +1562,11 @@ def _process_single_module(
     future_only: bool,
     safety_draw_map: dict,
     lottery_type: int,
+    site_id: int,
     site_web_id: int,
     db_path: str | Path,
     default_target_hit_rate: float,
+    simulation_config: SimulationConfig,
     zodiac_map: dict,
     color_map: dict,
     trigger: str,
@@ -1316,12 +1620,23 @@ def _process_single_module(
 
     recent_rows = _load_recent_rows(conn, table_name, lottery_type, site_web_id, mode_id)
     all_target_draws = list(future_draws) if future_only else list(draws) + list(future_draws)
+    simulation_state = SimulationState()
 
     for draw in all_target_draws:
         try:
             is_future = bool(draw.get("_future"))
             draw_key = (draw["year"], draw["term"])
             safe_res_code = _resolve_safe_res_code(draw, draw_key, safety_draw_map)
+            truth = None
+            if int(lottery_type) == 3 and is_future and draw_key in safety_draw_map:
+                truth = generation_repository.get_future_draw_truth(
+                    conn,
+                    lottery_type_id=int(lottery_type),
+                    year=int(draw["year"]),
+                    term=int(draw["term"]),
+                    zodiac_map=zodiac_map,
+                    color_map=color_map,
+                )
 
             row_data = _generate_single_draw_row(
                 draw=draw, mode_id=mode_id, is_future=is_future,
@@ -1330,7 +1645,22 @@ def _process_single_module(
                 db_path=db_path, default_target_hit_rate=default_target_hit_rate,
                 zodiac_map=zodiac_map, build_row=build_generated_prediction_row_data,
                 conn=conn,
+                truth=truth,
+                simulation_config=simulation_config,
+                simulation_state=simulation_state,
+                site_id=int(site_id),
+                mechanism_key=mechanism_key,
             )
+            simulation_should_hit = row_data.pop("_simulation_should_hit", None)
+            if simulation_should_hit is not None:
+                simulation_state = _advance_simulation_state(
+                    simulation_state,
+                    SimulationResult(
+                        labels=(),
+                        should_hit=bool(simulation_should_hit),
+                        safe_debug={"has_truth": True, "should_hit": bool(simulation_should_hit)},
+                    ),
+                )
 
             if is_future:
                 row_data["res_sx"] = ""
@@ -1445,21 +1775,14 @@ def generate_prediction_batch(
         sync_site_modules(conn, site_id)
         zodiac_map, color_map = load_fixed_data_maps(conn)
         default_target_hit_rate = _default_target_hit_rate(conn)
+        simulation_config = _simulation_config(conn)
         max_terms_per_year = _max_terms_per_year(conn)
 
-        module_rows = conn.execute(
-            """
-            SELECT id, mechanism_key, mode_id, status, sort_order
-            FROM site_prediction_modules
-            WHERE site_id = ? AND status = 1
-            """
-            + (
-                f" AND mechanism_key IN ({', '.join('?' for _ in requested_keys)})"
-                if requested_keys else ""
-            )
-            + " ORDER BY sort_order, id",
-            [site_id] + (requested_keys if requested_keys else []),
-        ).fetchall()
+        module_rows = generation_repository.list_enabled_site_prediction_modules(
+            conn,
+            site_id=int(site_id),
+            mechanism_keys=requested_keys,
+        )
 
         draws = list_opened_draws_in_issue_range(conn, lottery_type, start_issue, end_issue)
         if not draws and future_only and int(future_periods or 0) > 0:
@@ -1499,8 +1822,9 @@ def generate_prediction_batch(
                 conn=conn, module_row=module_row, draws=draws,
                 future_draws=future_draws, future_only=future_only,
                 safety_draw_map=safety_draw_map, lottery_type=int(lottery_type),
-                site_web_id=site_web_id, db_path=db_path,
+                site_id=int(site_id), site_web_id=site_web_id, db_path=db_path,
                 default_target_hit_rate=default_target_hit_rate,
+                simulation_config=simulation_config,
                 zodiac_map=zodiac_map, color_map=color_map,
                 trigger=trigger, allow_overwrite=bool(allow_overwrite),
                 resolve_prediction_table_for_mode=resolve_prediction_table_for_mode,

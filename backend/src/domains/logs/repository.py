@@ -56,6 +56,56 @@ def query_logs(
     return [dict(row) for row in rows], total
 
 
+def query_backfill_logs(
+    conn: Any,
+    *,
+    lottery_type_id: int | None = None,
+    period: str = "",
+    action: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = 1,
+    page_size: int = 30,
+) -> tuple[list[dict[str, Any]], int]:
+    """分页查询 prediction.backfill 事件日志。"""
+    conditions: list[str] = ["logger_name = 'prediction.backfill'"]
+    params: list[Any] = []
+
+    if lottery_type_id is not None:
+        conditions.append("lottery_type_id = ?")
+        params.append(int(lottery_type_id))
+    if period:
+        conditions.append("message LIKE ?")
+        params.append(f"%期号={period}%")
+    if action:
+        conditions.append("message LIKE ?")
+        params.append(f"%动作={action}%")
+    if date_from:
+        conditions.append("created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("created_at <= ?")
+        params.append(date_to)
+
+    where = " AND ".join(conditions)
+    offset = max(0, page - 1) * page_size
+
+    total = int(
+        conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM error_logs WHERE {where}",
+            params,
+        ).fetchone()["cnt"]
+        or 0
+    )
+    rows = conn.execute(
+        f"SELECT id, created_at, level, message, lottery_type_id "
+        f"FROM error_logs WHERE {where} "
+        f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [page_size, offset],
+    ).fetchall()
+    return [dict(row) for row in rows], total
+
+
 def get_log_stats(conn: Any) -> dict[str, Any]:
     """获取日志统计信息（各级别数量、模块分布）。"""
     level_counts = conn.execute(

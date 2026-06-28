@@ -86,6 +86,9 @@ backend/src/
 │   ├── logs/                       # 日志领域
 │   │   ├── repository.py           # error_logs SQL 查询
 │   │   └── service.py              # 日志业务逻辑
+│   ├── scheduler/                  # 调度任务领域
+│   │   ├── repository.py           # scheduler_tasks / scheduler_task_runs SQL 查询
+│   │   └── service.py              # 任务入队、抢占、运行记录、执行生命周期、重试状态
 │   └── legacy/                     # 旧站兼容领域
 │       └── service.py              # 旧版 API 业务逻辑
 │
@@ -433,12 +436,16 @@ backend/src/auth.py
 
 ```txt
 backend/src/crawler/scheduler.py
+backend/src/domains/scheduler/service.py
+backend/src/domains/scheduler/repository.py
 ```
 
 说明：
 
 - `backend/src/crawler/crawler_service.py` 当前是兼容导出层
 - `CrawlerScheduler` 的真实实现位于 `backend/src/crawler/scheduler.py`
+- `backend/src/crawler/tasks.py` 当前是兼容门面，调度任务表读写已委托到 `domains/scheduler`
+- `domains/scheduler/service.py` 负责 `scheduler_tasks` / `scheduler_task_runs` 的任务入队、抢占锁、运行记录、执行生命周期、完成和失败重试状态
 
 职责：
 
@@ -454,6 +461,15 @@ backend/src/crawler/scheduler.py
 - `_schedule_auto_open()`
 - `_schedule_auto_crawl()`
 - `_schedule_taiwan_precise_open()`
+- `domains.scheduler.service.acquire_due_scheduler_tasks()` 使用任务表状态和 `locked_at` 超时机制抢占到期任务
+- `domains.scheduler.service.create_scheduler_task_run()` / `finish_scheduler_task_run()` 记录单次任务执行历史
+- `domains.scheduler.service.run_due_scheduler_tasks()` 统一编排任务抢占、执行回调、运行记录写入、成功完成和失败重试状态
+- `CrawlerScheduler._run_due_tasks()` 只提供任务执行回调和失败告警回调，不再直接维护 `scheduler_tasks` / `scheduler_task_runs` 生命周期
+
+重要限制：
+
+- 任务表读写和执行生命周期已经迁入 `domains/scheduler`，但主调度循环、具体任务执行规则仍在 `crawler/scheduler.py`。
+- 当前仍不是完整的分布式任务系统；多实例部署前，还需要继续收敛 `crawler/scheduler.py` 中剩余 SQL 和调度规则，并补齐数据库级锁/幂等边界。
 
 关键运维配置：
 
@@ -828,6 +844,78 @@ GET  /api/admin/configs/history          → 配置变更历史（可按 key 筛
 
 ---
 
+# 2026-06-28 mixed 复合玩法命中规则
+
+业务确认：`mixed` 复合类玩法按“任一维度命中即算命中”处理。
+
+- 可参与命中判断的维度包括生肖、号码、尾数、头数、波色等由玩法配置声明的原子维度。
+- 后台批量生成的台湾彩未来期模拟控制中，强制命中时只需命中其中一个真实维度；强制不中时必须避开所有真实维度标签。
+- 未来期真实开奖号码仍只允许在内存中的 `DrawTruth` 里只读使用，不写入日志、任务 summary、异常文本或任何 HTTP 响应。
+- `/api/predict/{mechanism}` 即时预测 API 不接入未来期真实开奖模拟控制，外部响应结构保持不变。
+
+# 2026-06-28 预测准确率控制落地
+
+台湾彩未来期预测准确率控制已接入后台批量生成主链路，作用范围限定为 `lottery_type_id=3`、future draw、且 `lottery_draws` 中存在未开奖期只读 `numbers` 的场景。
+
+- 批量生成读取 `prediction.simulation.target_hit_rate`、`prediction.simulation.max_consecutive_hits`、`prediction.simulation.max_consecutive_misses`。
+- 通用预测路径以及 246/331/474/476/478 等由 `predict()` 产出正文的特殊分支，会在落库前应用命中率控制。
+- 杀号/排除类玩法按 `hit_checker` 语义反向处理：预测避开真实标签才算命中。
+- mixed 复合类命中规则为任一维度命中；强制不中时会避开全部真实维度。
+- 内部 `_simulation_should_hit` 标记只用于推进连续命中/不中状态，落库前会移除，不进入 API、日志或 created 表。
+
+# 2026-06-28 预测领域与 SQL 收敛进展
+
+本轮继续执行“保持前端 API 数据结构不变”的渐进式重构。外部 API 响应字段、字段顺序和 legacy 包装形态未调整。
+
+## 已完成
+
+- 新增 `domains/prediction/generation_repository.py`，承接批量预测生成中的开奖记录读取、未来期安全映射、站点启用模块读取、created 最近行读取、`text_history_mappings` 候选行读取。
+- `prediction_generation/service.py` 中对应读取逻辑已改为 repository 调用；该文件当前保留生成编排、created 写入和任务日志写入职责。
+- 新增预测领域模型：`PredictionCategory`、`DrawContext`、`DrawTruth`、`PredictionRequest`、`PredictionOutput`。
+- 新增 `domains/prediction/category_service.py`，按玩法特征将机制归类为 `zodiac`、`image`、`size_parity`、`text_mapping`、`number`、`structured_mapping`、`mixed`。该模块为纯函数，不访问 SQL。
+- 新增 `domains/prediction/simulation_service.py`，提供台湾彩未来期开奖模拟控制的纯领域逻辑；真实开奖号只以 `DrawTruth` 内存对象参与计算，`to_safe_dict()` 不暴露号码。
+- 新增 system_config 默认项：
+  - `prediction.simulation.target_hit_rate`，默认 `0.5`
+  - `prediction.simulation.max_consecutive_hits`，默认 `3`
+  - `prediction.simulation.max_consecutive_misses`，默认 `3`
+- 新增 `domains/legacy/repository.py`，承接 legacy 图片列表、当前期号、mode_payload 元数据和 fallback 期号读取。
+- `legacy/api.py` 已移除直接查询 SQL，改为调用 `domains.legacy.repository`；`legacy/frontend_compat.py` 的 `/api/post/getList` 图片读取也已委托 repository。
+
+## 当前边界
+
+- 台湾彩模拟控制已接入后台批量生成落库链路；`DrawTruth` 只读读取后仅用于内存命中控制，落库、日志和响应不得写入完整开奖号。
+- `legacy/frontend_compat.py` 仍保留通用 mode_payload 查询 SQL；后续应按 endpoint/table 元数据继续迁入 repository。
+- `helpers.py` 与 `prediction_generation/brain_teaser.py` 仍有历史查询逻辑，需要继续拆分到明确 repository。
+
+## 验证
+
+本轮已执行：
+
+```powershell
+cd backend/src
+python -m pytest tests/unit/test_prediction_domain_models.py tests/unit/test_prediction_category_service.py tests/unit/test_prediction_generation_repository.py tests/unit/test_prediction_simulation_service.py tests/unit/test_prediction_simulation_config_defaults.py tests/unit/test_legacy_repository.py tests/unit/test_legacy_api_repository_contract.py tests/unit/test_legacy_mode_rows_overlay_delay.py tests/unit/test_api_contract_legacy_routes.py tests/unit/test_legacy_frontend_compat.py tests/unit/test_legacy_frontend_compat_image_url.py tests/unit/test_prediction_generation_overwrite_guard.py tests/unit/test_prediction_generation_legacy_mechanism_key_fallback.py tests/unit/test_api_contract_admin_routes.py -q
+```
+
+结果：
+
+```text
+42 passed
+```
+
+以及：
+
+```powershell
+python -m compileall domains/prediction/category_service.py domains/prediction/models.py domains/prediction/generation_repository.py domains/prediction/simulation_service.py domains/legacy/repository.py prediction_generation/service.py legacy/api.py legacy/frontend_compat.py runtime_config.py
+```
+
+## 架构评分更新
+
+当前架构评分：**8.2 / 10**。
+
+加分点：预测生成读取层和 legacy API 入口层进一步变薄；预测领域模型、玩法分类和模拟控制已具备独立测试；配置项进入 `system_config` 默认种子。
+
+扣分点：预测 handler 尚未按大类完全拆开；少数纯静态/非 `predict()` 生成玩法仍需要后续逐步纳入统一 handler；`helpers.py`、`legacy/frontend_compat.py` 和 `brain_teaser.py` 仍有待收敛 SQL。
+
 ## 静态 JSON 映射导入
 
 项目新增了两套独立脚本，用于将 `backend/data/json_data/` 下的静态 JSON 导入 PostgreSQL，并在预测模块中按路径快速读取：
@@ -915,3 +1003,99 @@ rows = get_mappings(
 ### 当前数据注意事项
 
 当前工作区中的 `backend/data/json_data/sx_verse.json` 为空文件。导入脚本会将其视为校验失败并拒绝写入，避免把空数据同步到正式库。补回有效 JSON 内容后可直接复用同一命令重新导入。
+
+# 2026-06-27 后端重构状态更新
+
+本轮后端优化已完成一轮阶段性收敛，重点是降低 `admin.crud`、预测响应构造、启动检查和管理 CRUD 的耦合，同时保持前端和彩票站点已经依赖的 API 返回结构不变。
+
+## 已完成的结构调整
+
+- `admin.crud` 已调整为兼容门面层，站点、用户、彩种、开奖、号码、预测模块等 CRUD 逐步委托到 `domains/*/service.py`。
+- 新增或补齐领域服务：
+  - `domains/users/service.py`
+  - `domains/numbers/service.py`
+  - `domains/lottery/service.py`
+  - `domains/prediction/api_response.py`
+  - `domains/prediction/backfill_service.py`
+  - `domains/prediction/backfill_repository.py`
+  - `domains/prediction/mode_payload_service.py`
+  - `domains/prediction/mode_payload_repository.py`
+  - `domains/sites/repository.py`
+  - `domains/sites/service.py`
+  - `domains/scheduler/service.py`
+  - `domains/scheduler/repository.py`
+- 预测 API 响应构造集中到 `domains.prediction.api_response`，避免路由和管理模块重复拼装响应。
+- 调度任务表读写从 `crawler/tasks.py` 迁入 `domains.scheduler`，`crawler/tasks.py` 保留旧导入兼容门面。
+- 开奖后回填所需的“最近一期已开奖”查询迁入 `domains.lottery.repository/service`，`crawler/scheduler.py` 不再直接查询这段 `lottery_draws`。
+- `/api/admin/lottery-draws/latest-term` 的最近已开奖期查询迁入 `domains.lottery.repository/service`，`admin_draw_routes.py` 不再直接查询 `lottery_draws`。
+- `/api/admin/backfill-predictions` 的期号推算、已开奖列表查询和 created 表回填 SQL 迁入 `domains.prediction.backfill_service/repository`，路由层只保留请求解析和响应包装。
+- `/api/admin/backfill-predictions/logs` 的查询 SQL 迁入 `domains.logs.repository/service`，路由层只保留参数解析和响应包装。
+- `/api/admin/logs` 查询入口改为依赖 `domains.logs.service`，并补充完整筛选参数的 API 合同测试。
+- `/api/admin/logs/export` 导出入口改为依赖 `domains.logs.service.export_error_logs`，并补充响应合同测试。
+- `/api/public/notice` 与 `/api/index/notice` 的公告查询迁入 `domains.sites.repository/service`，路由层只解析 `web` 参数并保持 `{ code, data: { content } }` 响应结构。
+- `/api/admin/sites/{id}/mode-payload/{table}` 的列表查询，以及 `{row_id}` 更新/删除逻辑，均已迁入 `domains.prediction.mode_payload_service/repository`；`admin_payload_routes.py` 和 `admin/payload.py` 只保留路由/兼容门面职责。
+- 启动风险提示抽离到 `app_http/startup_warnings.py`，`app_http/server.py` 只负责调用。
+- `routes.common.fetch_site_data` 保留历史响应格式，同时内部使用更清晰的抓取运行记录函数。
+- 默认预测蓝图 mode 列表已统一到数据库 schema seed 常量，避免运行时 fallback 与建表 seed 漂移。
+- `routes/` 目录已无直连 SQL；路由层保留 HTTP 参数解析、站点上下文校验和响应包装。
+
+## API 兼容性保护
+
+本轮没有改变彩票站点预测模块 API 的返回数据结构。自动化测试已保护以下关键合同：
+
+- `/api/predict/{mechanism}` 顶层字段顺序保持：`ok`, `protocol_version`, `generated_at`, `data`, `legacy`
+- `data` 字段顺序保持：`mechanism`, `source`, `request`, `context`, `prediction`, `backtest`, `explanation`, `warning`
+- 未开奖期的真实开奖结果继续隐藏，`request.res_code` 为 `null`，但上下文中仍保留 draw 信息。
+- 历史兼容接口继续保留原有成功响应外形，不强行改成统一 `{ ok, data }`。
+- `/api/public/notice` 与 `/api/index/notice` 公告接口响应合同已覆盖，继续返回 `{ code: 600|200, data: { content } }`。
+- `/api/admin/sites/{id}/mode-payload/{table}/{row_id}` 更新/删除前的行归属校验合同已覆盖，继续保持原有更新响应和删除 `{ ok: true }` 响应。
+- `admin.crud.ensure_admin_tables` 旧 patch 点已恢复，避免旧测试或旧工具依赖该入口时失效。
+
+## 当前验证结果
+
+在 `backend/src` 下执行：
+
+```powershell
+python -m pytest -q
+```
+
+最近一次结果：
+
+```text
+270 passed, 10 skipped
+```
+
+## 架构评分
+
+当前后端架构评分：**8.0 / 10**。
+
+优点：
+
+- 主要业务已经向 `domains/` 聚合，HTTP 层、路由层、领域层边界比之前清晰。
+- 预测 API 合同已有专门测试保护，适合继续重构而不破坏前端。
+- 公共公告接口和管理日志/回填接口的路由层 SQL 已继续收敛，routes 现在更接近纯 HTTP 适配层。
+- 调度任务表读写已开始从 `crawler/` 迁入 `domains/scheduler`，任务抢占、运行记录和失败重试有了更清晰的领域入口。
+- 数据库 schema、运行配置、日志、启动警告和部分兼容层已有明确归属。
+- 测试覆盖明显提升，当前全量测试通过。
+
+扣分点：
+
+- 仍有历史兼容包和旧模块存在，例如 `admin/`、`predict/`、部分 legacy API，短期不能删除。
+- routes 已无直连 SQL；helper、legacy、prediction generation 和 `crawler/scheduler.py` 中仍有业务规则或 SQL 需要继续收敛。
+- 调度器主循环仍是进程内 `threading.Timer` 风格；虽然任务表已有抢占和重试语义，但还不适合直接按多实例高可用调度器使用。
+- 文档和部分源码注释存在历史编码问题，阅读和维护体验受影响。
+- API 响应格式仍有历史接口与新接口并存，短期需要继续依赖合同测试保护。
+
+## 后续优化建议
+
+建议继续优化，但不要一次性大改。推荐优先级如下：
+
+1. 高优先级：继续为公共 API、legacy API、预测 API 增加合同测试，尤其是彩票站点真实调用路径。
+2. 高优先级：继续把 helper、legacy、prediction generation 中的散落 SQL 逐步迁移到 repository/service，保持 `routes/`、兼容门面和调度器编排层不直接写 SQL。
+3. 高优先级：继续迁移 `crawler/scheduler.py` 中的任务查询、补跑判断和自动开奖规则，让 `domains/scheduler` 承担完整任务领域能力。
+4. 中优先级：将进程内调度器升级为可持久化、可加锁的任务系统，避免多实例重复执行。
+5. 中优先级：整理编码损坏的中文文档和注释，统一保存为 UTF-8。
+6. 中优先级：继续拆分 `predict/mechanisms.py` 中体积较大的预测机制，迁移到更细的机制模块。
+7. 低优先级：逐步统一新接口响应规范，但历史接口不要强改，除非前端已同步迁移。
+
+---

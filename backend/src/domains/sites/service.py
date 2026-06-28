@@ -12,6 +12,7 @@ from tables import ensure_admin_tables
 
 from .repository import (
     delete_site_by_id,
+    find_enabled_site_announcement_by_web_id,
     find_site_by_id,
     get_site_web_id,
     insert_site,
@@ -146,3 +147,16 @@ def resolve_web_id(db_path: str | Path, site_id: int) -> int:
         if web_id is None:
             raise NotFoundError(f"site_id={site_id} 不存在或缺少 web_id 配置")
         return web_id
+
+
+def get_public_notice(db_path: str | Path, web_id: int | None) -> dict[str, Any]:
+    announcement = ""
+    if web_id is not None:
+        ensure_admin_tables(db_path)
+        with connect(db_path) as conn:
+            announcement = find_enabled_site_announcement_by_web_id(conn, web_id)
+
+    return {
+        "code": 600 if announcement else 200,
+        "data": {"content": announcement},
+    }

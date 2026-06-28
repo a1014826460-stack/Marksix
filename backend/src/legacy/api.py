@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from db import connect, quote_identifier
+from db import connect
+from domains.legacy import repository as legacy_repository
 from helpers import (
     apply_lottery_draw_overlay,
     build_mode_payload_filters, build_mode_payload_order_clause, load_fixed_data_maps,
@@ -41,96 +42,38 @@ def list_legacy_post_images(
     """
     _ensure_tables(db_path)
     with connect(db_path) as conn:
-        clauses = ["enabled = 1", "source_key = ?"]
-        params: list[Any] = ["legacy-post-list"]
-
-        if source_pc is not None:
-            clauses.append("source_pc = ?")
-            params.append(source_pc)
-        if source_web is not None:
-            clauses.append("source_web = ?")
-            params.append(source_web)
-        if source_type is not None:
-            clauses.append("source_type = ?")
-            params.append(source_type)
-
-        params.append(max(1, int(limit)))
-        rows = conn.execute(
-            f"""
-            SELECT id, title, file_name, storage_path, legacy_upload_path, cover_image,
-                   mime_type, file_size, sort_order, enabled
-            FROM legacy_image_assets
-            WHERE {' AND '.join(clauses)}
-            ORDER BY sort_order, id
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
-
-    return [dict(row) for row in rows]
+        return legacy_repository.list_legacy_post_image_assets(
+            conn,
+            source_pc=source_pc,
+            source_web=source_web,
+            source_type=source_type,
+            limit=limit,
+        )
 
 
 def get_legacy_current_term(db_path: str | Path, lottery_type_id: int = 1) -> dict[str, Any]:
     """旧静态页会先读取当前已开奖期号，再自行推导下一预测期。"""
     _ensure_tables(db_path)
     with connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT year, term, next_term
-            FROM lottery_draws
-            WHERE lottery_type_id = ?
-              AND is_opened = 1
-            ORDER BY year DESC, term DESC, id DESC
-            LIMIT 1
-            """,
-            (lottery_type_id,),
-        ).fetchone()
-        if row:
-            data = dict(row)
-            current_term = int(data.get("term") or 0)
-            next_term = data.get("next_term") or (current_term + 1 if current_term else "")
-            return {
-                "lottery_type_id": lottery_type_id,
-                "term": str(data.get("term") or ""),
-                "issue": f"{data.get('year') or ''}{data.get('term') or ''}",
-                "next_term": str(next_term or ""),
-            }
+        payload = legacy_repository.get_latest_opened_term(
+            conn,
+            lottery_type_id=int(lottery_type_id),
+        )
+        if payload.get("term"):
+            return payload
 
         # 旧库迁移后如果还没补 lottery_draws，也允许从历史预测表回退推导当前期号。
         # 这里选用旧前台确实展示的常用玩法表，优先找到任意一条已开奖记录。
         fallback_modes = (43, 38, 46, 50)
         for modes_id in fallback_modes:
-            meta = conn.execute(
-                """
-                SELECT table_name
-                FROM mode_payload_tables
-                WHERE modes_id = ?
-                LIMIT 1
-                """,
-                (modes_id,),
-            ).fetchone()
-            if not meta:
-                continue
-
-            table_name = str(meta["table_name"])
-            if not conn.table_exists(table_name):
-                continue
-
-            legacy_row = conn.execute(
-                f"""
-                SELECT year, term
-                FROM {quote_identifier(table_name)}
-                WHERE res_code IS NOT NULL
-                  AND res_code != ''
-                ORDER BY CAST(NULLIF(year, '') AS INTEGER) DESC NULLS LAST,
-                         CAST(NULLIF(term, '') AS INTEGER) DESC NULLS LAST,
-                         CAST(
-                             COALESCE(NULLIF(CAST(source_record_id AS TEXT), ''), CAST(id AS TEXT))
-                             AS INTEGER
-                         ) DESC
-                LIMIT 1
-                """
-            ).fetchone()
+            table_name = legacy_repository.get_mode_payload_table_name(
+                conn,
+                modes_id=modes_id,
+            )
+            legacy_row = legacy_repository.find_latest_result_term_in_payload_table(
+                conn,
+                table_name=table_name,
+            )
             if not legacy_row:
                 continue
 
@@ -174,15 +117,7 @@ def load_legacy_mode_rows(
     - type_value: 彩种ID，默认为 None 表示不区分
     """
     with connect(db_path) as conn:
-        meta = conn.execute(
-            """
-            SELECT modes_id, title, table_name, record_count
-            FROM mode_payload_tables
-            WHERE modes_id = ?
-            LIMIT 1
-            """,
-            (modes_id,),
-        ).fetchone()
+        meta = legacy_repository.get_mode_payload_metadata(conn, modes_id=int(modes_id))
         if not meta:
             raise KeyError(f"modes_id={modes_id} 不存在")
 

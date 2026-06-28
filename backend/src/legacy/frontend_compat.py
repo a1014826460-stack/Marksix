@@ -21,6 +21,7 @@ import re
 from typing import Any
 
 from db import quote_identifier
+from domains.legacy import repository as legacy_repository
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
     created_table_exists,
@@ -778,46 +779,14 @@ def _handle_post_get_list(query: dict, conn: Any) -> dict:
     except (ValueError, TypeError):
         pass
 
-    if not conn.table_exists("legacy_image_assets"):
-        return {"data": []}
-
-    clauses = ["enabled = 1", "source_key = ?"]
-    params: list[Any] = ["legacy-post-list"]
-
-    def _query_rows(target_pc: int):
-        local_clauses = list(clauses)
-        local_params = list(params)
-        local_clauses.append("source_pc = ?")
-        local_params.append(target_pc)
-        local_clauses.append("source_web = ?")
-        local_params.append(web_id)
-        local_clauses.append("source_type = ?")
-        local_params.append(type_val)
-        return conn.execute(
-            f"""
-            SELECT id, title, cover_image, sort_order
-            FROM legacy_image_assets
-            WHERE {' AND '.join(local_clauses)}
-            ORDER BY sort_order, id
-            """,
-            local_params,
-        ).fetchall()
-
-    rows = _query_rows(pc)
-    if not rows and pc == 72:
-        rows = _query_rows(305)
-
-    data: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        data.append({
-            "id": item.get("id"),
-            "title": item.get("title") or "",
-            "cover_image": item.get("cover_image") or "",
-            "sort_order": item.get("sort_order") or 0,
-        })
-
-    return {"data": data}
+    return {
+        "data": legacy_repository.list_frontend_post_images(
+            conn,
+            pc=pc,
+            web_id=web_id,
+            type_value=type_val,
+        )
+    }
 
 
 # ── 公开入口 ───────────────────────────────────────────────────────────

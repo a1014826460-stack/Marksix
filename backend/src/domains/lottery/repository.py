@@ -41,6 +41,37 @@ def find_latest_draw(conn: Any, lottery_type_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def find_latest_opened_draw_result(conn: Any, lottery_type_id: int) -> dict[str, Any] | None:
+    """查询指定彩种最近一期已开奖的回填结果字段。"""
+    row = conn.execute(
+        """
+        SELECT year, term, numbers
+        FROM lottery_draws
+        WHERE lottery_type_id = ? AND is_opened = 1
+        ORDER BY year DESC, term DESC, id DESC
+        LIMIT 1
+        """,
+        (int(lottery_type_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def find_latest_opened_draw_term(conn: Any, lottery_type_id: int) -> dict[str, Any] | None:
+    """查询指定彩种最近一期已开奖的期号摘要。"""
+    row = conn.execute(
+        """
+        SELECT year, term, draw_time
+        FROM lottery_draws
+        WHERE lottery_type_id = ?
+          AND is_opened = 1
+        ORDER BY year DESC, term DESC, id DESC
+        LIMIT 1
+        """,
+        (int(lottery_type_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def list_draws(conn: Any, lottery_type_id: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
     """查询开奖记录列表，支持按彩种筛选。"""
     params: list[Any] = []
