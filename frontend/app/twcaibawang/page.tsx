@@ -1,4 +1,5 @@
 import { TwcaibawangHomeClient } from "@/components/twcaibawang/TwcaibawangHomeClient"
+import { SiteTrafficTracker } from "@/components/SiteTrafficTracker"
 import { getPublicSitePageData, getVendorHomepageModules } from "@/lib/backend-api"
 import { buildPredictionModulesForSite } from "@/lib/prediction-adapters"
 import { getSiteConfig } from "@/lib/sites"
@@ -33,6 +34,7 @@ export default async function TwcaibawangPage() {
 
   return (
     <>
+      <SiteTrafficTracker siteKey="twcaibawang" eventType="site_page_view" path="/twcaibawang" />
       {cssPaths.map((href) => (
         <link key={href} rel="stylesheet" href={href} />
       ))}

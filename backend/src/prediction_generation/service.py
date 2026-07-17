@@ -1592,6 +1592,23 @@ def _process_single_module(
         "warnings": [],
         "trigger": trigger,
     }
+    simulation_report: dict[str, Any] = {
+        "enabled": int(lottery_type) == 3,
+        "target_hit_rate": simulation_config.normalized().target_hit_rate,
+        "max_consecutive_hits": simulation_config.normalized().max_consecutive_hits,
+        "max_consecutive_misses": simulation_config.normalized().max_consecutive_misses,
+        "truth_available": 0,
+        "truth_missing": 0,
+        "hits": 0,
+        "misses": 0,
+        "reversals": 0,
+        "skipped": 0,
+        "modes_used": [],
+        "modes_skipped": [],
+        "mechanisms_used": [],
+        "mechanisms_skipped": [],
+    }
+    module_report["simulation"] = simulation_report
 
     try:
         config, resolved_mechanism_key, used_fallback_key = _resolve_prediction_config_with_mode_fallback(
@@ -1637,6 +1654,12 @@ def _process_single_module(
                     zodiac_map=zodiac_map,
                     color_map=color_map,
                 )
+                if truth:
+                    simulation_report["truth_available"] += 1
+                else:
+                    simulation_report["truth_missing"] += 1
+            elif is_future:
+                simulation_report["skipped"] += 1
 
             row_data = _generate_single_draw_row(
                 draw=draw, mode_id=mode_id, is_future=is_future,
@@ -1653,6 +1676,21 @@ def _process_single_module(
             )
             simulation_should_hit = row_data.pop("_simulation_should_hit", None)
             if simulation_should_hit is not None:
+                should_count_as_reversal = (
+                    int(simulation_state.consecutive_hits or 0) >= simulation_config.normalized().max_consecutive_hits
+                    or int(simulation_state.consecutive_misses or 0)
+                    >= simulation_config.normalized().max_consecutive_misses
+                )
+                if should_count_as_reversal:
+                    simulation_report["reversals"] += 1
+                if bool(simulation_should_hit):
+                    simulation_report["hits"] += 1
+                else:
+                    simulation_report["misses"] += 1
+                if mode_id not in simulation_report["modes_used"]:
+                    simulation_report["modes_used"].append(mode_id)
+                if mechanism_key not in simulation_report["mechanisms_used"]:
+                    simulation_report["mechanisms_used"].append(mechanism_key)
                 simulation_state = _advance_simulation_state(
                     simulation_state,
                     SimulationResult(
@@ -1661,6 +1699,11 @@ def _process_single_module(
                         safe_debug={"has_truth": True, "should_hit": bool(simulation_should_hit)},
                     ),
                 )
+            elif is_future and int(lottery_type) == 3:
+                if mode_id not in simulation_report["modes_skipped"]:
+                    simulation_report["modes_skipped"].append(mode_id)
+                if mechanism_key not in simulation_report["mechanisms_skipped"]:
+                    simulation_report["mechanisms_skipped"].append(mechanism_key)
 
             if is_future:
                 row_data["res_sx"] = ""

@@ -3,6 +3,14 @@ import type { Metadata } from "next"
 
 export type FrontendSiteConfig = {
   siteKey: string
+  renderMode: "legacy-shell" | "iframe-vendor" | "react-home"
+  capabilities: {
+    sitePage: boolean
+    homepageModules: boolean
+    articleDetail: boolean
+    predictionModules: boolean
+    trafficEvents: boolean
+  }
   routePath: `/${string}` | "/"
   vendorIndexPath: `/${string}`
   domains: string[]
@@ -31,6 +39,14 @@ export type SiteRequestMatch = {
 const SITE_CONFIGS: FrontendSiteConfig[] = [
   {
     siteKey: "shengshi8800",
+    renderMode: "legacy-shell",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: false,
+      predictionModules: true,
+      trafficEvents: true,
+    },
     routePath: "/",
     vendorIndexPath: "/vendor/shengshi8800/embed.html?type=3&web=4",
     domains: ["localhost", "127.0.0.1"],
@@ -51,6 +67,14 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
   },
   {
     siteKey: "twsaimahui",
+    renderMode: "iframe-vendor",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: false,
+      predictionModules: true,
+      trafficEvents: true,
+    },
     routePath: "/twsaimahui",
     vendorIndexPath: "/vendor/twsaimahui/index.html",
     domains: ["www.twsaimahui.com", "twsaimahui.com"],
@@ -65,6 +89,14 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
   },
   {
     siteKey: "twcaibawang",
+    renderMode: "react-home",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: true,
+      predictionModules: true,
+      trafficEvents: true,
+    },
     routePath: "/twcaibawang",
     vendorIndexPath: "/vendor/twcaibawang.com/index.html",
     domains: ["www.twcaibawang.com", "twcaibawang.com"],
@@ -85,6 +117,14 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
   },
   {
     siteKey: "twjinniu",
+    renderMode: "react-home",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: true,
+      predictionModules: true,
+      trafficEvents: true,
+    },
     routePath: "/twjinniu",
     vendorIndexPath: "/vendor/twjinniu/index.html",
     domains: [
@@ -108,6 +148,14 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
   },
   {
     siteKey: "twcf888",
+    renderMode: "react-home",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: true,
+      predictionModules: true,
+      trafficEvents: true,
+    },
     routePath: "/twcf888",
     vendorIndexPath: "/vendor/twcf888.com/index.html",
     domains: ["www.twcf888.com", "twcf888.com"],

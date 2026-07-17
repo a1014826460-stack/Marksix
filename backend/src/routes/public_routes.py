@@ -14,6 +14,7 @@ from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
 from app_http.router import Router
 from domains.sites.service import get_public_notice
+from domains.traffic.service import record_traffic_event
 
 
 def register(router: Router) -> None:
@@ -23,6 +24,7 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/draw-history", draw_history)
     router.add("GET", "/api/public/current-period", current_period)
     router.add("GET", "/api/public/notice", notice)
+    router.add("POST", "/api/public/traffic-events", traffic_events)
     # 旧前端兼容路径
     router.add("GET", "/api/index/notice", notice)
 
@@ -119,3 +121,24 @@ def notice(ctx: RequestContext) -> None:
             pass
 
     ctx.send_json(get_public_notice(ctx.db_path, web_id))
+
+
+def _client_ip(ctx: RequestContext) -> str | None:
+    forwarded = str(ctx.headers.get("X-Forwarded-For", "") or "").split(",", 1)[0].strip()
+    if forwarded:
+        return forwarded
+    client_address = getattr(ctx.handler, "client_address", None)
+    if isinstance(client_address, tuple) and client_address:
+        return str(client_address[0])
+    return None
+
+
+def traffic_events(ctx: RequestContext) -> None:
+    ctx.send_json(
+        record_traffic_event(
+            ctx.db_path,
+            ctx.body,
+            ip_address=_client_ip(ctx),
+            user_agent=str(ctx.headers.get("User-Agent", "") or ""),
+        )
+    )

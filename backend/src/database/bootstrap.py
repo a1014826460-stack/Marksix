@@ -20,6 +20,7 @@ from database.schema.scheduler import ensure_scheduler_tables
 from database.schema.logs import ensure_log_tables
 from database.schema.config import ensure_config_history_tables
 from database.schema.audit import ensure_audit_tables
+from database.schema.traffic import ensure_traffic_tables
 from database.schema.legacy import (
     ensure_basic_prediction_payload_table,
     ensure_legacy_asset_tables,
@@ -187,6 +188,7 @@ def ensure_admin_tables(db_path: str | Path) -> None:
         ensure_twcaibawang_prediction_tables(conn, pk_sql)
         ensure_audit_tables(conn, pk_sql)
         ensure_log_tables(conn, pk_sql)
+        ensure_traffic_tables(conn, pk_sql)
         ensure_config_history_tables(conn, pk_sql)
 
         # ── 3. 索引（表就绪后创建） ──

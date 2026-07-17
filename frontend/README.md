@@ -89,3 +89,38 @@ pnpm --filter @liuhecai/frontend exec tsc --noEmit
 - 同一玩法在不同站点只通过 adapter 改展示字段，不改 canonical 数据。
 - `raw` 只是兼容兜底，新实现不要直接依赖后端临时字段。
 
+## Registry-Driven Multi-Site Notes
+
+The five public sites are resolved through `lib/sites.ts` and
+`lib/site-registry.ts`.
+
+Registered site keys:
+
+- `shengshi8800`
+- `twsaimahui`
+- `twcaibawang`
+- `twjinniu`
+- `twcf888`
+
+Each site config includes `renderMode` and `capabilities`. Current render modes:
+
+- `legacy-shell`: `shengshi8800`
+- `iframe-vendor`: `twsaimahui`
+- `react-home`: `twcaibawang`, `twjinniu`, `twcf888`
+
+Preferred API paths:
+
+- `GET /api/sites/<siteKey>/site-page`
+- `GET /api/sites/<siteKey>/homepage-modules`
+- `GET /api/sites/<siteKey>/article-detail?article_id=...`
+- `GET /api/sites/<siteKey>/prediction-modules`
+- `POST /api/sites/<siteKey>/traffic-events`
+
+Legacy API paths remain available as compatibility forwarders and should call
+`lib/site-api-service.ts`. Compatibility forwarders record `api_compat_hit`
+traffic events without blocking the original response.
+
+Public page traffic is collected by `components/SiteTrafficTracker.tsx`. It uses
+`navigator.sendBeacon` first and `fetch(..., { keepalive: true })` as fallback.
+The frontend endpoint forwards to Python backend `/api/public/traffic-events`,
+where raw IP addresses are hashed before storage.

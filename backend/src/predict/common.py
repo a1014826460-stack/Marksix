@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from db import connect as db_connect, default_postgres_target
+from domains.prediction import predict_repository
 from runtime_config import get_bootstrap_config_value
 
 # 惰性获取默认数据库目标，避免 import 时因缺少 DATABASE_URL 而崩溃
@@ -126,17 +127,7 @@ def special_zodiac_from_number_map(row: Any, conn: Any) -> str:
 
 def get_table_title(conn: Any, table_name: str) -> tuple[int | None, str | None]:
     """通过拆表映射找回表对应的 modes_id 和中文标题。"""
-    row = conn.execute(
-        """
-        SELECT modes_id, title
-        FROM mode_payload_tables
-        WHERE table_name = ?
-        """,
-        (table_name,),
-    ).fetchone()
-    if not row:
-        return None, None
-    return int(row["modes_id"]), str(row["title"])
+    return predict_repository.get_mode_payload_table_title(conn, table_name)
 
 def load_rows(conn: Any, table_name: str) -> list[Any]:
     """读取有开奖结果的历史记录，按年份和期号升序用于回测。
@@ -144,18 +135,7 @@ def load_rows(conn: Any, table_name: str) -> list[Any]:
     通过子查询先取最近 200 条再升序排列——保证回测按时间顺序推进，
     同时避免全表扫描拖慢 predict()。
     """
-    return conn.execute(
-        f"""
-        SELECT * FROM (
-            SELECT *
-            FROM {quote_identifier(table_name)}
-            WHERE res_code IS NOT NULL AND res_code != ''
-            ORDER BY CAST(year AS INTEGER) DESC, CAST(term AS INTEGER) DESC
-            LIMIT 10
-        ) AS recent
-        ORDER BY CAST(year AS INTEGER), CAST(term AS INTEGER)
-        """
-    ).fetchall()
+    return predict_repository.load_recent_result_rows(conn, table_name, limit=10)
 
 def row_get(row: Any, key: str, default: Any = "") -> Any:
     """安全读取行字段，兼容 sqlite3.Row / psycopg dict row。"""
@@ -210,15 +190,7 @@ def load_fixed_value_map(
     if not table_exists(conn, "fixed_data"):
         return {label: () for label in fallback_labels} if fallback_labels else {}
 
-    rows = conn.execute(
-        """
-        SELECT id, name, code
-        FROM fixed_data
-        WHERE sign = ?
-        ORDER BY CAST(id AS INTEGER)
-        """,
-        (mapping_key,),
-    ).fetchall()
+    rows = predict_repository.load_fixed_data_rows(conn, mapping_key)
     for row in rows:
         label = normalize_fixed_label(str(row["name"]))
         for sort_order, value in enumerate(split_fixed_code_values(str(row["code"] or ""))):
@@ -336,15 +308,8 @@ def build_element_number_map(conn: Any) -> dict[str, str]:
         if not table_exists(conn, table_name):
             continue
 
-        rows = conn.execute(
-            f"""
-            SELECT content
-            FROM {quote_identifier(table_name)}
-            WHERE content IS NOT NULL AND content != ''
-            """
-        ).fetchall()
-        for row in rows:
-            for item in parse_json_or_plain_content(row["content"] or ""):
+        for content in predict_repository.load_non_empty_column_values(conn, table_name, "content"):
+            for item in parse_json_or_plain_content(content):
                 if "|" not in item:
                     continue
                 label, numbers = item.split("|", 1)

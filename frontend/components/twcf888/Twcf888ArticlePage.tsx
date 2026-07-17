@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+import { SiteTrafficTracker } from "@/components/SiteTrafficTracker"
 import {
   getTwcf888ArticleDefinition,
   getTwcf888ArticleDetail,
@@ -92,6 +93,12 @@ export async function renderTwcf888ArticlePage(
 
   return (
     <main style={{ background: "#f5f5f5", minHeight: "100vh", padding: "12px" }}>
+      <SiteTrafficTracker
+        siteKey="twcf888"
+        eventType="article_view"
+        articleId={articleId}
+        path={`/twcf888/${group}/${articleId}`}
+      />
       <style>{`
         .twcf888-article-shell img { max-width: 100%; }
         .twcf888-article-shell .box img { max-width: 100%; }

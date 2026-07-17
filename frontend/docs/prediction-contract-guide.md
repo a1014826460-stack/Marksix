@@ -74,14 +74,36 @@ This layer may change field names, grouping style, and display strings, but must
 ## New Site Flow
 
 1. Place target HTML/CSS/JS under `public/vendor/<site_key>/`.
-2. Register the site in `lib/sites.ts`.
-3. Add a site adapter that maps canonical modules to the target page model.
-4. Request `/api/prediction-modules` or the site-specific compatibility payload.
-5. Validate that pending/opened/hit/miss states render correctly.
+2. Register the site in `lib/sites.ts` with `renderMode` and `capabilities`.
+3. Use `lib/site-registry.ts` to resolve defaults and request parameters.
+4. Add a site adapter or provider only when the shared `lib/site-api-service.ts`
+   defaults are not enough.
+5. Request `/api/sites/<siteKey>/prediction-modules` for the preferred unified
+   contract, or keep `/api/prediction-modules` only as a compatibility path.
+6. Validate that pending/opened/hit/miss states render correctly.
+
+## Unified Prediction API
+
+Preferred route:
+
+```text
+GET /api/sites/<siteKey>/prediction-modules
+```
+
+The response keeps canonical modules in `data.canonical_modules` and legacy
+adapter payloads in `data.compatibility`.
+
+Compatibility route:
+
+```text
+GET /api/prediction-modules?site_key=<siteKey>
+```
+
+The compatibility route preserves its older response shape while sourcing data
+from the shared site service.
 
 ## Recommended Checks
 
 - `pnpm --filter @liuhecai/frontend exec tsc --noEmit`
 - site-specific snapshot or manual browser checks
 - API response checks for canonical fields
-

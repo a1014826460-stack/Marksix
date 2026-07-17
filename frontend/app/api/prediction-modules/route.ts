@@ -1,87 +1,33 @@
 import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
-import { getPublicSitePageData, getVendorHomepageModules } from "@/lib/backend-api"
-import {
-  adaptPublicSitePageDataWithCanonicalModules,
-  adaptVendorHomepageModulesWithCanonicalModules,
-} from "@/lib/prediction-adapters"
-import { buildCanonicalPredictionModules } from "@/lib/prediction-contract"
-import { getSiteConfig } from "@/lib/sites"
+import { getSitePredictionModules, recordSiteApiCompatHit } from "@/lib/site-api-service"
+import { resolveSiteApiContext } from "@/lib/site-registry"
 
 export const runtime = "nodejs"
 
-const DEFAULT_VENDOR_MODULES = [
-  "wuxiao_wuma",
-  "public_yixiao_yima",
-  "shuangbo_12ma",
-  "shujinguang",
-  "daxiao_2tou",
-  "tiandi_2xiao",
-]
-
-function parsePositiveInt(value: string | null, fallback?: number) {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
-
-function parseModules(value: string | null) {
-  return (value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
+    const { searchParams, pathname } = new URL(request.url)
     const siteKey = searchParams.get("site_key") || searchParams.get("siteKey") || undefined
-    const site = siteKey ? getSiteConfig(siteKey) : null
-    const siteId = parsePositiveInt(searchParams.get("site_id"), site?.defaultWebId)
-
-    if (!siteId) {
+    if (!siteKey && !searchParams.get("site_id")) {
       return jsonWithCors(
         { ok: false, error: "site_id or a registered site_key is required" },
         { status: 400 }
       )
     }
 
-    const historyLimit = parsePositiveInt(searchParams.get("history_limit"), 8) || 8
-    const lotteryType = parsePositiveInt(searchParams.get("lottery_type"), site?.defaultLotteryTypeId)
-    const vendorModules = parseModules(searchParams.get("vendor_modules") || searchParams.get("modules"))
-    const includeVendor = searchParams.get("include_vendor") !== "0"
-
-    const sitePageData = await getPublicSitePageData({
-      siteId,
-      historyLimit,
-      lotteryType,
-    })
-    const homepageModules = includeVendor
-      ? await getVendorHomepageModules({
-          siteId,
-          lotteryType: lotteryType || sitePageData.site.lottery_type_id,
-          historyLimit,
-          modules: vendorModules.length ? vendorModules : DEFAULT_VENDOR_MODULES,
-        })
-      : null
-    const canonicalModules = buildCanonicalPredictionModules({
-      sitePageData,
-      vendorHomepageModules: homepageModules,
-    })
-
+    const context = resolveSiteApiContext(siteKey || "shengshi8800", searchParams)
+    void recordSiteApiCompatHit(context, pathname)
+    const payload = await getSitePredictionModules(context)
     return jsonWithCors({
       ok: true,
       site: {
-        site_id: sitePageData.site.id,
-        site_key: site?.siteKey || siteKey || null,
-        lottery_type: sitePageData.site.lottery_type_id,
-        domain: sitePageData.site.domain,
+        site_id: context.siteId,
+        site_key: context.siteKey,
+        lottery_type: context.lotteryType,
+        domain: context.site.domains[0],
       },
-      data: canonicalModules,
-      compatibility: {
-        site_page: adaptPublicSitePageDataWithCanonicalModules(sitePageData, canonicalModules),
-        vendor_homepage_modules: homepageModules
-          ? adaptVendorHomepageModulesWithCanonicalModules(homepageModules, canonicalModules)
-          : null,
-      },
+      data: payload.data.canonical_modules,
+      compatibility: payload.data.compatibility,
     })
   } catch (error) {
     return jsonWithCors(
@@ -94,4 +40,3 @@ export async function GET(request: Request) {
 export function OPTIONS() {
   return buildOptionsResponse()
 }
-

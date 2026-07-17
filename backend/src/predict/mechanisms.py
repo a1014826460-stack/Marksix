@@ -1,4 +1,4 @@
-import json
+﻿import json
 import random
 import re
 import sqlite3
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from db import ConnectionAdapter, connect as db_connect, utc_now
+from domains.prediction import predict_repository
 
 from predict.common import (
     DEFAULT_DB_TARGET,
@@ -43,6 +44,46 @@ from predict._db_helpers import (
     _table_column_list,
     _table_columns,
 )
+from predict.categories import mixed, size_parity, structured_mapping, text_mapping, zodiac
+from predict.categories.mixed import (
+    mixed_dimension_contains_hit,
+    mixed_dimension_excludes_hit,
+    mixed_xiao_tail_outcome_from_row as _mixed_xiao_tail_outcome_from_row,
+    parse_mixed_dimension_content,
+)
+from predict.categories.size_parity import (
+    format_fixed_groups,
+    format_half_wave_groups,
+    format_head_groups,
+    format_parity_groups,
+    format_size_groups,
+    format_tail_groups,
+    label_for_special_number,
+    special_combined_parity_from_row,
+    special_combined_size_from_row,
+    special_half_wave_from_row,
+    special_head_from_row,
+    special_parity_from_row,
+    special_size_from_row,
+    special_tail_from_row,
+    special_wave_from_row,
+)
+from predict.categories.structured_mapping import (
+    build_pipe_value_map,
+    category_outcome_from_map,
+    format_dynamic_pipe_groups,
+)
+from predict.categories.zodiac import (
+    format_9x12,
+    format_split_zodiac_columns,
+    format_xiao_code_columns,
+    format_xiao_pair,
+    format_zodiac_all_codes,
+    format_zodiac_csv,
+    format_zodiac_one_code,
+    format_zodiac_two_codes,
+    get_zodiac_numbers,
+)
 
 
 # 数字映射常量已迁移至 predict/number_maps.py，此处兼容导入
@@ -68,6 +109,7 @@ TABLE_FIXED_MAPPING_KEYS: dict[str, str] = {
     "mode_payload_58": "波色单双",
     "mode_payload_61": "四季肖",
 }
+structured_mapping.table_fixed_mapping_keys = TABLE_FIXED_MAPPING_KEYS
 
 DOMESTIC_WILD_LABELS = ("家禽", "野兽")
 DOMESTIC_WILD_FALLBACK = {
@@ -117,15 +159,8 @@ def labels_from_history_pipe(table_name: str, fallback: tuple[str, ...] = ()):
             return fallback
 
         labels: list[str] = []
-        rows = conn.execute(
-            f"""
-            SELECT content
-            FROM {quote_identifier(table_name)}
-            WHERE content IS NOT NULL AND content != ''
-            """
-        ).fetchall()
-        for row in rows:
-            for item in parse_json_or_plain_content(row["content"] or ""):
+        for content in predict_repository.load_non_empty_column_values(conn, table_name, "content"):
+            for item in parse_json_or_plain_content(content):
                 if "|" not in item:
                     continue
                 label = item.split("|", 1)[0].strip()
@@ -424,13 +459,7 @@ def _find_fixed_data_sign_for_labels(
         return None
 
     label_set = set(labels)
-    rows = conn.execute(
-        """
-        SELECT sign, name FROM fixed_data
-        WHERE name IS NOT NULL AND name != ''
-        ORDER BY sign, CAST(id AS INTEGER)
-        """
-    ).fetchall()
+    rows = predict_repository.load_fixed_data_sign_names(conn)
 
     # 按 sign 分组统计匹配的 name 数量
     sign_hits: dict[str, int] = {}
@@ -457,51 +486,7 @@ def _find_fixed_data_sign_for_labels(
     return None
 
 
-def build_pipe_value_map(
-    conn: sqlite3.Connection,
-    table_name: str,
-    labels: tuple[str, ...],
-) -> dict[str, tuple[str, ...]]:
-    """从 `标签|值列表` 的历史 content 中建立标签映射。
-
-    优先使用 public.fixed_data 中的固定映射，仅在 fixed_data 无匹配时
-    才回退到历史表数据。
-    """
-    # 1) 通过 TABLE_FIXED_MAPPING_KEYS 精确查找
-    fixed_mapping_key = TABLE_FIXED_MAPPING_KEYS.get(table_name)
-    if fixed_mapping_key:
-        fixed_mapping = load_fixed_value_map(conn, fixed_mapping_key, labels)
-        if fixed_mapping and any(fixed_mapping.values()):
-            return fixed_mapping
-
-    # 2) 通过标签模糊匹配 fixed_data 中的 sign
-    guessed_sign = _find_fixed_data_sign_for_labels(conn, labels)
-    if guessed_sign:
-        fixed_mapping = load_fixed_value_map(conn, guessed_sign, labels)
-        if fixed_mapping and any(fixed_mapping.values()):
-            return fixed_mapping
-
-    # 3) 回退：从历史表 content 中提取映射（结果可能不稳定）
-    result: dict[str, set[str]] = {label: set() for label in labels}
-    rows = conn.execute(
-        f"""
-        SELECT content
-        FROM {quote_identifier(table_name)}
-        WHERE content IS NOT NULL AND content != ''
-        """
-    ).fetchall()
-    for row in rows:
-        for item in parse_json_or_plain_content(row["content"] or ""):
-            if "|" not in item:
-                continue
-            label, raw_values = item.split("|", 1)
-            label = label.strip()
-            if label not in result:
-                continue
-            values = [value.strip() for value in raw_values.split(",") if value.strip()]
-            result[label].update(values)
-    return {label: tuple(sorted(values)) for label, values in result.items()}
-
+structured_mapping.find_fixed_data_sign_for_labels = _find_fixed_data_sign_for_labels
 
 def build_qinqi_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]]:
     """琴棋书画的映射来自 title 与 content 的组合。
@@ -515,14 +500,7 @@ def build_qinqi_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]
         return fixed_mapping
 
     result: dict[str, set[str]] = {label: set() for label in labels}
-    rows = conn.execute(
-        """
-        SELECT title, content
-        FROM mode_payload_26
-        WHERE title IS NOT NULL AND title != ''
-          AND content IS NOT NULL AND content != ''
-        """
-    ).fetchall()
+    rows = predict_repository.load_qinqi_history_rows(conn)
     for row in rows:
         title_labels = [value.strip() for value in row["title"].split(",") if value.strip()]
         zodiac_values = [value.strip() for value in row["content"].split(",") if value.strip()]
@@ -537,19 +515,6 @@ def build_qinqi_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]
         if all(result[label] for label in labels):
             break
     return {label: tuple(sorted(values)) for label, values in result.items()}
-
-
-def category_outcome_from_map(
-    value: str,
-    mapping: dict[str, tuple[str, ...]],
-    labels: tuple[str, ...],
-) -> str:
-    """把特码生肖或号码归属到某个预测标签。"""
-    for label in labels:
-        if value in mapping.get(label, ()):
-            return label
-    return ""
-
 
 def make_pipe_category_outcome(
     table_name: str,
@@ -814,16 +779,11 @@ def mixed_dimension_excludes_hit(outcome: str, labels: tuple[str, ...]) -> bool:
 def _content_category_pool(conn: sqlite3.Connection, table_name: str, content_column: str = "content") -> list[str]:
     if not table_exists(conn, table_name) or content_column not in _table_columns(conn, table_name):
         return []
-    rows = conn.execute(
-        f"""
-        SELECT {quote_identifier(content_column)}
-        FROM {quote_identifier(table_name)}
-        WHERE {quote_identifier(content_column)} IS NOT NULL AND {quote_identifier(content_column)} != ''
-        GROUP BY {quote_identifier(content_column)}
-        ORDER BY COUNT(*) DESC, {quote_identifier(content_column)}
-        """
-    ).fetchall()
-    return [str(row[content_column] or "") for row in rows]
+    return predict_repository.load_distinct_non_empty_column_values_by_frequency(
+        conn,
+        table_name,
+        content_column,
+    )
 
 
 def _pipe_right_zodiac_values(content: str) -> tuple[str, ...]:
@@ -1038,6 +998,7 @@ TEXT_POOL_SOURCES: dict[str, tuple[str, str]] = {
     "四字玄机": ("mode_payload_52", "title"),
     "独家幽默": ("mode_payload_59", "content"),
 }
+text_mapping.text_pool_sources = TEXT_POOL_SOURCES
 
 TEXT_HISTORY_MAPPING_TABLE = "text_history_mappings"
 TEXT_HISTORY_TITLE_MARKERS = (
@@ -1052,6 +1013,8 @@ TEXT_HISTORY_TITLE_MARKERS = (
     "老黄历",
 )
 TEXT_HISTORY_COLUMN_PREFERENCE = ("content", "title", "jiexi")
+text_mapping.text_history_mapping_table = TEXT_HISTORY_MAPPING_TABLE
+text_mapping.text_history_column_preference = TEXT_HISTORY_COLUMN_PREFERENCE
 
 
 def _text_history_preferred_column(conn: sqlite3.Connection, modes_id: int) -> str | None:
@@ -1070,23 +1033,18 @@ def _text_history_preferred_column(conn: sqlite3.Connection, modes_id: int) -> s
     for column in TEXT_HISTORY_COLUMN_PREFERENCE:
         if column not in columns:
             continue
-        where_prefix = ""
-        if filters:
-            where_prefix = "WHERE " + " AND ".join(filters) + f" AND COALESCE({quote_identifier(column)}, '') != ''"
-        else:
-            where_prefix = f"WHERE COALESCE({quote_identifier(column)}, '') != ''"
-        row = conn.execute(
-            f"""
-            SELECT 1
-            FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-            {where_prefix}
-            LIMIT 1
-            """,
-            params,
-        ).fetchone()
-        if row:
+        if predict_repository.has_text_history_column_value(
+            conn,
+            TEXT_HISTORY_MAPPING_TABLE,
+            column,
+            mode_column=mode_column,
+            modes_id=modes_id if filters else None,
+        ):
             return column
     return None
+
+
+text_mapping.text_history_preferred_column = _text_history_preferred_column
 
 
 def _random_text_history_mapping_row(
@@ -1120,57 +1078,48 @@ def _random_text_history_mapping_row(
             legacy_text_parts.append("COALESCE(text_content, '') != ''")
         if legacy_text_parts:
             where_parts.append(f"({' OR '.join(legacy_text_parts)})")
-            row = conn.execute(
-                f"""
-                SELECT *
-                FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-                WHERE {" AND ".join(where_parts)}
-                ORDER BY RANDOM()
-                LIMIT 1
-                """,
-                params,
-            ).fetchone()
+            row = predict_repository.load_random_text_history_row(
+                conn,
+                TEXT_HISTORY_MAPPING_TABLE,
+                mode_column=mode_column,
+                modes_id=modes_id if filters else None,
+                non_empty_columns=tuple(
+                    column_name
+                    for column_name in ("payload_json", "text_content")
+                    if column_name in columns
+                ),
+            )
             if row:
                 return row
 
     if preferred_column and preferred_column in columns:
-        where_parts = list(filters)
-        where_parts.append(f"COALESCE({quote_identifier(preferred_column)}, '') != ''")
-        row = conn.execute(
-            f"""
-            SELECT *
-            FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-            WHERE {" AND ".join(where_parts)}
-            ORDER BY RANDOM()
-            LIMIT 1
-            """,
-            params,
-        ).fetchone()
+        row = predict_repository.load_random_text_history_row(
+            conn,
+            TEXT_HISTORY_MAPPING_TABLE,
+            mode_column=mode_column,
+            modes_id=modes_id if filters else None,
+            non_empty_columns=(preferred_column,),
+        )
         if row:
             return row
 
     available_columns = [column for column in TEXT_HISTORY_COLUMN_PREFERENCE if column in columns]
     if not available_columns:
         return None
-    text_where_clause = " OR ".join(
-        f"COALESCE({quote_identifier(column)}, '') != ''" for column in available_columns
+    row = predict_repository.load_random_text_history_row(
+        conn,
+        TEXT_HISTORY_MAPPING_TABLE,
+        mode_column=mode_column,
+        modes_id=modes_id if filters else None,
+        non_empty_columns=tuple(available_columns),
     )
-    where_parts = list(filters)
-    where_parts.append(f"({text_where_clause})")
-    row = conn.execute(
-        f"""
-        SELECT *
-        FROM {quote_identifier(TEXT_HISTORY_MAPPING_TABLE)}
-        WHERE {" AND ".join(where_parts)}
-        ORDER BY RANDOM()
-        LIMIT 1
-        """,
-        params,
-    ).fetchone()
     if row:
         return row
 
     return None
+
+
+text_mapping.random_text_history_mapping_row = _random_text_history_mapping_row
 
 
 def _text_history_row_payload(row: Any) -> dict[str, Any]:
@@ -1199,6 +1148,9 @@ def _text_history_row_payload(row: Any) -> dict[str, Any]:
     return result
 
 
+text_mapping.text_history_row_payload = _text_history_row_payload
+
+
 def _table_output_columns(
     conn: sqlite3.Connection,
     table_name: str,
@@ -1209,6 +1161,9 @@ def _table_output_columns(
         return allowed_columns
     columns = set(_table_column_list(conn, table_name))
     return tuple(column for column in allowed_columns if column in columns)
+
+
+text_mapping.table_output_columns = _table_output_columns
 
 
 def _latest_window_metadata(
@@ -1242,48 +1197,17 @@ def _latest_window_metadata(
         )
     order_clause = f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
 
-    row = conn.execute(
-        f"""
-        SELECT {", ".join(quote_identifier(column) for column in selected_columns)}
-        FROM {quote_identifier(table_name)}
-        {order_clause}
-        LIMIT 1
-        """
-    ).fetchone()
+    row = predict_repository.load_latest_columns_by_issue(
+        conn,
+        table_name,
+        columns=tuple(selected_columns),
+    )
     if not row:
         return {}
     return {
         column: row[column]
         for column in selected_columns
     }
-
-
-def format_text_history_mapping(title: str, modes_id: int, text_column: str | None = None):
-    """输出历史文本映射配对，不做文本语义猜测。
-
-    该类玩法的本质是历史推荐池：随机抽取一条历史文本，并携带它当期对应的
-    特码号码和特码生肖。这样“四字词语/谜语/玄机”等玩法不需要硬编码解释规则。
-    """
-
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
-        row = _random_text_history_mapping_row(conn, modes_id, labels, text_column)
-        if not row:
-            return {
-                "title": title,
-                "content": title,
-                "code": "",
-                "sx": "",
-                "_labels": list(labels),
-            }
-
-        result = _text_history_row_payload(row)
-        if not result:
-            source_text_column = text_column or "content"
-            result[source_text_column] = title
-        result["_labels"] = list(labels)
-        return result
-
-    return formatter
 
 
 def _is_text_history_title(title: str) -> bool:
@@ -1312,7 +1236,7 @@ def _make_text_history_mapping_config(
         outcome_loader=special_zodiac_from_number_map,
         content_loader=default_content_from_row,
         content_parser=parse_zodiac_content,
-        content_formatter=format_text_history_mapping(title, modes_id, text_column),
+        content_formatter=text_mapping.format_text_history_mapping(title, modes_id, text_column),
         hit_checker=contains_hit,
         explanation=(
             f"{title} 属于文本历史映射玩法，不做固定语义推理。",
@@ -1320,119 +1244,6 @@ def _make_text_history_mapping_config(
             "预测时先按历史特码生肖选择候选生肖，再随机抽取一条匹配的历史文本配对；若没有匹配项则从该玩法历史池随机抽取。",
         ),
     )
-
-
-def random_text_pool_row(conn: sqlite3.Connection, mapping_key: str) -> dict[str, str] | None:
-    """从 SQLite 文案池随机取一条文案；旧库没有文案池时回退到源玩法表。"""
-    source = TEXT_POOL_SOURCES.get(mapping_key)
-    if not source:
-        return None
-    table_name, text_column = source
-    if not table_exists(conn, table_name):
-        return None
-    columns = list(_table_column_list(conn, table_name))
-    if text_column not in columns:
-        return None
-
-    selected_columns = [
-        column for column in ("title", "content", "jiexi", "code") if column in columns
-    ]
-    if not selected_columns:
-        return None
-
-    distinct_columns = ", ".join(quote_identifier(column) for column in selected_columns)
-    row = conn.execute(
-        f"""
-        SELECT {distinct_columns}
-        FROM (
-            SELECT DISTINCT {distinct_columns}
-            FROM {quote_identifier(table_name)}
-            WHERE {quote_identifier(text_column)} IS NOT NULL
-              AND {quote_identifier(text_column)} != ''
-        ) AS text_pool
-        ORDER BY RANDOM()
-        LIMIT 1
-        """
-    ).fetchone()
-    return {key: str(row[key] or "") for key in row.keys()} if row else None
-
-
-def format_text_pool_jiexi(title: str, mapping_key: str):
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
-        source = TEXT_POOL_SOURCES.get(mapping_key)
-        if source:
-            table_name, text_column = source
-            modes_id = int(table_name.rsplit("_", 1)[-1])
-            output_columns = _table_output_columns(conn, table_name, ("title", "content", "jiexi"))
-            row = _random_text_history_mapping_row(conn, modes_id, labels, text_column)
-            if row:
-                mapped_payload = _text_history_row_payload(row)
-                result: dict[str, Any] = {}
-                if "title" in output_columns:
-                    result["title"] = str(mapped_payload.get("title") or title)
-                if "content" in output_columns:
-                    content_value = str(mapped_payload.get("content") or "")
-                    result["content"] = content_value or f"{title}|{','.join(labels)}"
-                if "jiexi" in output_columns:
-                    jiexi_value = str(mapped_payload.get("jiexi") or "")
-                    result["jiexi"] = jiexi_value or "".join(labels)
-                if not result:
-                    result[text_column] = title
-                result["_labels"] = list(labels)
-                return result
-
-        row = random_text_pool_row(conn, mapping_key)
-        table_name, text_column = source if source else ("", "content")
-        output_columns = _table_output_columns(conn, table_name, ("title", "content", "jiexi"))
-        result: dict[str, Any] = {}
-        if "title" in output_columns:
-            result["title"] = (row or {}).get("title") or title
-        if "content" in output_columns:
-            result["content"] = (row or {}).get("content") or f"{title}|{','.join(labels)}"
-        if "jiexi" in output_columns:
-            result["jiexi"] = (row or {}).get("jiexi") or "".join(labels)
-        if not result:
-            result[text_column] = title
-        return result
-
-    return formatter
-
-
-def format_humor_tail_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, Any]:
-    """独家幽默保留 title/content/code 三字段结构。
-
-    title/content 从 text_history_mappings (mode_id=59) 随机抽取；
-    code 为随机 6 个尾数分组。
-    """
-    mapped = _random_text_history_mapping_row(_, 59, (), "content")
-
-    # 随机选取 6 个尾数生成 code
-    all_tails = list(TAIL_NUMBER_MAP.keys())
-    selected_tails = random.sample(all_tails, 6)
-    humor_code = [f"{tail}|{','.join(TAIL_NUMBER_MAP[tail])}" for tail in selected_tails]
-
-    if mapped:
-        return {
-            "title": str(mapped["title"] or "预测独家幽默") if "title" in mapped.keys() else "预测独家幽默",
-            "content": str(mapped["content"] or "") if "content" in mapped.keys() else "",
-            "code": humor_code,
-            "_labels": list(labels),
-        }
-
-    row = random_text_pool_row(_, "独家幽默")
-    return {
-        "title": (row or {}).get("title") or "预测独家幽默",
-        "content": (row or {}).get("content") or f"独家幽默：本期参考 {','.join(labels)}。",
-        "code": humor_code,
-    }
-
-
-def format_juzi_title(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
-    """欲钱解特：从 text_history_mappings (mode_id=62) 随机抽取 title。"""
-    mapped = _random_text_history_mapping_row(conn, 62, (), "title")
-    if mapped and "title" in mapped.keys():
-        return {"title": str(mapped["title"] or ""), "_labels": list(labels)}
-    return {"title": "欲钱解特诗", "_labels": list(labels)}
 
 
 def format_black_white(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
@@ -2892,17 +2703,8 @@ def _infer_group_widths(
     widths: list[int] = []
     for column in columns:
         counter: Counter[int] = Counter()
-        rows = conn.execute(
-            f"""
-            SELECT {quote_identifier(column)}
-            FROM {quote_identifier(table_name)}
-            WHERE {quote_identifier(column)} IS NOT NULL
-              AND {quote_identifier(column)} != ''
-            LIMIT 50
-            """
-        ).fetchall()
-        for row in rows:
-            parsed_values = tuple(value_parser(str(row[column] or "")))
+        for raw_value in predict_repository.load_limited_non_empty_column_values(conn, table_name, column, limit=50):
+            parsed_values = tuple(value_parser(str(raw_value or "")))
             if parsed_values:
                 counter[len(parsed_values)] += 1
         if not counter:
@@ -2923,17 +2725,8 @@ def _infer_codes_per_label(
 
     counter: Counter[int] = Counter()
     for column in columns:
-        rows = conn.execute(
-            f"""
-            SELECT {quote_identifier(column)}
-            FROM {quote_identifier(table_name)}
-            WHERE {quote_identifier(column)} IS NOT NULL
-              AND {quote_identifier(column)} != ''
-            LIMIT 50
-            """
-        ).fetchall()
-        for row in rows:
-            raw_value = str(row[column] or "")
+        for raw_value in predict_repository.load_limited_non_empty_column_values(conn, table_name, column, limit=50):
+            raw_value = str(raw_value or "")
             if "|" not in raw_value:
                 continue
             zodiac_values = parse_zodiac_content(raw_value)
@@ -2965,17 +2758,8 @@ def _infer_group_selection_groups(
     groups: list[tuple[str, ...]] = []
     for column in columns:
         seen: list[str] = []
-        rows = conn.execute(
-            f"""
-            SELECT {quote_identifier(column)}
-            FROM {quote_identifier(table_name)}
-            WHERE {quote_identifier(column)} IS NOT NULL
-              AND {quote_identifier(column)} != ''
-            LIMIT 200
-            """
-        ).fetchall()
-        for row in rows:
-            for value in value_parser(str(row[column] or "")):
+        for raw_value in predict_repository.load_limited_non_empty_column_values(conn, table_name, column, limit=200):
+            for value in value_parser(str(raw_value or "")):
                 if value not in seen:
                     seen.append(value)
         groups.append(_ordered_labels(seen, preferred_order) or preferred_order)
@@ -3444,17 +3228,9 @@ def _labels_from_column(table_name: str, label_column: str):
     def loader(conn: sqlite3.Connection) -> tuple[str, ...]:
         if not table_exists(conn, table_name):
             return ()
-        rows = conn.execute(
-            f"""
-            SELECT {quote_identifier(label_column)}
-            FROM {quote_identifier(table_name)}
-            WHERE {quote_identifier(label_column)} IS NOT NULL
-              AND {quote_identifier(label_column)} != ''
-            """
-        ).fetchall()
         labels: list[str] = []
-        for row in rows:
-            for label in parse_pipe_label_content(str(row[label_column] or "")):
+        for raw_value in predict_repository.load_non_empty_column_values(conn, table_name, label_column):
+            for label in parse_pipe_label_content(str(raw_value or "")):
                 if label and label not in labels:
                     labels.append(label)
         return tuple(labels)
@@ -3474,14 +3250,12 @@ def _build_label_value_map(
         return {label: () for label in labels}
 
     selected_columns = [label_column] if value_column is None else [label_column, value_column]
-    rows = conn.execute(
-        f"""
-        SELECT {", ".join(quote_identifier(column) for column in selected_columns)}
-        FROM {quote_identifier(table_name)}
-        WHERE {quote_identifier(label_column)} IS NOT NULL
-          AND {quote_identifier(label_column)} != ''
-        """
-    ).fetchall()
+    rows = predict_repository.load_rows_with_non_empty_label_column(
+        conn,
+        table_name,
+        label_column=label_column,
+        selected_columns=tuple(selected_columns),
+    )
     for row in rows:
         if value_column is None:
             for item in parse_json_or_plain_content(str(row[label_column] or "")):
@@ -4296,13 +4070,7 @@ def build_title_prediction_configs(db_path: str | Path = DEFAULT_DB_TARGET) -> d
         existing_titles = {config.title for config in PREDICTION_CONFIGS.values()}
         generated: dict[str, PredictionConfig] = {}
 
-        rows = conn.execute(
-            """
-            SELECT modes_id, title, table_name, record_count
-            FROM mode_payload_tables
-            ORDER BY modes_id
-            """
-        ).fetchall()
+        rows = predict_repository.load_mode_payload_table_rows(conn)
         for row in rows:
             modes_id = int(row["modes_id"])
             title = str(row["title"] or "").strip()
@@ -4356,7 +4124,9 @@ def ensure_prediction_configs_loaded(db_path: str | Path = DEFAULT_DB_TARGET) ->
 
 def supported_prediction_keys() -> tuple[str, ...]:
     """返回当前可用预测机制 key，包含手写机制和按 title 自动生成的本地机制。"""
-    return tuple(sorted(PREDICTION_CONFIGS))
+    from predict.registry import PredictionRegistry
+
+    return PredictionRegistry(PREDICTION_CONFIGS).supported_keys()
 
 
 def list_prediction_configs(db_path: str | Path | None = None) -> list[dict[str, Any]]:
@@ -4364,16 +4134,9 @@ def list_prediction_configs(db_path: str | Path | None = None) -> list[dict[str,
     status_map: dict[str, int] = {}
     if db_path is not None:
         status_map = get_mechanism_statuses(db_path)
-    return [
-        {
-            "key": key,
-            "title": config.title,
-            "default_modes_id": config.default_modes_id,
-            "default_table": config.default_table,
-            "status": status_map.get(key, 1),
-        }
-        for key, config in sorted(PREDICTION_CONFIGS.items())
-    ]
+    from predict.registry import PredictionRegistry
+
+    return PredictionRegistry(PREDICTION_CONFIGS).list_configs(status_map)
 
 
 # get_mechanism_statuses, set_mechanism_status 已迁移至 predict.mechanism_status
@@ -4385,8 +4148,35 @@ from predict.mechanism_status import (  # noqa: F401 - 兼容导出
 
 def get_prediction_config(key: str) -> PredictionConfig:
     """根据统一 key 获取预测配置。"""
-    try:
-        return PREDICTION_CONFIGS[key]
-    except KeyError as exc:
-        supported = ", ".join(sorted(PREDICTION_CONFIGS))
-        raise ValueError(f"不支持的预测机制: {key}。当前支持: {supported}") from exc
+    from predict.registry import PredictionRegistry
+
+    return PredictionRegistry(PREDICTION_CONFIGS).get(key)
+
+
+format_dynamic_pipe_groups = structured_mapping.format_dynamic_pipe_groups
+
+special_parity_from_row = size_parity.special_parity_from_row
+special_size_from_row = size_parity.special_size_from_row
+special_wave_from_row = size_parity.special_wave_from_row
+special_half_wave_from_row = size_parity.special_half_wave_from_row
+format_size_groups = size_parity.format_size_groups
+format_parity_groups = size_parity.format_parity_groups
+
+parse_mixed_dimension_content = mixed.parse_mixed_dimension_content
+mixed_dimension_contains_hit = mixed.mixed_dimension_contains_hit
+mixed_dimension_excludes_hit = mixed.mixed_dimension_excludes_hit
+
+format_zodiac_csv = zodiac.format_zodiac_csv
+format_xiao_pair = zodiac.format_xiao_pair
+format_split_zodiac_columns = zodiac.format_split_zodiac_columns
+get_zodiac_numbers = zodiac.get_zodiac_numbers
+format_zodiac_one_code = zodiac.format_zodiac_one_code
+format_zodiac_two_codes = zodiac.format_zodiac_two_codes
+format_zodiac_all_codes = zodiac.format_zodiac_all_codes
+format_9x12 = zodiac.format_9x12
+
+format_text_history_mapping = text_mapping.format_text_history_mapping
+random_text_pool_row = text_mapping.random_text_pool_row
+format_text_pool_jiexi = text_mapping.format_text_pool_jiexi
+format_humor_tail_groups = text_mapping.format_humor_tail_groups
+format_juzi_title = text_mapping.format_juzi_title

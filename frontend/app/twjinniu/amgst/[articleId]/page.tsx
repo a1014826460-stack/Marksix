@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+import { SiteTrafficTracker } from "@/components/SiteTrafficTracker"
 import { getTwjinniuArticleDefinition, getTwjinniuArticleDetail } from "@/lib/twjinniu-articles"
 
 type PageProps = {
@@ -86,6 +87,12 @@ export default async function TwjinniuArticlePage({ params, searchParams }: Page
 
   return (
     <main style={{ background: "#f5f5f5", minHeight: "100vh", padding: "12px" }}>
+      <SiteTrafficTracker
+        siteKey="twjinniu"
+        eventType="article_view"
+        articleId={articleId}
+        path={`/twjinniu/amgst/${articleId}`}
+      />
       <style>{`
         .twjinniu-article-shell img { max-width: 100%; }
         .twjinniu-article-shell .box img { max-width: 100%; }

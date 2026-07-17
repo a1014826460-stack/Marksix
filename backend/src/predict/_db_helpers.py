@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from db import ConnectionAdapter
-from predict.common import quote_identifier, table_exists
+from domains.prediction import predict_repository
 
 COMMON_PAYLOAD_COLUMNS = {
     "id",
@@ -31,7 +31,7 @@ COMMON_PAYLOAD_COLUMNS = {
 
 
 def _table_column_list(conn: ConnectionAdapter, table_name: str) -> tuple[str, ...]:
-    return tuple(conn.table_columns(table_name))
+    return predict_repository.table_columns(conn, table_name)
 
 
 def _table_columns(conn: ConnectionAdapter, table_name: str) -> set[str]:
@@ -47,35 +47,11 @@ def _business_columns(conn: ConnectionAdapter, table_name: str) -> tuple[str, ..
 
 
 def _sample_column_value(conn: ConnectionAdapter, table_name: str, column: str) -> str:
-    if column not in _table_columns(conn, table_name):
-        return ""
-    row = conn.execute(
-        f"""
-        SELECT {quote_identifier(column)}
-        FROM {quote_identifier(table_name)}
-        WHERE {quote_identifier(column)} IS NOT NULL
-          AND {quote_identifier(column)} != ''
-        LIMIT 1
-        """
-    ).fetchone()
-    return str(row[column] or "") if row else ""
+    return predict_repository.sample_column_value(conn, table_name, column)
 
 
 def _sample_content(conn: ConnectionAdapter, table_name: str) -> str:
-    if not table_exists(conn, table_name):
-        return ""
-    columns = _table_columns(conn, table_name)
-    if "content" not in columns:
-        return ""
-    row = conn.execute(
-        f"""
-        SELECT content
-        FROM {quote_identifier(table_name)}
-        WHERE content IS NOT NULL AND content != ''
-        LIMIT 1
-        """
-    ).fetchone()
-    return str(row["content"] or "") if row else ""
+    return predict_repository.sample_content(conn, table_name)
 
 
 def _is_first_stage_supported_table(columns: set[str]) -> bool:

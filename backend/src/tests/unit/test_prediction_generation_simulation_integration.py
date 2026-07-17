@@ -253,8 +253,85 @@ def test_process_single_module_loads_future_truth_and_tracks_simulation_state(mo
         SimulationState(consecutive_hits=0, consecutive_misses=0),
         SimulationState(consecutive_hits=1, consecutive_misses=0),
     ]
+    assert report["simulation"] == {
+        "enabled": True,
+        "target_hit_rate": 1.0,
+        "max_consecutive_hits": 3,
+        "max_consecutive_misses": 3,
+        "truth_available": 2,
+        "truth_missing": 0,
+        "hits": 2,
+        "misses": 0,
+        "reversals": 0,
+        "skipped": 0,
+        "modes_used": [43],
+        "modes_skipped": [],
+        "mechanisms_used": ["pt3xiao"],
+        "mechanisms_skipped": [],
+    }
+    assert "01" not in str(report["simulation"])
+    assert "07" not in str(report["simulation"])
     assert all(row["res_code"] == "" for row in calls)
     assert all("_simulation_should_hit" not in row for row in calls)
+
+
+def test_process_single_module_reports_missing_future_truth_as_skipped_simulation(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "_resolve_prediction_config_with_mode_fallback",
+        lambda mechanism_key, mode_id, db_path: (_config(), mechanism_key, False),
+    )
+    monkeypatch.setattr(service, "_load_recent_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(service, "enforce_prediction_diversity", lambda **kwargs: kwargs["row_data"])
+    monkeypatch.setattr(service, "_repair_text_prediction_diversity", lambda *args, **kwargs: kwargs["row_data"])
+    monkeypatch.setattr(service.generation_repository, "get_future_draw_truth", lambda conn, **kwargs: None)
+    monkeypatch.setattr(
+        service,
+        "_generate_single_draw_row",
+        lambda **kwargs: {
+            "type": str(kwargs["lottery_type"]),
+            "year": str(kwargs["draw"]["year"]),
+            "term": str(kwargs["draw"]["term"]),
+            "web": str(kwargs["site_web_id"]),
+            "content": "rat",
+            "res_code": kwargs["safe_res_code"] or "",
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "_persist_generated_row",
+        lambda conn, table_name, row_data, allow_overwrite: {"action": "inserted"},
+    )
+
+    report = service._process_single_module(
+        conn=object(),
+        module_row={"id": 1, "mechanism_key": "pt3xiao", "mode_id": 43},
+        draws=[],
+        future_draws=[{"year": 2026, "term": 131, "numbers_str": "", "_future": True}],
+        future_only=True,
+        safety_draw_map={(2026, 131): True},
+        lottery_type=3,
+        site_id=7,
+        site_web_id=6,
+        db_path="fake-db",
+        default_target_hit_rate=0.65,
+        simulation_config=SimulationConfig(target_hit_rate=0.5),
+        zodiac_map={},
+        color_map={},
+        trigger="test",
+        allow_overwrite=True,
+        resolve_prediction_table_for_mode=lambda conn, mode_id, default_table: default_table,
+        build_generated_prediction_row_data=lambda **kwargs: kwargs,
+    )
+
+    assert report["simulation"]["truth_available"] == 0
+    assert report["simulation"]["truth_missing"] == 1
+    assert report["simulation"]["hits"] == 0
+    assert report["simulation"]["misses"] == 0
+    assert report["simulation"]["modes_used"] == []
+    assert report["simulation"]["modes_skipped"] == [43]
+    assert report["simulation"]["mechanisms_used"] == []
+    assert report["simulation"]["mechanisms_skipped"] == ["pt3xiao"]
 
 
 def test_mode_65_future_taiwan_simulation_forces_matching_number_segment():

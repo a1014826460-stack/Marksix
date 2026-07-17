@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { LegacyModulesFrame } from "@/components/LegacyModulesFrame"
+import { SiteTrafficTracker } from "@/components/SiteTrafficTracker"
 import { getCalConvTitle } from "@/lib/calconv"
 import type { LotteryGame } from "@/lib/lotteryData"
 import { getSiteConfig } from "@/lib/sites"
@@ -81,6 +82,7 @@ function LegacyShellContent() {
 
   return (
     <>
+      <SiteTrafficTracker siteKey="shengshi8800" eventType="site_page_view" path="/" />
       {SHELL_SITE?.shellCssPaths?.map((href) => (
         <link key={href} rel="stylesheet" href={href} />
       ))}

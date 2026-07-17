@@ -1,49 +1,17 @@
 import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
-import { getPublicSitePageData } from "@/lib/backend-api"
-import { adaptPublicSitePageDataWithCanonicalModules } from "@/lib/prediction-adapters"
-import { buildCanonicalPredictionModules } from "@/lib/prediction-contract"
-import { getSiteConfig } from "@/lib/sites"
+import { getSitePage, recordSiteApiCompatHit } from "@/lib/site-api-service"
+import { resolveSiteApiContext } from "@/lib/site-registry"
 
 export const runtime = "nodejs"
 
-const TWJINNIU_LIVE_HOMEPAGE_SECTIONS = ["本站出品精华版", "精华版文章详情页"]
-const TWJINNIU_CONFIRMED_POSTGRESQL_HOMEPAGE_SECTIONS = [
-  "公式平特肖",
-  "一肖一码大公开",
-  "四肖八码",
-  "单双四肖八码",
-  "平特一肖",
-  "平特一尾",
-  "一句话中特码",
-  "合数大小",
-  "八肖十六码",
-]
-const TWJINNIU_UNCONFIRMED_HOMEPAGE_SECTIONS: string[] = []
-
-function parsePositiveInt(value: string | null, fallback: number) {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
-
 export async function GET(request: Request) {
   try {
-    const site = getSiteConfig("twjinniu")
-    if (!site) {
-      return jsonWithCors({ ok: false, error: "twjinniu site config is missing" }, { status: 500 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const historyLimit = parsePositiveInt(searchParams.get("history_limit"), 8)
-    const webId = parsePositiveInt(searchParams.get("web_id") || searchParams.get("web"), site.defaultWebId)
-    const siteId = parsePositiveInt(searchParams.get("site_id"), webId)
-    const lotteryType = parsePositiveInt(searchParams.get("lottery_type"), site.defaultLotteryTypeId)
-    const siteData = await getPublicSitePageData({
-      siteId,
-      lotteryType,
-      historyLimit,
-    })
-    const canonicalModules = buildCanonicalPredictionModules({ sitePageData: siteData })
-    const missingModules = siteData.modules
+    const { searchParams, pathname } = new URL(request.url)
+    const context = resolveSiteApiContext("twjinniu", searchParams)
+    void recordSiteApiCompatHit(context, pathname)
+    const payload = await getSitePage(context)
+    const sitePage = payload.data.site_page
+    const missingModules = sitePage.modules
       .filter((module) => !module.history?.length)
       .map((module) => ({
         mechanism_key: module.mechanism_key,
@@ -54,31 +22,26 @@ export async function GET(request: Request) {
     return jsonWithCors({
       ok: true,
       site: {
-        site_key: site.siteKey,
-        site_id: site.defaultWebId,
-        web_id: site.defaultWebId,
-        requested_site_key: searchParams.get("site_key") || searchParams.get("siteKey") || site.siteKey,
-        requested_site_id: siteId,
-        requested_web_id: webId,
-        lottery_type: lotteryType,
-        domain: site.domains[0],
+        ...payload.site,
+        requested_site_key:
+          searchParams.get("site_key") || searchParams.get("siteKey") || context.siteKey,
       },
       data: {
-        site_page: adaptPublicSitePageDataWithCanonicalModules(siteData, canonicalModules),
-        canonical_modules: canonicalModules,
+        site_page: sitePage,
+        canonical_modules: [],
         missing_modules: missingModules,
         homepage_source_status: {
           data_source: "local-postgresql",
           source_chain: [
             "frontend /api/twjinniu/site-page",
+            "frontend /api/sites/twjinniu/site-page",
             "backend /api/public/site-page",
-            "PostgreSQL",
           ],
-          live_sections: TWJINNIU_LIVE_HOMEPAGE_SECTIONS,
-          confirmed_postgresql_sections: TWJINNIU_CONFIRMED_POSTGRESQL_HOMEPAGE_SECTIONS,
-          unresolved_sections: TWJINNIU_UNCONFIRMED_HOMEPAGE_SECTIONS,
+          live_sections: [],
+          confirmed_postgresql_sections: [],
+          unresolved_sections: [],
           snapshot_only_sections: [],
-          live_article_module_count: siteData.modules.length,
+          live_article_module_count: sitePage.modules.length,
           missing_article_module_count: missingModules.length,
         },
       },

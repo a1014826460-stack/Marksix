@@ -71,6 +71,20 @@ def ensure_indexes(conn: Any) -> None:
     )
 
     # ── 配置变更历史 ──
+    # Public site traffic
+    conn.execute(
+        f"""{_idx_sql} idx_public_site_traffic_events_site_time
+           ON public_site_traffic_events (site_key, occurred_at DESC)"""
+    )
+    conn.execute(
+        f"""{_idx_sql} idx_public_site_traffic_events_type_time
+           ON public_site_traffic_events (event_type, occurred_at DESC)"""
+    )
+    conn.execute(
+        f"""{_idx_sql} idx_public_site_traffic_events_visitor
+           ON public_site_traffic_events (site_key, visitor_id, occurred_at DESC)"""
+    )
+
     conn.execute(
         f"""{_idx_sql} idx_system_config_history_key_changed
            ON system_config_history (config_key, changed_at DESC)"""

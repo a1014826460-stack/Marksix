@@ -41,6 +41,7 @@ from routes import (
     admin_payload_routes,
     admin_prediction_routes,
     admin_site_routes,
+    admin_traffic_routes,
     admin_user_routes,
     auth_routes,
     job_routes,
@@ -88,6 +89,7 @@ def build_router() -> Router:
     )
     admin_user_routes.register(router)
     admin_dashboard_routes.register(router)
+    admin_traffic_routes.register(router)
     admin_config_routes.register(router)
     admin_prediction_routes.register(router)
     admin_lottery_routes.register(router)
