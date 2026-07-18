@@ -97,18 +97,10 @@ def reconcile_site_prediction_modules_to_blueprint(
             continue
         blueprint_rows = get_site_prediction_module_blueprints(site, conn=conn)
         # Authorization follows the declarative blueprint even when a legacy
-        # mode has no currently registered generator configuration. A vendor
-        # composite may additionally require source rows not rendered as a
-        # standalone site-page module.
+        # mode has no currently registered generator configuration. Vendor
+        # composites must return their existing empty history when a source is
+        # disabled; they do not widen the site's enabled module set.
         blueprint_mode_ids = {int(mode_id) for mode_id in get_required_mode_ids_for_site(site)}
-        if _site_matches_twcaibawang(site):
-            from vendor.homepage_modules import get_vendor_module_source_mode_ids
-
-            blueprint_mode_ids.update(
-                mode_id
-                for mode_ids in get_vendor_module_source_mode_ids().values()
-                for mode_id in mode_ids
-            )
         existing_rows = conn.execute(
             """
             SELECT id, mode_id, status

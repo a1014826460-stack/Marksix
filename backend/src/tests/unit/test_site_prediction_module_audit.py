@@ -170,6 +170,57 @@ def test_reconcile_disables_extra_rows_and_reenables_required_rows(tmp_path):
     ]
 
 
+def test_reconcile_does_not_keep_twcaibawang_vendor_sources_outside_blueprint(tmp_path):
+    db_path = str(tmp_path / "twcaibawang_vendor_source_reconcile.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY,
+                web_id INTEGER NOT NULL,
+                domain TEXT,
+                lottery_type_id INTEGER,
+                blueprint_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE site_prediction_modules (
+                id INTEGER PRIMARY KEY,
+                site_id INTEGER NOT NULL,
+                mechanism_key TEXT NOT NULL,
+                mode_id INTEGER NOT NULL,
+                status INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT,
+                title TEXT,
+                UNIQUE(site_id, mechanism_key)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO managed_sites (id, web_id, domain, lottery_type_id, blueprint_name)
+            VALUES (5, 5, 'www.twcaibawang.com', 3, 'twcaibawang')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO site_prediction_modules (id, site_id, mechanism_key, mode_id, status)
+            VALUES (1, 5, 'legacy_vendor_source', 44, 1)
+            """
+        )
+
+        reconcile_site_prediction_modules_to_blueprint(conn, site_ids=[5])
+        row = conn.execute(
+            "SELECT status FROM site_prediction_modules WHERE id = 1"
+        ).fetchone()
+
+    assert int(row["status"]) == 0
+
+
 def test_known_site_default_blueprint_is_migrated_to_its_dedicated_profile(tmp_path):
     db_path = str(tmp_path / "site_blueprint_profile_migration.sqlite3")
     with connect(db_path) as conn:

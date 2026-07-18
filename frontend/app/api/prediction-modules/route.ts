@@ -1,21 +1,13 @@
 import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
 import { getSitePredictionModules, recordSiteApiCompatHit } from "@/lib/site-api-service"
-import { resolveSiteApiContext } from "@/lib/site-registry"
+import { resolvePredictionModulesCompatibilityContext } from "@/lib/site-registry"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
     const { searchParams, pathname } = new URL(request.url)
-    const siteKey = searchParams.get("site_key") || searchParams.get("siteKey") || undefined
-    if (!siteKey && !searchParams.get("site_id")) {
-      return jsonWithCors(
-        { ok: false, error: "site_id or a registered site_key is required" },
-        { status: 400 }
-      )
-    }
-
-    const context = resolveSiteApiContext(siteKey || "shengshi8800", searchParams)
+    const context = resolvePredictionModulesCompatibilityContext(searchParams)
     void recordSiteApiCompatHit(context, pathname)
     const payload = await getSitePredictionModules(context)
     return jsonWithCors({
@@ -30,9 +22,11 @@ export async function GET(request: Request) {
       compatibility: payload.data.compatibility,
     })
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Request failed"
+    const status = message === "site_id or a registered site_key is required" ? 400 : 500
     return jsonWithCors(
-      { ok: false, error: error instanceof Error ? error.message : "Request failed" },
-      { status: 500 }
+      { ok: false, error: message },
+      { status }
     )
   }
 }

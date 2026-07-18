@@ -48,7 +48,7 @@ public/vendor/<site_key>/    各站真实 HTML/CSS/JS/图片资源
 1. 将目标站 HTML/CSS/JS 放入 `public/vendor/<site_key>/`。
 2. 在 `lib/sites.ts` 注册 `siteKey`, `routePath`, `vendorIndexPath`, `domains`, `defaultWebId`, `defaultLotteryTypeId`。
 3. 建立该站点的 prediction adapter，明确页面需要的 `moduleKey` 列表。
-4. 旧 JS 不直接读取后端原始返回，统一请求 `/api/prediction-modules?site_key=<site_key>&lottery_type=...`。
+4. 旧 JS 不直接读取后端原始返回，统一请求 `/api/prediction-modules?site_key=<site_key>&lottery_type=...`；仅有 `site_id` 时也必须是注册站点，且同时传入的 `site_key` 与 `site_id` 必须指向同一站点。
 5. adapter 负责将 canonical row 转成目标页面字段，并定义空数据、待开奖、已开奖、命中、未命中的展示文本。
 6. 验收时重点检查预测模块能否在目标样式中正常显示，以及 Network 中 `web/type/lottery_type` 参数是否正确。
 

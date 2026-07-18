@@ -2,6 +2,7 @@ import {
   getAllSiteKeys,
   getRegisteredSite,
   resolveSiteApiContext,
+  resolvePredictionModulesCompatibilityContext,
   type RegisteredSiteKey,
 } from "@/lib/site-registry"
 import {
@@ -41,6 +42,36 @@ const crossSiteOverrideContext = resolveSiteApiContext(
 
 if (crossSiteOverrideContext.siteId !== 7 || crossSiteOverrideContext.webId !== 7) {
   throw new Error("A site-private route must ignore cross-site site_id/web query overrides")
+}
+
+const compatibilityContext = resolvePredictionModulesCompatibilityContext(
+  new URLSearchParams("site_id=5")
+)
+if (compatibilityContext.siteKey !== "twcaibawang" || compatibilityContext.siteId !== 5) {
+  throw new Error("The compatibility prediction route must resolve a registered site_id")
+}
+
+let compatibilityConflictRejected = false
+try {
+  resolvePredictionModulesCompatibilityContext(
+    new URLSearchParams("site_key=twjinniu&site_id=5")
+  )
+} catch {
+  compatibilityConflictRejected = true
+}
+if (!compatibilityConflictRejected) {
+  throw new Error("The compatibility prediction route must reject conflicting site identity")
+}
+
+let missingCompatibilityIdentityRejected = false
+try {
+  resolvePredictionModulesCompatibilityContext()
+} catch (error) {
+  missingCompatibilityIdentityRejected =
+    error instanceof Error && error.message === "site_id or a registered site_key is required"
+}
+if (!missingCompatibilityIdentityRejected) {
+  throw new Error("The compatibility prediction route must preserve the missing identity validation error")
 }
 
 void getSitePage(context)

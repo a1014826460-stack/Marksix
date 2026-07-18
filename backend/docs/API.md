@@ -115,6 +115,8 @@ DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 
 `public.site_prediction_modules` 的 `status=1` 行是站点预测模块的运行时授权源。站点私有前端 API 以路径站点身份为准，查询参数中的 `site_id`、`web`、`web_id` 不可跨站覆盖。
 
+无路径兼容接口 `/api/prediction-modules` 使用注册表中的 `site_key` 或 `site_id` 解析站点；两者同时传入时必须指向同一注册站点，否则保留既有错误 envelope 返回，不能回退到默认站点。缺少身份仍为既有 `400`，身份冲突沿用既有 `500` error envelope。
+
 vendor 聚合和 legacy 模块读取在请求明确指定 `web` 时会验证该站点是否启用了对应 `mode_id`。未启用模块保持原有空结果形状：vendor 返回原有模块对象与空 `history`，`/api/legacy/module-rows` 返回原有元数据与 `rows: []`，`/api/kaijiang/*` 返回 `{ "data": [] }`。
 
 站点 5-8 的蓝图收敛和审计命令：

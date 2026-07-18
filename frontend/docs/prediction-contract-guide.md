@@ -100,7 +100,13 @@ GET /api/prediction-modules?site_key=<siteKey>
 ```
 
 The compatibility route preserves its older response shape while sourcing data
-from the shared site service.
+from the shared site service. It accepts either a registered `site_key` or a
+registered `site_id`. When both are supplied they must identify the same
+registered site; a conflict returns the existing error envelope instead of
+silently selecting another site. Path-owned site routes continue to ignore
+query-string `site_id`, `web`, and `web_id` overrides. Missing identity keeps
+the route's existing `400` error envelope; identity conflicts retain the
+existing `500` error envelope.
 
 ## Recommended Checks
 

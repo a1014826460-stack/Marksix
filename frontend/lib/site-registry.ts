@@ -29,6 +29,14 @@ export function getRegisteredSite(siteKey: string) {
   return site
 }
 
+function getRegisteredSiteByDefaultSiteId(siteId: number) {
+  const site = getAllSiteConfigs().find((candidate) => candidate.defaultSiteId === siteId)
+  if (!site) {
+    throw new Error(`Unknown site_id: ${siteId}`)
+  }
+  return site
+}
+
 function parsePositiveInt(value: string | null, fallback: number) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
@@ -67,6 +75,28 @@ export function resolveSiteApiContext(
     ),
     modeIds: parseModeIds(searchParams.get("mode_ids")),
   }
+}
+
+/**
+ * The legacy non-path prediction route needs an explicit registered site.
+ * Unlike path-owned routes, it has no path segment from which to derive identity.
+ */
+export function resolvePredictionModulesCompatibilityContext(
+  searchParams: URLSearchParams = new URLSearchParams()
+): SiteApiContext {
+  const siteKey = searchParams.get("site_key") || searchParams.get("siteKey")
+  const siteIdValue = searchParams.get("site_id")
+  const siteByKey = siteKey ? getRegisteredSite(siteKey) : null
+  const siteById = siteIdValue ? getRegisteredSiteByDefaultSiteId(Number(siteIdValue)) : null
+
+  if (!siteByKey && !siteById) {
+    throw new Error("site_id or a registered site_key is required")
+  }
+  if (siteByKey && siteById && siteByKey.siteKey !== siteById.siteKey) {
+    throw new Error("site_key and site_id must identify the same registered site")
+  }
+
+  return resolveSiteApiContext((siteByKey || siteById)!.siteKey, searchParams)
 }
 
 export function buildSiteEnvelope<T>(context: SiteApiContext, data: T) {
