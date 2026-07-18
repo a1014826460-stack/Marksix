@@ -21,6 +21,7 @@ import re
 from typing import Any
 
 from db import quote_identifier
+from domains.prediction.repository import get_mode_authorization_for_web_id
 from domains.legacy import repository as legacy_repository
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
@@ -143,6 +144,19 @@ def _resolve_endpoint_table_name(conn: Any, endpoint: str, num: Any) -> str:
     if mapped_mode_id is not None:
         return _resolve_table_name(conn, mapped_mode_id)
     return _resolve_table_name(conn, num)
+
+
+def _resolve_endpoint_mode_id(conn: Any, endpoint: str, num: Any) -> int | None:
+    """Resolve the actual mode ID behind a legacy endpoint request."""
+    normalized_num = str(num).strip()
+    mapped_mode_id = _ENDPOINT_MODE_IDS.get((endpoint.strip().lower(), normalized_num))
+    if mapped_mode_id is not None:
+        return int(mapped_mode_id)
+    try:
+        mode_id = int(normalized_num)
+    except (TypeError, ValueError):
+        return None
+    return mode_id if mode_id > 0 else None
 
 
 # ── 表列名读取（兼容 SQLite / PostgreSQL）────────────────────────────
@@ -718,6 +732,15 @@ def _handle_standard_kaijiang(endpoint: str, query: dict, conn: Any) -> dict:
             pass
 
     if raw_num is None or str(raw_num).strip() == "":
+        return {"data": []}
+
+    mode_id = _resolve_endpoint_mode_id(conn, endpoint, raw_num)
+    authorization = (
+        get_mode_authorization_for_web_id(conn, web_id=web_id, mode_id=mode_id)
+        if web_id is not None and mode_id is not None
+        else None
+    )
+    if web_id is not None and (mode_id is None or authorization is False):
         return {"data": []}
 
     # 解析表名

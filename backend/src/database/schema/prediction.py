@@ -27,7 +27,7 @@ TWCAIBAWANG_REQUIRED_MODE_IDS = (
     482, 483, 484,
 )
 TWJINNIU_REQUIRED_MODE_IDS = (
-    5, 12, 14, 20, 15, 26, 31, 38, 43, 47, 48, 49, 50, 53, 56, 66, 72, 74,
+    5, 12, 14, 20, 15, 26, 31, 38, 43, 47, 48, 49, 50, 51, 53, 56, 66, 72, 74,
     77, 78, 79, 81, 83, 103, 108, 110, 117, 123, 132, 142, 143, 144, 151,
     173, 180, 198, 219, 279, 472, 474, 476, 479, 480, 481, 482, 483, 484,
 )
@@ -198,37 +198,37 @@ def _backfill_site_blueprint_names(conn: Any) -> None:
         """
         UPDATE managed_sites
         SET blueprint_name = ?
-        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+        WHERE (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = ?)
           AND web_id = 5
         """,
-        (TWCAIBAWANG_BLUEPRINT_NAME,),
+        (TWCAIBAWANG_BLUEPRINT_NAME, DEFAULT_SITE_BLUEPRINT_NAME),
     )
     conn.execute(
         """
         UPDATE managed_sites
         SET blueprint_name = ?
-        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+        WHERE (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = ?)
           AND web_id = 6
         """,
-        (TWSAIMAHUI_BLUEPRINT_NAME,),
+        (TWSAIMAHUI_BLUEPRINT_NAME, DEFAULT_SITE_BLUEPRINT_NAME),
     )
     conn.execute(
         """
         UPDATE managed_sites
         SET blueprint_name = ?
-        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+        WHERE (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = ?)
           AND web_id = 7
         """,
-        (TWJINNIU_BLUEPRINT_NAME,),
+        (TWJINNIU_BLUEPRINT_NAME, DEFAULT_SITE_BLUEPRINT_NAME),
     )
     conn.execute(
         """
         UPDATE managed_sites
         SET blueprint_name = ?
-        WHERE (blueprint_name IS NULL OR blueprint_name = '')
+        WHERE (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = ?)
           AND web_id = 8
         """,
-        (TWCF888_BLUEPRINT_NAME,),
+        (TWCF888_BLUEPRINT_NAME, DEFAULT_SITE_BLUEPRINT_NAME),
     )
     conn.execute(
         """
@@ -284,6 +284,31 @@ def ensure_prediction_tables(conn: Any, pk_sql: str) -> None:
             mechanism_key TEXT PRIMARY KEY,
             status INTEGER NOT NULL DEFAULT 1,
             updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+    # Internal-only future-generation bookkeeping. Candidate hashes prevent
+    # duplicate reservations without retaining the future draw itself.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS prediction_generation_controls (
+            {pk_sql},
+            lottery_type_id INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            term INTEGER NOT NULL,
+            mode_id INTEGER NOT NULL,
+            web_id INTEGER NOT NULL,
+            rule_id TEXT NOT NULL,
+            rule_revision INTEGER NOT NULL,
+            target_hit INTEGER NOT NULL,
+            verified_hit INTEGER NOT NULL,
+            signature_hash TEXT NOT NULL,
+            prefix_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(lottery_type_id, year, term, mode_id, web_id),
+            UNIQUE(lottery_type_id, year, term, mode_id, prefix_hash)
         )
         """
     )

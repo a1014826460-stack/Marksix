@@ -31,6 +31,17 @@ def test_size_parity_category_reexports_mechanism_functions():
     assert mechanisms.format_parity_groups is size_parity.format_parity_groups
 
 
+def test_static_configs_bind_size_parity_category_helpers():
+    assert (
+        mechanisms.PREDICTION_CONFIGS["danshuangtema"].outcome_loader
+        is size_parity.special_parity_from_row
+    )
+    assert (
+        mechanisms.PREDICTION_CONFIGS["liangtouzxt"].content_formatter
+        is size_parity.format_head_groups
+    )
+
+
 def test_size_parity_category_fallbacks_without_fixed_data():
     row = {"res_code": "01,02,03,04,05,06,27", "res_color": "red,blue,green"}
     conn = FakeConn()

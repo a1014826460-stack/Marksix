@@ -69,6 +69,41 @@ def get_enabled_module_rows(conn: Any, site_id: int, mechanism_keys: list[str] |
     return [dict(row) for row in conn.execute(query, params).fetchall()]
 
 
+def get_enabled_mode_ids_for_web_id(conn: Any, web_id: int) -> set[int]:
+    """Return enabled mode IDs for the managed site identified by business web_id."""
+    if not conn.table_exists("managed_sites") or not conn.table_exists("site_prediction_modules"):
+        return set()
+    rows = conn.execute(
+        """
+        SELECT DISTINCT spm.mode_id
+        FROM managed_sites AS site
+        JOIN site_prediction_modules AS spm ON spm.site_id = site.id
+        WHERE site.web_id = ?
+          AND spm.status = 1
+          AND spm.mode_id IS NOT NULL
+        """,
+        (int(web_id),),
+    ).fetchall()
+    return {int(row["mode_id"]) for row in rows}
+
+
+def is_mode_enabled_for_web_id(conn: Any, *, web_id: int, mode_id: int) -> bool:
+    """Whether a mode is enabled for the managed site identified by web_id."""
+    return get_mode_authorization_for_web_id(conn, web_id=web_id, mode_id=mode_id) is True
+
+
+def get_mode_authorization_for_web_id(
+    conn: Any,
+    *,
+    web_id: int,
+    mode_id: int,
+) -> bool | None:
+    """Return mode authorization, or None when legacy fixtures lack site config tables."""
+    if not conn.table_exists("managed_sites") or not conn.table_exists("site_prediction_modules"):
+        return None
+    return int(mode_id) in get_enabled_mode_ids_for_web_id(conn, int(web_id))
+
+
 def insert_module(conn: Any, site_id: int, mechanism_key: str, mode_id: int,
                   status: int, sort_order: int, now: str) -> dict[str, Any]:
     """插入一个新的预测模块行，返回新建的行数据。"""

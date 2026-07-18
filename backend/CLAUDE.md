@@ -168,3 +168,31 @@ python -m pytest -q
 ```text
 42 passed
 ```
+# 2026-07-17 预测分类拆分与 DAO 收敛
+
+- `backend/docs/API.md` 是唯一的 API 文档位置；历史 `backend/API.md` 已迁移，不再维护。
+- `predict.mechanisms` 保留预测配置注册与兼容导出；已拆出的 `size_parity`、`zodiac`、`mixed`、`structured_mapping`、`text_mapping`、`number` 分类模块承载对应的解析、命中或格式化规则。
+- `predict.mechanisms`、`predict.common`、`predict._db_helpers`、`predict.mechanism_status` 与 `prediction_generation.service` 不再直接执行业务 SQL；机制状态和任务日志分别经 `domains.prediction.state_repository` 与 `domains.prediction.generation_log_repository` 持久化。
+- 所有 HTTP 响应契约保持不变；未来开奖真值仍禁止进入日志、任务报告、持久化预测内容或 API 响应。
+# 2026-07-17 Image 分类与动态 Registry Builder
+
+- `predict.categories.image` 承担连期窗口的 `start/end/content/image_url` formatter 与只读元数据加载；图片渲染、文件写入和批量编排仍保留在 `prediction_generation`，不改变落库或 HTTP payload 形状。
+- `predict.categories.content_columns` 承担历史内容列读取、列合并、生肖/尾数/波色文本解析；`predict.mechanisms` 保留兼容导出与静态配置。
+- 动态 mode_payload 配置的表遍历、静态模式排除和第一/第二阶段分派已迁至 `predict.registry_builder.build_dynamic_prediction_configs`；具体玩法分类规则仍由 `mechanisms.py` 注入，避免一次性改变旧规则。
+- 以上仅调整内部边界；API 响应字段、字段顺序、legacy 包装和未来期开奖安全约束不变。
+
+# 2026-07-18 预测生成硬约束
+
+- 台湾彩未来期的受控生成必须通过 `domains.prediction.generation_rules` 的已验证规则；未知动态玩法或专用行生成器尚未接入规则时，必须跳过未来受控生成，不能回退为概率模拟并宣称准确率受控。
+- 连续窗口准确率使用 `domains.prediction.accuracy_plan`；控制记录和跨站/相邻期签名预约只允许经 `domains.prediction.generation_control_repository` 持久化到内部表 `prediction_generation_controls`。
+- 控制表只能保存候选签名哈希、规则版本和布尔验证结果，禁止保存完整未来开奖号码或将该表暴露给 HTTP、public、legacy、日志、任务摘要或图片层。
+- 未来受控生成的账本预约与 `created` 预测行写入必须延迟到同一事务边界提交；写入失败或跳过已有行时必须移除预约。跨站预约冲突最多重选一次；相邻期比较必须覆盖跨年期号序列。
+- `backend/docs/prediction-module-rules.md` 是生成的规则审阅文档。修改未来命中规则、候选数量、跨站前缀宽度或相邻期签名策略时，必须同步更新渲染器、文档和测试。
+
+# 2026-07-19 站点预测模块授权
+
+- `public.site_prediction_modules(status=1)` 是站点预测模块的唯一运行时授权来源；蓝图只定义可同步的目标集合。
+- 站点私有 Next API 的 `site_id`、`web`、`web_id` 由路径 `siteKey` 固定，禁止用 query 跨站覆盖。
+- vendor 聚合或 legacy 模块行在带显式 `web` 时必须校验启用模块；不授权时保持既有空 `history`、`rows` 或 `{ data: [] }` 包装，禁止增加响应字段。
+- 使用 `python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"` 审计站点 5-8；仅在确认审计结果后加 `--apply`。该操作只切换 `status`，不删除历史行。
+- 修改站点蓝图、vendor 固定模式或 `twcf888` 模块文档时，必须更新 `test_site_prediction_module_audit.py`。

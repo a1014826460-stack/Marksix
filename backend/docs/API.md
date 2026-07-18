@@ -111,6 +111,24 @@ DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 - SQLite 不参与正式运行
 - SQLite 仅保留给历史迁移或显式本地测试
 
+### 4.4 站点预测模块授权
+
+`public.site_prediction_modules` 的 `status=1` 行是站点预测模块的运行时授权源。站点私有前端 API 以路径站点身份为准，查询参数中的 `site_id`、`web`、`web_id` 不可跨站覆盖。
+
+vendor 聚合和 legacy 模块读取在请求明确指定 `web` 时会验证该站点是否启用了对应 `mode_id`。未启用模块保持原有空结果形状：vendor 返回原有模块对象与空 `history`，`/api/legacy/module-rows` 返回原有元数据与 `rows: []`，`/api/kaijiang/*` 返回 `{ "data": [] }`。
+
+站点 5-8 的蓝图收敛和审计命令：
+
+```powershell
+# 只读审计
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"
+
+# 仅切换 status，不删除预测历史
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>" --apply
+```
+
+脚本同时验证 `twcf888` vendor 文档、站点蓝图和前端固定模块依赖。
+
 ### 4.3 旧 SQLite 数据迁移
 
 当前这版重构后的仓库，已经不再内置可直接执行的 SQLite → PostgreSQL 迁移脚本。
@@ -2772,3 +2790,15 @@ python -m pytest -q
 ```text
 42 passed
 ```
+# 2026-07-17 预测分类拆分与 DAO 收敛
+
+- `backend/docs/API.md` 是唯一的 API 文档位置；历史 `backend/API.md` 已迁移，不再维护。
+- `predict.mechanisms` 保留预测配置注册与兼容导出；已拆出的 `size_parity`、`zodiac`、`mixed`、`structured_mapping`、`text_mapping`、`number` 分类模块承载对应的解析、命中或格式化规则。
+- `predict.mechanisms`、`predict.common`、`predict._db_helpers`、`predict.mechanism_status` 与 `prediction_generation.service` 不再直接执行业务 SQL；机制状态和任务日志分别经 `domains.prediction.state_repository` 与 `domains.prediction.generation_log_repository` 持久化。
+- 所有 HTTP 响应契约保持不变；未来开奖真值仍禁止进入日志、任务报告、持久化预测内容或 API 响应。
+# 2026-07-17 Image 分类与动态 Registry Builder
+
+- `predict.categories.image` 承担连期窗口的 `start/end/content/image_url` formatter 与只读元数据加载；图片渲染、文件写入和批量编排仍保留在 `prediction_generation`，不改变落库或 HTTP payload 形状。
+- `predict.categories.content_columns` 承担历史内容列读取、列合并、生肖/尾数/波色文本解析；`predict.mechanisms` 保留兼容导出与静态配置。
+- 动态 mode_payload 配置的表遍历、静态模式排除和第一/第二阶段分派已迁至 `predict.registry_builder.build_dynamic_prediction_configs`；具体玩法分类规则仍由 `mechanisms.py` 注入，避免一次性改变旧规则。
+- 以上仅调整内部边界；API 响应字段、字段顺序、legacy 包装和未来期开奖安全约束不变。

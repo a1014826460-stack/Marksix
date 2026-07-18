@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from db import connect
+from domains.prediction.repository import get_enabled_mode_ids_for_web_id
 from helpers import load_fixed_data_maps, split_csv
 from legacy.api import load_legacy_mode_rows
 from public.api import resolve_public_site
@@ -19,6 +20,24 @@ SUPPORTED_MODULE_KEYS = (
     "daxiao_2tou",
     "tiandi_2xiao",
 )
+
+_MODULE_SOURCE_MODE_IDS: dict[str, tuple[int, ...]] = {
+    "wuxiao_wuma": (47, 69, 151),
+    "public_yixiao_yima": (49, 44, 151),
+    "shuangbo_12ma": (38,),
+    "shujinguang": (44,),
+    "daxiao_2tou": (57, 108),
+    "tiandi_2xiao": (5, 251),
+}
+
+_MODULE_PRESENTATION: dict[str, tuple[str, str]] = {
+    "wuxiao_wuma": ("五肖五码", "table-composite"),
+    "public_yixiao_yima": ("公开一肖一码", "card-composite"),
+    "shuangbo_12ma": ("双波12码", "wave-composite"),
+    "shujinguang": ("输尽光", "single-line"),
+    "daxiao_2tou": ("大小+2头", "single-line"),
+    "tiandi_2xiao": ("天地两肖", "single-line"),
+}
 
 
 @dataclass(frozen=True)
@@ -34,6 +53,11 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError, AttributeError):
         return default
+
+
+def get_vendor_module_source_mode_ids() -> dict[str, tuple[int, ...]]:
+    """Return a copy of the fixed source IDs used by vendor composite blocks."""
+    return dict(_MODULE_SOURCE_MODE_IDS)
 
 
 def _parse_json_array(value: Any) -> list[Any]:
@@ -539,7 +563,22 @@ def build_vendor_homepage_modules(
         "daxiao_2tou": _build_daxiao_2tou,
         "tiandi_2xiao": _build_tiandi_2xiao,
     }
-    data = [builders[key](ctx, db_path) for key in requested_keys]
+    with connect(db_path) as conn:
+        enabled_mode_ids = get_enabled_mode_ids_for_web_id(conn, ctx.web_id)
+
+    data = []
+    for key in requested_keys:
+        if set(_MODULE_SOURCE_MODE_IDS[key]).issubset(enabled_mode_ids):
+            module = builders[key](ctx, db_path)
+        else:
+            title, display_style = _MODULE_PRESENTATION[key]
+            module = {
+                "module_key": key,
+                "title": title,
+                "display_style": display_style,
+                "history": [],
+            }
+        data.append(module)
     return {
         "ok": True,
         "site": {

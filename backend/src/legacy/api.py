@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from db import connect
+from domains.prediction.repository import get_mode_authorization_for_web_id
 from domains.legacy import repository as legacy_repository
 from helpers import (
     apply_lottery_draw_overlay,
@@ -122,6 +123,20 @@ def load_legacy_mode_rows(
             raise KeyError(f"modes_id={modes_id} 不存在")
 
         meta_dict = dict(meta)
+        authorization = (
+            get_mode_authorization_for_web_id(
+                conn,
+                web_id=int(web),
+                mode_id=int(modes_id),
+            )
+            if web is not None
+            else None
+        )
+        if authorization is False:
+            return {
+                **meta_dict,
+                "rows": [],
+            }
         table_name = str(meta_dict["table_name"])
         has_public_table = conn.table_exists(table_name)
         has_created_table = (

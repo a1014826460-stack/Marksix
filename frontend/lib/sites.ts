@@ -16,6 +16,7 @@ export type FrontendSiteConfig = {
   domains: string[]
   legacyPublicBasePath: `/${string}`
   defaultGame: LotteryGame
+  defaultSiteId: number
   defaultWebId: number
   defaultLotteryTypeId: 1 | 2 | 3
   forumTitle: string
@@ -52,6 +53,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     domains: ["localhost", "127.0.0.1"],
     legacyPublicBasePath: "/vendor/shengshi8800",
     defaultGame: "taiwan",
+    defaultSiteId: 4,
     defaultWebId: 4,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾六合彩论坛",
@@ -80,6 +82,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     domains: ["www.twsaimahui.com", "twsaimahui.com"],
     legacyPublicBasePath: "/vendor/twsaimahui",
     defaultGame: "taiwan",
+    defaultSiteId: 6,
     defaultWebId: 6,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾赛马会",
@@ -102,6 +105,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     domains: ["www.twcaibawang.com", "twcaibawang.com"],
     legacyPublicBasePath: "/vendor/twcaibawang.com",
     defaultGame: "hongkong",
+    defaultSiteId: 5,
     defaultWebId: 5,
     defaultLotteryTypeId: 3,
     forumTitle: "香港天天彩",
@@ -135,6 +139,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     ],
     legacyPublicBasePath: "/vendor/twjinniu",
     defaultGame: "taiwan",
+    defaultSiteId: 7,
     defaultWebId: 7,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾通天网",
@@ -161,6 +166,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     domains: ["www.twcf888.com", "twcf888.com"],
     legacyPublicBasePath: "/vendor/twcf888.com",
     defaultGame: "taiwan",
+    defaultSiteId: 8,
     defaultWebId: 8,
     defaultLotteryTypeId: 3,
     forumTitle: "台湾创富网",

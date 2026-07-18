@@ -34,6 +34,15 @@ for (const siteKey of expectedKeys) {
 }
 
 const context = resolveSiteApiContext("twjinniu", new URLSearchParams("history_limit=3"))
+const crossSiteOverrideContext = resolveSiteApiContext(
+  "twjinniu",
+  new URLSearchParams("site_id=5&web=5&web_id=5")
+)
+
+if (crossSiteOverrideContext.siteId !== 7 || crossSiteOverrideContext.webId !== 7) {
+  throw new Error("A site-private route must ignore cross-site site_id/web query overrides")
+}
+
 void getSitePage(context)
 void getSiteHomepageModules(context)
 void getSitePredictionModules(context)

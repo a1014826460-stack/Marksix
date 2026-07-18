@@ -14,6 +14,19 @@
 
 运行时会优先读取数据库中的配置；如果某个配置项缺失，或数据库不可用，则回退到 `runtime_config.py` 中的默认值。数据库连接目标本身仍需通过 `DATABASE_URL` 或启动参数提供。
 
+## 站点预测模块授权
+
+- `site_prediction_modules` 中 `status=1` 的行是站点预测资料的唯一运行时授权来源。
+- 站点私有 API 的站点身份由 URL 路径确定，query 中的 `site_id`、`web`、`web_id` 不能跨站覆盖。
+- 站点 5-8 的模块集可用以下命令审计；加 `--apply` 只停用蓝图外行或启用缺失蓝图行，不删除历史数据：
+
+```powershell
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>" --apply
+```
+
+- 禁用模块保持现有 API 空结果格式，避免影响 legacy 前端解析。
+
 ---
 
 ## src/ 分层架构
@@ -1099,3 +1112,15 @@ python -m pytest -q
 7. 低优先级：逐步统一新接口响应规范，但历史接口不要强改，除非前端已同步迁移。
 
 ---
+# 2026-07-17 预测分类拆分与 DAO 收敛
+
+- `backend/docs/API.md` 是唯一的 API 文档位置；历史 `backend/API.md` 已迁移，不再维护。
+- `predict.mechanisms` 保留预测配置注册与兼容导出；已拆出的 `size_parity`、`zodiac`、`mixed`、`structured_mapping`、`text_mapping`、`number` 分类模块承载对应的解析、命中或格式化规则。
+- `predict.mechanisms`、`predict.common`、`predict._db_helpers`、`predict.mechanism_status` 与 `prediction_generation.service` 不再直接执行业务 SQL；机制状态和任务日志分别经 `domains.prediction.state_repository` 与 `domains.prediction.generation_log_repository` 持久化。
+- 所有 HTTP 响应契约保持不变；未来开奖真值仍禁止进入日志、任务报告、持久化预测内容或 API 响应。
+# 2026-07-17 Image 分类与动态 Registry Builder
+
+- `predict.categories.image` 承担连期窗口的 `start/end/content/image_url` formatter 与只读元数据加载；图片渲染、文件写入和批量编排仍保留在 `prediction_generation`，不改变落库或 HTTP payload 形状。
+- `predict.categories.content_columns` 承担历史内容列读取、列合并、生肖/尾数/波色文本解析；`predict.mechanisms` 保留兼容导出与静态配置。
+- 动态 mode_payload 配置的表遍历、静态模式排除和第一/第二阶段分派已迁至 `predict.registry_builder.build_dynamic_prediction_configs`；具体玩法分类规则仍由 `mechanisms.py` 注入，避免一次性改变旧规则。
+- 以上仅调整内部边界；API 响应字段、字段顺序、legacy 包装和未来期开奖安全约束不变。

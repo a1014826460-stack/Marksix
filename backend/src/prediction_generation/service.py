@@ -16,9 +16,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from db import connect
+from db import connect, utc_now
 from domains.prediction.category_service import classify_prediction_config
-from domains.prediction import generation_repository
+from domains.prediction import generation_log_repository, generation_repository
+from domains.prediction.accuracy_plan import AccuracyPolicy, choose_target_hit
+from domains.prediction.candidate_control import (
+    ControlledCandidateUnavailable,
+    choose_controlled_labels,
+    signature_hash,
+)
+from domains.prediction.generation_control_repository import (
+    acquire_issue_mode_lock,
+    load_adjacent_controls,
+    load_controls_for_issue,
+    list_recent_verified_outcomes,
+    reserve_control,
+)
+from domains.prediction.generation_rules import get_generation_rule
 from domains.prediction.models import DrawContext, DrawTruth, PredictionRequest
 from domains.prediction.simulation_service import (
     SimulationConfig,
@@ -552,6 +566,202 @@ def _format_prediction_content_from_labels(
         elif override_labels:
             prediction_labels = (str(override_labels),)
     return generated_content, prediction_labels
+
+
+class _PersistedFutureControl:
+    """Internal plan data. It never enters a created row, report, or HTTP response."""
+
+    def __init__(
+        self,
+        *,
+        labels: tuple[str, ...],
+        signature: tuple[str, ...],
+        prefix_signature: tuple[str, ...],
+        target_hit: bool,
+        verified_hit: bool,
+        rule_id: str,
+        rule_revision: int,
+    ) -> None:
+        self.labels = labels
+        self.signature = signature
+        self.prefix_signature = prefix_signature
+        self.target_hit = target_hit
+        self.verified_hit = verified_hit
+        self.rule_id = rule_id
+        self.rule_revision = rule_revision
+
+
+class _PersistedFutureControlUnavailable(ValueError):
+    """A verified rule could not reserve a legal future candidate."""
+
+
+def _control_savepoint_name(*, year: int, term: int, mode_id: int) -> str:
+    """Return a SQL-safe savepoint identifier for one controlled future row."""
+    return f"prediction_control_{int(year)}_{int(term)}_{int(mode_id)}"
+
+
+def _start_control_savepoint(conn: Any, *, year: int, term: int, mode_id: int) -> str:
+    name = _control_savepoint_name(year=year, term=term, mode_id=mode_id)
+    conn.execute(f"SAVEPOINT {name}")
+    return name
+
+
+def _release_control_savepoint(conn: Any, name: str) -> None:
+    conn.execute(f"RELEASE SAVEPOINT {name}")
+
+
+def _rollback_control_savepoint(conn: Any, name: str) -> None:
+    conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+    _release_control_savepoint(conn, name)
+
+
+def _plan_persisted_future_control(
+    *,
+    conn: Any,
+    config: PredictionConfig,
+    lottery_type: int,
+    site_id: int,
+    site_web_id: int,
+    draw: dict[str, Any],
+    truth: DrawTruth | None,
+    simulation_config: SimulationConfig,
+    mechanism_key: str,
+    predicted_labels: tuple[str, ...],
+    attempt: int = 0,
+    rejected_prefix_hashes: set[str] | None = None,
+    rejected_signature_hashes: set[str] | None = None,
+) -> _PersistedFutureControl | None:
+    """Build a rule-verified future candidate using only internal control data."""
+    if int(lottery_type) != 3 or truth is None:
+        return None
+
+    rule = get_generation_rule(config)
+    if not rule.supported:
+        return None
+
+    policy = AccuracyPolicy(minimum_hit_rate=simulation_config.normalized().target_hit_rate)
+    year = int(draw["year"])
+    term = int(draw["term"])
+    acquire_issue_mode_lock(
+        conn,
+        lottery_type_id=int(lottery_type),
+        year=year,
+        term=term,
+        mode_id=int(config.default_modes_id),
+    )
+    prior_outcomes = list_recent_verified_outcomes(
+        conn,
+        lottery_type_id=int(lottery_type),
+        mode_id=int(config.default_modes_id),
+        web_id=int(site_web_id),
+        before_issue=(year, term),
+        limit=max(0, policy.normalized().window_size - 1),
+    )
+    target_hit = choose_target_hit(
+        prior_outcomes,
+        policy=policy,
+        seed=(
+            f"controlled:{site_id}:{site_web_id}:{lottery_type}:{config.default_modes_id}:"
+            f"{year}:{term}:{mechanism_key}"
+        ),
+    )
+    same_issue_controls = load_controls_for_issue(
+        conn,
+        lottery_type_id=int(lottery_type),
+        year=year,
+        term=term,
+        mode_id=int(config.default_modes_id),
+    )
+    adjacent_controls = load_adjacent_controls(
+        conn,
+        lottery_type_id=int(lottery_type),
+        year=year,
+        term=term,
+        mode_id=int(config.default_modes_id),
+        web_id=int(site_web_id),
+    )
+    try:
+        candidate = choose_controlled_labels(
+            config=config,
+            rule=rule,
+            truth=truth,
+            predicted_labels=tuple(predicted_labels),
+            should_hit=target_hit,
+            forbidden_prefixes=set(),
+            forbidden_signatures=set(),
+            forbidden_prefix_hashes=(
+                {str(row["prefix_hash"]) for row in same_issue_controls}
+                | set(rejected_prefix_hashes or ())
+            ),
+            forbidden_signature_hashes=(
+                {str(row["signature_hash"]) for row in adjacent_controls}
+                | set(rejected_signature_hashes or ())
+            ),
+            seed=(
+                f"controlled-candidate:{site_id}:{site_web_id}:{lottery_type}:"
+                f"{config.default_modes_id}:{year}:{term}:{mechanism_key}:{int(attempt)}"
+            ),
+            conn=conn,
+        )
+    except ControlledCandidateUnavailable as exc:
+        raise _PersistedFutureControlUnavailable(
+            f"mode_id={int(config.default_modes_id or 0)}: controlled candidate unavailable"
+        ) from exc
+    return _PersistedFutureControl(
+        labels=candidate.labels,
+        signature=candidate.signature,
+        prefix_signature=candidate.prefix_signature,
+        target_hit=target_hit,
+        verified_hit=candidate.verified_hit,
+        rule_id=rule.rule_id,
+        rule_revision=rule.rule_revision,
+    )
+
+
+def _apply_persisted_future_control(
+    *,
+    result: dict[str, Any],
+    config: PredictionConfig,
+    lottery_type: int,
+    site_id: int,
+    site_web_id: int,
+    draw: dict[str, Any],
+    is_future: bool,
+    truth: DrawTruth | None,
+    simulation_config: SimulationConfig | None,
+    mechanism_key: str,
+    conn: Any,
+    control_attempt: int = 0,
+    rejected_prefix_hashes: set[str] | None = None,
+    rejected_signature_hashes: set[str] | None = None,
+) -> tuple[Any, tuple[str, ...], SimulationResult, _PersistedFutureControl] | None:
+    """Apply a persisted rule plan for a verified Taiwan future module."""
+    if not is_future or truth is None or simulation_config is None or not callable(getattr(conn, "execute", None)):
+        return None
+    prediction = dict(result.get("prediction") or {})
+    baseline_labels = tuple(str(label) for label in prediction.get("labels") or () if str(label))
+    control = _plan_persisted_future_control(
+        conn=conn,
+        config=config,
+        lottery_type=lottery_type,
+        site_id=site_id,
+        site_web_id=site_web_id,
+        draw=draw,
+        truth=truth,
+        simulation_config=simulation_config,
+        mechanism_key=mechanism_key,
+        predicted_labels=baseline_labels,
+        attempt=control_attempt,
+        rejected_prefix_hashes=rejected_prefix_hashes,
+        rejected_signature_hashes=rejected_signature_hashes,
+    )
+    generated_content, _ = _format_prediction_content_from_labels(config, control.labels, conn)
+    return (
+        generated_content,
+        control.labels,
+        SimulationResult(labels=control.labels, should_hit=control.verified_hit, safe_debug={"has_truth": True}),
+        control,
+    )
 
 
 def _apply_simulation_to_prediction_result(
@@ -1258,6 +1468,9 @@ def _generate_default_mode_row(
     simulation_state: SimulationState | None = None,
     site_id: int = 0,
     mechanism_key: str = "",
+    control_attempt: int = 0,
+    rejected_prefix_hashes: set[str] | None = None,
+    rejected_signature_hashes: set[str] | None = None,
 ) -> dict[str, Any]:
     """通用模式：调用 predict() 生成预测内容。"""
     result = predict(
@@ -1268,7 +1481,7 @@ def _generate_default_mode_row(
         random_seed=f"{draw['year']}{draw['term']:03d}" if is_future else None,
         conn=conn,
     )
-    generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+    persisted_control = _apply_persisted_future_control(
         result=result,
         config=config,
         lottery_type=lottery_type,
@@ -1278,10 +1491,40 @@ def _generate_default_mode_row(
         is_future=is_future,
         truth=truth,
         simulation_config=simulation_config,
-        simulation_state=simulation_state,
         mechanism_key=mechanism_key,
         conn=conn,
+        control_attempt=control_attempt,
+        rejected_prefix_hashes=rejected_prefix_hashes,
+        rejected_signature_hashes=rejected_signature_hashes,
     )
+    if (
+        persisted_control is None
+        and is_future
+        and truth is not None
+        and callable(getattr(conn, "execute", None))
+        and get_generation_rule(config).supported
+    ):
+        raise _PersistedFutureControlUnavailable(
+            f"mode_id={int(config.default_modes_id or 0)}: controlled candidate unavailable"
+        )
+    if persisted_control is not None:
+        generated_content, _, simulation_result, control_plan = persisted_control
+    else:
+        generated_content, _, simulation_result = _apply_simulation_to_prediction_result(
+            result=result,
+            config=config,
+            lottery_type=lottery_type,
+            site_id=site_id,
+            site_web_id=site_web_id,
+            draw=draw,
+            is_future=is_future,
+            truth=truth,
+            simulation_config=simulation_config,
+            simulation_state=simulation_state,
+            mechanism_key=mechanism_key,
+            conn=conn,
+        )
+        control_plan = None
 
     row_data = build_row(
         mode_id=config.default_modes_id,
@@ -1292,6 +1535,8 @@ def _generate_default_mode_row(
     )
     if simulation_result is not None and simulation_result.should_hit is not None:
         row_data["_simulation_should_hit"] = simulation_result.should_hit
+    if control_plan is not None:
+        row_data["_generation_control"] = control_plan
     if int(config.default_modes_id or 0) == 251:
         row_data = _ensure_mode_251_xiao(row_data, result["prediction"]["content"])
     return row_data
@@ -1316,6 +1561,9 @@ def _generate_single_draw_row(
     simulation_state: SimulationState | None = None,
     site_id: int = 0,
     mechanism_key: str = "",
+    control_attempt: int = 0,
+    rejected_prefix_hashes: set[str] | None = None,
+    rejected_signature_hashes: set[str] | None = None,
 ) -> dict[str, Any]:
     """根据 mode_id 分发生成单期预测行。"""
     if mode_id == 65:
@@ -1429,6 +1677,9 @@ def _generate_single_draw_row(
         simulation_state=simulation_state,
         site_id=site_id,
         mechanism_key=mechanism_key,
+        control_attempt=control_attempt,
+        rejected_prefix_hashes=rejected_prefix_hashes,
+        rejected_signature_hashes=rejected_signature_hashes,
     )
 
 
@@ -1438,6 +1689,7 @@ def _persist_generated_row(
     row_data: dict[str, Any],
     *,
     allow_overwrite: bool,
+    commit: bool = True,
 ) -> dict[str, Any]:
     """持久化单行预测结果，自动任务默认只插入缺失行。"""
     if not allow_overwrite:
@@ -1450,7 +1702,7 @@ def _persist_generated_row(
                 "id": str(existing["id"]),
                 "created_at": str(existing["created_at"] or ""),
             }
-    return upsert_created_prediction_row(conn, table_name, row_data)
+    return upsert_created_prediction_row(conn, table_name, row_data, commit=commit)
 
 
 # ── 结构化模块日志 ──────────────────────────────────────
@@ -1467,24 +1719,15 @@ def _write_task_log_to_db(
     """将预测任务日志直接写入 error_logs 表，确保后台日志管理页面可见。"""
     try:
         with connect(db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO error_logs (
-                    created_at, level, logger_name, module, func_name,
-                    file_path, line_number, message,
-                    site_id, web_id, lottery_type_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.now(timezone.utc).isoformat(),
-                    level,
-                    "prediction.task",
-                    "prediction_generation",
-                    "_log_module_result",
-                    __file__, 0,
-                    message,
-                    site_id, web_id, lottery_type_id,
-                ),
+            generation_log_repository.write_prediction_task_log(
+                conn,
+                level=level,
+                message=message,
+                site_id=site_id,
+                web_id=web_id,
+                lottery_type_id=lottery_type_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                file_path=__file__,
             )
     except Exception:
         pass
@@ -1661,21 +1904,152 @@ def _process_single_module(
             elif is_future:
                 simulation_report["skipped"] += 1
 
-            row_data = _generate_single_draw_row(
-                draw=draw, mode_id=mode_id, is_future=is_future,
-                safe_res_code=safe_res_code, lottery_type=lottery_type,
-                site_web_id=site_web_id, config=config, table_name=table_name,
-                db_path=db_path, default_target_hit_rate=default_target_hit_rate,
-                zodiac_map=zodiac_map, build_row=build_generated_prediction_row_data,
-                conn=conn,
-                truth=truth,
-                simulation_config=simulation_config,
-                simulation_state=simulation_state,
-                site_id=int(site_id),
-                mechanism_key=mechanism_key,
+            if is_future and int(lottery_type) == 3 and truth is not None:
+                future_rule = get_generation_rule(config)
+                if not future_rule.supported:
+                    simulation_report["skipped"] += 1
+                    if mode_id not in simulation_report["modes_skipped"]:
+                        simulation_report["modes_skipped"].append(mode_id)
+                    if mechanism_key not in simulation_report["mechanisms_skipped"]:
+                        simulation_report["mechanisms_skipped"].append(mechanism_key)
+                    module_report["warnings"].append(
+                        f"mode_id={mode_id}: future generation skipped because its unverified rule cannot control accuracy"
+                    )
+                    continue
+
+            rejected_prefix_hashes: set[str] = set()
+            rejected_signature_hashes: set[str] = set()
+            row_data: dict[str, Any] | None = None
+            control_plan: _PersistedFutureControl | None = None
+            simulation_should_hit: bool | None = None
+            for control_attempt in range(2):
+                try:
+                    row_data = _generate_single_draw_row(
+                        draw=draw, mode_id=mode_id, is_future=is_future,
+                        safe_res_code=safe_res_code, lottery_type=lottery_type,
+                        site_web_id=site_web_id, config=config, table_name=table_name,
+                        db_path=db_path, default_target_hit_rate=default_target_hit_rate,
+                        zodiac_map=zodiac_map, build_row=build_generated_prediction_row_data,
+                        conn=conn,
+                        truth=truth,
+                        simulation_config=simulation_config,
+                        simulation_state=simulation_state,
+                        site_id=int(site_id),
+                        mechanism_key=mechanism_key,
+                        control_attempt=control_attempt,
+                        rejected_prefix_hashes=rejected_prefix_hashes,
+                        rejected_signature_hashes=rejected_signature_hashes,
+                    )
+                except _PersistedFutureControlUnavailable as exc:
+                    module_report["errors"] += 1
+                    if not module_report["error_message"]:
+                        module_report["error_message"] = str(exc)
+                    module_report["warnings"].append(
+                        f"mode_id={mode_id}: future generation was not persisted because no legal controlled candidate exists"
+                    )
+                    row_data = None
+                    break
+
+                control_plan = row_data.pop("_generation_control", None)
+                simulation_should_hit = row_data.pop("_simulation_should_hit", None)
+                if control_plan is None:
+                    break
+
+                control_savepoint = _start_control_savepoint(
+                    conn,
+                    year=int(draw["year"]),
+                    term=int(draw["term"]),
+                    mode_id=int(mode_id),
+                )
+                reservation = reserve_control(
+                    conn,
+                    lottery_type_id=int(lottery_type),
+                    year=int(draw["year"]),
+                    term=int(draw["term"]),
+                    mode_id=int(mode_id),
+                    web_id=int(site_web_id),
+                    rule_id=control_plan.rule_id,
+                    rule_revision=control_plan.rule_revision,
+                    target_hit=control_plan.target_hit,
+                    verified_hit=control_plan.verified_hit,
+                    signature=control_plan.signature,
+                    prefix_signature=control_plan.prefix_signature,
+                    created_at=utc_now(),
+                )
+                if reservation.get("reserved"):
+                    break
+                _rollback_control_savepoint(conn, control_savepoint)
+                control_savepoint = None
+                if reservation.get("reason") == "site_issue_already_reserved":
+                    row_data = None
+                    break
+                rejected_prefix_hashes.add(signature_hash(control_plan.prefix_signature))
+                rejected_signature_hashes.add(signature_hash(control_plan.signature))
+                row_data = None
+                control_plan = None
+
+            if row_data is None:
+                if "control_savepoint" in locals() and control_savepoint is not None:
+                    _rollback_control_savepoint(conn, control_savepoint)
+                    control_savepoint = None
+                simulation_report["skipped"] += 1
+                module_report["warnings"].append(
+                    f"mode_id={mode_id}: future generation skipped because its candidate reservation conflicted"
+                )
+                continue
+            if is_future:
+                row_data["res_sx"] = ""
+                row_data["res_color"] = ""
+            else:
+                row_data["res_sx"], row_data["res_color"] = compute_result_fields(
+                    draw["numbers_str"], zodiac_map, color_map,
+                )
+
+            if control_plan is None:
+                row_data = enforce_prediction_diversity(
+                    mode_id=mode_id, row_data=row_data,
+                    recent_rows=recent_rows, config=config,
+                )
+                row_data = _repair_text_prediction_diversity(
+                    conn,
+                    mode_id=mode_id,
+                    row_data=row_data,
+                    recent_rows=recent_rows,
+                )
+            diversity_warning = row_data.pop("_diversity_warning", None)
+            if diversity_warning:
+                module_report["warnings"].append(str(diversity_warning))
+
+            stored = _persist_generated_row(
+                conn,
+                table_name,
+                row_data,
+                allow_overwrite=allow_overwrite,
+                **({"commit": False} if control_plan is not None else {}),
             )
-            simulation_should_hit = row_data.pop("_simulation_should_hit", None)
-            if simulation_should_hit is not None:
+            if control_plan is not None and stored.get("action") == "skipped_existing":
+                _rollback_control_savepoint(conn, control_savepoint)
+                control_savepoint = None
+            if stored.get("action") == "inserted":
+                module_report["inserted"] += 1
+                recent_rows.insert(0, {
+                    "title": row_data.get("title"),
+                    "content": row_data.get("content"),
+                    "jiexi": row_data.get("jiexi"),
+                })
+            elif stored.get("action") == "updated":
+                module_report["updated"] += 1
+                recent_rows.insert(0, {
+                    "title": row_data.get("title"),
+                    "content": row_data.get("content"),
+                    "jiexi": row_data.get("jiexi"),
+                })
+            else:
+                module_report["skipped_existing"] += 1
+            if "control_savepoint" in locals() and control_savepoint is not None:
+                _release_control_savepoint(conn, control_savepoint)
+                control_savepoint = None
+            if stored.get("action") in {"inserted", "updated"} and simulation_should_hit is not None:
                 should_count_as_reversal = (
                     int(simulation_state.consecutive_hits or 0) >= simulation_config.normalized().max_consecutive_hits
                     or int(simulation_state.consecutive_misses or 0)
@@ -1704,53 +2078,11 @@ def _process_single_module(
                     simulation_report["modes_skipped"].append(mode_id)
                 if mechanism_key not in simulation_report["mechanisms_skipped"]:
                     simulation_report["mechanisms_skipped"].append(mechanism_key)
-
-            if is_future:
-                row_data["res_sx"] = ""
-                row_data["res_color"] = ""
-            else:
-                row_data["res_sx"], row_data["res_color"] = compute_result_fields(
-                    draw["numbers_str"], zodiac_map, color_map,
-                )
-
-            row_data = enforce_prediction_diversity(
-                mode_id=mode_id, row_data=row_data,
-                recent_rows=recent_rows, config=config,
-            )
-            row_data = _repair_text_prediction_diversity(
-                conn,
-                mode_id=mode_id,
-                row_data=row_data,
-                recent_rows=recent_rows,
-            )
-            diversity_warning = row_data.pop("_diversity_warning", None)
-            if diversity_warning:
-                module_report["warnings"].append(str(diversity_warning))
-
-            stored = _persist_generated_row(
-                conn,
-                table_name,
-                row_data,
-                allow_overwrite=allow_overwrite,
-            )
-            if stored.get("action") == "inserted":
-                module_report["inserted"] += 1
-                recent_rows.insert(0, {
-                    "title": row_data.get("title"),
-                    "content": row_data.get("content"),
-                    "jiexi": row_data.get("jiexi"),
-                })
-            elif stored.get("action") == "updated":
-                module_report["updated"] += 1
-                recent_rows.insert(0, {
-                    "title": row_data.get("title"),
-                    "content": row_data.get("content"),
-                    "jiexi": row_data.get("jiexi"),
-                })
-            else:
-                module_report["skipped_existing"] += 1
         except Exception as exc:
-            conn.rollback()
+            if "control_savepoint" in locals() and control_savepoint is not None:
+                _rollback_control_savepoint(conn, control_savepoint)
+            else:
+                conn.rollback()
             module_report["errors"] += 1
             if not module_report["error_message"]:
                 module_report["error_message"] = str(exc)

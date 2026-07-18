@@ -291,4 +291,5 @@ def test_bootstrap_seeds_expanded_twjinniu_blueprint_profile(tmp_path):
     assert 474 in required_mode_ids
     assert 476 in required_mode_ids
     assert 484 in required_mode_ids
-    assert len(required_mode_ids) == 47
+    assert 51 in required_mode_ids
+    assert len(required_mode_ids) == 48

@@ -30,3 +30,31 @@ def test_structured_mapping_builds_pipe_map_from_history(monkeypatch):
     mapping = structured_mapping.build_pipe_value_map(object(), "mode_payload_1", ("red", "blue"))
 
     assert mapping == {"red": ("01", "02"), "blue": ("03",)}
+
+
+def test_structured_mapping_category_owns_qinqi_and_pipe_formatters(monkeypatch):
+    monkeypatch.setattr(
+        structured_mapping,
+        "load_qinqi_value_map",
+        lambda _conn: {"琴": ("rat",), "棋": ("ox",), "书": (), "画": ()},
+    )
+    monkeypatch.setattr(structured_mapping, "special_zodiac_from_number_map", lambda *_args: "ox")
+    monkeypatch.setattr(
+        structured_mapping,
+        "build_pipe_value_map",
+        lambda *_args: {"red": ()},
+    )
+
+    assert structured_mapping.qinqi_outcome_from_row({}, object()) == "棋"
+    assert structured_mapping.format_qinqi_content(("琴", "棋"), object()) == {
+        "title": "琴,棋",
+        "content": "rat,ox",
+    }
+    assert structured_mapping.format_zodiac_groups("mode_payload_1", ("red",))(
+        ("red",), object()
+    ) == ["red|"]
+
+
+def test_static_configs_bind_structured_mapping_category_helpers():
+    assert mechanisms.PREDICTION_CONFIGS["qinqi"].outcome_loader is structured_mapping.qinqi_outcome_from_row
+    assert mechanisms.PREDICTION_CONFIGS["qinqi"].content_formatter is structured_mapping.format_qinqi_content

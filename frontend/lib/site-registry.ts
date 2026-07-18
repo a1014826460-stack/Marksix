@@ -53,15 +53,14 @@ export function resolveSiteApiContext(
   searchParams: URLSearchParams = new URLSearchParams()
 ): SiteApiContext {
   const site = getRegisteredSite(siteKey)
-  const webId = parsePositiveInt(searchParams.get("web_id") || searchParams.get("web"), site.defaultWebId)
-
   return {
     site,
     siteKey: site.siteKey,
     searchParams,
     historyLimit: parsePositiveInt(searchParams.get("history_limit"), 8),
-    siteId: parsePositiveInt(searchParams.get("site_id"), webId),
-    webId,
+    // The path site owns identity; query values may only refine non-site options.
+    siteId: site.defaultSiteId,
+    webId: site.defaultWebId,
     lotteryType: parseLotteryType(
       searchParams.get("lottery_type") || searchParams.get("type"),
       site.defaultLotteryTypeId

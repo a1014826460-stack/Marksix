@@ -36,6 +36,17 @@ def test_zodiac_category_reexports_mechanism_functions():
     assert mechanisms.format_9x12 is zodiac.format_9x12
 
 
+def test_static_configs_bind_zodiac_category_helpers():
+    assert (
+        mechanisms.PREDICTION_CONFIGS["pt3xiao"].content_formatter
+        is zodiac.format_zodiac_csv
+    )
+    assert (
+        mechanisms.PREDICTION_CONFIGS["sixiao_sima"].content_formatter
+        is zodiac.format_zodiac_one_code
+    )
+
+
 def test_zodiac_category_formats_numbers_from_fixed_data():
     conn = FakeConn()
 

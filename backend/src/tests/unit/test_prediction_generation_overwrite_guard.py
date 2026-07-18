@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 
+from utils import created_prediction_store
 from prediction_generation import service
 
 
@@ -17,7 +18,7 @@ def test_persist_generated_row_skips_existing_when_overwrite_disabled(monkeypatc
     monkeypatch.setattr(
         service,
         "upsert_created_prediction_row",
-        lambda conn, table_name, row_data: calls.append("upsert") or {"action": "updated"},
+        lambda conn, table_name, row_data, *, commit=True: calls.append("upsert") or {"action": "updated"},
     )
 
     result = service._persist_generated_row(
@@ -43,7 +44,7 @@ def test_persist_generated_row_allows_admin_overwrite(monkeypatch):
     monkeypatch.setattr(
         service,
         "upsert_created_prediction_row",
-        lambda conn, table_name, row_data: calls.append("upsert") or {"action": "updated"},
+        lambda conn, table_name, row_data, *, commit=True: calls.append("upsert") or {"action": "updated"},
     )
 
     result = service._persist_generated_row(
@@ -55,6 +56,50 @@ def test_persist_generated_row_allows_admin_overwrite(monkeypatch):
 
     assert result["action"] == "updated"
     assert calls == ["upsert"]
+
+
+def test_persist_generated_row_can_defer_created_store_commit(monkeypatch):
+    commit_flags: list[bool] = []
+
+    monkeypatch.setattr(
+        service,
+        "upsert_created_prediction_row",
+        lambda _conn, _table_name, _row_data, *, commit: commit_flags.append(commit) or {"action": "inserted"},
+    )
+
+    result = service._persist_generated_row(
+        object(),
+        "mode_payload_44",
+        {"type": "3", "year": "2026", "term": "133", "web": "4", "content": "new"},
+        allow_overwrite=True,
+        commit=False,
+    )
+
+    assert result["action"] == "inserted"
+    assert commit_flags == [False]
+
+
+def test_created_table_bootstrap_can_defer_commit(monkeypatch):
+    commit_calls: list[str] = []
+
+    class _Conn:
+        def commit(self):
+            commit_calls.append("commit")
+
+    monkeypatch.setattr(created_prediction_store, "ensure_postgres_connection", lambda _conn: None)
+    monkeypatch.setattr(created_prediction_store, "validate_mode_payload_table_name", lambda _name: "mode_payload_44")
+    monkeypatch.setattr(created_prediction_store, "table_column_names", lambda *_args: {"id", "created_at", "mode_id"})
+    monkeypatch.setattr(created_prediction_store, "list_table_columns", lambda *_args: [])
+    monkeypatch.setattr(created_prediction_store, "schema_table_exists", lambda *_args: True)
+    monkeypatch.setattr(created_prediction_store, "ensure_created_schema", lambda *_args: None)
+
+    # The implementation's SQL work is irrelevant here; the regression is that
+    # the explicit deferred mode must not commit it before its caller finishes.
+    monkeypatch.setattr(_Conn, "execute", lambda *_args, **_kwargs: None, raising=False)
+
+    created_prediction_store.ensure_created_prediction_table(_Conn(), "mode_payload_44", commit=False)
+
+    assert commit_calls == []
 
 
 def test_generate_mode_331_row_persists_x7m14(monkeypatch):

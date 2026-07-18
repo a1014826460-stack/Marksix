@@ -3,11 +3,37 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from domains.prediction import predict_repository
-from predict.common import load_fixed_value_map, parse_json_or_plain_content
+from predict.common import (
+    load_fixed_value_map,
+    parse_json_or_plain_content,
+    special_zodiac_from_number_map,
+)
 
 
 table_fixed_mapping_keys: dict[str, str] = {}
 find_fixed_data_sign_for_labels: Callable[[Any, tuple[str, ...]], str | None] = lambda _conn, _labels: None
+
+
+def load_qinqi_value_map(conn: Any) -> dict[str, tuple[str, ...]]:
+    labels = ("琴", "棋", "书", "画")
+    fixed_mapping = load_fixed_value_map(conn, "四艺生肖", labels)
+    if fixed_mapping and all(fixed_mapping.get(label) for label in labels):
+        return fixed_mapping
+
+    result: dict[str, set[str]] = {label: set() for label in labels}
+    for row in predict_repository.load_qinqi_history_rows(conn):
+        title_labels = [value.strip() for value in str(row["title"] or "").split(",") if value.strip()]
+        zodiac_values = [value.strip() for value in str(row["content"] or "").split(",") if value.strip()]
+        if not title_labels or len(zodiac_values) % len(title_labels) != 0:
+            continue
+        chunk_size = len(zodiac_values) // len(title_labels)
+        for index, label in enumerate(title_labels):
+            if label in result:
+                start = index * chunk_size
+                result[label].update(zodiac_values[start:start + chunk_size])
+        if all(result[label] for label in labels):
+            break
+    return {label: tuple(sorted(values)) for label, values in result.items()}
 
 
 def build_pipe_value_map(
@@ -61,3 +87,33 @@ def format_dynamic_pipe_groups(table_name: str):
         return [f"{label}|{','.join(mapping.get(label, ()))}" for label in selected]
 
     return formatter
+
+
+def make_pipe_category_outcome(table_name: str, labels: tuple[str, ...]):
+    def loader(row: Any, conn: Any) -> str:
+        zodiac = special_zodiac_from_number_map(row, conn)
+        mapping = build_pipe_value_map(conn, table_name, labels)
+        return category_outcome_from_map(zodiac, mapping, labels)
+
+    return loader
+
+
+def qinqi_outcome_from_row(row: Any, conn: Any) -> str:
+    zodiac = special_zodiac_from_number_map(row, conn)
+    return category_outcome_from_map(zodiac, load_qinqi_value_map(conn), ("琴", "棋", "书", "画"))
+
+
+def format_zodiac_groups(table_name: str, labels: tuple[str, ...]):
+    def formatter(selected: tuple[str, ...], conn: Any) -> list[str]:
+        mapping = build_pipe_value_map(conn, table_name, labels)
+        return [f"{label}|{','.join(mapping.get(label, ()))}" for label in selected]
+
+    return formatter
+
+
+def format_qinqi_content(labels: tuple[str, ...], conn: Any) -> dict[str, str]:
+    mapping = load_qinqi_value_map(conn)
+    values: list[str] = []
+    for label in labels:
+        values.extend(mapping.get(label, ()))
+    return {"title": ",".join(labels), "content": ",".join(values)}

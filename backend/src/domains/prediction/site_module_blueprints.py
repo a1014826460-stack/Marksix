@@ -142,6 +142,7 @@ TWJINNIU_REQUIRED_MODE_IDS = (
     48,
     49,
     50,
+    51,
     53,
     56,
     66,

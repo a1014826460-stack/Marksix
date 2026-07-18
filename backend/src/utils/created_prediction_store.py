@@ -792,7 +792,12 @@ def ensure_created_schema(conn: Any) -> None:
     conn.execute(f"CREATE SCHEMA IF NOT EXISTS {quote_identifier(CREATED_SCHEMA_NAME)}")
 
 
-def ensure_created_prediction_table(conn: Any, source_table_name: str) -> str:
+def ensure_created_prediction_table(
+    conn: Any,
+    source_table_name: str,
+    *,
+    commit: bool = True,
+) -> str:
     """确保 `created.mode_payload_{mode_id}` 目标表存在且结构正确。
 
     结构来源：
@@ -929,7 +934,8 @@ def ensure_created_prediction_table(conn: Any, source_table_name: str) -> str:
         """,
         (utc_now_iso(),),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return target_qualified
 
 
@@ -1022,6 +1028,8 @@ def upsert_created_prediction_row(
     conn: Any,
     source_table_name: str,
     row_data: dict[str, Any],
+    *,
+    commit: bool = True,
 ) -> dict[str, Any]:
     """向 `created.mode_payload_{mode_id}` 写入或更新一条本地预测结果。
 
@@ -1037,7 +1045,7 @@ def upsert_created_prediction_row(
 
     ensure_postgres_connection(conn)
     table_name = validate_mode_payload_table_name(source_table_name)
-    target_qualified = ensure_created_prediction_table(conn, table_name)
+    target_qualified = ensure_created_prediction_table(conn, table_name, commit=commit)
     target_column_defs = {
         column.name: column.sql_type
         for column in list_table_columns(conn, CREATED_SCHEMA_NAME, table_name)
@@ -1076,7 +1084,8 @@ def upsert_created_prediction_row(
             [filtered_data[column] for column in update_columns] + [existing_row["id"]],
         )
         sync_three_period_special_window_rows(conn, table_name, filtered_data)
-        conn.commit()
+        if commit:
+            conn.commit()
         return {
             "action": "updated",
             "schema": CREATED_SCHEMA_NAME,
@@ -1105,7 +1114,8 @@ def upsert_created_prediction_row(
         [insert_data[column] for column in insert_columns],
     )
     sync_three_period_special_window_rows(conn, table_name, insert_data)
-    conn.commit()
+    if commit:
+        conn.commit()
     return {
         "action": "inserted",
         "schema": CREATED_SCHEMA_NAME,

@@ -44,12 +44,33 @@ from predict._db_helpers import (
     _table_column_list,
     _table_columns,
 )
-from predict.categories import mixed, size_parity, structured_mapping, text_mapping, zodiac
+from predict.categories import content_columns, image, mixed, number, size_parity, structured_mapping, text_mapping, zodiac
 from predict.categories.mixed import (
     mixed_dimension_contains_hit,
     mixed_dimension_excludes_hit,
     mixed_xiao_tail_outcome_from_row as _mixed_xiao_tail_outcome_from_row,
     parse_mixed_dimension_content,
+)
+from predict.categories.image import format_window_content
+from predict.categories.content_columns import (
+    black_white_content_from_row,
+    jiexi_content_from_row,
+    join_columns_content_loader,
+    parse_literal_label_content,
+    parse_tail_digit_content,
+    parse_wave_chars,
+    parse_zodiac_chars,
+    parsed_columns_content_loader,
+    tail_code_content_from_row,
+    tail_columns_content_loader,
+    xiao_code_content_from_row,
+)
+from predict.categories.number import (
+    format_24_numbers,
+    format_segment_groups,
+    format_split_number_columns,
+    special_number_from_row,
+    special_segment_from_row,
 )
 from predict.categories.size_parity import (
     format_fixed_groups,
@@ -72,6 +93,17 @@ from predict.categories.structured_mapping import (
     build_pipe_value_map,
     category_outcome_from_map,
     format_dynamic_pipe_groups,
+    format_qinqi_content,
+    format_zodiac_groups,
+    make_pipe_category_outcome,
+    qinqi_outcome_from_row,
+)
+from predict.categories.text_mapping import (
+    format_humor_tail_groups,
+    format_juzi_title,
+    format_text_history_mapping,
+    format_text_pool_jiexi,
+    random_text_pool_row,
 )
 from predict.categories.zodiac import (
     format_9x12,
@@ -125,25 +157,8 @@ def labels_from_fixed(mapping_key: str, fallback: tuple[str, ...]):
     return loader
 
 
-def label_for_special_number(
-    row: sqlite3.Row,
-    conn: sqlite3.Connection,
-    mapping_key: str,
-    fallback: str,
-) -> str:
-    special_code = special_code_from_res_code(row["res_code"] or "")
-    return fixed_label_for_value(conn, mapping_key, special_code) or fallback
 
 
-def format_fixed_groups(mapping_key: str, fallback_map: dict[str, list[str]] | None = None):
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-        mapping = load_fixed_value_map(conn, mapping_key, labels)
-        return [
-            f"{label}|{','.join(mapping.get(label, tuple(fallback_map.get(label, ()) if fallback_map else ())))}"
-            for label in labels
-        ]
-
-    return formatter
 
 
 def labels_from_history_pipe(table_name: str, fallback: tuple[str, ...] = ()):
@@ -205,56 +220,16 @@ def format_dynamic_pipe_groups(table_name: str):
     return formatter
 
 
-def special_head_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据 res_code 的特码号码推导特码头数。"""
-    special_code = special_code_from_res_code(row["res_code"] or "")
-    number = int(special_code)
-    fallback = "0头" if number < 10 else f"{number // 10}头"
-    return label_for_special_number(row, conn, "头", fallback)
 
 
-def special_tail_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据 res_code 的特码号码推导特码尾数。"""
-    special_code = special_code_from_res_code(row["res_code"] or "")
-    fallback = f"{int(special_code) % 10}尾"
-    return label_for_special_number(row, conn, "尾", fallback)
 
 
-def special_parity_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据 res_code 的特码号码推导单双。"""
-    fallback = "双" if int(special_code_from_res_code(row["res_code"] or "")) % 2 == 0 else "单"
-    return label_for_special_number(row, conn, "单双", fallback)
 
 
-def special_size_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据特码号码推导大小，01-24 为小，25-49 为大。"""
-    fallback = "大" if int(special_code_from_res_code(row["res_code"] or "")) >= 25 else "小"
-    return label_for_special_number(row, conn, "大小", fallback)
 
 
-def special_half_wave_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据特码波色和单双推导半波，例如 红单、蓝双。"""
-    special_code = special_code_from_res_code(row["res_code"] or "")
-    mapped = fixed_label_for_value(conn, "波色单双", special_code)
-    if mapped:
-        return mapped
-
-    wave = special_wave_from_row(row, conn).removesuffix("波")
-    parity = special_parity_from_row(row, conn)
-    return f"{wave}{parity}" if wave and parity else ""
 
 
-def special_wave_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """优先从 res_color 取特码波色；缺失时用固定号码波色映射推导。"""
-    values = [value.strip() for value in str(row_get(row, "res_color", "") or "").split(",") if value.strip()]
-    if values:
-        return {"red": "红波", "blue": "蓝波", "green": "绿波"}.get(values[-1], "")
-
-    special_code = special_code_from_res_code(row["res_code"] or "")
-    mapped_label = fixed_label_for_value(conn, "波色", special_code)
-    if mapped_label:
-        return mapped_label
-    return ""
 
 
 def _special_digit_sum(row: sqlite3.Row) -> int:
@@ -262,12 +237,8 @@ def _special_digit_sum(row: sqlite3.Row) -> int:
     return (number // 10) + (number % 10)
 
 
-def special_combined_parity_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
-    return "合单" if _special_digit_sum(row) % 2 == 1 else "合双"
 
 
-def special_combined_size_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
-    return "合数大" if _special_digit_sum(row) >= 7 else "合数小"
 
 
 def load_domestic_wild_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]]:
@@ -299,153 +270,28 @@ def special_fengmaibizhong_from_row(row: sqlite3.Row, conn: sqlite3.Connection) 
     return "|".join(label for label in outcomes if label)
 
 
-def special_number_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
-    """24码直接以特码号码作为命中目标。"""
-    return special_code_from_res_code(row["res_code"] or "")
 
 
-def jiexi_content_from_row(row: sqlite3.Row) -> str:
-    """一句真言/四字玄机用 jiexi 字段存储候选生肖。"""
-    return str(row_get(row, "jiexi", "") or "")
 
 
-def tail_code_content_from_row(row: sqlite3.Row) -> str:
-    """独家幽默用 code 字段存储尾数候选。"""
-    return str(row_get(row, "code", "") or "")
 
 
-def xiao_code_content_from_row(row: sqlite3.Row) -> str:
-    """9肖12码使用 xiao/code 两列，这里把 xiao 作为历史命中标签来源。"""
-    return str(row_get(row, "xiao", "") or "")
 
 
-def black_white_content_from_row(row: sqlite3.Row) -> str:
-    """黑白各3肖使用 hei/bai 两列存储预测生肖。"""
-    values = [
-        str(row_get(row, "hei", "") or "").strip(),
-        str(row_get(row, "bai", "") or "").strip(),
-    ]
-    return ",".join(value for value in values if value)
 
 
-def join_columns_content_loader(columns: tuple[str, ...]):
-    """把多个字段中的预测标签合并为一个字符串参与历史命中率计算。
-
-    多字段玩法常见于 jia/ye、nan/nv、zu1/zu2/zu3、xiao/code 等结构。命中判断
-    本质仍是“特码生肖或尾数是否落入这些字段给出的标签集合”，因此只需要把各列
-    的标签合并后交给既有 parser 即可。
-    """
-
-    def loader(row: sqlite3.Row) -> str:
-        values = [
-            str(row_get(row, column, "") or "").strip()
-            for column in columns
-            if str(row_get(row, column, "") or "").strip()
-        ]
-        return ",".join(values)
-
-    return loader
 
 
-def parsed_columns_content_loader(columns: tuple[str, ...], value_parser):
-    """逐列解析并合并标签，避免把 JSON 字符串直接拼接后破坏原始结构。
-    第二阶段支持的多字段玩法里，单列内容可能本身就是 JSON 数组字符串，例如
-    `["猴|34,46","龙|14,38"]`。如果直接把多列原值用逗号拼接，再交给统一 parser，
-    会把 JSON 内部的逗号也拆开，导致历史命中标签解析失真。这里先按列解析，再合并
-    成规范化标签串，供历史回测与策略选择复用。
-    """
-
-    def loader(row: sqlite3.Row) -> str:
-        labels: list[str] = []
-        for column in columns:
-            raw_value = str(row_get(row, column, "") or "")
-            labels.extend(value_parser(raw_value))
-        return ",".join(labels)
-
-    return loader
 
 
-def tail_columns_content_loader(columns: tuple[str, ...]):
-    """读取尾数字段，并统一转成 `N尾` 标签。
-
-    部分表的 dan/shuang 字段只保存 `1,3,5` 这类尾数数字，而预测模块统一用
-    `1尾` 标签计算命中，所以这里在读取阶段做一次规范化。
-    """
-
-    def loader(row: sqlite3.Row) -> str:
-        labels: list[str] = []
-        for column in columns:
-            raw_value = str(row_get(row, column, "") or "")
-            for value in re.findall(r"\d", raw_value):
-                label = f"{int(value)}尾"
-                if label not in labels:
-                    labels.append(label)
-        return ",".join(labels)
-
-    return loader
 
 
-def parse_tail_digit_content(content: str) -> tuple[str, ...]:
-    """解析尾数内容，兼容 `1尾`、`1,3,5` 和 JSON `1尾|01,11` 结构。"""
-    labels: list[str] = []
-    chinese_tail_digits = {
-        "零": 0,
-        "一": 1,
-        "二": 2,
-        "两": 2,
-        "三": 3,
-        "四": 4,
-        "五": 5,
-        "六": 6,
-        "七": 7,
-        "八": 8,
-        "九": 9,
-    }
-    for item in parse_json_or_plain_content(content):
-        if "|" in item:
-            item = item.split("|", 1)[0]
-        for value in re.findall(r"\d", item):
-            label = f"{int(value)}尾"
-            if label not in labels:
-                labels.append(label)
-        for value in re.findall(r"[零一二两三四五六七八九]", item):
-            label = f"{chinese_tail_digits[value]}尾"
-            if label not in labels:
-                labels.append(label)
-    return tuple(labels)
 
 
-def parse_zodiac_chars(content: str) -> tuple[str, ...]:
-    """从无分隔中文文本中提取生肖字符，兼容 jiexi=鼠虎兔龙 这类格式。"""
-    values = [normalize_zodiac_label(value) for value in re.findall(r"[鼠牛虎兔龍蛇马馬羊猴鸡雞狗猪豬]", content or "")]
-    return tuple(dict.fromkeys(values))
 
 
-def parse_wave_chars(content: str) -> tuple[str, ...]:
-    """从文本中提取红/蓝/绿波色标签。"""
-    labels: list[str] = []
-    for value in re.findall(r"[红蓝绿]", content or ""):
-        label = f"{value}波"
-        if label not in labels:
-            labels.append(label)
-    return tuple(labels)
 
 
-def parse_literal_label_content(content: str) -> tuple[str, ...]:
-    """Parse plain single-label rows, tolerating JSON-array and `label|values` content."""
-    labels: list[str] = []
-    for item in parse_json_or_plain_content(content):
-        text = str(item or "").strip()
-        if not text:
-            continue
-        if "|" in text:
-            text = text.split("|", 1)[0].strip()
-        if text and text not in labels:
-            labels.append(text)
-    if labels:
-        return tuple(labels)
-    text = str(content or "").strip()
-    return (text,) if text else ()
 
 
 def _find_fixed_data_sign_for_labels(
@@ -488,77 +334,19 @@ def _find_fixed_data_sign_for_labels(
 
 structured_mapping.find_fixed_data_sign_for_labels = _find_fixed_data_sign_for_labels
 
-def build_qinqi_value_map(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]]:
-    """琴棋书画的映射来自 title 与 content 的组合。
-
-    该表的 title 保存标签顺序，例如 `书,棋,琴`；content 保存按标签顺序展开的
-    生肖，例如 9 个生肖即 3 个标签各 3 个生肖。因此这里按 title 顺序切片还原映射。
-    """
-    labels = ("琴", "棋", "书", "画")
-    fixed_mapping = load_fixed_value_map(conn, "四艺生肖", labels)
-    if fixed_mapping and all(fixed_mapping.get(label) for label in labels):
-        return fixed_mapping
-
-    result: dict[str, set[str]] = {label: set() for label in labels}
-    rows = predict_repository.load_qinqi_history_rows(conn)
-    for row in rows:
-        title_labels = [value.strip() for value in row["title"].split(",") if value.strip()]
-        zodiac_values = [value.strip() for value in row["content"].split(",") if value.strip()]
-        if not title_labels or len(zodiac_values) % len(title_labels) != 0:
-            continue
-        chunk_size = len(zodiac_values) // len(title_labels)
-        for index, label in enumerate(title_labels):
-            if label not in result:
-                continue
-            start = index * chunk_size
-            result[label].update(zodiac_values[start:start + chunk_size])
-        if all(result[label] for label in labels):
-            break
-    return {label: tuple(sorted(values)) for label, values in result.items()}
-
-def make_pipe_category_outcome(
-    table_name: str,
-    labels: tuple[str, ...],
-):
-    """生成从特码生肖反推结构化 content 标签的 outcome_loader。"""
-
-    def loader(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-        zodiac = special_zodiac_from_number_map(row, conn)
-        mapping = build_pipe_value_map(conn, table_name, labels)
-        return category_outcome_from_map(zodiac, mapping, labels)
-
-    return loader
 
 
-def qinqi_outcome_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
-    """根据特码生肖推导琴棋书画标签。"""
-    zodiac = special_zodiac_from_number_map(row, conn)
-    return category_outcome_from_map(zodiac, build_qinqi_value_map(conn), ("琴", "棋", "书", "画"))
 
 
-def format_head_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> list[str]:
-    """3头中特接口格式：`头|号码列表` 的 JSON 数组。"""
-    return format_fixed_groups("头", HEAD_NUMBER_MAP)(labels, _)
 
 
-def format_tail_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> list[str]:
-    """绝杀一尾接口格式：`尾|号码列表` 的 JSON 数组。"""
-    return format_fixed_groups("尾", TAIL_NUMBER_MAP)(labels, _)
 
 
-def format_size_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> list[str]:
-    """大小中特接口格式：`大/小|号码列表` 的 JSON 数组。"""
-    return format_fixed_groups("大小", SIZE_NUMBER_MAP)(labels, _)
 
 
-def format_half_wave_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> list[str]:
-    """绝杀半波接口格式：`半波|号码列表` 的 JSON 数组。"""
-    return format_fixed_groups("波色单双", HALF_WAVE_NUMBER_MAP)(labels, _)
 
 
-def format_parity_groups(labels: tuple[str, ...], _: sqlite3.Connection) -> list[str]:
-    """单双码接口格式：`单/双|号码列表` 的 JSON 数组。"""
-    return format_fixed_groups("单双", PARITY_NUMBER_MAP)(labels, _)
+
 
 
 def format_wave_csv(labels: tuple[str, ...], _: sqlite3.Connection) -> str:
@@ -566,71 +354,14 @@ def format_wave_csv(labels: tuple[str, ...], _: sqlite3.Connection) -> str:
     return ",".join(labels)
 
 
-def format_zodiac_csv(labels: tuple[str, ...], _: sqlite3.Connection) -> str:
-    """生肖列表历史格式为英文逗号拼接。"""
-    return ",".join(labels)
 
 
-def format_zodiac_groups(table_name: str, labels: tuple[str, ...]):
-    """返回 `标签|生肖列表` 结构化 content formatter。"""
-
-    def formatter(selected: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-        mapping = build_pipe_value_map(conn, table_name, labels)
-        return [f"{label}|{','.join(mapping.get(label, ()))}" for label in selected]
-
-    return formatter
 
 
-def format_qinqi_content(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-    """琴棋书画返回 title（标签）和 content（展开后的生肖）。"""
-    mapping = build_qinqi_value_map(conn)
-    values: list[str] = []
-    for label in labels:
-        values.extend(mapping.get(label, ()))
-    return {
-        "title": ",".join(labels),
-        "content": ",".join(values),
-    }
 
 
-def format_xiao_pair(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
-    """单双四肖原表使用 xiao_1/xiao_2，两组各 4 个生肖。"""
-    return {
-        "xiao_1": ",".join(labels[:4]),
-        "xiao_2": ",".join(labels[4:8]),
-    }
 
 
-def format_split_zodiac_columns(
-    columns: tuple[str, ...],
-    widths: tuple[int, ...],
-    codes_per_label: int = 0,
-):
-    """按历史列结构回填生肖分组，必要时补出每个生肖对应的固定号码。
-    例如：
-    - `家野4肖` 需要输出 `{"jia": "猪,鸡,羊,牛", "ye": "鼠,龙,虎,蛇"}`
-    - `3组3肖6码` 需要输出 `{"zu1": "[\"猴|34,46\", ...]" , ...}`
-    """
-
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-        result: dict[str, str] = {}
-        index = 0
-        for column, width in zip(columns, widths):
-            group_labels = labels[index:index + width]
-            index += width
-            if codes_per_label > 0:
-                result[column] = json.dumps(
-                    [
-                        f"{label}|{','.join(get_zodiac_numbers(conn, label)[:codes_per_label])}"
-                        for label in group_labels
-                    ],
-                    ensure_ascii=False,
-                )
-            else:
-                result[column] = ",".join(group_labels)
-        return result
-
-    return formatter
 
 
 def format_split_tail_columns(columns: tuple[str, ...], widths: tuple[int, ...]):
@@ -648,53 +379,8 @@ def format_split_tail_columns(columns: tuple[str, ...], widths: tuple[int, ...])
     return formatter
 
 
-def format_split_number_columns(columns: tuple[str, ...], widths: tuple[int, ...]):
-    """按列宽把号码集合拆回历史表结构，例如 `dan/shuang` 两列各 16 码。"""
-
-    def formatter(labels: tuple[str, ...], _: sqlite3.Connection) -> dict[str, str]:
-        result: dict[str, str] = {}
-        index = 0
-        for column, width in zip(columns, widths):
-            result[column] = ",".join(labels[index:index + width])
-            index += width
-        return result
-
-    return formatter
 
 
-def format_xiao_code_columns(
-    xiao_column: str,
-    code_column: str,
-    code_count: int,
-):
-    """根据选中的生肖生成对应号码列，保持 `xiao/code` 历史表结构。"""
-
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-        # 一次查询获取全部生肖号码映射，避免逐标签重复查询 fixed_data
-        all_zodiac_map = load_fixed_value_map(conn, "生肖")
-        per_zodiac_numbers: dict[str, list[str]] = {}
-        for label in labels:
-            per_zodiac_numbers[label] = list(all_zodiac_map.get(label, ()))
-
-        selected_codes: list[str] = []
-        index = 0
-        while len(selected_codes) < code_count and index < 5:
-            for label in labels:
-                numbers = per_zodiac_numbers.get(label, [])
-                if index < len(numbers):
-                    code = numbers[index]
-                    if code not in selected_codes:
-                        selected_codes.append(code)
-                        if len(selected_codes) == code_count:
-                            break
-            index += 1
-
-        return {
-            xiao_column: ",".join(labels),
-            code_column: ",".join(selected_codes),
-        }
-
-    return formatter
 
 
 def format_qianhou_texiao_columns(
@@ -756,9 +442,6 @@ def mixed_xiao_tail_content_loader(
     return loader
 
 
-def parse_mixed_dimension_content(content: str) -> tuple[str, ...]:
-    """解析内部混合标签，当前用于 `生肖 + 尾数` 组合玩法。"""
-    return tuple(value.strip() for value in content.split(",") if value.strip())
 
 
 def mixed_xiao_tail_outcome_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
@@ -766,14 +449,8 @@ def mixed_xiao_tail_outcome_from_row(row: sqlite3.Row, conn: sqlite3.Connection)
     return f"肖:{special_zodiac_from_number_map(row, conn)}|尾:{special_tail_from_row(row, conn)}"
 
 
-def mixed_dimension_contains_hit(outcome: str, labels: tuple[str, ...]) -> bool:
-    """组合玩法命中：任一真实命中原子落入预测标签集合。"""
-    return any(value in labels for value in str(outcome or "").split("|") if value)
 
 
-def mixed_dimension_excludes_hit(outcome: str, labels: tuple[str, ...]) -> bool:
-    """组合绝杀玩法命中：所有真实命中原子都没有落入预测标签集合。"""
-    return not mixed_dimension_contains_hit(outcome, labels)
 
 
 def _content_category_pool(conn: sqlite3.Connection, table_name: str, content_column: str = "content") -> list[str]:
@@ -855,61 +532,16 @@ def format_mixed_xiao_tail_columns(
     return formatter
 
 
-def get_zodiac_numbers(conn: sqlite3.Connection, zodiac: str) -> list[str]:
-    """从固定映射表读取生肖对应号码。"""
-    mapping = load_fixed_value_map(conn, "生肖", (zodiac,))
-    return list(mapping.get(zodiac, ()))
 
 
-def format_zodiac_one_code(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-    """7肖7码：每个生肖带 1 个代表号码。"""
-    result: list[str] = []
-    for label in labels:
-        numbers = get_zodiac_numbers(conn, label)
-        result.append(f"{label}|{numbers[0] if numbers else ''}")
-    return result
 
 
-def format_zodiac_two_codes(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-    """4肖8码：每个生肖带 2 个代表号码。"""
-    result: list[str] = []
-    for label in labels:
-        numbers = get_zodiac_numbers(conn, label)[:2]
-        result.append(f"{label}|{','.join(numbers)}")
-    return result
 
 
-def format_zodiac_all_codes(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-    """Return `zodiac|number-list` rows using every fixed number for each zodiac."""
-    result: list[str] = []
-    for label in labels:
-        numbers = get_zodiac_numbers(conn, label)
-        result.append(f"{label}|{','.join(numbers)}")
-    return result
 
 
-def format_9x12(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
-    """9肖12码：输出 9 个生肖和 12 个号码。"""
-    selected_codes: list[str] = []
-    per_zodiac_numbers = {label: get_zodiac_numbers(conn, label) for label in labels}
-    index = 0
-    while len(selected_codes) < 12 and index < 5:
-        for label in labels:
-            numbers = per_zodiac_numbers.get(label, [])
-            if index < len(numbers):
-                selected_codes.append(numbers[index])
-                if len(selected_codes) == 12:
-                    break
-        index += 1
-    return {
-        "xiao": ",".join(labels),
-        "code": ",".join(selected_codes),
-    }
 
 
-def format_24_numbers(labels: tuple[str, ...], _: sqlite3.Connection) -> str:
-    """24码历史格式为 24 个号码逗号拼接。"""
-    return ",".join(labels)
 
 
 def format_title_jiexi(title: str):
@@ -929,9 +561,6 @@ SEGMENT_ORDER = tuple(f"{index}段" for index in range(1, 8))
 XIONGJI_LABELS = ("凶丑", "吉美")
 
 
-def special_segment_from_row(row: sqlite3.Row, _: sqlite3.Connection) -> str:
-    number = int(special_code_from_res_code(row["res_code"] or ""))
-    return f"{((number - 1) // 7) + 1}段"
 
 
 def special_xiongjiliuxiao_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
@@ -949,19 +578,6 @@ def special_xiongjiliuxiao_from_row(row: sqlite3.Row, conn: sqlite3.Connection) 
     return ""
 
 
-def format_segment_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
-    mapping = load_fixed_value_map(conn, "7段", labels)
-    if not any(mapping.values()):
-        mapping = {
-            "1段": tuple(f"{number:02d}" for number in range(1, 8)),
-            "2段": tuple(f"{number:02d}" for number in range(8, 15)),
-            "3段": tuple(f"{number:02d}" for number in range(15, 22)),
-            "4段": tuple(f"{number:02d}" for number in range(22, 29)),
-            "5段": tuple(f"{number:02d}" for number in range(29, 36)),
-            "6段": tuple(f"{number:02d}" for number in range(36, 43)),
-            "7段": tuple(f"{number:02d}" for number in range(43, 50)),
-        }
-    return [f"{label}|{','.join(mapping.get(label, ()))}" for label in labels]
 
 
 def format_xiongjiliuxiao_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
@@ -1166,48 +782,23 @@ def _table_output_columns(
 text_mapping.table_output_columns = _table_output_columns
 
 
-def _latest_window_metadata(
-    conn: sqlite3.Connection,
-    table_name: str,
-) -> dict[str, Any]:
-    """读取连期表最新一组窗口元信息，用于保持输出结构稳定。"""
-    if not table_exists(conn, table_name):
-        return {}
 
-    columns = set(_table_column_list(conn, table_name))
-    selected_columns = [
-        column for column in ("start", "end", "image_url")
-        if column in columns
-    ]
-    if not selected_columns:
-        return {}
 
-    order_parts: list[str] = []
-    if "year" in columns:
-        order_parts.append("CAST(year AS INTEGER) DESC")
-    if "term" in columns:
-        order_parts.append("CAST(term AS INTEGER) DESC")
-    if "source_record_id" in columns:
-        order_parts.append(
-            "CAST(COALESCE(NULLIF(CAST(source_record_id AS TEXT), ''), '0') AS INTEGER) DESC"
-        )
-    elif "id" in columns:
-        order_parts.append(
-            "CAST(COALESCE(NULLIF(CAST(id AS TEXT), ''), '0') AS INTEGER) DESC"
-        )
-    order_clause = f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
+image.table_exists = table_exists
+image.table_columns = _table_column_list
+format_window_content = image.format_window_content
 
-    row = predict_repository.load_latest_columns_by_issue(
-        conn,
-        table_name,
-        columns=tuple(selected_columns),
-    )
-    if not row:
-        return {}
-    return {
-        column: row[column]
-        for column in selected_columns
-    }
+jiexi_content_from_row = content_columns.jiexi_content_from_row
+tail_code_content_from_row = content_columns.tail_code_content_from_row
+xiao_code_content_from_row = content_columns.xiao_code_content_from_row
+black_white_content_from_row = content_columns.black_white_content_from_row
+join_columns_content_loader = content_columns.join_columns_content_loader
+parsed_columns_content_loader = content_columns.parsed_columns_content_loader
+tail_columns_content_loader = content_columns.tail_columns_content_loader
+parse_tail_digit_content = content_columns.parse_tail_digit_content
+parse_zodiac_chars = content_columns.parse_zodiac_chars
+parse_wave_chars = content_columns.parse_wave_chars
+parse_literal_label_content = content_columns.parse_literal_label_content
 
 
 def _is_text_history_title(title: str) -> bool:
@@ -1267,6 +858,56 @@ def format_element_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> 
         result.append(f"{label}|{','.join(numbers)}")
     return result
 
+
+# Static configurations capture these callables at import time. Rebind category
+# implementations after legacy local definitions so configurations use one source.
+label_for_special_number = size_parity.label_for_special_number
+format_fixed_groups = size_parity.format_fixed_groups
+special_head_from_row = size_parity.special_head_from_row
+special_tail_from_row = size_parity.special_tail_from_row
+special_parity_from_row = size_parity.special_parity_from_row
+special_size_from_row = size_parity.special_size_from_row
+special_half_wave_from_row = size_parity.special_half_wave_from_row
+special_wave_from_row = size_parity.special_wave_from_row
+special_combined_parity_from_row = size_parity.special_combined_parity_from_row
+special_combined_size_from_row = size_parity.special_combined_size_from_row
+format_head_groups = size_parity.format_head_groups
+format_tail_groups = size_parity.format_tail_groups
+format_size_groups = size_parity.format_size_groups
+format_half_wave_groups = size_parity.format_half_wave_groups
+format_parity_groups = size_parity.format_parity_groups
+
+parse_mixed_dimension_content = mixed.parse_mixed_dimension_content
+mixed_dimension_contains_hit = mixed.mixed_dimension_contains_hit
+mixed_dimension_excludes_hit = mixed.mixed_dimension_excludes_hit
+
+get_zodiac_numbers = zodiac.get_zodiac_numbers
+format_zodiac_one_code = zodiac.format_zodiac_one_code
+format_zodiac_two_codes = zodiac.format_zodiac_two_codes
+format_zodiac_all_codes = zodiac.format_zodiac_all_codes
+format_9x12 = zodiac.format_9x12
+format_zodiac_csv = zodiac.format_zodiac_csv
+format_xiao_pair = zodiac.format_xiao_pair
+format_split_zodiac_columns = zodiac.format_split_zodiac_columns
+format_xiao_code_columns = zodiac.format_xiao_code_columns
+
+format_text_history_mapping = text_mapping.format_text_history_mapping
+random_text_pool_row = text_mapping.random_text_pool_row
+format_text_pool_jiexi = text_mapping.format_text_pool_jiexi
+format_humor_tail_groups = text_mapping.format_humor_tail_groups
+format_juzi_title = text_mapping.format_juzi_title
+
+special_number_from_row = number.special_number_from_row
+format_24_numbers = number.format_24_numbers
+special_segment_from_row = number.special_segment_from_row
+format_segment_groups = number.format_segment_groups
+format_split_number_columns = number.format_split_number_columns
+
+make_pipe_category_outcome = structured_mapping.make_pipe_category_outcome
+qinqi_outcome_from_row = structured_mapping.qinqi_outcome_from_row
+format_zodiac_groups = structured_mapping.format_zodiac_groups
+format_qinqi_content = structured_mapping.format_qinqi_content
+format_window_content = image.format_window_content
 
 PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
     "3tou": PredictionConfig(
@@ -2953,22 +2594,6 @@ def _make_text_column_wave_config(
     )
 
 
-def format_window_content(base_formatter, table_name: str):
-    """给连期表恢复 `start/end/content` 输出结构。
-    预测脚本无法预知真实下一段窗口的 end，这里只生成 content，start/end 留空给调用方
-    或上游排期逻辑填充；历史回测仍按表内已有 start/end 展开的逐期开奖行计算。
-    """
-
-    def formatter(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, Any]:
-        metadata = _latest_window_metadata(conn, table_name)
-        return {
-            "start": str(metadata.get("start") or ""),
-            "end": str(metadata.get("end") or ""),
-            "content": base_formatter(labels, conn),
-            "image_url": metadata.get("image_url"),
-        }
-
-    return formatter
 
 
 def _make_window_config(
@@ -4057,50 +3682,14 @@ def build_title_prediction_configs(db_path: str | Path = DEFAULT_DB_TARGET) -> d
     - 只生成本地已归一化为 mode_payload_xxx 的表，确保回测和预测都使用本地数据。
     - 当前是第一阶段自动化覆盖，复杂文案和多字段复合玩法留给后续分段处理。
     """
-    try:
-        conn = db_connect(db_path)
-    except Exception:
-        return {}
+    from predict.registry_builder import build_dynamic_prediction_configs
 
-    with conn:
-        if not table_exists(conn, "mode_payload_tables"):
-            return {}
-
-        existing_modes_ids = {config.default_modes_id for config in PREDICTION_CONFIGS.values()}
-        existing_titles = {config.title for config in PREDICTION_CONFIGS.values()}
-        generated: dict[str, PredictionConfig] = {}
-
-        rows = predict_repository.load_mode_payload_table_rows(conn)
-        for row in rows:
-            modes_id = int(row["modes_id"])
-            title = str(row["title"] or "").strip()
-            table_name = str(row["table_name"] or "").strip()
-            if (
-                not title
-                or modes_id in existing_modes_ids
-                or title in existing_titles
-                or not table_exists(conn, table_name)
-                or int(row["record_count"] or 0) <= 0
-            ):
-                continue
-
-            columns = _table_columns(conn, table_name)
-            business_columns = _business_columns(conn, table_name)
-
-            if _is_first_stage_supported_table(columns):
-                config = _classify_title_config(title, table_name, modes_id, _sample_content(conn, table_name))
-            else:
-                config = _classify_second_stage_config(
-                    conn,
-                    title,
-                    table_name,
-                    modes_id,
-                    business_columns,
-                )
-            if config is not None:
-                generated[config.key] = config
-
-        return generated
+    return build_dynamic_prediction_configs(
+        db_path,
+        static_configs=PREDICTION_CONFIGS,
+        classify_first_stage=_classify_title_config,
+        classify_second_stage=_classify_second_stage_config,
+    )
 
 
 _title_configs_loaded = False

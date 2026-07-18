@@ -45,6 +45,7 @@ def test_twjinniu_site_uses_dedicated_blueprint_by_web_id():
         48,
         49,
         50,
+        51,
         53,
         56,
         66,
