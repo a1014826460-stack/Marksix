@@ -21,6 +21,7 @@ yarn-error.log*
 *.log
 *.bak
 *.psd
+.worktrees/
 
 # env files (allow .env.example template)
 .env
