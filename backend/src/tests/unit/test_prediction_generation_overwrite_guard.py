@@ -102,6 +102,29 @@ def test_created_table_bootstrap_can_defer_commit(monkeypatch):
     assert commit_calls == []
 
 
+def test_runtime_created_row_write_rejects_missing_table_without_schema_ddl(monkeypatch):
+    class _Conn:
+        engine = "postgres"
+
+    monkeypatch.setattr(created_prediction_store, "schema_table_exists", lambda *_args: False)
+    monkeypatch.setattr(
+        created_prediction_store,
+        "ensure_created_prediction_table",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("runtime write must not execute DDL")),
+    )
+
+    try:
+        created_prediction_store.upsert_created_prediction_row(
+            _Conn(),
+            "mode_payload_44",
+            {"type": "3", "year": "2026", "term": "133", "web": "4", "content": "value"},
+        )
+    except RuntimeError as error:
+        assert "database.versioned_migrations" in str(error)
+    else:
+        raise AssertionError("missing created table must require an explicit migration")
+
+
 def test_generate_mode_331_row_persists_x7m14(monkeypatch):
     monkeypatch.setattr(
         service,

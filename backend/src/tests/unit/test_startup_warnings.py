@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app_http import server
+from app_http import server, startup_warnings
 
 
 def test_run_server_logs_startup_risk_warnings_without_starting_scheduler():
@@ -20,3 +20,13 @@ def test_run_server_logs_startup_risk_warnings_without_starting_scheduler():
 
     warnings.assert_called_once_with()
     http_server.return_value.server_close.assert_called_once_with()
+
+
+def test_log_startup_risk_warnings_reports_dedicated_scheduler_worker():
+    with patch("app_http.startup_warnings.logging.getLogger") as get_logger, \
+         patch("app_http.startup_warnings.has_insecure_bootstrap_admin_password", return_value=False):
+        startup_warnings.log_startup_risk_warnings()
+
+    get_logger.return_value.warning.assert_any_call(
+        "Run the scheduler-worker service exactly once (or use its database task locks); HTTP API instances do not execute scheduler timers."
+    )

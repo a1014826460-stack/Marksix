@@ -670,6 +670,25 @@ VERIFY_HOST=www.twsaimahui.com ./deploy/verify.sh
 
 ## PostgreSQL 备份
 
+调度器通过 `scheduler-worker` 执行 `pg_dump -Fc` 备份；`backend/data/backups` 必须挂载到持久化磁盘或对象存储同步目录，不能只依赖容器可写层。备份开始前会检查可用空间，`pg_dump` 与 `pg_restore --list` 都有超时，并在完成后保存 SHA-256 校验和。
+
+关键运行配置：
+
+- `database.backup_timeout_seconds`：`pg_dump` 最大运行时间，默认 900 秒。
+- `database.backup_verify_timeout_seconds`：归档校验最大时间，默认 60 秒。
+- `database.backup_min_free_space_mb`：开始前需要的最小可用空间，默认 1024 MiB。
+- `database.backup_retention_days`：保留天数；清理前先确认备份已复制到异地存储。
+
+部署前先运行显式 schema 迁移；API 和 worker 不会自行建表：
+
+```bash
+docker compose run --rm db-migrate
+```
+
+该迁移同时对齐 `created.mode_payload_*` 镜像：它使用 `public.mode_payload_*` 实际表与
+`mode_payload_tables` 元数据的并集。新增预测模块或发现 `created` 缺表时，执行该迁移，
+不要重启 API/worker 期待运行时自动建表或补列。
+
 ```bash
 docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%d).sql
 ```
@@ -679,6 +698,7 @@ docker compose exec postgres pg_dump -U postgres liuhecai > backup_$(date +%Y%m%
 ```bash
 docker compose exec postgres pg_dump -U postgres liuhecai -F c -f /tmp/backup.dump
 docker compose cp postgres:/tmp/backup.dump ./backup_$(date +%Y%m%d).dump
+sha256sum ./backup_$(date +%Y%m%d).dump
 ```
 
 ## PostgreSQL 恢复
@@ -695,6 +715,26 @@ docker compose exec -T postgres psql -U postgres liuhecai < backup_20250101.sql
 docker compose cp ./backup_20250101.dump postgres:/tmp/restore.dump
 docker compose exec postgres pg_restore -U postgres -d liuhecai --clean --if-exists /tmp/restore.dump
 ```
+
+## 备份恢复演练
+
+至少每季度在隔离的测试数据库进行一次演练，不能直接在生产库验证恢复：
+
+```bash
+# 1. 校验归档是否可读，及其校验和是否匹配备份任务记录。
+pg_restore --list ./backup_20250101.dump >/dev/null
+sha256sum ./backup_20250101.dump
+
+# 2. 创建隔离目标并恢复；实际名称按运维环境调整。
+createdb liuhecai_restore_drill
+pg_restore --clean --if-exists --no-owner -d liuhecai_restore_drill ./backup_20250101.dump
+
+# 3. 检查关键表和最近开奖记录，记录恢复耗时、RPO 与 RTO。
+psql -d liuhecai_restore_drill -c "SELECT COUNT(*) FROM lottery_draws;"
+dropdb liuhecai_restore_drill
+```
+
+演练记录应包含：备份文件名、SHA-256、恢复开始/结束时间、校验查询结果、负责人与发现的问题。任何校验失败都应保留归档、停止清理，并通过告警渠道处理。
 
 ## 运维常用命令
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -120,6 +121,60 @@ def _build_pg_dump_command(db_path: str | Path, output_path: Path) -> tuple[list
     return command, env, db_name
 
 
+def _timeout_seconds(db_path: str | Path, key: str, fallback: int) -> int:
+    try:
+        return max(1, int(_cfg(db_path, key, fallback)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _ensure_backup_space(db_path: str | Path, backup_dir: Path) -> None:
+    try:
+        minimum_mb = max(0, int(_cfg(db_path, "database.backup_min_free_space_mb", 1024)))
+    except (TypeError, ValueError):
+        minimum_mb = 1024
+    required_bytes = minimum_mb * 1024 * 1024
+    available_bytes = shutil.disk_usage(backup_dir).free
+    if available_bytes < required_bytes:
+        raise RuntimeError(
+            "PostgreSQL backup aborted: insufficient free space "
+            f"({available_bytes} bytes available, {required_bytes} bytes required)"
+        )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_backup_archive(db_path: str | Path, output_path: Path, env: dict[str, str]) -> None:
+    configured = str(_cfg(db_path, "database.pg_restore_path", "pg_restore")).strip() or "pg_restore"
+    pg_restore = shutil.which(configured)
+    if pg_restore is None:
+        raise RuntimeError(
+            "pg_restore not found. Install postgresql-client or set system_config "
+            "database.pg_restore_path to an absolute path."
+        )
+    timeout_seconds = _timeout_seconds(db_path, "database.backup_verify_timeout_seconds", 60)
+    try:
+        completed = subprocess.run(
+            [pg_restore, "--list", str(output_path)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"pg_restore verification timed out after {timeout_seconds}s") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or f"exit code {completed.returncode}").strip()
+        raise RuntimeError(f"pg_restore verification failed: {detail}")
+
+
 def cleanup_old_backups(db_path: str | Path, backup_dir: Path, db_name: str) -> int:
     retention_days = max(1, int(_cfg(db_path, "database.backup_retention_days", 30)))
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
@@ -170,6 +225,7 @@ def run_postgres_backup(db_path: str | Path, payload: dict[str, Any] | None = No
 
     backup_dir = _backup_dir(db_path)
     backup_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_backup_space(db_path, backup_dir)
 
     timestamp = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8))).strftime("%Y%m%d_%H%M%S")
     probe_output = backup_dir / "probe.dump"
@@ -178,13 +234,22 @@ def run_postgres_backup(db_path: str | Path, payload: dict[str, Any] | None = No
     command[-1] = str(output_path)
 
     _logger.info("PostgreSQL backup starting: database=%s output=%s", db_name, output_path)
-    completed = subprocess.run(
-        command,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    timeout_seconds = _timeout_seconds(db_path, "database.backup_timeout_seconds", 900)
+    try:
+        completed = subprocess.run(
+            command,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise RuntimeError(f"pg_dump timed out after {timeout_seconds}s") from exc
     if completed.returncode != 0:
         try:
             output_path.unlink(missing_ok=True)
@@ -193,8 +258,18 @@ def run_postgres_backup(db_path: str | Path, payload: dict[str, Any] | None = No
         detail = (completed.stderr or completed.stdout or f"exit code {completed.returncode}").strip()
         raise RuntimeError(f"pg_dump failed: {detail}")
 
+    try:
+        _verify_backup_archive(db_path, output_path, env)
+    except Exception:
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
     removed = cleanup_old_backups(db_path, backup_dir, db_name)
     size_bytes = output_path.stat().st_size
+    checksum = _sha256_file(output_path)
     _logger.info(
         "PostgreSQL backup completed: file=%s size=%d cleanup_removed=%d",
         output_path,
@@ -206,6 +281,8 @@ def run_postgres_backup(db_path: str | Path, payload: dict[str, Any] | None = No
         "database": db_name,
         "path": str(output_path),
         "size_bytes": size_bytes,
+        "sha256": checksum,
+        "archive_verified": True,
         "cleanup_removed": removed,
         "payload": payload or {},
     }

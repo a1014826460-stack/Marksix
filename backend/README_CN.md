@@ -50,6 +50,7 @@ backend/src/
 │   ├── bootstrap.py                # ensure_admin_tables 总入口
 │   ├── seed.py                     # 默认数据播种
 │   ├── migrations.py               # 轻量列迁移
+│   ├── versioned_migrations.py     # PostgreSQL 显式版本化迁移账本
 │   ├── summary.py                  # 数据库内容摘要
 │   └── schema/                     # 按领域拆分的建表文件
 │       ├── auth.py                 # admin_users / admin_sessions
@@ -170,14 +171,14 @@ backend/src/main.py
 启动顺序：
 
 1. 从 `DATABASE_URL` 或配置中的 PostgreSQL DSN 解析正式运行数据库目标。
-2. 调用 `ensure_admin_tables()` 创建核心表并初始化基础数据。
-3. 调用 `init_logging()` 启用结构化文件日志和基于数据库的错误日志。
-4. 启动 HTTP 服务。
-5. 启动 `CrawlerScheduler`，用于进程内定时任务。
+2. 先执行 `python -m database.versioned_migrations --db-path "$env:DATABASE_URL"`；Docker Compose 会由 `db-migrate` 服务执行同一命令并持有 PostgreSQL advisory lock。
+3. API/worker 的 `ensure_admin_tables()` 只校验 `schema_migrations` 账本，不会在启动或请求路径执行结构性 DDL。
+4. 调用 `init_logging()` 启用结构化文件日志和基于数据库的错误日志。
+5. 启动 HTTP 服务及独立的 `scheduler-worker`；worker 持有租约后负责 timer 生命周期。
 
 重要限制：
 
-当前调度器仍然是基于 `threading.Timer` 的进程内定时调度器。它会在进程重启后通过扫描数据库状态恢复任务，但它不是分布式调度器，也不是持久化调度器。
+`scheduler-worker` 持有数据库租约后运行 `CrawlerScheduler`；持久化任务表负责可恢复的手动任务、预测、备份和台湾精准开盘，香港/澳门的精确检查仍使用 worker 内存 timer。不得运行多个活跃 worker；失去租约必须停止 timer。
 
 ---
 
@@ -697,8 +698,7 @@ backend/src/runtime_config.py
 
 函数：
 
-- `ensure_system_config_table()`
-- `seed_system_config_defaults()`
+- `ensure_system_config_table()`、`seed_system_config_defaults()`：仅供 SQLite bootstrap 或 PostgreSQL 显式版本化迁移调用；API、worker 和请求路径不得调用。
 - `get_config()`
 - `get_config_from_conn()`
 - `list_system_configs()`
@@ -715,6 +715,8 @@ backend/src/runtime_config.py
 数据库连接的启动参数不能只存在数据库中。
 
 因此 PostgreSQL DSN 仍然需要从环境变量 `DATABASE_URL` 或启动参数中读取；运行时普通配置则由 `system_config` 与 `runtime_config.py` 默认值共同提供。
+
+`created.mode_payload_*` 镜像表同样只会在显式版本化迁移中按 `public.mode_payload_*` 的实际表集合与 `mode_payload_tables` 元数据并集进行创建或对齐。预测生成、API 和 worker 不会在运行时建表或补列；若发现缺失镜像，应先执行迁移命令。
 
 ---
 

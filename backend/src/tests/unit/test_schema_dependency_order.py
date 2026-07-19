@@ -64,7 +64,9 @@ def test_site_permissions_are_created_only_after_managed_sites_exist():
     assert "REFERENCES managed_sites(id) ON DELETE CASCADE" in site_permissions_sql
 
 
-def test_postgres_bootstrap_orders_auth_lottery_sites_before_dependent_tables(monkeypatch):
+def test_postgres_migration_baseline_orders_auth_lottery_sites_before_dependent_tables(monkeypatch):
+    from database.versioned_migrations import _baseline_schema
+
     calls: list[str] = []
 
     class _BootstrapConnection:
@@ -76,7 +78,6 @@ def test_postgres_bootstrap_orders_auth_lottery_sites_before_dependent_tables(mo
         def __exit__(self, *_args):
             return None
 
-    monkeypatch.setattr("database.bootstrap.connect", lambda _target: _BootstrapConnection())
     monkeypatch.setattr("database.bootstrap.seed_system_config_defaults", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("database.bootstrap.ensure_system_config_table", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("database.bootstrap._sync_legacy_image_assets", lambda *_args, **_kwargs: None)
@@ -95,8 +96,7 @@ def test_postgres_bootstrap_orders_auth_lottery_sites_before_dependent_tables(mo
             lambda *_args, _name=name, **_kwargs: calls.append(_name),
         )
 
-    monkeypatch.setattr("database.bootstrap._initialized_targets", set())
-    ensure_admin_tables("postgresql://test:test@localhost:5432/test")
+    _baseline_schema(_BootstrapConnection())
 
     assert calls[:3] == ["ensure_auth_tables", "ensure_lottery_tables", "ensure_site_tables"]
 

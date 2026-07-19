@@ -211,3 +211,7 @@ python -m pytest -q
 - `scheduler_worker` 必须持有 `scheduler_worker_leases` 中的独占租约后才可启动 timer；续租失败时必须停止全部 timer 并释放租约，避免多个 worker 重复执行进程内调度。
 - 台湾彩精准开盘只允许使用持久化 `taiwan_precise_open` 任务：`CrawlerScheduler.start()` 负责确保该任务存在，内存精准 timer 只覆盖香港/澳门，禁止两条路径重复开盘或回填。
 - 管理员 session 数据库只保存 `token_hash` 和不可逆的旧列标记，禁止保存可直接使用的 bearer token；登录 JSON 中的 `token` 暂为兼容保留，同时由 HttpOnly、SameSite=Strict cookie 支持同源管理端请求。
+- PostgreSQL 的结构性 DDL 只允许由 `python -m database.versioned_migrations --db-path "<DATABASE_URL>"` 执行；迁移命令必须使用 `schema_migrations` 账本与 PostgreSQL transaction advisory lock。API/worker 启动和请求路径只可校验迁移状态，不得建表、建索引、加/删列。
+- `created.mode_payload_*` 镜像表只允许由显式迁移按 `public.mode_payload_*` 实际表与 `mode_payload_tables` 元数据并集创建或对齐；预测生成、API 和 worker 发现缺表时必须失败并提示执行迁移，不得在运行时修复结构。
+- `runtime_config`、日志持久化及认证/管理请求路径不得调用任何 `ensure_*_table` 或配置 seed；表和默认配置只由 versioned migration 的 baseline 创建。缺失 schema 必须显式失败并要求执行迁移，不能在请求中修复。
+- PostgreSQL 备份必须在启动前检查 `database.backup_min_free_space_mb`，对 `pg_dump` 和 `pg_restore --list` 分别设置超时，成功后保存 SHA-256 与 archive verification 状态；恢复验证只允许在隔离数据库演练，不能用生产库试恢复。

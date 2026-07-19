@@ -181,3 +181,24 @@ def test_structured_log_formatter_redacts_sensitive_extra_values():
     assert "session-token" not in serialized
     assert payload["req_params"]["body"]["password"] == "***REDACTED***"
     assert payload["result"]["token"] == "***REDACTED***"
+
+
+def test_daily_prediction_subprocess_log_does_not_include_database_password(monkeypatch):
+    from crawler import scheduler
+
+    logger = __import__("unittest.mock").mock.MagicMock()
+    monkeypatch.setattr(scheduler, "_crawler_logger", logger)
+    monkeypatch.setattr(
+        scheduler.subprocess,
+        "run",
+        lambda *_args, **_kwargs: type("Done", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
+
+    scheduler._run_daily_prediction_subprocess(
+        "postgresql://admin:subprocess-password@example.test/liuhecai",
+        3,
+    )
+
+    logged = " ".join(str(call) for call in logger.info.call_args_list)
+    assert "subprocess-password" not in logged
+    assert "***REDACTED***" in logged

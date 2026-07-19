@@ -427,6 +427,30 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "Retention days for scheduled PostgreSQL .dump backup files.",
         "is_secret": 0,
     },
+    "database.backup_timeout_seconds": {
+        "value": 900,
+        "value_type": "int",
+        "description": "Maximum pg_dump runtime in seconds before the scheduled backup is aborted.",
+        "is_secret": 0,
+    },
+    "database.backup_verify_timeout_seconds": {
+        "value": 60,
+        "value_type": "int",
+        "description": "Maximum pg_restore --list verification runtime in seconds.",
+        "is_secret": 0,
+    },
+    "database.backup_min_free_space_mb": {
+        "value": 1024,
+        "value_type": "int",
+        "description": "Minimum free disk space required before scheduled backup starts.",
+        "is_secret": 0,
+    },
+    "database.pg_restore_path": {
+        "value": "pg_restore",
+        "value_type": "string",
+        "description": "pg_restore executable path used to verify scheduled backup archives.",
+        "is_secret": 0,
+    },
     "database.pg_dump_path": {
         "value": "pg_dump",
         "value_type": "string",
@@ -593,11 +617,12 @@ def _deserialize_value(value_text: str, value_type: str) -> Any:
     return str(value_text or "")
 
 def ensure_system_config_table(conn: Any) -> None:
-    """确保系统配置表存在。
+    """仅供 bootstrap 或显式迁移创建系统配置表。
 
     根据当前连接的数据库引擎创建 ``system_config`` 表。SQLite 使用
     ``AUTOINCREMENT`` 主键，PostgreSQL 使用 ``BIGSERIAL`` 主键，其他字段保持一致。
-    如果表已存在，则不会修改已有表结构。
+    如果表已存在，则不会修改已有表结构。生产 API、worker 与请求路径禁止调用本函数；
+    PostgreSQL 仅允许通过 ``database.versioned_migrations`` 的显式迁移调用。
 
     Args:
         conn (Any): 数据库连接对象，需提供 ``engine`` 属性和 ``execute`` 方法。
@@ -624,7 +649,7 @@ def ensure_system_config_table(conn: Any) -> None:
     )
 
 def seed_system_config_defaults(conn: Any, *, now: str) -> None:
-    """将默认配置种子数据写入系统配置表。
+    """仅供 bootstrap 或显式迁移写入默认配置种子。
 
     遍历 ``CONFIG_DEFAULTS`` 中的所有配置项，仅在数据库中不存在对应 key 时插入默认值。
     已存在的配置不会被覆盖，避免覆盖管理员在后台或 API 中做出的修改。
@@ -634,7 +659,7 @@ def seed_system_config_defaults(conn: Any, *, now: str) -> None:
         now (str): 当前时间字符串，用于填充 ``created_at`` 和 ``updated_at`` 字段。
 
     Returns:
-        None: 该函数仅负责初始化缺失配置，不返回业务数据。
+        None: 该函数仅负责初始化缺失配置，不返回业务数据；生产请求路径禁止调用。
 
     Raises:
         TypeError: 当默认配置中的 JSON 值无法序列化时抛出。
@@ -772,8 +797,6 @@ def list_system_configs(
         Exception: 当数据库连接、建表、初始化或查询失败时由底层实现抛出。
     """
     with connect(db_path) as conn:
-        ensure_system_config_table(conn)
-        seed_system_config_defaults(conn, now=utc_now())
         rows = conn.execute(
             f"""
             SELECT key, value_text, value_type, description, is_secret, updated_at
@@ -838,7 +861,6 @@ def upsert_system_config(
     resolved_type = str(value_type or default_meta.get("value_type") or "string")
 
     with connect(db_path) as conn:
-        ensure_system_config_table(conn)
         timestamp = utc_now()
 
         # 读取旧值用于历史记录
@@ -1161,7 +1183,6 @@ def reset_config(db_path: str | Path, key: str, changed_by: str = "") -> dict[st
         raise ValueError(f"配置项 '{key}' 不存在默认值，无法恢复")
 
     with connect(db_path) as conn:
-        ensure_system_config_table(conn)
         # 读取旧值
         old_row = conn.execute(
             f"SELECT value_text FROM {CONFIG_TABLE_NAME} WHERE key = ? LIMIT 1",
@@ -1371,6 +1392,9 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
                 "logging.slow_call_warning_ms",
                 "auth.session_ttl_seconds",
                 "auth.password_iterations",
+                "database.backup_timeout_seconds",
+                "database.backup_verify_timeout_seconds",
+                "database.backup_min_free_space_mb",
             }
             if key in positive_int_keys and v < 0:
                 return False, f"'{key}' 不能为负数，当前值: {v}"

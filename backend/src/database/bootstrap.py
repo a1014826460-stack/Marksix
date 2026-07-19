@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from database.connection import connect, utc_now, auto_increment_primary_key
+from database.connection import connect, utc_now, auto_increment_primary_key, detect_database_engine
 from database.migrations import add_column_if_missing
 from database.seed import seed_bootstrap_data
 from database.schema.auth import ensure_auth_tables
@@ -30,6 +30,7 @@ from database.schema.legacy import (
 )
 from database.schema.indexes import ensure_indexes
 from runtime_config import ensure_system_config_table, seed_system_config_defaults
+from database.versioned_migrations import validate_runtime_schema
 
 # 按 db_target 维度记录已完成的初始化
 _initialized_targets: set[str] = set()
@@ -156,11 +157,39 @@ def _sync_legacy_image_assets(conn: Any) -> None:
         )
 
 
-def ensure_admin_tables(db_path: str | Path) -> None:
-    """确保所有管理表、索引和引导数据存在。
+def _apply_legacy_schema_bootstrap(conn: Any) -> None:
+    """Apply the historical schema bootstrap using an already-open connection."""
+    now = utc_now()
+    ensure_system_config_table(conn)
+    seed_system_config_defaults(conn, now=now)
 
-    编排 schema 创建、轻量迁移、索引创建和默认数据播种。
-    同一 db_path 可安全重复调用——后续调用直接返回。
+    pk_sql = auto_increment_primary_key("id", conn.engine)
+
+    ensure_auth_tables(conn, pk_sql)
+    ensure_lottery_tables(conn, pk_sql)
+    ensure_site_tables(conn, pk_sql)
+    ensure_scheduler_tables(conn, pk_sql)
+    ensure_prediction_tables(conn, pk_sql)
+    ensure_legacy_asset_tables(conn, pk_sql)
+    ensure_liubuzhong_table(conn, pk_sql)
+    ensure_site_specific_prediction_tables(conn, pk_sql)
+    ensure_twcaibawang_prediction_tables(conn, pk_sql)
+    ensure_audit_tables(conn, pk_sql)
+    ensure_log_tables(conn, pk_sql)
+    ensure_traffic_tables(conn, pk_sql)
+    ensure_config_history_tables(conn, pk_sql)
+    ensure_indexes(conn)
+    _sync_legacy_image_assets(conn)
+    seed_bootstrap_data(conn, now=now)
+
+
+def ensure_admin_tables(db_path: str | Path) -> None:
+    """Ensure test SQLite tables or validate production PostgreSQL migrations.
+
+    PostgreSQL API/worker request paths must not run structural DDL.  Production
+    schema changes are performed only by ``database.versioned_migrations``.
+    Explicit SQLite callers retain the historical bootstrap for tests and legacy
+    tooling.
     """
     global _initialized_targets
 
@@ -168,37 +197,13 @@ def ensure_admin_tables(db_path: str | Path) -> None:
     if target_key in _initialized_targets:
         return
 
-    now = utc_now()
+    if detect_database_engine(db_path) == "postgres":
+        validate_runtime_schema(db_path)
+        _initialized_targets.add(target_key)
+        return
+
     with connect(db_path) as conn:
-        # ── 1. 系统配置表（最先创建，后续播种依赖它） ──
-        ensure_system_config_table(conn)
-        seed_system_config_defaults(conn, now=now)
-
-        pk_sql = auto_increment_primary_key("id", conn.engine)
-
-        # ── 2. 各业务表组（按依赖顺序） ──
-        ensure_auth_tables(conn, pk_sql)
-        ensure_lottery_tables(conn, pk_sql)
-        ensure_site_tables(conn, pk_sql)
-        ensure_scheduler_tables(conn, pk_sql)
-        ensure_prediction_tables(conn, pk_sql)
-        ensure_legacy_asset_tables(conn, pk_sql)
-        ensure_liubuzhong_table(conn, pk_sql)
-        ensure_site_specific_prediction_tables(conn, pk_sql)
-        ensure_twcaibawang_prediction_tables(conn, pk_sql)
-        ensure_audit_tables(conn, pk_sql)
-        ensure_log_tables(conn, pk_sql)
-        ensure_traffic_tables(conn, pk_sql)
-        ensure_config_history_tables(conn, pk_sql)
-
-        # ── 3. 索引（表就绪后创建） ──
-        ensure_indexes(conn)
-
-        # ── 4. Legacy 图片同步（受配置控制） ──
-        _sync_legacy_image_assets(conn)
-
-        # ── 5. 播种引导数据 ──
-        seed_bootstrap_data(conn, now=now)
+        _apply_legacy_schema_bootstrap(conn)
 
     # 只有全部成功后才标记该 target 已初始化
     _initialized_targets.add(target_key)

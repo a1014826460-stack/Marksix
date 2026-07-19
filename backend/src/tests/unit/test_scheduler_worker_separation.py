@@ -63,6 +63,24 @@ def test_scheduler_uses_taiwan_durable_task_instead_of_a_precise_timer():
     assert "taiwan_precise_open" in source
 
 
+def test_rescheduling_precise_checks_does_not_run_taiwan_open_from_an_in_memory_timer(monkeypatch):
+    from crawler import scheduler
+
+    runner = scheduler.CrawlerScheduler("postgresql://scheduler-test")
+    runner._running = True
+    monkeypatch.setattr(scheduler, "_cfg", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(scheduler, "_compute_hk_macau_default_next_time_ms", lambda *_args, **_kwargs: "")
+
+    def taiwan_open_must_not_run():
+        raise AssertionError("Taiwan open must use the durable taiwan_precise_open task")
+
+    monkeypatch.setattr(runner, "_open_taiwan_draws_and_update_next_time", taiwan_open_must_not_run)
+
+    runner._reschedule_precise_checks_once()
+
+    assert 3 not in runner._precise_timers
+
+
 def test_scheduler_start_enqueues_taiwan_durable_open_task(monkeypatch):
     from crawler import scheduler
 

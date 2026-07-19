@@ -13,7 +13,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable
 
-from db import auto_increment_primary_key, connect, utc_now
+from db import connect, utc_now
 from runtime_config import get_config, get_config_from_conn
 from security.redaction import redact_text, redact_value
 
@@ -91,35 +91,9 @@ class DatabaseLogHandler(logging.Handler):
         super().__init__(level=logging.ERROR)
         self._db_path = db_path
 
-    def _ensure_table(self, conn: Any) -> None:
-        pk_sql = auto_increment_primary_key("id", conn.engine)
-        conn.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS error_logs (
-                {pk_sql},
-                created_at TEXT NOT NULL,
-                level TEXT NOT NULL DEFAULT 'ERROR',
-                logger_name TEXT NOT NULL DEFAULT '',
-                module TEXT NOT NULL DEFAULT '',
-                func_name TEXT NOT NULL DEFAULT '',
-                file_path TEXT NOT NULL DEFAULT '',
-                line_number INTEGER NOT NULL DEFAULT 0,
-                message TEXT NOT NULL DEFAULT '',
-                exc_type TEXT,
-                exc_message TEXT,
-                stack_trace TEXT,
-                user_id TEXT,
-                request_params TEXT,
-                duration_ms REAL,
-                extra_data TEXT
-            )
-            """
-        )
-
     def emit(self, record: logging.LogRecord) -> None:
         try:
             with connect(self._db_path) as conn:
-                self._ensure_table(conn)
                 conn.execute(
                     """
                     INSERT INTO error_logs (

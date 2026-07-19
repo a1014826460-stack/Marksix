@@ -41,8 +41,8 @@ def main() -> int:
     if detect_database_engine(db_path) != "postgres":
         raise RuntimeError("调度 worker 正式运行仅支持 PostgreSQL。")
 
-    ensure_prediction_configs_loaded(db_path)
     ensure_admin_tables(db_path)
+    ensure_prediction_configs_loaded(db_path)
     init_logging(str(db_path))
     log_startup_risk_warnings()
 

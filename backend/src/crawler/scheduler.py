@@ -49,6 +49,7 @@ from helpers import (
     sync_lottery_type_next_time_from_latest_draw,
 )
 from runtime_config import get_config, get_config_from_conn
+from security.redaction import redact_text
 
 from alerts.alert_service import (
     alert_crawler_failure,
@@ -105,7 +106,8 @@ def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) 
         "--lottery-type-id",
         str(lottery_type_id),
     ]
-    _crawler_logger.info("Daily prediction subprocess starting: %s", command)
+    safe_command = [redact_text(item) for item in command]
+    _crawler_logger.info("Daily prediction subprocess starting: %s", safe_command)
     completed = subprocess.run(
         command,
         cwd=str(src_root),

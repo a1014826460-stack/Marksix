@@ -116,7 +116,7 @@
 - [x] Persist job metadata/result-safe summaries in scheduler tables and expose existing job response shape from durable records.
 - [x] Move scheduler startup into a dedicated worker command/service; API process no longer starts timers. The worker owns the complete legacy timer lifecycle (crawl, open, precise checks, missed-task recovery) and stops it on SIGTERM/SIGINT.
 - [x] Guard the worker lifecycle with an exclusive renewable lease, and ensure Taiwan precise-open work is enqueued only through the durable task path (no duplicate in-memory Taiwan timer).
-- [ ] Add PostgreSQL integration coverage for task acquisition and recovery.
+- [x] Add PostgreSQL integration coverage for task acquisition and recovery (runs when `TEST_DATABASE_URL` is configured).
 
 ## Task 6: Versioned Migration and Backup Hardening
 
@@ -130,9 +130,10 @@
 - Test: `backend/src/tests/integration/test_versioned_migrations.py`
 - Test: `backend/src/tests/unit/test_postgres_backup.py`
 
-- [ ] Write failing migration lock/version tests and backup command timeout tests.
-- [ ] Add a migration ledger and PostgreSQL advisory deployment lock; startup only validates current schema.
-- [ ] Add dump timeout, checksum, disk-space guard, durable backup mount, and restore verification documentation.
+- [x] Write failing migration lock/version tests; backup command timeout tests remain pending.
+- [x] Add a migration ledger and PostgreSQL advisory deployment lock; API/worker startup only validates current schema while Docker Compose runs the explicit migration command first.
+- [x] Add dump timeout, checksum, disk-space guard, archive verification, durable backup mount guidance, and restore-drill documentation.
+- [x] Move `created.mode_payload_*` reconciliation into the explicit migration path; reconcile both metadata and actual public payload tables, never from API/worker/generation runtime.
 - [ ] Run PostgreSQL integration tests in CI.
 
 ## Task 7: Maintainability Completion

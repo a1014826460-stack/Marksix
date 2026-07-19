@@ -1045,7 +1045,12 @@ def upsert_created_prediction_row(
 
     ensure_postgres_connection(conn)
     table_name = validate_mode_payload_table_name(source_table_name)
-    target_qualified = ensure_created_prediction_table(conn, table_name, commit=commit)
+    if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
+        raise RuntimeError(
+            f"预测结果表 {CREATED_SCHEMA_NAME}.{table_name} 不存在；"
+            "请先运行 python -m database.versioned_migrations。"
+        )
+    target_qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
     target_column_defs = {
         column.name: column.sql_type
         for column in list_table_columns(conn, CREATED_SCHEMA_NAME, table_name)

@@ -210,8 +210,8 @@ def run_server(host: str, port: int, db_path: str | Path) -> None:
             "后端正式运行仅支持 PostgreSQL。"
             " 如需使用 SQLite，请只在明确的 legacy/test/migration 脚本中显式传入。"
         )
-    ensure_prediction_configs_loaded(db_path)
     ensure_admin_tables(db_path)
+    ensure_prediction_configs_loaded(db_path)
     init_logging(str(db_path))
     server = ThreadingHTTPServer((host, port), ApiHandler)
     server.db_path = db_path  # type: ignore[attr-defined]

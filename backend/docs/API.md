@@ -98,12 +98,15 @@ DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 1. PostgreSQL 服务已启动
 2. 数据库 `liuhecai` 已创建
 3. 环境变量 `DATABASE_URL` 已设置
+4. 已执行显式迁移命令：`python -m database.versioned_migrations --db-path "$env:DATABASE_URL"`
 
 注意：
 
 - 代码中不再硬编码数据库密码
 - 正式运行只接受 PostgreSQL DSN
 - 如果未配置 `DATABASE_URL`，启动会立即失败并提示
+- API 与 `scheduler-worker` 启动时只校验 `schema_migrations` 账本，不会自动建表、建索引或修改列；Docker Compose 使用一次性 `db-migrate` 服务在启动应用前执行迁移。
+- `created.mode_payload_*` 镜像表也只由显式迁移创建或补列：迁移会同时检查 `public.mode_payload_*` 实际表和 `mode_payload_tables` 元数据；预测生成、API 与 worker 不会在运行时执行该类 DDL。
 
 ### 4.2 SQLite 说明
 

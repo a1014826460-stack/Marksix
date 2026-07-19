@@ -60,6 +60,8 @@ services:
     depends_on:
       pgbouncer:
         condition: service_started
+      db-migrate:
+        condition: service_completed_successfully
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
@@ -91,7 +93,9 @@ services:
     depends_on:
       pgbouncer:
         condition: service_started
-    command: ["python", "-m", "scheduler_worker"]
+      db-migrate:
+        condition: service_completed_successfully
+    command: ["sh", "-c", "cd /app/src && python -m scheduler_worker"]
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
@@ -99,6 +103,26 @@ services:
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     volumes:
       - ./backend/data:/app/data
+      - ${BACKUP_DIR:-./backend/data/backups}:/app/data/backups
+    networks:
+      - liuhecai-network
+
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+      args:
+        APT_MIRROR: ${APT_MIRROR:-deb.debian.org}
+    container_name: liuhecai-db-migrate
+    restart: "no"
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    command: ["sh", "-c", "cd /app/src && python -m database.versioned_migrations --db-path \"$$DATABASE_URL\""]
+    environment:
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
+      POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     networks:
       - liuhecai-network
 
