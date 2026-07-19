@@ -21,8 +21,8 @@ const twsaimahuiManifestModule = toDataModule(
 )
 const sitesModule = toDataModule(
   compileModule("frontend/lib/sites.ts")
-    .replace('"@/lib/site-platform/site-manifest"', JSON.stringify(manifestModule))
-    .replace('"@/sites/twsaimahui/site.manifest"', JSON.stringify(twsaimahuiManifestModule))
+    .replace(/[@]\/lib\/site-platform\/site-manifest/g, manifestModule)
+    .replace(/[@]\/sites\/twsaimahui\/site\.manifest/g, twsaimahuiManifestModule)
 )
 const registryModule = toDataModule(
   compileModule("frontend/lib/site-registry.ts").replace('"@/lib/sites"', JSON.stringify(sitesModule))

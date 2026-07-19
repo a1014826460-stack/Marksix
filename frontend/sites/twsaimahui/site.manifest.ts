@@ -47,10 +47,10 @@ export default defineVendorSiteManifest({
   },
   security: {
     externalScriptOrigins: [
-      "https://gy.123pmz.com",
+      "https://gy.123pmz.com:8443",
       "https://js.szly123.com",
       "https://libs.baidu.com",
-      "https://x1.xn--hdcl2bk2m1bc.xn--gecrj9c",
+      "https://x1.xn--hdcl2bk2m1bc.xn--gecrj9c:8443",
     ],
     externalNavigationOrigins: ["https://www.72965.com", "https://www-08200.com"],
   },

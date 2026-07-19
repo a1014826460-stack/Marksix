@@ -124,3 +124,32 @@ Public page traffic is collected by `components/SiteTrafficTracker.tsx`. It uses
 `navigator.sendBeacon` first and `fetch(..., { keepalive: true })` as fallback.
 The frontend endpoint forwards to Python backend `/api/public/traffic-events`,
 where raw IP addresses are hashed before storage.
+
+## Vendor Site Bridge Pilot
+
+Vendor UI is not standardized. Supplied HTML, JavaScript, CSS and images stay
+under `public/vendor/<siteKey>/`; configuration and data access are added by a
+manifest and optional browser bridge.
+
+The `twsaimahui` pilot uses:
+
+- `sites/twsaimahui/site.manifest.ts` for identity, vendor entry, API defaults,
+  selected prediction modules, branding metadata and external-origin allowlists.
+- `public/vendor/twsaimahui/site-bridge.js` for `window.LotterySiteBridge` and
+  its `lottery:*` loading/ready/error events.
+- `GET /api/sites/twsaimahui/bridge-config` for public runtime configuration.
+- `GET /api/sites/twsaimahui/draw?lottery_type=1|2|3` for normalized draw data.
+
+To scaffold and validate a new vendor site:
+
+```powershell
+pnpm site:scaffold --site-key example-site
+# Copy the supplied archive to frontend/public/vendor/example-site/.
+# Then fill the generated manifest with actual siteId, webId, domains and modules.
+pnpm site:sync-manifests
+pnpm site:validate --site-key example-site
+```
+
+Do not guess how an unknown vendor module consumes prediction rows. The supplied
+page must either listen to `lottery:prediction-ready` or declare a reviewed
+adapter and DOM selector mapping.
