@@ -59,6 +59,16 @@ def ensure_scheduler_tables(conn: Any, pk_sql: str) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scheduler_worker_leases (
+            lease_name TEXT PRIMARY KEY,
+            holder_id TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
     add_column_if_missing(conn, "scheduler_tasks", "schedule_scope", "TEXT NOT NULL DEFAULT 'auto'")
     add_column_if_missing(conn, "scheduler_tasks", "site_id", "INTEGER")
     add_column_if_missing(conn, "scheduler_tasks", "web_id", "INTEGER")

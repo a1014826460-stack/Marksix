@@ -16,28 +16,29 @@ from runtime_config import (
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_super_admin
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/system-config", system_config_list)
-    router.add("GET", "/api/admin/configs/groups", config_groups)
-    router.add("POST", "/api/admin/configs/batch-update", batch_update)
-    router.add("GET", "/api/admin/configs/effective", configs_effective)
-    router.add_prefix("GET", "/api/admin/configs/effective/", config_effective_detail)
-    router.add("GET", "/api/admin/configs/history", config_history)
-    router.add_regex("POST", r"^/api/admin/configs/.+/reset$", config_reset)
-    router.add_prefix(None, "/api/admin/system-config/", system_config_detail)
+    router.add("GET", "/api/admin/system-config", system_config_list, guard=require_super_admin)
+    router.add("GET", "/api/admin/configs/groups", config_groups, guard=require_super_admin)
+    router.add("POST", "/api/admin/configs/batch-update", batch_update, guard=require_super_admin)
+    router.add("GET", "/api/admin/configs/effective", configs_effective, guard=require_super_admin)
+    router.add_prefix("GET", "/api/admin/configs/effective/", config_effective_detail, guard=require_super_admin)
+    router.add("GET", "/api/admin/configs/history", config_history, guard=require_super_admin)
+    router.add_regex("POST", r"^/api/admin/configs/.+/reset$", config_reset, guard=require_super_admin)
+    router.add_prefix(None, "/api/admin/system-config/", system_config_detail, guard=require_super_admin)
 
 
 def system_config_list(ctx: RequestContext) -> None:
     prefix = ctx.query_value("prefix", "") or ""
-    include_secrets = (ctx.query_value("include_secrets", "0") or "0") in {"1", "true", "True"}
     ctx.send_json(
         {
             "configs": list_system_configs(
                 ctx.db_path,
                 prefix=prefix,
-                include_secrets=include_secrets,
+                include_secrets=False,
             )
         }
     )
@@ -85,8 +86,18 @@ def config_effective_detail(ctx: RequestContext) -> None:
 
 def config_history(ctx: RequestContext) -> None:
     config_key = ctx.query_value("key", "") or ""
-    page = int(ctx.query_value("page", "1") or 1)
-    page_size = min(int(ctx.query_value("page_size", "30") or 30), 200)
+    page = parse_bounded_int(
+        ctx.query_value("page", "1"),
+        default=1,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="page",
+    )
+    page_size = parse_bounded_int(
+        ctx.query_value("page_size", "30"),
+        default=30,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="page_size",
+    )
     ctx.send_json(get_config_history(ctx.db_path, key=config_key, page=page, page_size=page_size))
 
 

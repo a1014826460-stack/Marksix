@@ -196,3 +196,18 @@ python -m pytest -q
 - vendor 聚合或 legacy 模块行在带显式 `web` 时必须校验启用模块；不授权时保持既有空 `history`、`rows` 或 `{ data: [] }` 包装，禁止增加响应字段。
 - 使用 `python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"` 审计站点 5-8；仅在确认审计结果后加 `--apply`。该操作只切换 `status`，不删除历史行。
 - 修改站点蓝图、vendor 固定模式或 `twcf888` 模块文档时，必须更新 `test_site_prediction_module_audit.py`。
+
+# 2026-07-19 安全与稳定性整改
+
+- 所有 `req_params`、结构化日志 `result` 与 JSON 日志均须经 `security.redaction.redact_value()` 递归脱敏；不得记录密码、令牌、验证码、`numbers`、`res_code`、DSN 或其他密钥值。
+- 标记为 `is_secret=1` 的 `system_config` 为可写不可读：`include_secrets=1` 仅为兼容参数，不得返回真实值；有效值和历史接口也必须掩码。
+- `super_admin` 独占用户管理、系统配置及站点的创建/删除/更新；至少保留一个启用的 `super_admin`。
+- 非管理员的站点访问与预测生成必须以 `site_permissions` 表的显式授权为准；`super_admin/admin` 保留全站访问。
+- 管理端列表参数必须使用 `app_http.security.parse_bounded_int`，保持成功响应字段不变，拒绝非法参数时复用既有错误 envelope。
+- 验证码、失败登录和会话认证表只允许在 bootstrap/migration 创建；认证请求路径不得运行 `CREATE TABLE` 或 `CREATE INDEX`，以避免验证码请求被 DDL/锁等待阻塞。
+- 管理端长任务必须写入 `scheduler_tasks` 后由 `scheduler_worker` 执行；HTTP API 进程不得启动 `CrawlerScheduler`、timer 或 daemon job thread。任务轮询保留既有 `status`、`started_at`、`result`、`metadata` 字段形状。
+- `site_permissions` 必须在 `managed_sites` 创建后创建；这是 PostgreSQL 的外键依赖顺序，不能放入认证表 bootstrap。
+- `scheduler_worker` 必须调用 `CrawlerScheduler.start()` 并在收到 `SIGTERM`/`SIGINT` 后调用 `stop()`；只轮询持久化任务会遗漏自动抓取、自动开奖、精准检查和错过任务补跑。
+- `scheduler_worker` 必须持有 `scheduler_worker_leases` 中的独占租约后才可启动 timer；续租失败时必须停止全部 timer 并释放租约，避免多个 worker 重复执行进程内调度。
+- 台湾彩精准开盘只允许使用持久化 `taiwan_precise_open` 任务：`CrawlerScheduler.start()` 负责确保该任务存在，内存精准 timer 只覆盖香港/澳门，禁止两条路径重复开盘或回填。
+- 管理员 session 数据库只保存 `token_hash` 和不可逆的旧列标记，禁止保存可直接使用的 bearer token；登录 JSON 中的 `token` 暂为兼容保留，同时由 HttpOnly、SameSite=Strict cookie 支持同源管理端请求。

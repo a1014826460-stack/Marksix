@@ -12,5 +12,5 @@ def log_startup_risk_warnings() -> None:
             "Bootstrap admin password is still the default value; change it before exposing the service."
         )
     logger.warning(
-        "CrawlerScheduler runs in-process and is suitable for a single active backend instance only."
+        "Run the scheduler-worker service exactly once (or use its database task locks); HTTP API instances do not execute scheduler timers."
     )

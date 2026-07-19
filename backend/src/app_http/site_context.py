@@ -178,7 +178,12 @@ def require_site_access(ctx: RequestContext, site_id: int) -> SiteContext:
     site_ctx = resolve_site_context(db_path=ctx.db_path, path_site_id=site_id)
     if not site_ctx.enabled:
         raise ForbiddenError(f"站点 site_id={site_id} 已被停用")
-    # 后续可在此处加入角色级别的站点权限判断
+    from .auth import require_authenticated
+    from domains.sites.permissions import can_access_site
+
+    user = require_authenticated(ctx)
+    if not can_access_site(user, site_id, db_path=ctx.db_path):
+        raise ForbiddenError("当前账号没有访问该站点的权限")
     return site_ctx
 
 

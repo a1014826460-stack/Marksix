@@ -4,14 +4,15 @@ from http import HTTPStatus
 
 from admin.crud import delete_user, list_users, save_user
 
+from app_http.auth import require_super_admin
 from app_http.request_context import RequestContext
 from app_http.router import Router
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/users", list_user_routes)
-    router.add("POST", "/api/admin/users", create_user)
-    router.add_prefix(None, "/api/admin/users/", user_detail)
+    router.add("GET", "/api/admin/users", list_user_routes, guard=require_super_admin)
+    router.add("POST", "/api/admin/users", create_user, guard=require_super_admin)
+    router.add_prefix(None, "/api/admin/users/", user_detail, guard=require_super_admin)
 
 
 def list_user_routes(ctx: RequestContext) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import psycopg
@@ -19,7 +20,7 @@ from prediction_generation.brain_teaser_image import (
 )
 
 
-DEFAULT_DB_DSN = "postgresql://postgres:2225427@localhost:5432/liuhecai"
+DEFAULT_DB_DSN = os.environ.get("TEST_DATABASE_URL", "").strip()
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +37,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if not args.db_dsn:
+        raise SystemExit("TEST_DATABASE_URL or --db-dsn must be set before generating an image")
     with psycopg.connect(args.db_dsn, row_factory=dict_row, connect_timeout=10) as conn:
         current_record = load_brain_teaser_record_for_issue(
             conn,

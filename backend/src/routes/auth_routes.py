@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from http import HTTPStatus
 
 from auth import login_user, logout_user
@@ -92,6 +93,18 @@ def login(ctx: RequestContext) -> None:
 
     # 登录成功，清除设备锁定记录
     reset_login_attempts(ctx.db_path, fingerprint)
+    expires_at = str(result.get("expires_at") or "")
+    max_age_seconds = 0
+    try:
+        expires_at_datetime = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        max_age_seconds = max(0, int((expires_at_datetime - datetime.now(timezone.utc)).total_seconds()))
+    except (TypeError, ValueError):
+        pass
+    ctx.response.set_session_cookie(
+        str(result.get("token") or ""),
+        max_age_seconds=max_age_seconds,
+        secure=ctx.request_is_secure(),
+    )
     ctx.send_json(result)
 
 
@@ -102,4 +115,5 @@ def me(ctx: RequestContext) -> None:
 
 def logout(ctx: RequestContext) -> None:
     logout_user(ctx.db_path, ctx.bearer_token())
+    ctx.response.clear_session_cookie(secure=ctx.request_is_secure())
     ctx.send_json({"ok": True})

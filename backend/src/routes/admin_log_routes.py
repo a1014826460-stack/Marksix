@@ -5,16 +5,18 @@ from domains.logs import service as logs_service
 from http import HTTPStatus
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_admin
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/logs/modules", modules)
-    router.add("GET", "/api/admin/logs/levels", levels)
-    router.add("GET", "/api/admin/logs/stats", stats)
-    router.add("POST", "/api/admin/logs/cleanup", cleanup)
-    router.add("GET", "/api/admin/logs/export", export_logs)
-    router.add("GET", "/api/admin/logs", list_logs)
-    router.add_prefix("GET", "/api/admin/logs/", log_detail)
+    router.add("GET", "/api/admin/logs/modules", modules, guard=require_admin)
+    router.add("GET", "/api/admin/logs/levels", levels, guard=require_admin)
+    router.add("GET", "/api/admin/logs/stats", stats, guard=require_admin)
+    router.add("POST", "/api/admin/logs/cleanup", cleanup, guard=require_admin)
+    router.add("GET", "/api/admin/logs/export", export_logs, guard=require_admin)
+    router.add("GET", "/api/admin/logs", list_logs, guard=require_admin)
+    router.add_prefix("GET", "/api/admin/logs/", log_detail, guard=require_admin)
 
 
 def modules(ctx: RequestContext) -> None:
@@ -67,8 +69,18 @@ def log_detail(ctx: RequestContext) -> None:
 def list_logs(ctx: RequestContext) -> None:
     result = logs_service.query_error_logs(
         ctx.db_path,
-        page=int(ctx.query_value("page", "1") or 1),
-        page_size=min(int(ctx.query_value("page_size", "30") or 30), 200),
+        page=parse_bounded_int(
+            ctx.query_value("page", "1"),
+            default=1,
+            maximum=MAX_ADMIN_LIST_LIMIT,
+            field_name="page",
+        ),
+        page_size=parse_bounded_int(
+            ctx.query_value("page_size", "30"),
+            default=30,
+            maximum=MAX_ADMIN_LIST_LIMIT,
+            field_name="page_size",
+        ),
         level=ctx.query_value("level", "") or "",
         module=ctx.query_value("module", "") or "",
         keyword=ctx.query_value("keyword", "") or "",

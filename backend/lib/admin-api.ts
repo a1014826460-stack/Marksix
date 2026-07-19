@@ -10,19 +10,6 @@ export type ApiError = {
   max_attempts?: number
 }
 
-export function getAdminToken() {
-  if (typeof window === "undefined") return ""
-  return window.localStorage.getItem("liuhecai_admin_token") || ""
-}
-
-export function setAdminToken(token: string) {
-  window.localStorage.setItem("liuhecai_admin_token", token)
-}
-
-export function clearAdminToken() {
-  window.localStorage.removeItem("liuhecai_admin_token")
-}
-
 /** 生成简单的设备指纹，用于登录锁定追踪 */
 export function getDeviceFingerprint(): string {
   if (typeof window === "undefined") return ""
@@ -58,12 +45,8 @@ export type AdminApiError = Error & {
 
 export async function adminApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  const token = getAdminToken()
   if (!headers.has("content-type") && options.body) {
     headers.set("content-type", "application/json")
-  }
-  if (token) {
-    headers.set("authorization", `Bearer ${token}`)
   }
   // 设备指纹（登录等敏感操作需要）
   const fp = getDeviceFingerprint()
@@ -75,6 +58,7 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
     ...options,
     headers,
     cache: "no-store",
+    credentials: "same-origin",
   })
 
   const rawText = await response.text()
@@ -88,9 +72,6 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAdminToken()
-    }
     const apiError = (data ?? {}) as ApiError
     const message =
       apiError.error ||

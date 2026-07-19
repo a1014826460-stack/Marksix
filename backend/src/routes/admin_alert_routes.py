@@ -5,16 +5,16 @@ from runtime_config import upsert_system_config
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
-from app_http.auth import require_authenticated
+from app_http.auth import require_admin
 
 
 def register(router: Router) -> None:
     router.add("GET", "/api/admin/alert/recipients", get_alert_recipients,
-               guard=require_authenticated)
+               guard=require_admin)
     router.add("PUT", "/api/admin/alert/recipients", update_alert_recipients,
-               guard=require_authenticated)
+               guard=require_admin)
     router.add("POST", "/api/admin/alert/test-email", test_alert_email,
-               guard=require_authenticated)
+               guard=require_admin)
 
 
 def get_alert_recipients(ctx: RequestContext) -> None:

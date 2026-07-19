@@ -13,6 +13,7 @@ from public.api import (
 from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from domains.sites.service import get_public_notice
 from domains.traffic.service import record_traffic_event
 
@@ -31,7 +32,12 @@ def register(router: Router) -> None:
 
 def site_page(ctx: RequestContext) -> None:
     site_id = ctx.query_value("site_id")
-    history_limit = int(ctx.query_value("history_limit", "8") or 8)
+    history_limit = parse_bounded_int(
+        ctx.query_value("history_limit", "8"),
+        default=8,
+        maximum=MAX_PUBLIC_HISTORY_LIMIT,
+        field_name="history_limit",
+    )
     lottery_type = ctx.query_value("lottery_type")
     raw_mode_ids = str(ctx.query_value("mode_ids", "") or "").strip()
     mode_ids = []

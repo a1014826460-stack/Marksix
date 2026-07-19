@@ -11,6 +11,36 @@ from helpers import parse_bool
 from tables import ensure_admin_tables
 
 
+# ``editor`` existed in historical admin rows. Keep it as a constrained
+# non-privileged role while new management UI uses the documented roles.
+VALID_ROLES = {"super_admin", "admin", "site_admin", "operator", "viewer", "editor"}
+
+
+def _validate_role(role: str) -> str:
+    normalized = str(role or "").strip().lower()
+    if normalized not in VALID_ROLES:
+        raise ValueError("角色不受支持")
+    return normalized
+
+
+def _ensure_active_super_admin_remains(conn: Any, *, user_id: int, role: str, status: int) -> None:
+    existing = conn.execute("SELECT role, status FROM admin_users WHERE id = ?", (user_id,)).fetchone()
+    if not existing or str(existing["role"] or "").strip().lower() != "super_admin" or not bool(existing["status"]):
+        return
+    remains_super_admin = role == "super_admin" and bool(status)
+    if remains_super_admin:
+        return
+    count = int(
+        conn.execute(
+            "SELECT COUNT(*) AS total FROM admin_users WHERE role = ? AND status = 1",
+            ("super_admin",),
+        ).fetchone()["total"]
+        or 0
+    )
+    if count <= 1:
+        raise ValueError("至少保留一个启用的超级管理员")
+
+
 def list_users(db_path: str | Path) -> list[dict[str, Any]]:
     """List admin users with sensitive fields removed."""
     ensure_admin_tables(db_path)
@@ -29,7 +59,7 @@ def save_user(
     now = utc_now()
     username = str(payload.get("username") or "").strip()
     display_name = str(payload.get("display_name") or username).strip()
-    role = str(payload.get("role") or "admin").strip()
+    role = _validate_role(str(payload.get("role") or "admin"))
     status = 1 if parse_bool(payload.get("status"), True) else 0
     password = str(payload.get("password") or "")
     if not username:
@@ -54,6 +84,7 @@ def save_user(
         existing = conn.execute("SELECT * FROM admin_users WHERE id = ?", (user_id,)).fetchone()
         if not existing:
             raise KeyError(f"user_id={user_id} 不存在")
+        _ensure_active_super_admin_remains(conn, user_id=user_id, role=role, status=status)
         password_hash = hash_password(password, db_path=db_path) if password else existing["password_hash"]
         row = conn.execute(
             """
@@ -73,16 +104,23 @@ def save_user(
 
 
 def delete_user(db_path: str | Path, user_id: int) -> None:
-    """Delete an admin user while preserving at least one active admin."""
+    """Delete an admin user while preserving active admins and a super-admin."""
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
-        total = int(
-            conn.execute("SELECT COUNT(*) AS total FROM admin_users WHERE status = 1").fetchone()["total"]
-            or 0
-        )
-        target = conn.execute("SELECT status FROM admin_users WHERE id = ?", (user_id,)).fetchone()
+        total = int(conn.execute("SELECT COUNT(*) AS total FROM admin_users WHERE status = 1").fetchone()["total"] or 0)
+        target = conn.execute("SELECT status, role FROM admin_users WHERE id = ?", (user_id,)).fetchone()
         if not target:
             raise KeyError(f"user_id={user_id} 不存在")
+        if str(target["role"] or "").strip().lower() == "super_admin" and bool(target["status"]):
+            super_admin_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS total FROM admin_users WHERE role = ? AND status = 1",
+                    ("super_admin",),
+                ).fetchone()["total"]
+                or 0
+            )
+            if super_admin_count <= 1:
+                raise ValueError("至少保留一个启用的超级管理员")
         if total <= 1 and int(target["status"] or 0) == 1:
             raise ValueError("至少保留一个可登录管理员")
         conn.execute("DELETE FROM admin_users WHERE id = ?", (user_id,))

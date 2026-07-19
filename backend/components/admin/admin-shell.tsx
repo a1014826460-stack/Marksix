@@ -21,7 +21,7 @@ import {
   Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { adminApi, clearAdminToken, getAdminToken } from "@/lib/admin-api"
+import { adminApi } from "@/lib/admin-api"
 import { Button } from "@/components/ui/button"
 
 const menuItems = [
@@ -54,26 +54,16 @@ export function AdminShell({ title, description, children, actions }: AdminShell
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
-    const token = getAdminToken()
-    if (!token && pathname !== "/login") {
-      router.replace("/login")
-      return
-    }
-    if (token) {
-      adminApi<{ user: { display_name: string; username: string } }>("/auth/me")
-        .then((data) => setUser(data.user))
-        .catch(() => {
-          clearAdminToken()
-          router.replace("/login")
-        })
-    }
+    if (pathname === "/login") return
+    adminApi<{ user: { display_name: string; username: string } }>("/auth/me")
+      .then((data) => setUser(data.user))
+      .catch(() => router.replace("/login"))
   }, [pathname, router])
 
   async function logout() {
     try {
       await adminApi("/auth/logout", { method: "POST" })
     } finally {
-      clearAdminToken()
       router.replace("/login")
     }
   }

@@ -84,3 +84,11 @@ def test_serve_upload_rejects_path_traversal(tmp_path):
     writer.serve_upload("/uploads/../escaped.jpg", base_dir)
 
     assert handler.status == HTTPStatus.NOT_FOUND
+
+
+def test_response_writer_handles_static_handler_without_request_headers():
+    handler = _DummyHandler()
+
+    ResponseWriter(handler).send_error_json(HTTPStatus.NOT_FOUND, "File not found")
+
+    assert handler.status == HTTPStatus.NOT_FOUND

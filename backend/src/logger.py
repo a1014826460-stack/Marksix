@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from db import auto_increment_primary_key, connect, utc_now
 from runtime_config import get_config, get_config_from_conn
+from security.redaction import redact_text, redact_value
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = BACKEND_ROOT / "data" / "logs"
@@ -67,19 +68,19 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "file": f"{record.pathname}:{record.lineno}",
             "func": record.funcName,
-            "msg": record.getMessage(),
+            "msg": redact_text(record.getMessage()),
         }
         if record.exc_info and record.exc_info[1]:
             payload["exc_type"] = type(record.exc_info[1]).__name__
-            payload["exc_msg"] = str(record.exc_info[1])
-            payload["stack"] = traceback.format_exception(*record.exc_info)
+            payload["exc_msg"] = redact_text(record.exc_info[1])
+            payload["stack"] = [redact_text(item) for item in traceback.format_exception(*record.exc_info)]
         for attr in (
             "duration_ms", "user_id", "module", "req_params", "result",
             "site_id", "web_id", "lottery_type_id", "year", "term",
             "task_key", "task_type", "request_path", "request_method",
         ):
             if hasattr(record, attr):
-                value = getattr(record, attr)
+                value = redact_value(getattr(record, attr))
                 if value is not None and value != "" and value != 0:
                     payload[attr] = value
         return json.dumps(payload, ensure_ascii=False, default=str)
@@ -137,16 +138,16 @@ class DatabaseLogHandler(logging.Handler):
                         record.funcName,
                         record.pathname,
                         record.lineno,
-                        record.getMessage(),
+                        redact_text(record.getMessage()),
                         type(record.exc_info[1]).__name__ if record.exc_info and record.exc_info[1] else None,
-                        str(record.exc_info[1]) if record.exc_info and record.exc_info[1] else None,
-                        "".join(traceback.format_exception(*record.exc_info)) if record.exc_info else None,
+                        redact_text(record.exc_info[1]) if record.exc_info and record.exc_info[1] else None,
+                        "".join(redact_text(item) for item in traceback.format_exception(*record.exc_info)) if record.exc_info else None,
                         str(getattr(record, "user_id", "") or ""),
-                        json.dumps(getattr(record, "req_params", None), ensure_ascii=False, default=str)
+                        json.dumps(redact_value(getattr(record, "req_params", None)), ensure_ascii=False, default=str)
                         if getattr(record, "req_params", None) is not None
                         else None,
                         float(getattr(record, "duration_ms", 0)) if getattr(record, "duration_ms", None) is not None else None,
-                        json.dumps(getattr(record, "result", None), ensure_ascii=False, default=str)
+                        json.dumps(redact_value(getattr(record, "result", None)), ensure_ascii=False, default=str)
                         if getattr(record, "result", None) is not None
                         else None,
                         # 业务上下文字段 — 从 logging.LogRecord extra 中读取

@@ -13,7 +13,7 @@ from admin.prediction import (
 )
 from db import connect
 from http import HTTPStatus
-from app_http.auth import require_generation_access
+from app_http.auth import require_admin, require_generation_access
 from app_http.request_context import RequestContext
 from app_http.router import Router
 from app_http.site_context import (
@@ -26,8 +26,8 @@ from app_http.site_context import (
 def register(router: Router) -> None:
     router.add("GET", "/api/predict/mechanisms", list_public_mechanisms)
     router.add_regex(None, r"^/api/predict/[^/]+$", run_mechanism_prediction)
-    router.add("GET", "/api/admin/predict/mechanisms", list_admin_mechanisms)
-    router.add_regex(None, r"^/api/admin/predict/mechanisms/[^/]+$", mechanism_status)
+    router.add("GET", "/api/admin/predict/mechanisms", list_admin_mechanisms, guard=require_admin)
+    router.add_regex(None, r"^/api/admin/predict/mechanisms/[^/]+$", mechanism_status, guard=require_admin)
 
 
 def list_public_mechanisms(ctx: RequestContext) -> None:

@@ -6,7 +6,7 @@ $PythonExe = "D:\python\python.exe"
 $NodeExe = (Get-Command node).Source
 $PowerShellExe = (Get-Command powershell.exe).Source
 $NextCli = Join-Path $BackendRoot "node_modules\next\dist\bin\next"
-$DefaultDbUrl = "postgresql://postgres:2225427@localhost:5432/liuhecai"
+$DefaultDbUrl = $env:DATABASE_URL
 $Port = 8000
 $AdminPort = 3002
 $BackendConsoleMarker = "LIUHECAI_BACKEND_CONSOLE"
@@ -163,10 +163,12 @@ function Start-Backend {
     if (-not (Test-Path $PythonExe)) {
         throw "Python executable not found: $PythonExe"
     }
+    if ([string]::IsNullOrWhiteSpace($DbUrl)) {
+        throw "DATABASE_URL must be set before starting the backend."
+    }
 
-    $command = "`"$PythonExe`" backend/src/app.py --db_path $DbUrl"
     Write-Host "Starting backend..."
-    Write-Host "  $command"
+    Write-Host "  $PythonExe backend/src/app.py --db_path <DATABASE_URL>"
     $windowCommand = @"
 `$env:$BackendConsoleMarker = '1'
 `$Host.UI.RawUI.WindowTitle = 'Liuhecai Backend :8000'

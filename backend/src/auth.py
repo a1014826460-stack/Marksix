@@ -14,6 +14,16 @@ from runtime_config import get_bootstrap_config_value, get_config
 from tables import ensure_admin_tables
 
 
+def hash_session_token(token: str) -> str:
+    """Return the one-way database representation of a bearer session token."""
+    return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+
+def _legacy_session_token_value(token: str) -> str:
+    """Keep the legacy non-null token column harmless for incremental schemas."""
+    return f"hashed:{hash_session_token(token)}"
+
+
 def _password_iterations(db_path: str | Path | None = None) -> int:
     value = get_bootstrap_config_value("auth.password_iterations", 260000)
     if db_path:
@@ -92,10 +102,10 @@ def login_user(db_path: str | Path, username: str, password: str) -> dict[str, A
         conn.execute("DELETE FROM admin_sessions WHERE user_id = ?", (row["id"],))
         conn.execute(
             """
-            INSERT INTO admin_sessions (token, user_id, created_at, expires_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO admin_sessions (token, token_hash, user_id, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (token, row["id"], created_at, expires_at),
+            (_legacy_session_token_value(token), hash_session_token(token), row["id"], created_at, expires_at),
         )
         conn.execute(
             "UPDATE admin_users SET last_login_at = ?, updated_at = ? WHERE id = ?",
@@ -118,22 +128,22 @@ def auth_user_from_token(db_path: str | Path, token: str | None) -> dict[str, An
             SELECT s.expires_at, u.*
             FROM admin_sessions s
             JOIN admin_users u ON u.id = s.user_id
-            WHERE s.token = ? AND u.status = 1
+            WHERE s.token_hash = ? AND u.status = 1
             """,
-            (token,),
+                (hash_session_token(token),),
         ).fetchone()
         if not row:
             return None
 
-        expires_at = str(row.get("expires_at") or "").strip()
+        expires_at = str(dict(row).get("expires_at") or "").strip()
         if expires_at:
             try:
                 expires_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
             except ValueError:
-                conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+                conn.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (hash_session_token(token),))
                 return None
             if expires_dt <= datetime.now(timezone.utc):
-                conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+                conn.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (hash_session_token(token),))
                 return None
 
         return public_user(row)
@@ -152,4 +162,4 @@ def logout_user(db_path: str | Path, token: str | None) -> None:
         return
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
-        conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+        conn.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (hash_session_token(token),))

@@ -10,6 +10,7 @@ from typing import Any, Callable, Pattern
 from http import HTTPStatus
 
 from core.errors import AppError, UnauthorizedError, ForbiddenError, NotFoundError
+from security.redaction import redact_text, redact_value
 from .auth import get_current_user
 from .request_context import RequestContext
 
@@ -46,7 +47,7 @@ def _query_snapshot(ctx: RequestContext) -> dict[str, Any]:
             snapshot[key] = values[0]
         else:
             snapshot[key] = values
-    return snapshot
+    return redact_value(snapshot)
 
 
 def _build_request_log_extra(ctx: RequestContext) -> dict[str, Any]:
@@ -54,11 +55,10 @@ def _build_request_log_extra(ctx: RequestContext) -> dict[str, Any]:
     cached_body = getattr(ctx, "_body", None)
     req_params: dict[str, Any] = {
         "path": ctx.path,
-        "raw_path": ctx.raw_path,
         "query": _query_snapshot(ctx),
     }
     if cached_body is not None:
-        req_params["body"] = cached_body
+        req_params["body"] = redact_value(cached_body)
 
     query_or_body = cached_body if isinstance(cached_body, dict) else {}
     site_id = _as_int((query_or_body.get("site_id") if isinstance(query_or_body, dict) else None) or ctx.query_value("site_id"))
@@ -172,8 +172,8 @@ class Router:
             logger.exception(
                 "Request failed: %s %s -> %s",
                 ctx.command,
-                ctx.raw_path,
-                exc,
+                ctx.path,
+                redact_text(exc),
                 extra=_build_request_log_extra(ctx),
             )
             if isinstance(exc, AppError):

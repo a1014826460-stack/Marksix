@@ -6,16 +6,23 @@ from admin.crud import create_number, delete_number, list_numbers, update_number
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_admin
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/numbers", list_number_routes)
-    router.add("POST", "/api/admin/numbers", create_number_route)
-    router.add_prefix(None, "/api/admin/numbers/", number_detail)
+    router.add("GET", "/api/admin/numbers", list_number_routes, guard=require_admin)
+    router.add("POST", "/api/admin/numbers", create_number_route, guard=require_admin)
+    router.add_prefix(None, "/api/admin/numbers/", number_detail, guard=require_admin)
 
 
 def list_number_routes(ctx: RequestContext) -> None:
-    limit = int(ctx.query_value("limit", "300") or 300)
+    limit = parse_bounded_int(
+        ctx.query_value("limit", "300"),
+        default=300,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="limit",
+    )
     keyword = ctx.query_value("keyword", "") or ""
     sign = ctx.query_value("sign", "") or ""
     ctx.send_json({"numbers": list_numbers(ctx.db_path, limit, keyword, sign)})

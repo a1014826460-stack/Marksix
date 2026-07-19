@@ -7,19 +7,31 @@ from domains.lottery.service import get_latest_opened_draw_term
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_admin
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/draws", list_draw_routes)
-    router.add("POST", "/api/admin/draws", create_draw)
-    router.add_prefix(None, "/api/admin/draws/", draw_detail)
-    router.add("GET", "/api/admin/lottery-draws/latest-term", latest_term)
+    router.add("GET", "/api/admin/draws", list_draw_routes, guard=require_admin)
+    router.add("POST", "/api/admin/draws", create_draw, guard=require_admin)
+    router.add_prefix(None, "/api/admin/draws/", draw_detail, guard=require_admin)
+    router.add("GET", "/api/admin/lottery-draws/latest-term", latest_term, guard=require_admin)
 
 
 def list_draw_routes(ctx: RequestContext) -> None:
-    limit = int(ctx.query_value("limit", ctx.query_value("page_size", "20")) or 20)
-    page = int(ctx.query_value("page", "1") or 1)
-    offset = (max(page, 1) - 1) * limit
+    limit = parse_bounded_int(
+        ctx.query_value("limit", ctx.query_value("page_size", "20")),
+        default=20,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="limit",
+    )
+    page = parse_bounded_int(
+        ctx.query_value("page", "1"),
+        default=1,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="page",
+    )
+    offset = (page - 1) * limit
     lottery_type_id_raw = ctx.query_value("lottery_type_id", None)
     lottery_type_id = int(lottery_type_id_raw) if lottery_type_id_raw else None
     ctx.send_json(list_draws(ctx.db_path, limit=limit, offset=offset, lottery_type_id=lottery_type_id))

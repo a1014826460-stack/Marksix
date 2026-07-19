@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from vendor.homepage_modules import build_vendor_homepage_modules, SUPPORTED_MODULE_KEYS
 
 
@@ -14,7 +15,12 @@ def homepage_modules(ctx: RequestContext) -> None:
     if raw_site_id in (None, ""):
         raise ValueError("site_id is required")
     site_id = int(raw_site_id)
-    history_limit = int(ctx.query_value("history_limit", "8") or 8)
+    history_limit = parse_bounded_int(
+        ctx.query_value("history_limit", "8"),
+        default=8,
+        maximum=MAX_PUBLIC_HISTORY_LIMIT,
+        field_name="history_limit",
+    )
     lottery_type_raw = ctx.query_value("lottery_type")
     lottery_type = int(lottery_type_raw) if lottery_type_raw not in (None, "") else None
     requested_modules = [

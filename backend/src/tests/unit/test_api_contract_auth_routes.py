@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from unittest.mock import patch
 
 from routes import auth_routes
@@ -20,6 +21,12 @@ def test_captcha_route_contract():
         "expires_in_seconds": 300,
     }
     assert store_mock.called
+
+
+def test_captcha_storage_does_not_run_schema_setup_per_request():
+    from captcha import store_captcha
+
+    assert "_ensure_tables" not in inspect.getsource(store_captcha)
 
 
 def test_login_missing_captcha_contract():

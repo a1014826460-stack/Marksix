@@ -467,7 +467,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "value": "",
         "value_type": "string",
         "description": "SMTP 登录密码或授权码。",
-        "is_secret": 0,
+        "is_secret": 1,
     },
     "alert.smtp_from_name": {
         "value": "Liuhecai 报警系统",
@@ -761,8 +761,8 @@ def list_system_configs(
         db_path (str | Path): 数据库路径或连接配置路径。
         prefix (str, optional): 配置 key 前缀筛选条件。空字符串表示不筛选。
             默认为空字符串。
-        include_secrets (bool, optional): 是否返回敏感配置的真实值。为 ``False`` 时，
-            敏感配置的 ``value_text`` 会被置为空字符串。默认为 ``False``。
+        include_secrets (bool, optional): 兼容旧调用方保留的参数；敏感配置始终不会返回
+            真实值，``value_text`` 固定为空字符串。
 
     Returns:
         list[dict[str, Any]]: 配置记录列表，每项包含 ``key``、``value_text``、
@@ -786,7 +786,7 @@ def list_system_configs(
         result: list[dict[str, Any]] = []
         for row in rows:
             data = dict(row)
-            if data.get("is_secret") and not include_secrets:
+            if data.get("is_secret"):
                 data["value_text"] = ""
             result.append(data)
         return result
@@ -920,7 +920,10 @@ def upsert_system_config(
             """,
             (normalized_key,),
         ).fetchone()
-        return dict(row) if row else {}
+        result = dict(row) if row else {}
+        if result.get("is_secret"):
+            result["value_text"] = ""
+        return result
 
 # ── 配置分组 ─────────────────────────────────────────
 
@@ -969,17 +972,19 @@ def get_config_effective(db_path: str | Path, key: str) -> dict[str, Any]:
     default_type = str(default_meta.get("value_type") or "string")
 
     db_value = None
+    db_is_secret = False
     source = "config.yaml"
     updated_at = ""
     try:
         with connect(db_path) as conn:
             if conn.table_exists(CONFIG_TABLE_NAME):
                 row = conn.execute(
-                    f"SELECT value_text, value_type, updated_at FROM {CONFIG_TABLE_NAME} WHERE key = ? LIMIT 1",
+                    f"SELECT value_text, value_type, is_secret, updated_at FROM {CONFIG_TABLE_NAME} WHERE key = ? LIMIT 1",
                     (key,),
                 ).fetchone()
                 if row:
                     rd = dict(row)
+                    db_is_secret = bool(rd.get("is_secret", 0))
                     db_value = _deserialize_value(
                         str(rd.get("value_text") or ""),
                         str(rd.get("value_type") or default_type),
@@ -989,7 +994,12 @@ def get_config_effective(db_path: str | Path, key: str) -> dict[str, Any]:
     except Exception:
         pass
 
+    is_secret = bool(default_meta.get("is_secret", 0)) or db_is_secret
     effective_value = db_value if db_value is not None else default_value
+    if is_secret:
+        db_value = None
+        default_value = None
+        effective_value = None
     return {
         "key": key,
         "value": db_value,
@@ -998,7 +1008,7 @@ def get_config_effective(db_path: str | Path, key: str) -> dict[str, Any]:
         "value_type": default_type,
         "source": source,
         "description": str(default_meta.get("description", "")),
-        "is_secret": bool(default_meta.get("is_secret", 0)),
+        "is_secret": is_secret,
         "updated_at": updated_at,
     }
 
@@ -1103,6 +1113,10 @@ def list_configs_effective(
         # 需要重启判断：调度器和日志配置修改后通常需重启服务
         requires_restart = key.startswith(("logging.", "auth."))
 
+        if is_secret:
+            default_value = None
+            effective_value = None
+
         results.append({
             "key": key,
             "value": display_value,
@@ -1191,7 +1205,10 @@ def reset_config(db_path: str | Path, key: str, changed_by: str = "") -> dict[st
             f"SELECT key, value_text, value_type, description, is_secret, updated_at FROM {CONFIG_TABLE_NAME} WHERE key = ? LIMIT 1",
             (key,),
         ).fetchone()
-        return dict(row) if row else {}
+        result = dict(row) if row else {}
+        if result.get("is_secret"):
+            result["value_text"] = ""
+        return result
 
 def batch_update_configs(
     db_path: str | Path,
@@ -1275,12 +1292,31 @@ def get_config_history(
             ).fetchone()["cnt"] or 0
         )
         rows = conn.execute(
-            f"SELECT * FROM system_config_history{where} ORDER BY changed_at DESC LIMIT ? OFFSET ?",
+            f"""
+            SELECT history.*, COALESCE(config.is_secret, 0) AS current_is_secret
+            FROM system_config_history AS history
+            LEFT JOIN {CONFIG_TABLE_NAME} AS config ON config.key = history.config_key
+            {where}
+            ORDER BY history.changed_at DESC
+            LIMIT ? OFFSET ?
+            """,
             params + [page_size, offset],
         ).fetchall()
 
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        config_key = str(item.get("config_key") or "")
+        is_secret = bool(CONFIG_DEFAULTS.get(config_key, {}).get("is_secret", 0)) or bool(
+            item.pop("current_is_secret", 0)
+        )
+        if is_secret:
+            item["old_value"] = "***已配置***" if item.get("old_value") else ""
+            item["new_value"] = "***已配置***" if item.get("new_value") else ""
+        items.append(item)
+
     return {
-        "items": [dict(row) for row in rows],
+        "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,

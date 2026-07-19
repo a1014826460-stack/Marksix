@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { adminApi, jsonBody, setAdminToken } from "@/lib/admin-api"
+import { adminApi, jsonBody } from "@/lib/admin-api"
 import { Field } from "@/features/shared/Field"
 import { formValue } from "@/features/shared/form-helpers"
 
@@ -118,7 +118,7 @@ export function LoginPage() {
     setMessageIsWarning(false)
 
     try {
-      const result = await adminApi<{ token: string }>("/auth/login", {
+      await adminApi<{ token: string }>("/auth/login", {
         method: "POST",
         body: jsonBody({
           username: formValue(form, "username"),
@@ -128,7 +128,6 @@ export function LoginPage() {
       })
       // 登录成功
       localFailuresRef.current = 0
-      setAdminToken(result.token)
       router.replace("/")
     } catch (error) {
       const err = error as Error & { locked?: boolean; attemptCount?: number; maxAttempts?: number }
@@ -281,7 +280,6 @@ export function LoginPage() {
             <Field label="用户名">
               <Input
                 name="username"
-                defaultValue="admin"
                 autoComplete="username"
                 disabled={locked}
               />
@@ -290,7 +288,6 @@ export function LoginPage() {
               <Input
                 name="password"
                 type="password"
-                defaultValue="admin123"
                 autoComplete="current-password"
                 disabled={locked}
               />

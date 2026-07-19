@@ -28,6 +28,7 @@ yarn-error.log*
 .env.production
 .env.development
 deploy/nginx.conf.local
+ops/frp-target-b/frpc.local.toml
 
 # vercel
 .vercel
@@ -73,4 +74,3 @@ frontend/public/data/
 backend/data/logs/app.log.3
 backend/data/logs/app.log.2
 backend/data/logs/app.log.1
-

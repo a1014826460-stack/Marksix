@@ -8,19 +8,18 @@
   viewer      — 只读用户，仅可查看公开数据
 
 当前实现：
-  - super_admin / admin 拥有全部站点权限（向后兼容现有系统）
-  - site_admin 可访问所有站点（站点粒度的权限控制预留接口）
-  - operator 可查看数据、生成预测，但不可创建/更新/删除站点
-  - viewer 仅可读取公开数据，不可执行任何管理操作
-
-后续扩展方向：
-  - 新增 site_permissions 表，将 site_admin 映射到具体站点
-  - 在 managed_sites 上增加 created_by 字段，限制 operator 只能操作自己创建的站点
+  - super_admin / admin 拥有全部站点权限（保持现有管理员兼容）。
+  - site_admin、operator、viewer 必须在 ``site_permissions`` 中拥有对应站点授权。
+  - operator 仅在被授予 ``can_generate`` 时可以生成预测。
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+from db import connect
+from .permission_repository import has_site_permission
 
 # ── 角色常量 ──────────────────────────────────────────
 
@@ -52,7 +51,27 @@ def is_admin(user: dict[str, Any] | None) -> bool:
     return _resolve_role(user) in _ADMIN_ROLES
 
 
-def can_access_site(user: dict[str, Any] | None, site_id: int) -> bool:
+def _has_permission(user: dict[str, Any] | None, site_id: int, permission: str, db_path: str | Path | None) -> bool:
+    role = _resolve_role(user)
+    if role in _ADMIN_ROLES:
+        return True
+    if role not in _VIEW_BACKEND_ROLES or db_path is None:
+        return False
+    user_id = user.get("id") if user else None
+    try:
+        normalized_user_id = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    try:
+        with connect(db_path) as conn:
+            if not conn.table_exists("site_permissions"):
+                return False
+            return has_site_permission(conn, user_id=normalized_user_id, site_id=int(site_id), permission=permission)
+    except Exception:
+        return False
+
+
+def can_access_site(user: dict[str, Any] | None, site_id: int, *, db_path: str | Path | None = None) -> bool:
     """判断用户是否有权限访问指定站点。
 
     super_admin / admin: 全部站点
@@ -62,14 +81,10 @@ def can_access_site(user: dict[str, Any] | None, site_id: int) -> bool:
     role = _resolve_role(user)
     if not role:
         return False
-    if role in _ADMIN_ROLES:
-        return True
-    # site_admin / operator / viewer 当前可访问所有站点
-    # 后续通过 site_permissions 表进行站点粒度控制
-    return role in _VIEW_BACKEND_ROLES
+    return _has_permission(user, site_id, "view", db_path)
 
 
-def can_manage_site(user: dict[str, Any] | None, site_id: int) -> bool:
+def can_manage_site(user: dict[str, Any] | None, site_id: int, *, db_path: str | Path | None = None) -> bool:
     """判断用户是否有权限管理站点（创建/更新/删除）。
 
     只有 super_admin / admin / site_admin 可以管理站点。
@@ -78,10 +93,10 @@ def can_manage_site(user: dict[str, Any] | None, site_id: int) -> bool:
     role = _resolve_role(user)
     if not role:
         return False
-    return role in {ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SITE_ADMIN}
+    return role in _ADMIN_ROLES or (role == ROLE_SITE_ADMIN and _has_permission(user, site_id, "manage", db_path))
 
 
-def can_generate_predictions(user: dict[str, Any] | None, site_id: int) -> bool:
+def can_generate_predictions(user: dict[str, Any] | None, site_id: int, *, db_path: str | Path | None = None) -> bool:
     """判断用户是否有权限为指定站点生成预测资料。
 
     super_admin / admin / site_admin / operator 可生成预测。
@@ -90,7 +105,9 @@ def can_generate_predictions(user: dict[str, Any] | None, site_id: int) -> bool:
     role = _resolve_role(user)
     if not role:
         return False
-    return role in _GENERATION_ROLES
+    return role in _ADMIN_ROLES or (
+        role in {ROLE_SITE_ADMIN, ROLE_OPERATOR} and _has_permission(user, site_id, "generate", db_path)
+    )
 
 
 def can_view_backend(user: dict[str, Any] | None) -> bool:
@@ -130,15 +147,15 @@ def require_admin(user: dict[str, Any] | None) -> None:
         raise ForbiddenError("需要管理员权限")
 
 
-def require_site_management(user: dict[str, Any] | None, site_id: int) -> None:
+def require_site_management(user: dict[str, Any] | None, site_id: int, *, db_path: str | Path | None = None) -> None:
     """要求站点管理权限，否则抛出 ForbiddenError。"""
     from core.errors import ForbiddenError
-    if not can_manage_site(user, site_id):
+    if not can_manage_site(user, site_id, db_path=db_path):
         raise ForbiddenError("当前账号没有管理该站点的权限")
 
 
-def require_generation_permission(user: dict[str, Any] | None, site_id: int) -> None:
+def require_generation_permission(user: dict[str, Any] | None, site_id: int, *, db_path: str | Path | None = None) -> None:
     """要求预测生成权限，否则抛出 ForbiddenError。"""
     from core.errors import ForbiddenError
-    if not can_generate_predictions(user, site_id):
+    if not can_generate_predictions(user, site_id, db_path=db_path):
         raise ForbiddenError("当前账号没有生成预测数据的权限")

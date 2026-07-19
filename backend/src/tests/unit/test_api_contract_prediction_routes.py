@@ -169,8 +169,9 @@ def test_site_prediction_modules_route_contract_keeps_service_payload():
     }
 
     with patch("routes.admin_site_routes.parse_site_route_context") as parse_context, \
-         patch("routes.admin_site_routes.resolve_site_context"), \
-         patch("routes.admin_site_routes.list_site_prediction_modules", return_value=payload):
+          patch("routes.admin_site_routes.resolve_site_context"), \
+          patch("domains.sites.permissions.can_access_site", return_value=True), \
+          patch("routes.admin_site_routes.list_site_prediction_modules", return_value=payload):
         parse_context.return_value.parts = ["", "api", "admin", "sites", "5", "prediction-modules"]
         parse_context.return_value.site_id = 5
 

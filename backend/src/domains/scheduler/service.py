@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from crawler.collectors import _cfg
 from db import connect as db_connect
+from security.redaction import redact_value
 
 from . import repository
 
@@ -20,6 +21,9 @@ TASK_TYPE_DAILY_PREDICTION = "daily_prediction"
 TASK_TYPE_POSTGRES_BACKUP = "postgres_backup"
 SCHEDULE_SCOPE_AUTO = "auto"
 SCHEDULE_SCOPE_MANUAL = "manual"
+TASK_TYPE_MANUAL_JOB = "manual_job"
+MAX_MANUAL_JOB_RESULT_BYTES = 16 * 1024
+SCHEDULER_WORKER_LEASE_NAME = "crawler_scheduler"
 
 
 def _task_poll_interval_seconds(db_path: str | Path) -> int:
@@ -34,8 +38,77 @@ def _task_retry_delay_seconds(db_path: str | Path) -> int:
     return max(5, int(_cfg(db_path, "crawler.task_retry_delay_seconds", 60)))
 
 
+def _worker_lease_seconds(db_path: str | Path) -> int:
+    return max(30, int(_cfg(db_path, "crawler.worker_lease_seconds", 90)))
+
+
 def _json_dumps(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+
+def _safe_manual_job_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Persist only a bounded, recursively redacted manual-job summary."""
+    safe_result = redact_value(dict(result))
+    serialized = _json_dumps(safe_result)
+    if len(serialized.encode("utf-8")) <= MAX_MANUAL_JOB_RESULT_BYTES:
+        return safe_result
+    bounded: dict[str, Any] = {}
+    for key, value in safe_result.items():
+        if len(_json_dumps({key: value}).encode("utf-8")) <= 4096:
+            bounded[key] = value
+    bounded["truncated"] = True
+    return bounded
+
+
+def _lease_deadline(now: datetime, lease_seconds: int) -> str:
+    return (now + timedelta(seconds=max(1, int(lease_seconds)))).isoformat()
+
+
+def try_acquire_scheduler_worker_lease(
+    db_path: str | Path,
+    *,
+    holder_id: str,
+    now: datetime | None = None,
+    lease_seconds: int | None = None,
+) -> bool:
+    current = now or datetime.now(timezone.utc)
+    duration = lease_seconds if lease_seconds is not None else _worker_lease_seconds(db_path)
+    with db_connect(db_path) as conn:
+        return repository.try_acquire_worker_lease(
+            conn,
+            lease_name=SCHEDULER_WORKER_LEASE_NAME,
+            holder_id=holder_id,
+            now_text=current.isoformat(),
+            expires_at=_lease_deadline(current, duration),
+        )
+
+
+def renew_scheduler_worker_lease(
+    db_path: str | Path,
+    *,
+    holder_id: str,
+    now: datetime | None = None,
+    lease_seconds: int | None = None,
+) -> bool:
+    current = now or datetime.now(timezone.utc)
+    duration = lease_seconds if lease_seconds is not None else _worker_lease_seconds(db_path)
+    with db_connect(db_path) as conn:
+        return repository.renew_worker_lease(
+            conn,
+            lease_name=SCHEDULER_WORKER_LEASE_NAME,
+            holder_id=holder_id,
+            now_text=current.isoformat(),
+            expires_at=_lease_deadline(current, duration),
+        )
+
+
+def release_scheduler_worker_lease(db_path: str | Path, *, holder_id: str) -> None:
+    with db_connect(db_path) as conn:
+        repository.release_worker_lease(
+            conn,
+            lease_name=SCHEDULER_WORKER_LEASE_NAME,
+            holder_id=holder_id,
+        )
 
 
 def _task_key(task_type: str, payload: dict[str, Any]) -> str:
@@ -240,7 +313,8 @@ def run_due_scheduler_tasks(
             run_id = create_scheduler_task_run(db_path, task=task, worker_id=worker_id)
             execute_task(task)
             finish_scheduler_task_run(db_path, run_id=run_id, status="done")
-            mark_scheduler_task_done(db_path, int(task["id"]))
+            if str(task.get("task_type") or "") != TASK_TYPE_MANUAL_JOB:
+                mark_scheduler_task_done(db_path, int(task["id"]))
         except Exception as exc:
             finish_scheduler_task_run(
                 db_path,
@@ -248,7 +322,8 @@ def run_due_scheduler_tasks(
                 status="failed",
                 error_message=f"{type(exc).__name__}: {exc}",
             )
-            mark_scheduler_task_failed(db_path, task, exc)
+            if str(task.get("task_type") or "") != TASK_TYPE_MANUAL_JOB:
+                mark_scheduler_task_failed(db_path, task, exc)
             if on_task_failed:
                 on_task_failed(task, exc)
     return tasks
@@ -373,3 +448,93 @@ def enqueue_manual_daily_prediction_task(
         created_by=created_by,
     )
     return {"task_key": task_key, "run_at": run_at, "schedule_date": schedule_date}
+
+
+def enqueue_manual_job(
+    db_path: str | Path,
+    *,
+    job_type: str,
+    payload: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+    created_by: str = "unknown",
+    job_id: str,
+    run_at: str,
+) -> str:
+    """Persist a manually-requested job without retaining a callable in process memory."""
+    task_payload = {
+        "job_id": job_id,
+        "job_type": str(job_type),
+        "payload": dict(payload),
+        "metadata": dict(metadata or {}),
+        "result": None,
+    }
+    upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_MANUAL_JOB,
+        payload=task_payload,
+        run_at=run_at,
+        max_attempts=1,
+        schedule_scope=SCHEDULE_SCOPE_MANUAL,
+        force_reschedule=False,
+        task_key_override=f"manual_job:{job_id}",
+        created_by=created_by,
+    )
+    return job_id
+
+
+def get_manual_job(db_path: str | Path, job_id: str) -> dict[str, Any] | None:
+    with db_connect(db_path) as conn:
+        row = repository.find_manual_job_by_id(conn, job_id)
+    if not row:
+        return None
+    try:
+        payload = json.loads(str(row.get("payload_json") or "{}"))
+    except json.JSONDecodeError:
+        payload = {}
+    status = str(row.get("status") or "pending")
+    return {
+        "status": "error" if status == "failed" else status,
+        "started_at": row.get("locked_at") or row.get("last_finished_at"),
+        "result": payload.get("result"),
+        "metadata": dict(payload.get("metadata") or {}),
+        **({"error": str(row.get("last_error") or "")} if status == "failed" else {}),
+    }
+
+
+def complete_manual_job(db_path: str | Path, task: dict[str, Any], *, result: dict[str, Any]) -> None:
+    """Store a safe job result and mark an acquired manual job done."""
+    try:
+        payload = json.loads(str(task.get("payload_json") or "{}"))
+    except json.JSONDecodeError:
+        payload = {}
+    payload["result"] = _safe_manual_job_result(result)
+    now_text = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        repository.update_manual_job_payload(
+            conn,
+            task_id=int(task["id"]),
+            payload_json=_json_dumps(payload),
+            updated_at=now_text,
+        )
+        repository.mark_manual_job_done(
+            conn,
+            task_id=int(task["id"]),
+            started_at=str(task.get("locked_at") or now_text),
+            finished_at=now_text,
+            updated_at=now_text,
+        )
+
+
+def fail_manual_job(db_path: str | Path, task: dict[str, Any], exc: Exception) -> None:
+    """Expose the persisted manual-job error without storing a traceback."""
+    now_text = datetime.now(timezone.utc).isoformat()
+    message = f"{type(exc).__name__}: {exc}"
+    with db_connect(db_path) as conn:
+        repository.mark_task_failed(
+            conn,
+            task_id=int(task["id"]),
+            status="failed",
+            run_at=now_text,
+            last_error=message,
+            updated_at=now_text,
+        )

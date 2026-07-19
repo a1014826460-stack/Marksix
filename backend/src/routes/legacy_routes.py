@@ -4,6 +4,7 @@ from legacy.api import get_legacy_current_term, list_legacy_post_images, load_le
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_LEGACY_LIST_LIMIT, parse_bounded_int
 from db import connect
 
 
@@ -60,7 +61,12 @@ def post_list(ctx: RequestContext, *, default_pc: int, default_web: int, default
     pc_raw = ctx.query_value("pc", str(default_pc))
     web_raw = ctx.query_value("web", str(default_web))
     type_raw = ctx.query_value("type", str(default_type))
-    limit = int(ctx.query_value("limit", "20") or 20)
+    limit = parse_bounded_int(
+        ctx.query_value("limit", "20"),
+        default=20,
+        maximum=MAX_LEGACY_LIST_LIMIT,
+        field_name="limit",
+    )
     ctx.send_json(
         {
             "data": list_legacy_post_images(
@@ -80,7 +86,12 @@ def module_rows(ctx: RequestContext) -> None:
         raise ValueError("modes_id 必须为正整数")
     web_value = ctx.query_value("web")
     type_raw = ctx.query_value("type")
-    limit = int(ctx.query_value("limit", "10") or 10)
+    limit = parse_bounded_int(
+        ctx.query_value("limit", "10"),
+        default=10,
+        maximum=MAX_LEGACY_LIST_LIMIT,
+        field_name="limit",
+    )
     ctx.send_json(
         load_legacy_mode_rows(
             ctx.db_path,

@@ -18,6 +18,16 @@
 
 ## 概览
 
+## 密钥管理与轮换
+
+- `DATABASE_URL`、`POSTGRES_PASSWORD`、`FRP_AUTH_TOKEN` 只能通过部署平台 Secret、受限环境变量或被 Git 忽略的本地文件注入；不得写入脚本、TOML、文档示例或日志。
+- 如果历史中曾提交凭据，先在数据库和 FRP 服务端轮换旧值，再撤销旧会话和不再需要的远程端口授权。仅删除仓库文本不能使旧凭据失效。
+- 在提交或部署前运行：
+
+```powershell
+pwsh -File .\scripts\check-no-secrets.ps1
+```
+
 系统由 6 个容器组成：
 
 - `postgres`
@@ -26,6 +36,9 @@
 - `backend-admin`
 - `frontend`
 - `nginx`
+
+此外，`scheduler-worker` 是独立的持久化调度进程：它执行抓取、批量生成和备份任务；
+`python-api` 仅提供 HTTP 接口，不再在自身进程中启动调度 timer。部署时必须保持该容器运行。
 
 对外访问入口：
 
@@ -240,6 +253,13 @@ chmod +x deploy/deploy.sh
 5. 启动容器
 6. 等待健康检查通过
 7. 首次导入 `fixed_data`（如需要）
+
+启动后确认 worker 状态：
+
+```bash
+docker compose ps scheduler-worker
+docker compose logs --tail=100 scheduler-worker
+```
 
 ## 快速验证
 

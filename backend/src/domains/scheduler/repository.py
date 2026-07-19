@@ -6,6 +6,7 @@ from typing import Any
 
 TASK_TABLE_NAME = "scheduler_tasks"
 TASK_RUN_TABLE_NAME = "scheduler_task_runs"
+WORKER_LEASE_TABLE_NAME = "scheduler_worker_leases"
 
 
 def find_task_by_key(conn: Any, task_key: str) -> dict[str, Any] | None:
@@ -258,6 +259,25 @@ def mark_task_done(conn: Any, *, task_id: int, finished_at: str, updated_at: str
     )
 
 
+def mark_manual_job_done(
+    conn: Any,
+    *,
+    task_id: int,
+    started_at: str,
+    finished_at: str,
+    updated_at: str,
+) -> None:
+    conn.execute(
+        f"""
+        UPDATE {TASK_TABLE_NAME}
+        SET status = 'done', locked_at = ?, locked_by = NULL,
+            last_error = NULL, last_finished_at = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (started_at, finished_at, updated_at, task_id),
+    )
+
+
 def mark_task_failed(
     conn: Any,
     *,
@@ -279,4 +299,86 @@ def mark_task_failed(
         WHERE id = ?
         """,
         (status, run_at, last_error, updated_at, task_id),
+    )
+
+
+def find_manual_job_by_id(conn: Any, job_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        f"""
+        SELECT task_key, status, payload_json, locked_at, last_finished_at, last_error
+        FROM {TASK_TABLE_NAME}
+        WHERE task_key = ?
+        LIMIT 1
+        """,
+        (f"manual_job:{job_id}",),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_manual_job_payload(
+    conn: Any,
+    *,
+    task_id: int,
+    payload_json: str,
+    updated_at: str,
+) -> None:
+    conn.execute(
+        f"UPDATE {TASK_TABLE_NAME} SET payload_json = ?, updated_at = ? WHERE id = ?",
+        (payload_json, updated_at, task_id),
+    )
+
+
+def try_acquire_worker_lease(
+    conn: Any,
+    *,
+    lease_name: str,
+    holder_id: str,
+    now_text: str,
+    expires_at: str,
+) -> bool:
+    """Atomically acquire an expired lease or renew one held by this worker."""
+    row = conn.execute(
+        f"""
+        INSERT INTO {WORKER_LEASE_TABLE_NAME} (
+            lease_name, holder_id, lease_expires_at, updated_at
+        )
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(lease_name) DO UPDATE SET
+            holder_id = excluded.holder_id,
+            lease_expires_at = excluded.lease_expires_at,
+            updated_at = excluded.updated_at
+        WHERE {WORKER_LEASE_TABLE_NAME}.lease_expires_at <= ?
+           OR {WORKER_LEASE_TABLE_NAME}.holder_id = ?
+        RETURNING holder_id
+        """,
+        (lease_name, holder_id, expires_at, now_text, now_text, holder_id),
+    ).fetchone()
+    return bool(row and str(row["holder_id"] or "") == holder_id)
+
+
+def renew_worker_lease(
+    conn: Any,
+    *,
+    lease_name: str,
+    holder_id: str,
+    now_text: str,
+    expires_at: str,
+) -> bool:
+    updated = conn.execute(
+        f"""
+        UPDATE {WORKER_LEASE_TABLE_NAME}
+        SET lease_expires_at = ?, updated_at = ?
+        WHERE lease_name = ?
+          AND holder_id = ?
+          AND lease_expires_at > ?
+        """,
+        (expires_at, now_text, lease_name, holder_id, now_text),
+    )
+    return bool(updated.rowcount)
+
+
+def release_worker_lease(conn: Any, *, lease_name: str, holder_id: str) -> None:
+    conn.execute(
+        f"DELETE FROM {WORKER_LEASE_TABLE_NAME} WHERE lease_name = ? AND holder_id = ?",
+        (lease_name, holder_id),
     )

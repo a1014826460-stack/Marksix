@@ -8,13 +8,27 @@ from typing import Any
 
 from http import HTTPStatus
 
+from .security import cors_allowed_origin
+
 
 class ResponseWriter:
     def __init__(self, handler: Any):
         self._handler = handler
+        self._pending_headers: list[tuple[str, str]] = []
+
+    def _send_pending_headers(self) -> None:
+        for key, value in self._pending_headers:
+            self._handler.send_header(key, value)
+        self._pending_headers.clear()
 
     def send_cors_headers(self) -> None:
-        self._handler.send_header("Access-Control-Allow-Origin", "*")
+        headers = getattr(self._handler, "headers", None)
+        origin = headers.get("Origin") if hasattr(headers, "get") else None
+        allowed_origin = cors_allowed_origin(origin)
+        if not allowed_origin:
+            return
+        self._handler.send_header("Access-Control-Allow-Origin", allowed_origin)
+        self._handler.send_header("Vary", "Origin")
         self._handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self._handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -22,10 +36,27 @@ class ResponseWriter:
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self._handler.send_response(status)
         self.send_cors_headers()
+        self._send_pending_headers()
         self._handler.send_header("Content-Type", "application/json; charset=utf-8")
         self._handler.send_header("Content-Length", str(len(body)))
         self._handler.end_headers()
         self._handler.wfile.write(body)
+
+    def set_session_cookie(self, token: str, *, max_age_seconds: int, secure: bool) -> None:
+        attributes = [
+            f"liuhecai_admin_session={token}",
+            "Path=/",
+            f"Max-Age={max(0, int(max_age_seconds))}",
+            "HttpOnly",
+            "SameSite=Strict",
+        ]
+        if secure:
+            attributes.append("Secure")
+        self._pending_headers.append(("Set-Cookie", "; ".join(attributes)))
+
+    def clear_session_cookie(self, *, secure: bool) -> None:
+        self.set_session_cookie("", max_age_seconds=0, secure=secure)
+
 
     def send_html(self, text: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = text.encode("utf-8")

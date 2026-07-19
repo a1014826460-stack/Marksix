@@ -15,7 +15,6 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from core.errors import AppError, UnauthorizedError, ForbiddenError
-from crawler.crawler_service import CrawlerScheduler
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
 from logger import init_logging
 from predict.mechanisms import ensure_prediction_configs_loaded
@@ -26,6 +25,7 @@ from .auth import get_current_user, require_authenticated
 from .request_context import RequestContext
 from .router import Router
 from .startup_warnings import log_startup_risk_warnings
+from security.redaction import redact_text
 
 from routes import (
     admin_dashboard_routes,
@@ -136,7 +136,9 @@ def _dispatch_error_response(ctx: RequestContext, exc: Exception, logger: loggin
     elif isinstance(exc, ValueError):
         ctx.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
     else:
-        logger.exception("Unhandled error: %s %s", ctx.command, ctx.raw_path)
+        from .router import _build_request_log_extra
+
+        logger.exception("Unhandled error: %s", ctx.command, extra=_build_request_log_extra(ctx))
         payload = {"ok": False, "error": "服务器内部错误"}
         if _DEBUG:
             import traceback
@@ -189,6 +191,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def dispatch(self, method: str) -> None:
         logger = logging.getLogger("app.request")
+        ctx: RequestContext | None = None
         try:
             ctx = RequestContext(self, method)
             ctx.state["database_summary"] = database_summary
@@ -197,7 +200,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 require_authenticated(ctx)
             ROUTER.dispatch(ctx)
         except Exception as exc:
-            ctx = RequestContext(self, method)
+            ctx = ctx or RequestContext(self, method)
             _dispatch_error_response(ctx, exc, logger)
 
 
@@ -215,14 +218,12 @@ def run_server(host: str, port: int, db_path: str | Path) -> None:
     print(f"Backend API running at http://{host}:{port}")
     print(f"CMS admin page: http://{host}:{port}/admin")
     print(f"Database engine: {detect_database_engine(db_path)} (formal runtime requires PostgreSQL)")
-    print(f"Database target: {db_path}")
+    print(f"Database target: {redact_text(db_path)}")
     log_startup_risk_warnings()
-    scheduler = CrawlerScheduler(db_path)
-    scheduler.start()
     try:
         server.serve_forever()
     finally:
-        scheduler.stop()
+        server.server_close()
 
 
 def build_parser() -> argparse.ArgumentParser:

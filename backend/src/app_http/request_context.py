@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from core.errors import ValidationError
+
 from .response import ResponseWriter
+from .security import parse_json_content_length
 
 
 class RequestContext:
@@ -66,14 +69,22 @@ class RequestContext:
         header = self.headers.get("Authorization", "")
         if header.lower().startswith("bearer "):
             return header.split(" ", 1)[1].strip()
+        raw_cookie = str(self.headers.get("Cookie", "") or "")
+        for item in raw_cookie.split(";"):
+            name, separator, value = item.strip().partition("=")
+            if separator and name == "liuhecai_admin_session" and value:
+                return value.strip()
         return None
 
     def read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
+        length = parse_json_content_length(self.headers.get("Content-Length"))
         if length == 0:
             return {}
-        raw = self.handler.rfile.read(length).decode("utf-8")
-        data = json.loads(raw)
+        try:
+            raw = self.handler.rfile.read(length).decode("utf-8")
+            data = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValidationError("JSON 请求体格式错误") from exc
         if not isinstance(data, dict):
             raise ValueError("JSON body 必须是对象")
         return data
@@ -92,6 +103,10 @@ class RequestContext:
 
     def send_error_json(self, status: Any, message: str, detail: str | None = None) -> None:
         self.response.send_error_json(status, message, detail)
+
+    def request_is_secure(self) -> bool:
+        forwarded = str(self.headers.get("X-Forwarded-Proto", "") or "").split(",", 1)[0].strip().lower()
+        return forwarded == "https" or bool(getattr(self.handler, "server", None) and getattr(self.handler.server, "uses_https", False))
 
     def serve_upload(self, path: str, base_dir: Path) -> None:
         self.response.serve_upload(path, base_dir)

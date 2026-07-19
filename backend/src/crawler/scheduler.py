@@ -971,9 +971,9 @@ class CrawlerScheduler:
         后，下一次轮询（最多 60 秒）会自动按新时间重新调度。
 
         - HK/Macau (1,2): 触发 _do_precise_draw_check（HTTP 请求验证期号）
-        - Taiwan (3):     触发开奖 + 更新 next_time + 延迟回填
+        - Taiwan (3):     由持久化 taiwan_precise_open 任务执行，避免与内存 timer 重复
         """
-        for lt_id in [1, 2, 3]:
+        for lt_id in [1, 2]:
             # 取消旧的定时器
             if lt_id in self._precise_timers:
                 self._precise_timers[lt_id].cancel()
@@ -1106,6 +1106,8 @@ class CrawlerScheduler:
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
         _ensure_postgres_backup_tasks(self.db_path)
+        # Taiwan precise opening is durable so restarts cannot lose the next draw.
+        _ensure_taiwan_precise_open_task(self.db_path)
         # 如果今天配置的时间已过且今天尚未执行过预测，立即补跑一次
         self._run_daily_prediction_if_missed()
         # 精确开奖检查（HK/Macau/Taiwan 均基于 system_config 中 lottery.{type}_next_time 调度）
@@ -1349,6 +1351,13 @@ class CrawlerScheduler:
             )
 
         def on_task_failed(task: dict[str, Any], exc: Exception) -> None:
+            if str(task.get("task_type") or "") == "manual_job":
+                try:
+                    from domains.scheduler.service import fail_manual_job
+
+                    fail_manual_job(self.db_path, task, exc)
+                except Exception as persist_exc:
+                    _crawler_logger.error("Manual job failure persistence failed: %s", persist_exc)
             if str(task.get("task_type") or "") == TASK_TYPE_POSTGRES_BACKUP:
                 try:
                     from crawler.postgres_backup import send_backup_failure_alert
@@ -1376,6 +1385,10 @@ class CrawlerScheduler:
             )
         except Exception as exc:
             _crawler_logger.error("Failed to acquire scheduler tasks: %s", exc)
+
+    def run_due_tasks_once(self) -> None:
+        """Run one durable-task polling cycle for the standalone worker."""
+        self._run_due_tasks()
 
     def _execute_task(self, task: dict[str, Any]) -> None:
         task_type = str(task.get("task_type") or "")
@@ -1420,6 +1433,9 @@ class CrawlerScheduler:
             _crawler_logger.info("PostgresBackup done: %s", result)
             _ensure_postgres_backup_tasks(self.db_path)
             return
+        if task_type == "manual_job":
+            self._execute_manual_job(task, payload)
+            return
         if task_type == "backfill_after_draw":
             _backfill_latest_opened_prediction_results(
                 self.db_path,
@@ -1427,6 +1443,27 @@ class CrawlerScheduler:
             )
             return
         raise ValueError(f"Unsupported scheduler task type: {task_type}")
+
+    def _execute_manual_job(self, task: dict[str, Any], payload: dict[str, Any]) -> None:
+        job_type = str(payload.get("job_type") or "")
+        job_payload = payload.get("payload") or {}
+        if not isinstance(job_payload, dict):
+            raise ValueError("Manual job payload must be an object")
+        if job_type == "crawl_and_generate":
+            result = crawl_and_generate_for_type(self.db_path, int(job_payload["lottery_type_id"]))
+        elif job_type == "site_prediction_generate_all":
+            from domains.prediction.service import bulk_generate_site_predictions
+
+            result = bulk_generate_site_predictions(
+                self.db_path,
+                int(job_payload["site_id"]),
+                dict(job_payload.get("options") or {}),
+            )
+        else:
+            raise ValueError(f"Unsupported manual job type: {job_type}")
+        from domains.scheduler.service import complete_manual_job
+
+        complete_manual_job(self.db_path, task, result=dict(result or {}))
 
     def _open_taiwan_draws_and_update_next_time(self) -> int:
         """精准开奖：将 type=3 且 draw_time 已过的未开奖记录置为 is_opened=1，

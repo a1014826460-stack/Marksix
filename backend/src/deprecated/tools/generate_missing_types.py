@@ -10,6 +10,7 @@
   python backend/src/utils/generate_missing_types.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ if str(UTILS_ROOT) not in sys.path:
 
 from db import connect, quote_identifier
 
-DEFAULT_DB_PATH = "postgresql://postgres:2225427@localhost:5432/liuhecai"
+DEFAULT_DB_PATH = os.environ.get("DATABASE_URL", "").strip()
 
 # 旧模块关心的 modes_id 列表
 LEGACY_MODES = [
@@ -44,6 +45,8 @@ def get_column_list(conn, table_name: str) -> list[str]:
 
 def generate_missing_types(db_path: str = DEFAULT_DB_PATH) -> dict[str, int]:
     """为缺少 type=1 或 type=2 数据的 mode_payload 表填充数据。"""
+    if not db_path:
+        raise ValueError("DATABASE_URL or an explicit db_path is required")
     results: dict[str, int] = {"type1_inserted": 0, "type2_inserted": 0}
 
     with connect(db_path) as conn:
@@ -132,7 +135,9 @@ def generate_missing_types(db_path: str = DEFAULT_DB_PATH) -> dict[str, int]:
 
 def main():
     db_path = DEFAULT_DB_PATH
-    print(f"=== 开始生成缺失的 type=1/2 数据 (db={db_path}) ===\n")
+    if not db_path:
+        raise SystemExit("DATABASE_URL must be set before running this script")
+    print("=== 开始生成缺失的 type=1/2 数据 ===\n")
 
     results = generate_missing_types(db_path)
 

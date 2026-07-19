@@ -37,6 +37,10 @@ def ensure_indexes(conn: Any) -> None:
         f"""{_idx_sql} idx_site_prediction_modules_site_status_sort
            ON site_prediction_modules (site_id, status, sort_order)"""
     )
+    conn.execute(
+        f"""{_idx_sql} idx_site_permissions_site_user
+           ON site_permissions (site_id, user_id)"""
+    )
 
     # ── 调度器任务 ──
     conn.execute(

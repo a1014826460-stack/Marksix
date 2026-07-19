@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { adminApi, clearAdminToken, getAdminToken } from "@/lib/admin-api"
+import { adminApi } from "@/lib/admin-api"
 
 export type AuthUser = {
   display_name: string
@@ -34,13 +34,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const token = getAdminToken()
-    if (!token && pathname !== "/login") {
-      router.replace("/login")
-      setReady(true)
-      return
-    }
-    if (!token) {
+    if (pathname === "/login") {
       setReady(true)
       return
     }
@@ -50,7 +44,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
         setReady(true)
       })
       .catch(() => {
-        clearAdminToken()
         router.replace("/login")
         setReady(true)
       })

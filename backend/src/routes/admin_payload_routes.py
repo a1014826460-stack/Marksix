@@ -7,6 +7,8 @@ from admin.payload import (
 )
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_admin
 from app_http.site_context import (
     extract_site_web_value,
     parse_site_route_context,
@@ -17,8 +19,8 @@ from domains.prediction.mode_payload_service import ensure_mode_payload_row_belo
 
 
 def register(router: Router) -> None:
-    router.add_regex(None, r"^/api/admin/sites/\d+/mode-payload/[^/]+$", site_payload_detail)
-    router.add_regex(None, r"^/api/admin/sites/\d+/mode-payload/[^/]+/[^/]+$", site_payload_detail)
+    router.add_regex(None, r"^/api/admin/sites/\d+/mode-payload/[^/]+$", site_payload_detail, guard=require_admin)
+    router.add_regex(None, r"^/api/admin/sites/\d+/mode-payload/[^/]+/[^/]+$", site_payload_detail, guard=require_admin)
 
 
 def site_payload_detail(ctx: RequestContext) -> None:
@@ -41,8 +43,18 @@ def site_payload_detail(ctx: RequestContext) -> None:
                 table_name,
                 type_filter=ctx.query_value("type", "") or "",
                 web_filter=web_filter,
-                page=int(ctx.query_value("page", "1") or 1),
-                page_size=int(ctx.query_value("page_size", "50") or 50),
+                page=parse_bounded_int(
+                    ctx.query_value("page", "1"),
+                    default=1,
+                    maximum=MAX_ADMIN_LIST_LIMIT,
+                    field_name="page",
+                ),
+                page_size=parse_bounded_int(
+                    ctx.query_value("page_size", "50"),
+                    default=50,
+                    maximum=MAX_ADMIN_LIST_LIMIT,
+                    field_name="page_size",
+                ),
                 search=ctx.query_value("search", "") or "",
                 source=query_source,
             )

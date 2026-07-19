@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from crawler.crawler_service import run_hk_crawler, run_macau_crawler
 
+from app_http.auth import require_admin
 from app_http.request_context import RequestContext
 from app_http.router import Router
 
 
 def register(router: Router) -> None:
-    router.add("POST", "/api/admin/crawler/run-hk", run_hk)
-    router.add("POST", "/api/admin/crawler/run-macau", run_macau)
-    router.add("POST", "/api/admin/crawler/run-all", run_all)
+    router.add("POST", "/api/admin/crawler/run-hk", run_hk, guard=require_admin)
+    router.add("POST", "/api/admin/crawler/run-macau", run_macau, guard=require_admin)
+    router.add("POST", "/api/admin/crawler/run-all", run_all, guard=require_admin)
 
 
 def run_hk(ctx: RequestContext) -> None:

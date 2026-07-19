@@ -6,24 +6,36 @@ from utils.normalize_payload_tables import normalize_payload_tables
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.security import MAX_ADMIN_LIST_LIMIT, parse_bounded_int
+from app_http.auth import require_admin
 
 from .common import list_fetch_runs
 
 
 def register(router: Router, *, default_pc: int, default_web: int, default_type: int) -> None:
-    router.add("GET", "/api/admin/fetch-runs", fetch_runs)
-    router.add("GET", "/api/admin/legacy-images", lambda ctx: legacy_images(ctx, default_pc, default_web, default_type))
-    router.add("POST", "/api/admin/normalize", normalize)
-    router.add("POST", "/api/admin/text-mappings", text_mappings)
+    router.add("GET", "/api/admin/fetch-runs", fetch_runs, guard=require_admin)
+    router.add("GET", "/api/admin/legacy-images", lambda ctx: legacy_images(ctx, default_pc, default_web, default_type), guard=require_admin)
+    router.add("POST", "/api/admin/normalize", normalize, guard=require_admin)
+    router.add("POST", "/api/admin/text-mappings", text_mappings, guard=require_admin)
 
 
 def fetch_runs(ctx: RequestContext) -> None:
-    limit = int(ctx.query_value("limit", "20") or 20)
+    limit = parse_bounded_int(
+        ctx.query_value("limit", "20"),
+        default=20,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="limit",
+    )
     ctx.send_json({"runs": list_fetch_runs(ctx.db_path, limit)})
 
 
 def legacy_images(ctx: RequestContext, default_pc: int, default_web: int, default_type: int) -> None:
-    limit = int(ctx.query_value("limit", "50") or 50)
+    limit = parse_bounded_int(
+        ctx.query_value("limit", "50"),
+        default=50,
+        maximum=MAX_ADMIN_LIST_LIMIT,
+        field_name="limit",
+    )
     ctx.send_json(
         {
             "images": list_legacy_post_images(

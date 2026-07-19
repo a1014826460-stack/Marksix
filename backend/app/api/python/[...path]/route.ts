@@ -19,8 +19,12 @@ async function proxy(request: NextRequest, context: RouteContext) {
   const headers = new Headers()
   const contentType = request.headers.get("content-type")
   const authorization = request.headers.get("authorization")
+  const cookie = request.headers.get("cookie")
+  const forwardedProto = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "")
   if (contentType) headers.set("content-type", contentType)
   if (authorization) headers.set("authorization", authorization)
+  if (cookie) headers.set("cookie", cookie)
+  if (forwardedProto) headers.set("x-forwarded-proto", forwardedProto)
 
   const method = request.method
   const body = method === "GET" || method === "HEAD" ? undefined : await request.text()
@@ -37,11 +41,14 @@ async function proxy(request: NextRequest, context: RouteContext) {
     })
 
     const responseBody = await response.text()
+    const responseHeaders = new Headers({
+      "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
+    })
+    const setCookie = response.headers.get("set-cookie")
+    if (setCookie) responseHeaders.set("set-cookie", setCookie)
     return new NextResponse(responseBody, {
       status: response.status,
-      headers: {
-        "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
-      },
+      headers: responseHeaders,
     })
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

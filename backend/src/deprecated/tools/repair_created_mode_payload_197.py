@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--db-path",
-        default="postgresql://postgres:2225427@localhost:5432/liuhecai",
+        default=os.environ.get("DATABASE_URL", "").strip(),
         help="数据库目标，可传 PostgreSQL DSN。",
     )
     parser.add_argument("--type", dest="lottery_type", default="3", help="按 type 过滤，默认 3。")
@@ -31,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if not args.db_path:
+        raise SystemExit("DATABASE_URL or --db-path must be set before running this script")
     with connect(args.db_path) as conn:
         result = repair_three_period_special_created_rows(
             conn,

@@ -10,6 +10,7 @@ from typing import Any
 
 from auth import auth_user_from_token, ensure_generation_permission
 from core.errors import UnauthorizedError, ForbiddenError
+from domains.sites.permissions import require_generation_permission as require_site_generation_permission
 
 from .request_context import RequestContext
 
@@ -42,8 +43,23 @@ def require_admin(ctx: RequestContext) -> dict[str, Any]:
     return user
 
 
+def require_super_admin(ctx: RequestContext) -> dict[str, Any]:
+    """Require the highest-privilege role for tenant-wide security operations."""
+    user = require_authenticated(ctx)
+    if str(user.get("role") or "").strip().lower() != "super_admin":
+        raise ForbiddenError("需要超级管理员权限")
+    return user
+
+
 def require_generation_access(ctx: RequestContext) -> dict[str, Any]:
     """要求当前用户具有预测资料生成权限。"""
     user = get_current_user(ctx)
     ensure_generation_permission(user)
     return user or {}
+
+
+def require_site_generation_access(ctx: RequestContext, site_id: int) -> dict[str, Any]:
+    """Require a generation-capable role and a grant for the requested site."""
+    user = require_authenticated(ctx)
+    require_site_generation_permission(user, site_id, db_path=ctx.db_path)
+    return user

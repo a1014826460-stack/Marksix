@@ -110,6 +110,63 @@ def test_scheduler_tasks_context_columns():
     conn.close()
 
 
+def test_postgres_bootstrap_creates_site_permissions_after_its_parents():
+    """A fresh PostgreSQL schema can create the cross-domain permission FK."""
+    conn = _connect_for_test()
+    from tables import ensure_admin_tables
+
+    ensure_admin_tables(conn.target)
+    columns = set(conn.table_columns("site_permissions"))
+    assert {"user_id", "site_id", "can_view", "can_manage", "can_generate"} <= columns
+    foreign_keys = conn.execute(
+        """
+        SELECT confrelid::regclass::text AS parent_table
+        FROM pg_constraint
+        WHERE conrelid = 'site_permissions'::regclass
+          AND contype = 'f'
+        """
+    ).fetchall()
+    parent_tables = {str(row["parent_table"]).split(".")[-1] for row in foreign_keys}
+    assert {"admin_users", "managed_sites"} <= parent_tables
+    conn.close()
+
+
+def test_postgres_bootstrap_creates_scheduler_worker_lease_table():
+    conn = _connect_for_test()
+    from tables import ensure_admin_tables
+
+    ensure_admin_tables(conn.target)
+    assert {"lease_name", "holder_id", "lease_expires_at", "updated_at"} <= set(
+        conn.table_columns("scheduler_worker_leases")
+    )
+    conn.close()
+
+
+def test_postgres_worker_lease_is_exclusive_and_can_recover_after_expiry():
+    from datetime import datetime, timedelta, timezone
+    from domains.scheduler import service
+    from tables import ensure_admin_tables
+
+    conn = _connect_for_test()
+    ensure_admin_tables(conn.target)
+    lease_name = service.SCHEDULER_WORKER_LEASE_NAME
+    with conn:
+        conn.execute("DELETE FROM scheduler_worker_leases WHERE lease_name = ?", (lease_name,))
+    now = datetime.now(timezone.utc)
+
+    assert service.try_acquire_scheduler_worker_lease(
+        conn.target, holder_id="integration-worker-a", now=now, lease_seconds=30
+    ) is True
+    assert service.try_acquire_scheduler_worker_lease(
+        conn.target, holder_id="integration-worker-b", now=now + timedelta(seconds=1), lease_seconds=30
+    ) is False
+    assert service.try_acquire_scheduler_worker_lease(
+        conn.target, holder_id="integration-worker-b", now=now + timedelta(seconds=31), lease_seconds=30
+    ) is True
+    service.release_scheduler_worker_lease(conn.target, holder_id="integration-worker-b")
+    conn.close()
+
+
 def test_error_logs_context_columns():
     """验证 error_logs 表存在业务上下文字段。"""
     conn = _connect_for_test()

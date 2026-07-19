@@ -161,13 +161,17 @@ python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE
 - `GET|POST /api/predict/{mechanism}`
 - `/api/admin/*`
 
-### 5.3 Token 格式
+### 5.3 会话与 Bearer 兼容
 
-`POST /api/auth/login` 返回的是原始 token，不含 `Bearer ` 前缀。后续请求必须自行拼接：
+`POST /api/auth/login` 的成功 JSON 仍返回原始 token，不含 `Bearer ` 前缀；这是兼容既有脚本和第三方调用的过渡接口。需要显式鉴权时，调用方仍可自行拼接：
 
 ```text
 Authorization: Bearer <token>
 ```
+
+同时，登录响应会设置 `liuhecai_admin_session` cookie（`HttpOnly`、`SameSite=Strict`；HTTPS 代理请求额外带 `Secure`）。同源管理端应依赖该 cookie，并使用 `credentials: "same-origin"`，不要将 token 写入 `localStorage`、日志或 URL。服务端优先接受 `Authorization: Bearer ...`，未提供时再读取该 cookie。
+
+数据库只保存 token 的 SHA-256 哈希；升级前遗留的明文 session 不会继续通过认证，用户需要重新登录。
 
 ### 5.4 角色限制
 
@@ -783,7 +787,7 @@ const data = await res.json()
 
 ### POST `/api/auth/login`
 
-接口说明：管理员登录，返回原始 token 与用户信息。
+接口说明：管理员登录，返回原始 token 与用户信息，并在响应头设置 HttpOnly session cookie。JSON 成功响应字段保持不变。
 
 鉴权要求：
 
@@ -802,7 +806,7 @@ const data = await res.json()
 ```json
 {
   "username": "admin",
-  "password": "admin123"
+  "password": "<configured-admin-password>"
 }
 ```
 
@@ -836,7 +840,7 @@ curl 示例：
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"admin\",\"password\":\"admin123\"}"
+  -d "{\"username\":\"admin\",\"password\":\"<configured-admin-password>\"}"
 ```
 
 PowerShell 示例：
@@ -846,7 +850,7 @@ Invoke-RestMethod `
   -Method POST `
   -Uri "http://127.0.0.1:8000/api/auth/login" `
   -ContentType "application/json" `
-  -Body '{"username":"admin","password":"admin123"}'
+  -Body '{"username":"admin","password":"<configured-admin-password>"}'
 ```
 
 前端调用示例：
@@ -855,16 +859,17 @@ Invoke-RestMethod `
 const res = await fetch("/fackyou/api/python/auth/login", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username: "admin", password: "admin123" }),
+  credentials: "same-origin",
+  body: JSON.stringify({ username: "admin", password: "<configured-admin-password>" }),
 })
 const data = await res.json()
-localStorage.setItem("liuhecai_admin_token", data.token)
 ```
 
 调试提示：
 
-- 返回的是原始 token，不带 `Bearer `
-- 后续请求头必须手动拼 `Authorization: Bearer <token>`
+- 返回的原始 token 不带 `Bearer `，仅供现有 Bearer 客户端兼容使用
+- 浏览器管理端应由 HttpOnly cookie 自动鉴权；JavaScript 无法、也不应读取 cookie
+- 非浏览器客户端可继续手动拼 `Authorization: Bearer <token>`
 
 ### GET `/api/auth/me`
 
@@ -2324,7 +2329,7 @@ curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---:|---|---|
 | `prefix` | string | 否 | `""` | 按 key 前缀过滤 |
-| `include_secrets` | bool/int | 否 | `0` | 是否返回敏感值明文 |
+| `include_secrets` | bool/int | 否 | `0` | 兼容旧客户端；敏感值始终掩码，不返回明文 |
 
 成功响应：
 
@@ -2370,6 +2375,20 @@ curl -X POST "http://127.0.0.1:8000/api/admin/alert/test-email" \
 ```
 
 ### 其他配置接口
+
+安全约束：所有标记为敏感的配置均为“可写不可读”。列表接口保留 `value_text` 字段但返回
+空字符串；有效值和历史接口保留原字段但不返回敏感配置的真实值。该约束同样适用于
+`include_secrets=1`，避免令牌、DSN、密码或 SMTP 授权码经管理 API 泄露。
+
+权限约束：系统配置与管理员账号管理接口仅允许 `super_admin` 调用；普通 `admin`
+账号仍可使用原有日常站点和资料管理接口，但不得读取、导出或修改系统机密配置。
+
+### 后台长任务
+
+`/api/admin/lottery-types/{id}/crawl-and-generate` 与站点批量生成接口会立即返回既有的
+`job_id` 成功响应。任务由独立 `scheduler-worker` 容器持久化执行；轮询
+`GET /api/admin/jobs/{job_id}` 的字段保持为 `status`、`started_at`、`result`、`metadata`，
+失败时额外返回既有的 `error` 字段。HTTP API 重启不会清除任务状态。
 
 - `GET /api/admin/configs/groups`
   - 返回 `{ groups: [...] }`

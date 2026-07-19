@@ -20,7 +20,9 @@ RETIRED_MANAGED_SITE_COLUMNS = (
 
 
 def _sync_site_id_related_tables(conn: Any, old_site_id: int, new_site_id: int) -> None:
-    related_tables = ("site_fetch_runs", "site_prediction_modules", "scheduler_tasks", "error_logs")
+    related_tables = (
+        "site_fetch_runs", "site_prediction_modules", "scheduler_tasks", "error_logs", "site_permissions",
+    )
     for table_name in related_tables:
         if not conn.table_exists(table_name):
             continue
@@ -149,6 +151,25 @@ def ensure_site_tables(conn: Any, pk_sql: str) -> None:
     _ensure_web_id_backfill(conn)
     align_managed_site_ids_with_web_ids(conn)
     _drop_retired_columns(conn)
+
+    # This bridge table depends on both managed_sites and admin_users.  Creating
+    # it here avoids PostgreSQL rejecting the forward managed_sites reference.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_permissions (
+            user_id INTEGER NOT NULL,
+            site_id INTEGER NOT NULL,
+            can_view INTEGER NOT NULL DEFAULT 1,
+            can_manage INTEGER NOT NULL DEFAULT 0,
+            can_generate INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, site_id),
+            FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+            FOREIGN KEY (site_id) REFERENCES managed_sites(id) ON DELETE CASCADE
+        )
+        """
+    )
 
     conn.execute(
         f"""

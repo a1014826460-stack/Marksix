@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
+from app_http.auth import require_admin
 from domains.traffic.service import (
     get_traffic_overview,
     get_traffic_sites,
@@ -10,9 +11,9 @@ from domains.traffic.service import (
 
 
 def register(router: Router) -> None:
-    router.add("GET", "/api/admin/traffic/overview", overview)
-    router.add("GET", "/api/admin/traffic/sites", sites)
-    router.add("GET", "/api/admin/traffic/timeseries", timeseries)
+    router.add("GET", "/api/admin/traffic/overview", overview, guard=require_admin)
+    router.add("GET", "/api/admin/traffic/sites", sites, guard=require_admin)
+    router.add("GET", "/api/admin/traffic/timeseries", timeseries, guard=require_admin)
 
 
 def _date_from(ctx: RequestContext) -> str | None:

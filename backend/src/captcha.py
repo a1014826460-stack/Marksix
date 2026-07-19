@@ -1,7 +1,8 @@
 """图形验证码生成与校验。
 
 纯标准库实现，不依赖 PIL/Pillow。生成 SVG 格式的 4 位数字字母验证码，
-返回 Base64 编码的 data URI 可直接嵌入 <img> 标签。
+返回 Base64 编码的 data URI 可直接嵌入 <img> 标签。认证表由启动期
+schema bootstrap 创建；请求路径仅执行短事务读写，避免验证码刷新触发 DDL。
 """
 
 from __future__ import annotations
@@ -12,8 +13,6 @@ import secrets
 import string
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
-
 from db import connect
 
 # 去除易混淆字符：0/O、1/I/L、2/Z
@@ -94,43 +93,11 @@ def generate_captcha() -> tuple[str, str]:
     return code, f"data:image/svg+xml;base64,{b64}"
 
 
-def _ensure_tables(conn: Any) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS admin_login_captcha (
-            id SERIAL PRIMARY KEY,
-            fingerprint TEXT NOT NULL,
-            code TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_admin_login_captcha_fingerprint
-        ON admin_login_captcha (fingerprint, expires_at)
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS admin_login_attempts (
-            fingerprint TEXT PRIMARY KEY,
-            attempt_count INTEGER NOT NULL DEFAULT 1,
-            first_attempt_at TEXT NOT NULL,
-            last_attempt_at TEXT NOT NULL,
-            locked_until TEXT
-        )
-        """
-    )
-
-
 def store_captcha(db_path: str | Path, fingerprint: str, code: str) -> None:
     """存储验证码，关联到设备指纹。"""
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(minutes=_CAPTCHA_TTL_MINUTES)).isoformat()
     with connect(db_path) as conn:
-        _ensure_tables(conn)
         # 清理同指纹旧验证码
         conn.execute(
             "DELETE FROM admin_login_captcha WHERE fingerprint = %s",
@@ -147,7 +114,6 @@ def verify_captcha(db_path: str | Path, fingerprint: str, code: str) -> bool:
     """验证验证码是否正确且未过期。验证后删除已使用的验证码。"""
     now = datetime.now(timezone.utc).isoformat()
     with connect(db_path) as conn:
-        _ensure_tables(conn)
         row = conn.execute(
             """SELECT code, expires_at FROM admin_login_captcha
                WHERE fingerprint = %s AND expires_at > %s
@@ -185,7 +151,6 @@ def check_login_locked(db_path: str | Path, fingerprint: str) -> tuple[bool, str
     now = datetime.now(timezone.utc)
     window_start = (now - timedelta(minutes=_ATTEMPT_WINDOW_MINUTES)).isoformat()
     with connect(db_path) as conn:
-        _ensure_tables(conn)
         row = conn.execute(
             "SELECT * FROM admin_login_attempts WHERE fingerprint = %s",
             (fingerprint,),
@@ -234,7 +199,6 @@ def record_login_failure(db_path: str | Path, fingerprint: str) -> dict[str, Any
     """记录一次登录失败，返回锁定状态信息。"""
     now_iso = _now_iso()
     with connect(db_path) as conn:
-        _ensure_tables(conn)
         existing = conn.execute(
             "SELECT * FROM admin_login_attempts WHERE fingerprint = %s",
             (fingerprint,),
@@ -277,7 +241,6 @@ def record_login_failure(db_path: str | Path, fingerprint: str) -> dict[str, Any
 def reset_login_attempts(db_path: str | Path, fingerprint: str) -> None:
     """登录成功后清除失败记录。"""
     with connect(db_path) as conn:
-        _ensure_tables(conn)
         conn.execute(
             "DELETE FROM admin_login_attempts WHERE fingerprint = %s",
             (fingerprint,),
