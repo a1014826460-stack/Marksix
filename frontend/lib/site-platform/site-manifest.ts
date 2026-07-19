@@ -123,6 +123,9 @@ export function defineVendorSiteManifest(input: VendorSiteManifestInput): Vendor
     throw new Error("identity.domains must contain at least one non-empty domain")
   }
   assertPath(identity.routePath, "identity.routePath")
+  if (identity.routePath !== `/${identity.siteKey}`) {
+    throw new Error("identity.routePath must equal /<siteKey>")
+  }
   assertPositiveInteger(identity.siteId, "identity.siteId")
   assertPositiveInteger(identity.webId, "identity.webId")
   assertPath(frontend.vendorIndexPath, "frontend.vendorIndexPath")
