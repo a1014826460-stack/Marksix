@@ -18,11 +18,16 @@
 
 - `site_prediction_modules` 中 `status=1` 的行是站点预测资料的唯一运行时授权来源。
 - 站点私有 API 的站点身份由 URL 路径确定，query 中的 `site_id`、`web`、`web_id` 不能跨站覆盖。
-- 站点 5-8 的模块集可用以下命令审计；加 `--apply` 只停用蓝图外行或启用缺失蓝图行，不删除历史数据：
+- 站点 4-8 的蓝图目标来自 `domains.prediction.site_page_dependencies`：它只收录当前前端可访问页面的精确数据源；注释脚本、孤立静态文件与未调用的旧元数据不会授权生成模块。
+- 模块的内部生成保障分为 `controlled_future`（已有已验证命中规则）、`history_only`（可展示历史但未来期不宣称受控正确率）和 `blocked`（没有精确数据源）。这些内部状态不会加入任何 API 响应。
+- 站点 4-8 的模块集可用以下命令审计；先执行 PostgreSQL versioned migration，再加 `--apply`。`--apply` 只停用蓝图外行或启用缺失蓝图行，不删除历史数据：
 
 ```powershell
-python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"
-python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>" --apply
+Push-Location backend/src
+python -m database.versioned_migrations --db-path "<DATABASE_URL>"
+Pop-Location
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>" --site-ids 4,5,6,7,8
+python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>" --site-ids 4,5,6,7,8 --apply
 ```
 
 - 禁用模块保持现有 API 空结果格式，避免影响 legacy 前端解析。

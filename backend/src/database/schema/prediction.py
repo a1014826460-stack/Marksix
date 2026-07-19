@@ -6,9 +6,11 @@ import json
 from typing import Any
 
 from database.migrations import add_column_if_missing
+from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
 DEFAULT_SITE_BLUEPRINT_NAME = "default"
+SHENGSHI8800_BLUEPRINT_NAME = "shengshi8800"
 TWCAIBAWANG_BLUEPRINT_NAME = "twcaibawang"
 TWSAIMAHUI_BLUEPRINT_NAME = "twsaimahui"
 TWJINNIU_BLUEPRINT_NAME = "twjinniu"
@@ -125,8 +127,17 @@ TWSAIMAHUI_BLOCKED_ITEMS = (
     },
 )
 
+# Backward-compatible constant exports must mirror the same page inventory
+# used by runtime profiles and explicit authorization migrations.
+TWCAIBAWANG_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcaibawang")
+TWSAIMAHUI_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twsaimahui")
+TWJINNIU_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twjinniu")
+TWCF888_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcf888")
+
 
 def _seed_site_blueprint_profiles(conn: Any) -> None:
+    # Bootstrap profiles use the same reachable-page inventory as the explicit
+    # authorization migration. Runtime never mutates these rows.
     now_row = conn.execute("SELECT CURRENT_TIMESTAMP AS current_ts").fetchone()
     now = str(now_row["current_ts"] or "")
     profiles = (
@@ -137,26 +148,32 @@ def _seed_site_blueprint_profiles(conn: Any) -> None:
             "blocked_items": (),
         },
         {
+            "name": SHENGSHI8800_BLUEPRINT_NAME,
+            "required_mode_ids": required_mode_ids_for_site_key("shengshi8800"),
+            "known_unavailable_mode_ids": (),
+            "blocked_items": (),
+        },
+        {
             "name": TWCAIBAWANG_BLUEPRINT_NAME,
-            "required_mode_ids": TWCAIBAWANG_REQUIRED_MODE_IDS,
+            "required_mode_ids": required_mode_ids_for_site_key("twcaibawang"),
             "known_unavailable_mode_ids": (),
             "blocked_items": TWCAIBAWANG_BLOCKED_ITEMS,
         },
         {
             "name": TWSAIMAHUI_BLUEPRINT_NAME,
-            "required_mode_ids": TWSAIMAHUI_REQUIRED_MODE_IDS,
+            "required_mode_ids": required_mode_ids_for_site_key("twsaimahui"),
             "known_unavailable_mode_ids": TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS,
             "blocked_items": TWSAIMAHUI_BLOCKED_ITEMS,
         },
         {
             "name": TWJINNIU_BLUEPRINT_NAME,
-            "required_mode_ids": TWJINNIU_REQUIRED_MODE_IDS,
+            "required_mode_ids": required_mode_ids_for_site_key("twjinniu"),
             "known_unavailable_mode_ids": (),
             "blocked_items": TWJINNIU_BLOCKED_ITEMS,
         },
         {
             "name": TWCF888_BLUEPRINT_NAME,
-            "required_mode_ids": TWCF888_REQUIRED_MODE_IDS,
+            "required_mode_ids": required_mode_ids_for_site_key("twcf888"),
             "known_unavailable_mode_ids": (),
             "blocked_items": TWCF888_BLOCKED_ITEMS,
         },
@@ -194,6 +211,15 @@ def _backfill_site_blueprint_names(conn: Any) -> None:
     if not conn.table_exists("managed_sites"):
         return
 
+    conn.execute(
+        """
+        UPDATE managed_sites
+        SET blueprint_name = ?
+        WHERE (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = ?)
+          AND web_id = 4
+        """,
+        (SHENGSHI8800_BLUEPRINT_NAME, DEFAULT_SITE_BLUEPRINT_NAME),
+    )
     conn.execute(
         """
         UPDATE managed_sites

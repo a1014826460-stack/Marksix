@@ -8,6 +8,7 @@ command while holding a transaction-scoped PostgreSQL advisory lock.
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 3
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -69,8 +70,88 @@ def _reconcile_created_prediction_tables(conn: Any) -> None:
         ensure_created_prediction_table(conn, table_name, commit=False)
 
 
+def _sync_site_blueprint_profiles_to_page_manifest(conn: Any) -> None:
+    """Apply reachable-page authorization sets through an explicit migration.
+
+    This is deliberately migration-only: API and worker processes must never
+    update site blueprint profiles as a side effect of ordinary startup.
+    """
+    if not conn.table_exists("site_blueprint_profiles"):
+        return
+
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    for site_key in ("twcaibawang", "twsaimahui", "twjinniu", "twcf888"):
+        conn.execute(
+            """
+            UPDATE site_blueprint_profiles
+            SET required_mode_ids_json = ?, updated_at = ?
+            WHERE blueprint_name = ?
+            """,
+            (
+                json.dumps(
+                    list(required_mode_ids_for_site_key(site_key)),
+                    ensure_ascii=False,
+                ),
+                utc_now(),
+                site_key,
+            ),
+        )
+
+
+def _sync_shengshi8800_page_authorization(conn: Any) -> None:
+    """Install the site-4 page profile and migrate only default assignments.
+
+    Existing custom site-four profiles intentionally remain untouched. This
+    migration changes authorization metadata only; it never modifies generated
+    prediction rows or HTTP-facing payload data.
+    """
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    if conn.table_exists("site_blueprint_profiles"):
+        now = utc_now()
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (blueprint_name) DO UPDATE SET
+                required_mode_ids_json = excluded.required_mode_ids_json,
+                known_unavailable_mode_ids_json = excluded.known_unavailable_mode_ids_json,
+                blocked_items_json = excluded.blocked_items_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "shengshi8800",
+                json.dumps(
+                    list(required_mode_ids_for_site_key("shengshi8800")),
+                    ensure_ascii=False,
+                ),
+                "[]",
+                "[]",
+                now,
+                now,
+            ),
+        )
+
+    if conn.table_exists("managed_sites"):
+        conn.execute(
+            """
+            UPDATE managed_sites
+            SET blueprint_name = ?
+            WHERE web_id = 4
+              AND (blueprint_name IS NULL OR blueprint_name = '' OR blueprint_name = 'default')
+            """,
+            ("shengshi8800",),
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
+    Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
+    Migration(3, "sync_shengshi8800_page_authorization", _sync_shengshi8800_page_authorization),
 )
 
 

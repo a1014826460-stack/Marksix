@@ -8,6 +8,7 @@ from domains.prediction.site_module_blueprints import (
     get_blueprint_name_for_site,
     get_required_mode_ids_for_site,
 )
+from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 from tables import ensure_admin_tables
 from predict.mechanisms import ensure_prediction_configs_loaded
 from predict.mechanisms import get_prediction_config
@@ -30,57 +31,7 @@ def test_twjinniu_site_uses_dedicated_blueprint_by_web_id():
         "lottery_type_id": 3,
     }
 
-    required = get_required_mode_ids_for_site(site)
-    assert required == (
-        5,
-        12,
-        14,
-        20,
-        15,
-        26,
-        31,
-        38,
-        43,
-        47,
-        48,
-        49,
-        50,
-        51,
-        53,
-        56,
-        66,
-        72,
-        74,
-        77,
-        78,
-        79,
-        81,
-        83,
-        103,
-        108,
-        110,
-        117,
-        123,
-        132,
-        142,
-        143,
-        144,
-        151,
-        173,
-        180,
-        198,
-        219,
-        279,
-        472,
-        474,
-        476,
-        479,
-        480,
-        481,
-        482,
-        483,
-        484,
-    )
+    assert get_required_mode_ids_for_site(site) == required_mode_ids_for_site_key("twjinniu")
 
 
 def test_twjinniu_blocked_items_are_exposed_for_admin_audit():

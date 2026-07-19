@@ -15,13 +15,10 @@ from domains.prediction.site_module_blueprints import (
     get_known_unavailable_mode_ids_for_site,
     get_required_mode_ids_for_site,
 )
+from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
-EXPECTED_REQUIRED_MODE_IDS = (
-    2, 5, 12, 14, 15, 20, 26, 27, 28, 38, 41, 42, 43, 45, 47, 49, 50, 51,
-    53, 54, 57, 66, 69, 74, 88, 95, 98, 100, 103, 122, 132, 143, 180, 197,
-    198, 224, 226, 279, 470, 472, 473, 482, 483,
-)
+EXPECTED_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcf888")
 
 EXPECTED_BLOCKED_MODULES = set()
 

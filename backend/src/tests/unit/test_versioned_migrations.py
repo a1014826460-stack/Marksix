@@ -30,7 +30,10 @@ def test_runtime_validation_reads_the_ledger_without_executing_schema_ddl(monkey
 
     class _Cursor:
         def fetchall(self):
-            return [{"version": versioned_migrations.CURRENT_SCHEMA_VERSION}]
+            return [
+                {"version": migration.version}
+                for migration in versioned_migrations.MIGRATIONS
+            ]
 
     class _Connection:
         engine = "postgres"
@@ -163,6 +166,83 @@ def test_migration_command_rejects_sqlite_targets():
 
     with pytest.raises(RuntimeError, match="仅支持 PostgreSQL"):
         run_migrations("migration-test.sqlite3")
+
+
+def test_migration_three_upserts_shengshi8800_profile_and_only_migrates_default_site_four_rows(tmp_path):
+    """Site 4's reachable-page profile must be explicit on already deployed DBs."""
+    from db import connect
+    from database.versioned_migrations import _sync_shengshi8800_page_authorization
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    db_path = str(tmp_path / "shengshi8800-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE site_blueprint_profiles (
+                blueprint_name TEXT PRIMARY KEY,
+                required_mode_ids_json TEXT NOT NULL,
+                known_unavailable_mode_ids_json TEXT NOT NULL,
+                blocked_items_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY,
+                web_id INTEGER NOT NULL,
+                blueprint_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES ('shengshi8800', '[64]', '[]', '[]', 'old', 'old')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO managed_sites (id, web_id, blueprint_name) VALUES
+                (4, 4, 'default'),
+                (40, 4, NULL),
+                (41, 4, 'custom-site-four'),
+                (5, 5, 'default')
+            """
+        )
+
+        _sync_shengshi8800_page_authorization(conn)
+        profile = conn.execute(
+            """
+            SELECT required_mode_ids_json, known_unavailable_mode_ids_json,
+                   blocked_items_json, updated_at
+            FROM site_blueprint_profiles
+            WHERE blueprint_name = 'shengshi8800'
+            """
+        ).fetchone()
+        sites = conn.execute(
+            "SELECT id, blueprint_name FROM managed_sites ORDER BY id"
+        ).fetchall()
+
+    import json
+
+    assert tuple(json.loads(str(profile["required_mode_ids_json"]))) == required_mode_ids_for_site_key(
+        "shengshi8800"
+    )
+    assert json.loads(str(profile["known_unavailable_mode_ids_json"])) == []
+    assert json.loads(str(profile["blocked_items_json"])) == []
+    assert str(profile["updated_at"]) != "old"
+    assert [(int(row["id"]), row["blueprint_name"]) for row in sites] == [
+        (4, "shengshi8800"),
+        (5, "default"),
+        (40, "shengshi8800"),
+        (41, "custom-site-four"),
+    ]
 
 
 def test_compose_runs_migrations_from_the_source_directory_before_api_and_worker_start():

@@ -7,6 +7,7 @@ from domains.prediction.site_module_blueprints import (
     get_blueprint_name_for_site,
     get_required_mode_ids_for_site,
 )
+from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
 def test_twcaibawang_site_uses_dedicated_blueprint_by_domain():
@@ -42,29 +43,7 @@ def test_twcaibawang_site_uses_dedicated_blueprint_by_web_id():
         "lottery_type_id": 1,
     }
 
-    required = get_required_mode_ids_for_site(site)
-    assert required == (
-        12,
-        26,
-        34,
-        38,
-        49,
-        50,
-        52,
-        54,
-        56,
-        57,
-        58,
-        60,
-        197,
-        472,
-        479,
-        480,
-        481,
-        482,
-        483,
-        484,
-    )
+    assert get_required_mode_ids_for_site(site) == required_mode_ids_for_site_key("twcaibawang")
 
 
 def test_twcaibawang_blocked_items_are_exposed_for_admin_audit():

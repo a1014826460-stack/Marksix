@@ -274,6 +274,8 @@ def test_bootstrap_seeds_twjinniu_managed_site(tmp_path):
 
 
 def test_bootstrap_seeds_expanded_twjinniu_blueprint_profile(tmp_path):
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
     db_path = str(tmp_path / "twjinniu_blueprint.sqlite3")
     ensure_admin_tables(db_path)
 
@@ -292,4 +294,25 @@ def test_bootstrap_seeds_expanded_twjinniu_blueprint_profile(tmp_path):
     assert 476 in required_mode_ids
     assert 484 in required_mode_ids
     assert 51 in required_mode_ids
-    assert len(required_mode_ids) == 48
+    assert required_mode_ids == required_mode_ids_for_site_key("twjinniu")
+
+
+def test_bootstrap_seed_uses_the_page_manifest_for_site_blueprint_profiles(tmp_path):
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    db_path = str(tmp_path / "manifest_seed.sqlite3")
+    ensure_admin_tables(db_path)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT required_mode_ids_json
+            FROM site_blueprint_profiles
+            WHERE blueprint_name = 'twcf888'
+            """
+        ).fetchone()
+
+    assert row is not None
+    assert tuple(json.loads(str(row["required_mode_ids_json"]))) == (
+        required_mode_ids_for_site_key("twcf888")
+    )

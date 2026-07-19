@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from .generation_rules import get_generation_rule
+from .site_page_dependencies import generation_assurance_for_mode
 
 
 def _outcome_description(rule_id: str) -> str:
@@ -45,16 +46,17 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
         "",
         "This document is generated from the internal rule manifest. It documents candidate semantics only and never contains future draw values.",
         "",
-        "| mode_id | key | title | rule | outcome semantics | future control | uniqueness |",
-        "|---:|---|---|---|---|---|---|",
+        "| mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |",
+        "|---:|---|---|---|---|---|---|---|",
     ]
     for mode_id, key, title, config in sorted(rows, key=lambda item: (item[0], item[1])):
         rule = get_generation_rule(config)
         status = "supported" if rule.supported else f"blocked: {rule.block_reason}"
+        assurance = generation_assurance_for_mode(mode_id)
         uniqueness = f"cross-site prefix: {rule.cross_site_prefix_width}; adjacent: full ordered signature"
         lines.append(
             f"| {mode_id} | {key} | {title} | {rule.rule_id} | "
-            f"{_outcome_description(rule.rule_id)} | {status} | {uniqueness} |"
+            f"{_outcome_description(rule.rule_id)} | {assurance} | {status} | {uniqueness} |"
         )
     return "\n".join(lines) + "\n"
 

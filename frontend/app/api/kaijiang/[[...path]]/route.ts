@@ -1955,7 +1955,7 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
         const payload = await fetchLegacyRows(
           url,
-          num === "10" ? 116 : num === "20" ? 146 : 34,
+          num === "10" ? 116 : num === "16" ? 9 : num === "20" ? 146 : 34,
           10,
         )
 

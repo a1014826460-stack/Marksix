@@ -194,8 +194,10 @@ python -m pytest -q
 - `public.site_prediction_modules(status=1)` 是站点预测模块的唯一运行时授权来源；蓝图只定义可同步的目标集合。
 - 站点私有 Next API 的 `site_id`、`web`、`web_id` 由路径 `siteKey` 固定，禁止用 query 跨站覆盖。
 - vendor 聚合或 legacy 模块行在带显式 `web` 时必须校验启用模块；不授权时保持既有空 `history`、`rows` 或 `{ data: [] }` 包装，禁止增加响应字段。
-- 使用 `python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"` 审计站点 5-8；仅在确认审计结果后加 `--apply`。该操作只切换 `status`，不删除历史行。
-- 修改站点蓝图、vendor 固定模式或 `twcf888` 模块文档时，必须更新 `test_site_prediction_module_audit.py`。
+- 使用 `python backend/scripts/reconcile_site_prediction_modules.py --db-path "<DATABASE_URL>"` 审计站点 4-8；仅在确认审计结果后加 `--apply`。该操作只切换 `status`，不删除历史行。
+- 修改站点蓝图、vendor 固定模式或站点 vendor 模块文档时，必须更新 `test_site_prediction_module_audit.py`。
+- 站点 4-8 的蓝图目标必须从 `domains.prediction.site_page_dependencies` 派生，覆盖所有当前可访问页面；注释脚本、孤立资源和未调用的旧前端元数据不得授权模块。
+- 页面清单中的 `controlled_future`、`history_only`、`blocked` 仅供内部生成/审计使用，禁止添加到任何 HTTP 响应；更新站点清单后须通过 versioned migration 同步已存储的 `site_blueprint_profiles`。
 
 # 2026-07-19 安全与稳定性整改
 

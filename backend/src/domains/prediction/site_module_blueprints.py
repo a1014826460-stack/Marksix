@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from database.schema.prediction import DEFAULT_REQUIRED_MODE_IDS as SCHEMA_DEFAULT_REQUIRED_MODE_IDS
+from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
 DEFAULT_REQUIRED_MODE_IDS = tuple(int(item) for item in SCHEMA_DEFAULT_REQUIRED_MODE_IDS)
@@ -437,6 +438,13 @@ TWCF888_REQUIRED_MODE_IDS = (
 
 TWCF888_BLOCKED_ITEMS = ()
 
+# Preserve public constant imports for older callers while sourcing their
+# values from the immutable reachable-page manifest.
+TWSAIMAHUI_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twsaimahui")
+TWCAIBAWANG_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcaibawang")
+TWJINNIU_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twjinniu")
+TWCF888_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcf888")
+
 def _normalize_domain(value: Any) -> str:
     return str(value or "").strip().lower()
 
@@ -513,7 +521,29 @@ def _site_matches_twsaimahui(site: dict[str, Any] | None) -> bool:
     except (TypeError, ValueError):
         web_id = 0
 
-    return lottery_type_id == 3 and web_id == 6
+    # Minimal callers such as audits may only have the business web ID.  A
+    # complete SiteContext still supplies lottery_type_id in production.
+    return web_id == 6 and lottery_type_id in {0, 3}
+
+
+def _site_matches_shengshi8800(site: dict[str, Any] | None) -> bool:
+    if not site:
+        return False
+
+    domain = _normalize_domain(site.get("domain"))
+    if domain in {"www.tw8800.com", "tw8800.com"}:
+        return True
+
+    try:
+        lottery_type_id = int(site.get("lottery_type_id") or 0)
+    except (TypeError, ValueError):
+        lottery_type_id = 0
+    try:
+        web_id = int(site.get("web_id") or 0)
+    except (TypeError, ValueError):
+        web_id = 0
+
+    return web_id == 4 and lottery_type_id in {0, 3}
 
 
 def _site_matches_twcaibawang(site: dict[str, Any] | None) -> bool:
@@ -568,14 +598,16 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
     profile = _load_blueprint_profile_from_db(site)
     if profile:
         return tuple(int(item) for item in profile.get("required_mode_ids") or ())
+    if _site_matches_shengshi8800(site):
+        return required_mode_ids_for_site_key("shengshi8800")
     if _site_matches_twsaimahui(site):
-        return TWSAIMAHUI_REQUIRED_MODE_IDS
+        return required_mode_ids_for_site_key("twsaimahui")
     if _site_matches_twcaibawang(site):
-        return TWCAIBAWANG_REQUIRED_MODE_IDS
+        return required_mode_ids_for_site_key("twcaibawang")
     if _site_matches_twjinniu(site):
-        return TWJINNIU_REQUIRED_MODE_IDS
+        return required_mode_ids_for_site_key("twjinniu")
     if _site_matches_twcf888(site):
-        return TWCF888_REQUIRED_MODE_IDS
+        return required_mode_ids_for_site_key("twcf888")
     return DEFAULT_REQUIRED_MODE_IDS
 
 
@@ -583,6 +615,8 @@ def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tupl
     profile = _load_blueprint_profile_from_db(site)
     if profile:
         return tuple(int(item) for item in profile.get("known_unavailable_mode_ids") or ())
+    if _site_matches_shengshi8800(site):
+        return ()
     if _site_matches_twsaimahui(site):
         return TWSAIMAHUI_KNOWN_UNAVAILABLE_MODE_IDS
     if _site_matches_twcaibawang(site):
@@ -598,6 +632,8 @@ def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, An
     profile = _load_blueprint_profile_from_db(site)
     if profile:
         return [dict(item) for item in profile.get("blocked_items") or []]
+    if _site_matches_shengshi8800(site):
+        return []
     if _site_matches_twsaimahui(site):
         return [dict(item) for item in TWSAIMAHUI_BLOCKED_ITEMS]
     if _site_matches_twcaibawang(site):
@@ -613,6 +649,8 @@ def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
     profile = _load_blueprint_profile_from_db(site)
     if profile:
         return str(profile.get("blueprint_name") or "default")
+    if _site_matches_shengshi8800(site):
+        return "shengshi8800"
     if _site_matches_twsaimahui(site):
         return "twsaimahui"
     if _site_matches_twcaibawang(site):

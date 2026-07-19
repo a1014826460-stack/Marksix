@@ -16,6 +16,16 @@ def test_rule_document_lists_mode_470_and_blocked_dynamic_configs():
     assert "blocked_pending_rule" in document
 
 
+def test_rule_document_includes_internal_generation_assurance_without_truth_data():
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+    assert "| assurance |" in document
+    assert "| 470 | pt3xiao | 平特3肖 |" in document
+    assert "| controlled_future |" in document
+    assert "| 50 | yijuzhenyan | 一句真言 |" in document
+    assert "| history_only |" in document
+
+
 def test_rule_document_writer_preserves_renderer_output(tmp_path):
     target = tmp_path / "prediction-module-rules.md"
 
