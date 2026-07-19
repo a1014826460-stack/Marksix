@@ -1,5 +1,7 @@
 import type { LotteryGame } from "@/lib/lotteryData"
 import type { Metadata } from "next"
+import type { VendorSiteManifest } from "@/lib/site-platform/site-manifest"
+import twsaimahuiManifest from "@/sites/twsaimahui/site.manifest"
 
 export type FrontendSiteConfig = {
   siteKey: string
@@ -37,6 +39,37 @@ export type SiteRequestMatch = {
   matchedByRefererHost: boolean
 }
 
+export function toFrontendSiteConfig(manifest: VendorSiteManifest): FrontendSiteConfig {
+  return {
+    siteKey: manifest.identity.siteKey,
+    renderMode:
+      manifest.frontend.renderMode === "legacy-dom"
+        ? "legacy-shell"
+        : manifest.frontend.renderMode === "react-template"
+          ? "react-home"
+          : "iframe-vendor",
+    capabilities: {
+      sitePage: true,
+      homepageModules: true,
+      articleDetail: false,
+      predictionModules: true,
+      trafficEvents: true,
+    },
+    routePath: manifest.identity.routePath,
+    vendorIndexPath: manifest.frontend.vendorIndexPath,
+    domains: [...manifest.identity.domains],
+    legacyPublicBasePath: manifest.frontend.legacyPublicBasePath,
+    defaultGame: manifest.frontend.defaultGame,
+    defaultSiteId: manifest.identity.siteId,
+    defaultWebId: manifest.identity.webId,
+    defaultLotteryTypeId: manifest.identity.defaultLotteryType,
+    forumTitle: manifest.frontend.forumTitle,
+    metadataTitle: manifest.frontend.metadataTitle,
+    metadataDescription: manifest.frontend.metadataDescription,
+    faviconPath: manifest.frontend.faviconPath,
+  }
+}
+
 const SITE_CONFIGS: FrontendSiteConfig[] = [
   {
     siteKey: "shengshi8800",
@@ -67,29 +100,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       "/vendor/shengshi8800/static/css/style3.css",
     ],
   },
-  {
-    siteKey: "twsaimahui",
-    renderMode: "iframe-vendor",
-    capabilities: {
-      sitePage: true,
-      homepageModules: true,
-      articleDetail: false,
-      predictionModules: true,
-      trafficEvents: true,
-    },
-    routePath: "/twsaimahui",
-    vendorIndexPath: "/vendor/twsaimahui/index.html",
-    domains: ["www.twsaimahui.com", "twsaimahui.com"],
-    legacyPublicBasePath: "/vendor/twsaimahui",
-    defaultGame: "taiwan",
-    defaultSiteId: 6,
-    defaultWebId: 6,
-    defaultLotteryTypeId: 3,
-    forumTitle: "台湾赛马会",
-    metadataTitle: "台湾赛马会：官方正版请认准唯一官方",
-    metadataDescription: "台湾赛马会：官方正版请认准唯一官方",
-    faviconPath: "/vendor/twsaimahui/static/image/favicon.ico",
-  },
+  toFrontendSiteConfig(twsaimahuiManifest),
   {
     siteKey: "twcaibawang",
     renderMode: "react-home",

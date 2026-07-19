@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor Site Onboarding"
+  short_description: "Onboard legacy lottery vendor HTML and JS safely"
+  default_prompt: "Use $vendor-site-onboarding to onboard a supplied vendor HTML and JS site."

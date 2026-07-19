@@ -257,6 +257,25 @@
     )
   ) || buildAppUrl("/api/kaijiang");
 
+  function applyBridgeConfig(config) {
+    if (!config || !config.site || !config.api) return;
+    SITE_KEY = readStringCandidate(config.site.site_key, SITE_KEY) || SITE_KEY;
+    siteSource = SITE_KEY;
+    httpApiBase = normalizeBase(readStringCandidate(config.api.http_api_base, httpApiBase));
+    kaijiangApiBase = normalizeBase(readStringCandidate(config.api.kaijiang_api_base, kaijiangApiBase));
+    if (!kaijiangApiBase) kaijiangApiBase = buildAppUrl("/api/kaijiang");
+    window.__LOTTERY_API_BASE__ = httpApiBase;
+    window.__LEGACY_KAIJIANG_API_BASE__ = kaijiangApiBase;
+    if (window.LEGACY_TWSAIMAHUI_RUNTIME) {
+      window.LEGACY_TWSAIMAHUI_RUNTIME.siteKey = SITE_KEY;
+      window.LEGACY_TWSAIMAHUI_RUNTIME.source = siteSource;
+      window.LEGACY_TWSAIMAHUI_RUNTIME.httpApiBase = httpApiBase;
+      window.LEGACY_TWSAIMAHUI_RUNTIME.kaijiangApiBase = kaijiangApiBase;
+      window.LEGACY_TWSAIMAHUI_RUNTIME.bridgeConfig = config;
+    }
+    window.dispatchEvent(new CustomEvent("lottery:runtime-config-applied", { detail: { config: config } }));
+  }
+
   window.LEGACY_TWSAIMAHUI_RUNTIME = {
     siteKey: SITE_KEY,
     source: siteSource,
@@ -281,11 +300,22 @@
     buildVendorUrl: buildVendorUrl,
     buildHistoryUrl: buildHistoryUrl,
     buildKaijiangUrl: buildKaijiangUrl,
-    isKaijiangRequest: isKaijiangRequest
+    isKaijiangRequest: isKaijiangRequest,
+    applyBridgeConfig: applyBridgeConfig,
+    bridgeConfig: null
   };
 
   window.__LOTTERY_API_BASE__ = httpApiBase;
   window.__LEGACY_KAIJIANG_API_BASE__ = kaijiangApiBase;
+
+  if (window.LotterySiteBridge && window.LotterySiteBridge.state && window.LotterySiteBridge.state.config) {
+    applyBridgeConfig(window.LotterySiteBridge.state.config);
+  }
+  if (window && typeof window.addEventListener === "function") {
+    window.addEventListener("lottery:bridge-ready", function (event) {
+      applyBridgeConfig(event && event.detail ? event.detail.config : null);
+    });
+  }
 
   var titleObserver = null;
 

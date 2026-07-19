@@ -85,6 +85,39 @@ Errors use:
 { "ok": false, "error": "message" }
 ```
 
+## Vendor Bridge Routes
+
+Manifest-backed vendor sites can load browser-safe runtime settings through:
+
+- `GET /api/sites/<siteKey>/bridge-config`
+- `GET /api/sites/<siteKey>/draw?lottery_type=1|2|3`
+
+`bridge-config` contains the registered `site_key/site_id/web_id`, same-origin
+API bases, selected prediction module keys and public branding metadata. It
+must never include backend credentials or a Python backend origin.
+
+`draw` returns a normalized data object:
+
+```json
+{
+  "ok": true,
+  "site": { "site_key": "twsaimahui", "lottery_type": 3 },
+  "data": {
+    "current_issue": "2026125",
+    "opened_at": null,
+    "next_issue": "2026126",
+    "next_draw_at": "2026-05-21 21:30:00",
+    "balls": [
+      { "value": "01", "color": "red", "zodiac": "马", "element": null, "is_special": false }
+    ]
+  }
+}
+```
+
+Expected bridge errors use `{ "ok": false, "error": { "code", "message",
+"retryable" } }`. The vendor bridge dispatches the equivalent browser event
+payload through `lottery:error`.
+
 ## Traffic Event Contract
 
 `POST /api/sites/<siteKey>/traffic-events` accepts:

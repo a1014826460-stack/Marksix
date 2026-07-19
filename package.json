@@ -19,6 +19,9 @@
     "build:backend-admin": "pnpm --filter @liuhecai/backend-admin build",
     "start:backend-admin": "pnpm --filter @liuhecai/backend-admin start -- --hostname 0.0.0.0 --port 3002",
     "lint:backend-admin": "eslint backend --ext .js,.jsx,.ts,.tsx",
+    "site:sync-manifests": "node scripts/sync-site-manifests.mjs",
+    "site:scaffold": "node scripts/scaffold-vendor-site.mjs",
+    "site:validate": "node scripts/validate-vendor-site.mjs",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint"
   },
