@@ -5,6 +5,7 @@ import {
   resolvePredictionModulesCompatibilityContext,
   type RegisteredSiteKey,
 } from "@/lib/site-registry"
+import twsaimahuiManifest from "@/sites/twsaimahui/site.manifest"
 import {
   getSiteArticleDetail,
   getSiteHomepageModules,
@@ -35,6 +36,13 @@ for (const siteKey of expectedKeys) {
 }
 
 const context = resolveSiteApiContext("twjinniu", new URLSearchParams("history_limit=3"))
+const twsaimahui = getRegisteredSite("twsaimahui")
+if (
+  twsaimahui.defaultWebId !== twsaimahuiManifest.identity.webId ||
+  twsaimahui.vendorIndexPath !== twsaimahuiManifest.frontend.vendorIndexPath
+) {
+  throw new Error("twsaimahui registry configuration must be derived from its manifest")
+}
 const crossSiteOverrideContext = resolveSiteApiContext(
   "twjinniu",
   new URLSearchParams("site_id=5&web=5&web_id=5")

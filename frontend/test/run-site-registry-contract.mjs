@@ -14,7 +14,16 @@ function toDataModule(source) {
   return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 }
 
-const sitesModule = toDataModule(compileModule("frontend/lib/sites.ts"))
+const manifestModule = toDataModule(compileModule("frontend/lib/site-platform/site-manifest.ts"))
+const twsaimahuiManifestModule = toDataModule(
+  compileModule("frontend/sites/twsaimahui/site.manifest.ts")
+    .replace('"@/lib/site-platform/site-manifest"', JSON.stringify(manifestModule))
+)
+const sitesModule = toDataModule(
+  compileModule("frontend/lib/sites.ts")
+    .replace('"@/lib/site-platform/site-manifest"', JSON.stringify(manifestModule))
+    .replace('"@/sites/twsaimahui/site.manifest"', JSON.stringify(twsaimahuiManifestModule))
+)
 const registryModule = toDataModule(
   compileModule("frontend/lib/site-registry.ts").replace('"@/lib/sites"', JSON.stringify(sitesModule))
 )
