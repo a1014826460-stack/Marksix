@@ -3,6 +3,23 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = "D:\pythonProject\outsource\Liuhecai"
 $BackendRoot = Join-Path $ProjectRoot "backend"
 $PythonExe = "D:\python\python.exe"
+
+# Local secrets stay in the ignored backend/.env.local file.
+$LocalEnvFile = Join-Path $BackendRoot ".env.local"
+if (Test-Path $LocalEnvFile) {
+    foreach ($line in Get-Content -LiteralPath $LocalEnvFile) {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') {
+            $name = $Matches[1]
+            $value = $Matches[2]
+            if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+                ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+            Set-Item -Path "Env:$name" -Value $value
+        }
+    }
+}
+
 $NodeExe = (Get-Command node).Source
 $PowerShellExe = (Get-Command powershell.exe).Source
 $NextCli = Join-Path $BackendRoot "node_modules\next\dist\bin\next"
