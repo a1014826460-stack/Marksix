@@ -27,6 +27,7 @@ if (twsaimahui.identity.webId !== 6 || twsaimahui.identity.defaultLotteryType !=
 if (twsaimahui.frontend.vendorIndexPath !== "/vendor/twsaimahui/index.html") throw new Error("twsaimahui manifest must own the vendor entry path")
 const config = projectPublicBridgeConfig(twsaimahui)
 if (config.api.kaijiang_api_base !== "/api/kaijiang" || config.site.web_id !== 6) throw new Error("bridge config projection must expose configured API and web identity")
+if (config.bridge.runtime.draw_selector !== ".vendor-shared-draw-mount" || config.brand.footer.imageUrls.length !== 4) throw new Error("bridge config must project shared runtime selectors and footer images")
 
 const draw = normalizeSiteDraw({ current_issue: "2026125", result_balls: [{ value: "1", color: "red", zodiac: "馬" }], special_ball: { value: "49", color: "green", zodiac: "雞" } }, { next_issue: "2026126", next_time: "2026-05-21 21:30:00" })
 if (draw.balls.length !== 2 || draw.balls[0].value !== "01" || !draw.balls[1].is_special || draw.balls[0].zodiac !== "马") throw new Error("draw normalization must pad values, normalize zodiac, and mark special balls")

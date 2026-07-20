@@ -16,7 +16,8 @@
     <meta name="mobile-agent" content="format=html5;url=.">
     <link rel="alternate" media="only screen and(max-width: 640px)" href=".">
 <!--    <script src="https://libs.baidu.com/jquery/1.10.2/jquery.min.js"></script>-->
-    <script src="site-bridge.js" data-site-key="twsaimahui"></script>
+    <script src="/vendor/_shared/lottery-site-bridge.js" data-site-key="twsaimahui"></script>
+    <script src="/vendor/_shared/lottery-site-runtime.js"></script>
     <script src="static/js/legacy_runtime.js"></script>
     <script src="static/js/jquery.min.js"></script>
     <script src="static/js/ajax_interceptor.js"></script>
@@ -25,6 +26,9 @@
     <script src="static/js/axios.min.js"></script>
     <script src="static/js/lottery_config.js"></script>
     <script src="static/js/api_client.js"></script>
+    <script>
+        window.LotterySiteRuntime.mount({ bridge: window.LotterySiteBridge });
+    </script>
 
 
     <style>
@@ -218,13 +222,7 @@
         text-align: center;
     }
 </style>
-<script>
-    var obj = document.getElementById('nav2');
-    var ot = obj.offsetTop;
-    document.onscroll = function () {
-        var st = document.body.scrollTop || document.documentElement.scrollTop;
-        obj.setAttribute('data-fixed',st >= ot?'fixed':'')}
-;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc3ODUxMDI3NzEwNyljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzQ4MScpOw=='))}();</script>
+
 
 
 
@@ -272,15 +270,6 @@
 	 
      
 	 
-	 <div class='box'>
-    <img src='static/picture/log1.jpg' width='100%' style='margin-top:48px;'>
-    <img src='static/picture/log5.jpg' width='100%' style='margin-top:48px;'>
-    <img src='static/picture/log4.jpg' width='100%' style='margin-top:48px;'>
-    <img src='static/picture/log8.jpg' width='100%' style='margin-top:48px;'>
-</div>
-
-
-
             </tbody></table>
     </div>
 </div>
@@ -494,90 +483,91 @@
     </script>
 
     <div id="content-area">
+        <section id="vendor-shared-predictions"></section>
 <!--特邀家野两肖start-->
 <div id="jy"></div>
 <div class='box l1'>
-    <script type='text/javascript' src='static/js/061jy2x.js'></script>
+    <template data-legacy-prediction-src="static/js/061jy2x.js"></template>
 </div>
 
 <!--左右开始start-->
 <div class='box l2'>
-    <script type='text/javascript' src='static/js/033zuoyou.js'></script>
+    <template data-legacy-prediction-src="static/js/033zuoyou.js"></template>
 </div>
 
 <!--精品六肖开始start-->
 <div class='box'>
     <div id='hao012' class="l3">
-        <script type='text/javascript' src='static/js/012liuxiao.js'></script>
+        <template data-legacy-prediction-src="static/js/012liuxiao.js"></template>
     </div></div>
 <!--结束end-->
 <!--阴阳开始start-->
 <div id="hao044"></div>
 <div class='box l4'>
-    <script type='text/javascript' src='static/js/044yinyang.js'></script>
+    <template data-legacy-prediction-src="static/js/044yinyang.js"></template>
 </div>
 <!--结束end-->
 <!--四肖八码start-->
 <div class='box'>
 <div id="hao027" class="l5"></div>
-        <script type='text/javascript' src='static/js/027six8m.js'></script>
+        <template data-legacy-prediction-src="static/js/027six8m.js"></template>
     </div>
 <!--单双四尾开始start-->
 <div class='box l6'>
-    <script type='text/javascript' src='static/js/003ds4w.js'></script>
+    <template data-legacy-prediction-src="static/js/003ds4w.js"></template>
 
 </div>
 <!--结束end-->
 <!--单双开始start-->
 <div class='box l7'>
-    <script type='text/javascript' src='static/js/071ds.js'></script>
+    <template data-legacy-prediction-src="static/js/071ds.js"></template>
 </div>
 <!--单双end-->
 
 <!--六肖开始start-->
 <div class='box l8'>
-    <script type='text/javascript' src='static/js/073sixiao.js'></script>
+    <template data-legacy-prediction-src="static/js/073sixiao.js"></template>
 </div>
 
 <!--合数单双开始start-->
 <div class='box l9'>
-    <script type='text/javascript' src='static/js/006heshuds.js'></script>
+    <template data-legacy-prediction-src="static/js/006heshuds.js"></template>
 </div>
 <!--结束end-->
 
 <!--天地开始start-->
 <div class='box l22'>
-    <script type='text/javascript' src='static/js/043tiandi.js'></script>
+    <template data-legacy-prediction-src="static/js/043tiandi.js"></template>
 </div>
 <!--结束end-->
 <!--吃肉草菜开始start-->
 <div id="hao049"></div>
 <div class='box l11'>
-    <script type='text/javascript' src='static/js/049rccx.js'></script>
+    <template data-legacy-prediction-src="static/js/049rccx.js"></template>
 </div>
 <!--结束end-->
 
 
 <!--家野开始start-->
 <div class='box l12'>
-    <script type='text/javascript' src='static/js/040jiaye.js'></script>
+    <template data-legacy-prediction-src="static/js/040jiaye.js"></template>
 </div>
 <!--结束end-->
 <!--隐刺五肖start-->
 <div class='box l13'>
-    <script type='text/javascript' src='static/js/042ycwx.js'></script>
+    <template data-legacy-prediction-src="static/js/042ycwx.js"></template>
 </div>
 <!--结束end-->
 <!--黑白开始start-->
 <div class='box l14'>
-    <script type='text/javascript' src='static/js/039heibai.js'></script>
+    <template data-legacy-prediction-src="static/js/039heibai.js"></template>
 
 </div>
 <!--结束end-->
 <!--九肖开始start-->
 <div id="hao014"></div>
 <div class='box l15'>
-    <script type='text/javascript' src='static/js/014jiuxiao.js'></script>
+    <template data-legacy-prediction-src="static/js/014jiuxiao.js"></template>
 </div>
 <!--结束end-->
 <!--<div id="yxxgzd">
@@ -590,14 +580,14 @@
 <!--三肖开始start-->
 <div id="hao031"></div>
 <div class='box  l16'>
-    <script type='text/javascript' src='static/js/031wuxiao.js'></script>
+    <template data-legacy-prediction-src="static/js/031wuxiao.js"></template>
 
 </div>
 <!--结束end-->
 <!--特邀单双四肖start-->
 <div id="hao060"></div>
 <div class='box l17'>
-    <script type='text/javascript' src='static/js/060ds4x.js'></script>
+    <template data-legacy-prediction-src="static/js/060ds4x.js"></template>
 </div>
 <!--结束end-->
 <!--跑马开始-->
@@ -608,14 +598,14 @@
     <div id='pgpm'>
 
         <div class="l18"></div>
-        <script type='text/javascript' src='static/js/011jiepaoma.js'></script>
+        <template data-legacy-prediction-src="static/js/011jiepaoma.js"></template>
 
     </div></div>
 <!--跑马结束-->
 
 <!--四肖开始start-->
 <div class='box l19'>
-    <script type='text/javascript' src='static/js/030lflx.js'></script>
+    <template data-legacy-prediction-src="static/js/030lflx.js"></template>
 </div>
 <div class="box">
     <div id="sibu">
@@ -624,32 +614,32 @@
 <!--成语平特尾start-->
 <div id="hao068"></div>
 <div class='box l20'>
-    <script type='text/javascript' src='static/js/068chengyupw.js'></script>
+    <template data-legacy-prediction-src="static/js/068chengyupw.js"></template>
 
 </div>
 <!--结束end-->
 <!--三期必中开始start 没有接口-->
 <div class='box'>
     <div id='sxbc' class=" l21">
-        <script type='text/javascript' src='static/js/023sanqibizhong.js'></script>
+        <template data-legacy-prediction-src="static/js/023sanqibizhong.js"></template>
     </div></div>
 <!--结束end-->
 
 <!--天地开始start-->
 <div class='box l10'>
-    <script type='text/javascript' src='static/js/075tiandi.js'></script>
+    <template data-legacy-prediction-src="static/js/075tiandi.js"></template>
 </div>
 <!--结束end-->
 
 <!--10码开始start-->
 <div class='box l23'>
-    <script type='text/javascript' src='static/js/038ma10.js'></script>
+    <template data-legacy-prediction-src="static/js/038ma10.js"></template>
 </div>
 <!--结束end-->
 <!--四季肖start-->
 <div id="hao050"></div>
 <div class='box  l24'>
-    <script type='text/javascript' src='static/js/050siji.js'></script>
+    <template data-legacy-prediction-src="static/js/050siji.js"></template>
 </div>
 <!--结束end-->
 <div class="box" id="pgt">
@@ -657,7 +647,7 @@
 <!--单双开始start-->
 <div id="hao004"></div>
 <div class='box l25'>
-    <script type='text/javascript' src='static/js/004danshuang.js'></script>
+    <template data-legacy-prediction-src="static/js/004danshuang.js"></template>
 </div>
 <div class="box" id="wzwtm">
 
@@ -666,13 +656,13 @@
 <!--结束end-->
 <!--20码start-->
 <!-- <div class='box l26'>
-    <script type='text/javascript' src='static/js/032ma20.js'></script>
+    <template data-legacy-prediction-src="static/js/032ma20.js"></template>
 </div> -->
 <!--结束end-->
 
 <!--一波开始start-->
 <div class='box l27'>
-    <script type='text/javascript' src='static/js/036ma12.js'></script>
+    <template data-legacy-prediction-src="static/js/036ma12.js"></template>
 
 </div>
 <!--一波end-->
@@ -680,24 +670,24 @@
 <!--四尾八码start-->
 <div class='box'>
     <div id="hao026" class=" l28"></div>
-    <script type='text/javascript' src='static/js/026siw8m.js'></script>
+    <template data-legacy-prediction-src="static/js/026siw8m.js"></template>
 </div>
 
 <!--16码start-->
 <div class='box l29'>
-    <script type='text/javascript' src='static/js/035ma16.js'></script>
+    <template data-legacy-prediction-src="static/js/035ma16.js"></template>
 </div>
 <!--结束end-->
 <!--一字平肖start-->
 <div id="hao065"></div>
 <div class='box l30'>
-    <script type='text/javascript' src='static/js/065yiziptx.js'></script>
+    <template data-legacy-prediction-src="static/js/065yiziptx.js"></template>
 
 </div>
 <!--结束end-->
 <!--风小子六肖开始start-->
 <div class='box l31'>
-    <script type='text/javascript' src='static/js/047liuxiao.js'></script>
+    <template data-legacy-prediction-src="static/js/047liuxiao.js"></template>
 </div>
 <!--结束end-->
 <div class="box">
@@ -712,12 +702,12 @@
 <!--文武开始start-->
 <div id="hao064"></div>
 <div class='box l32'>
-    <script type='text/javascript' src='static/js/046wenwu.js'></script>
+    <template data-legacy-prediction-src="static/js/046wenwu.js"></template>
 </div>
 <!--结束end-->
 <!--大小中特开始start-->
 <div class='box l33'>
-    <script type='text/javascript' src='static/js/002daxiao.js'></script>
+    <template data-legacy-prediction-src="static/js/002daxiao.js"></template>
 </div>
 <!--结束end-->
 <div class="box">
@@ -733,7 +723,7 @@
 <!--有无开始start-->
 <div id="hao045"></div>
 <div class='box l34'>
-    <script type='text/javascript' src='static/js/045youwu.js'></script>
+    <template data-legacy-prediction-src="static/js/045youwu.js"></template>
 </div>
 <!--结束end-->
 <!--<div id="yxxgzd1">
@@ -759,21 +749,21 @@
 
 <!--三连肖start-->
 <div class='box l35'>
-    <script type='text/javascript' src='static/js/067sanzipw.js'></script>
+    <template data-legacy-prediction-src="static/js/067sanzipw.js"></template>
 </div>
 <!--三连肖结束end-->
 <!--林北start-->
 <div id="hao062"></div>
 <div class='box'>
     <div id='ogkk' class="l36">
-        <script type='text/javascript' src='static/js/062linbei6x.js'></script>
+        <template data-legacy-prediction-src="static/js/062linbei6x.js"></template>
     </div>
 </div>
 <!--结束end-->
 <!--文房四宝开始start-->
 <div id="hao053"></div>
 <div class='box l37'>
-    <script type='text/javascript' src='static/js/053wfsb.js'></script>
+    <template data-legacy-prediction-src="static/js/053wfsb.js"></template>
 </div>
 <!--结束end-->
 
@@ -782,7 +772,7 @@
 
 <!--杀一肖开始start-->
 <div class='box l40'>
-    <script type='text/javascript' src='static/js/057s1x.js'></script>
+    <template data-legacy-prediction-src="static/js/057s1x.js"></template>
 </div>
 <!--结束end-->
 
@@ -790,11 +780,11 @@
 
  <!--  两肖+八码-->
 <!-- <div class='box l41'>
-    <script type='text/javascript' src='static/js/069lxbm.js'></script>
+    <template data-legacy-prediction-src="static/js/069lxbm.js"></template>
 </div> -->
 <!--平特一尾start-->
 <div class='box l42'>
-    <script type='text/javascript' src='static/js/022pt1w.js'></script>
+    <template data-legacy-prediction-src="static/js/022pt1w.js"></template>
 </div>
 <!--结束end-->
 
@@ -811,7 +801,7 @@
 <!--杀必中--end-->
 <!--两头开始start-->
 <div class='box l44'>
-    <script type='text/javascript' src='static/js/072liangtou.js'></script>
+    <template data-legacy-prediction-src="static/js/072liangtou.js"></template>
 </div>
 <!--两头end-->
 <!--新版跑狗图-->
@@ -827,7 +817,7 @@
 <!--杀七码开始start-->
 <div id="hao056"></div>
 <div class='box l45'>
-    <script type='text/javascript' src='static/js/056s7m.js'></script>
+    <template data-legacy-prediction-src="static/js/056s7m.js"></template>
 </div>
 <!--结束end-->
 
@@ -835,7 +825,7 @@
 <!--杀两肖开始start-->
 <div id="hao058"></div>
 <div class='box l47'>
-    <script type='text/javascript' src='static/js/058s2x.js'></script>
+    <template data-legacy-prediction-src="static/js/058s2x.js"></template>
 
 </div>
 <!--结束end-->
@@ -843,7 +833,7 @@
 <!--风雨雷电开始start-->
 <div id="hao051"></div>
 <div class='box l48'>
-    <script type='text/javascript' src='static/js/051fyld.js'></script>
+    <template data-legacy-prediction-src="static/js/051fyld.js"></template>
 </div>
 
 
@@ -853,14 +843,14 @@
 <div class='box'>
     <div id='1z'></div>
     <div class="yzxj"></div>
-    <script type='text/javascript' src='static/js/029yizixuanji.js'></script>
+    <template data-legacy-prediction-src="static/js/029yizixuanji.js"></template>
 </div> -->
 
 
 <!--成语平肖start-->
 <div id="hao066"></div>
 <div class='box l51'>
-    <script type='text/javascript' src='static/js/066chengyupx.js'></script>
+    <template data-legacy-prediction-src="static/js/066chengyupx.js"></template>
 </div>
 
 
@@ -877,7 +867,7 @@
 <div id="hao019"></div>
 <div class='box '>
     <div id='uyik' class="l52">
-        <script type='text/javascript' src='static/js/019liubuzhong.js'></script>
+        <template data-legacy-prediction-src="static/js/019liubuzhong.js"></template>
 
     </div></div>
 <!--结束end-->
@@ -892,14 +882,14 @@
 <!--男女开始start-->
 <!-- <div id="hao020"></div>
 <div class='box l53'>
-    <script type='text/javascript' src='static/js/020nn4x.js'></script> -->
+    <template data-legacy-prediction-src="static/js/020nn4x.js"></template> -->
 
 <!-- </div> -->
 <!--结束end-->
 <!--九肖一码开始start-->
 <div class='box'>
     <div id='yquk' class="l54">
-        <script type='text/javascript' src='static/js/013jiux1m.js'></script>
+        <template data-legacy-prediction-src="static/js/013jiux1m.js"></template>
 
     </div></div>
 
@@ -915,20 +905,20 @@
 <!--三头中特开始start-->
 <div id="3t"></div>
 <div class='box l55'>
-    <script type='text/javascript' src='static/js/024santou.js'></script>
+    <template data-legacy-prediction-src="static/js/024santou.js"></template>
 
 </div>
 <!--结束end-->
 <!--三行开始start-->
 <div class='box l56'>
-    <script type='text/javascript' src='static/js/025sanhang.js'></script>
+    <template data-legacy-prediction-src="static/js/025sanhang.js"></template>
 </div>
 <!--结束end-->
 
 <!--双波开始start-->
 <div id="sb"></div>
 <div class='box l57'>
-    <script type='text/javascript' src='static/js/001sb.js'></script>
+    <template data-legacy-prediction-src="static/js/001sb.js"></template>
 
 </div>
 <!--结束end-->
@@ -944,14 +934,14 @@
 <!--杀一头start-->
 <div id="hao018"></div>
 <div class='box l58'>
-    <script type='text/javascript' src='static/js/018sha1tou.js'></script>
+    <template data-legacy-prediction-src="static/js/018sha1tou.js"></template>
 
 </div>
 <!--结束end-->
 <!--美丑开始start-->
 <div id="hao041"></div>
 <div class='box l59'>
-    <script type='text/javascript' src='static/js/041meichou.js'></script>
+    <template data-legacy-prediction-src="static/js/041meichou.js"></template>
 
 </div>
 <!--结束end-->
@@ -962,14 +952,14 @@
 
 <!--杀三尾开始start-->
 <div class='box l61'>
-    <script type='text/javascript' src='static/js/015sha3w.js'></script>
+    <template data-legacy-prediction-src="static/js/015sha3w.js"></template>
 
 </div>
 <!--结束end-->
 
 <!--绝杀三肖开始start-->
 <div class='box l62'>
-    <script type='text/javascript' src='static/js/016sha3x.js'></script>
+    <template data-legacy-prediction-src="static/js/016sha3x.js"></template>
 </div>
 <!--结束end-->
 <!--马票图-->
@@ -977,26 +967,26 @@
 </div>
 <!--肥瘦开始start-->
 <div class='box l63'>
-    <script type='text/javascript' src='static/js/034feishou.js'></script>
+    <template data-legacy-prediction-src="static/js/034feishou.js"></template>
 
 </div>
 <!--结束end-->
 
 <!--平特一肖开始start-->
 <div class='box l64'>
-    <script type='text/javascript' src='static/js/074ptyx.js'></script>
+    <template data-legacy-prediction-src="static/js/074ptyx.js"></template>
 </div>
 <!--结束end-->
 <!--胆大胆小开始start-->
 <div class='box l65'>
-    <script type='text/javascript' src='static/js/037dandaxiao.js'></script>
+    <template data-legacy-prediction-src="static/js/037dandaxiao.js"></template>
 
 </div>
 <!--结束end-->
 
 <!--红蓝绿肖开始start-->
 <div class='box l66'>
-    <script type='text/javascript' src='static/js/048hllx.js'></script>
+    <template data-legacy-prediction-src="static/js/048hllx.js"></template>
 
 </div>
 <!--结束end-->
@@ -1004,7 +994,7 @@
 <!--琴棋书画开始start-->
 <div id="hao052"></div>
 <div class='box l67'>
-    <script type='text/javascript' src='static/js/052qqsh.js'></script>
+    <template data-legacy-prediction-src="static/js/052qqsh.js"></template>
 
 </div>
 <!--结束end-->
@@ -1022,14 +1012,14 @@
 <!--杀半波开始start-->
 <div id="shabb"></div>
 <div class='box l68'>
-    <script type='text/javascript' src='static/js/054sbanbo.js'></script>
+    <template data-legacy-prediction-src="static/js/054sbanbo.js"></template>
 
 </div>
 <!--结束end-->
 <!--杀半单双开始start-->
 <div id="hao055"></div>
 <div class='box l69'>
-    <script type='text/javascript' src='static/js/055sbands.js'></script>
+    <template data-legacy-prediction-src="static/js/055sbands.js"></template>
 
 </div>
 
@@ -1097,6 +1087,8 @@
 
 
 
+
+        <div id="vendor-site-footer"></div>
 
         <script type='text/javascript' src='static/js/site_nav.js'></script>
 
@@ -1885,6 +1877,3 @@
     </div><!-- end content-area -->
 
 </div></div></div></div></div></div></body></html>
-
-
-

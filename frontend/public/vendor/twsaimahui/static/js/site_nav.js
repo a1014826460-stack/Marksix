@@ -1,13 +1,15 @@
-$(function() {
-	var host = document.domain || "";
-	if (host.indexOf("351212.cc") < 0) {
-		// Legacy redirect intentionally disabled.
-	}
-
-	$(".nav2 ul li a").click(function() {
-		var target = $(this).attr("value");
-		if (!target) return;
-		var top = $(target).offset().top - 85;
-		$("html,body").animate({ scrollTop: top }, 500);
-	});
-});
+(function () {
+  "use strict";
+  document.addEventListener("DOMContentLoaded", function () {
+    var navigation = document.getElementById("nav2");
+    if (!navigation) return;
+    navigation.addEventListener("click", function (event) {
+      var link = event.target.closest && event.target.closest("a[href^='#']");
+      if (!link) return;
+      var destination = document.querySelector(link.getAttribute("href"));
+      if (!destination) return;
+      event.preventDefault();
+      window.scrollTo({ top: Math.max(0, destination.getBoundingClientRect().top + window.scrollY - navigation.offsetHeight - 8), behavior: "smooth" });
+    });
+  });
+})();

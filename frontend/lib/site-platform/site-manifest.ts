@@ -31,6 +31,13 @@ export type VendorSiteManifestInput = {
       prediction: boolean
     }
     predictionModuleKeys: string[]
+    runtime?: {
+      drawSelector: string
+      predictionSelector: string
+      footerSelector: string
+      navigationSelector: string
+      legacyPredictionScripts: "disabled" | "enabled"
+    }
   }
   brand: {
     siteName: string
@@ -45,6 +52,7 @@ export type VendorSiteManifestInput = {
     footer: {
       copyright: string
       icpImageUrl?: `/${string}`
+      imageUrls?: Array<`/${string}`>
       contacts?: Array<{ label: string; href: string }>
     }
   }
@@ -68,6 +76,13 @@ export type VendorSiteManifest = {
     api: Readonly<VendorSiteManifestInput["bridge"]["api"]>
     autoLoad: Readonly<VendorSiteManifestInput["bridge"]["autoLoad"]>
     predictionModuleKeys: readonly string[]
+    runtime: Readonly<{
+      drawSelector: string
+      predictionSelector: string
+      footerSelector: string
+      navigationSelector: string
+      legacyPredictionScripts: "disabled" | "enabled"
+    }>
   }>
   readonly brand: Readonly<{
     siteName: string
@@ -78,6 +93,7 @@ export type VendorSiteManifest = {
     footer: Readonly<{
       copyright: string
       icpImageUrl?: `/${string}`
+      imageUrls: readonly `/${string}`[]
       contacts: readonly Readonly<{ label: string; href: string }>[]
     }>
   }>
@@ -143,6 +159,21 @@ export function defineVendorSiteManifest(input: VendorSiteManifestInput): Vendor
   if (new Set(moduleKeys).size !== moduleKeys.length) {
     throw new Error("bridge.predictionModuleKeys must be unique")
   }
+  const runtime = bridge.runtime || {
+    drawSelector: "",
+    predictionSelector: "",
+    footerSelector: "",
+    navigationSelector: "",
+    legacyPredictionScripts: "enabled" as const,
+  }
+  for (const [key, value] of Object.entries(runtime)) {
+    if (key !== "legacyPredictionScripts" && typeof value !== "string") {
+      throw new Error(`bridge.runtime.${key} must be a string`)
+    }
+  }
+  if (!['disabled', 'enabled'].includes(runtime.legacyPredictionScripts)) {
+    throw new Error("bridge.runtime.legacyPredictionScripts must be disabled or enabled")
+  }
   assertOrigins(security.externalScriptOrigins, "security.externalScriptOrigins")
   assertOrigins(security.externalNavigationOrigins, "security.externalNavigationOrigins")
 
@@ -155,12 +186,14 @@ export function defineVendorSiteManifest(input: VendorSiteManifestInput): Vendor
       api: Object.freeze({ ...bridge.api }),
       autoLoad: Object.freeze({ ...bridge.autoLoad }),
       predictionModuleKeys: Object.freeze(moduleKeys),
+      runtime: Object.freeze({ ...runtime }),
     }),
     brand: Object.freeze({
       ...brand,
       navigation: Object.freeze(brand.navigation.map((item) => Object.freeze({ ...item }))),
       footer: Object.freeze({
         ...brand.footer,
+        imageUrls: Object.freeze([...(brand.footer.imageUrls || [])]),
         contacts: Object.freeze((brand.footer.contacts || []).map((item) => Object.freeze({ ...item }))),
       }),
     }),

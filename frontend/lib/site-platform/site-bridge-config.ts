@@ -17,6 +17,13 @@ export type PublicBridgeConfig = {
       prediction: boolean
     }
     prediction_module_keys: readonly string[]
+    runtime: {
+      draw_selector: string
+      prediction_selector: string
+      footer_selector: string
+      navigation_selector: string
+      legacy_prediction_scripts: "disabled" | "enabled"
+    }
   }
   brand: VendorSiteManifest["brand"]
 }
@@ -36,7 +43,20 @@ export function projectPublicBridgeConfig(manifest: VendorSiteManifest): PublicB
     bridge: {
       auto_load: manifest.bridge.autoLoad,
       prediction_module_keys: manifest.bridge.predictionModuleKeys,
+      runtime: {
+        draw_selector: manifest.bridge.runtime.drawSelector,
+        prediction_selector: manifest.bridge.runtime.predictionSelector,
+        footer_selector: manifest.bridge.runtime.footerSelector,
+        navigation_selector: manifest.bridge.runtime.navigationSelector,
+        legacy_prediction_scripts: manifest.bridge.runtime.legacyPredictionScripts,
+      },
     },
-    brand: manifest.brand,
+    brand: {
+      ...manifest.brand,
+      footer: {
+        ...manifest.brand.footer,
+        imageUrls: manifest.brand.footer.imageUrls,
+      },
+    },
   }
 }

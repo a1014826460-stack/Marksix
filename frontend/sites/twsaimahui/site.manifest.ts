@@ -25,10 +25,24 @@ export default defineVendorSiteManifest({
       kaijiangApiBase: "/api/kaijiang",
     },
     autoLoad: {
-      draw: false,
-      prediction: false,
+      draw: true,
+      prediction: true,
     },
-    predictionModuleKeys: [],
+    predictionModuleKeys: [
+      "wuxiao_wuma",
+      "public_yixiao_yima",
+      "shuangbo_12ma",
+      "shujinguang",
+      "daxiao_2tou",
+      "tiandi_2xiao",
+    ],
+    runtime: {
+      drawSelector: ".vendor-shared-draw-mount",
+      predictionSelector: "#vendor-shared-predictions",
+      footerSelector: "#vendor-site-footer",
+      navigationSelector: "#nav2",
+      legacyPredictionScripts: "disabled",
+    },
   },
   brand: {
     siteName: "台湾赛马会",
@@ -39,10 +53,22 @@ export default defineVendorSiteManifest({
       accent: "#f4d000",
       background: "#ffffff",
     },
-    navigation: [],
+    navigation: [
+      { label: "精华榜一", href: "#jhb" },
+      { label: "精华榜二", href: "#jhb2" },
+      { label: "封神图榜", href: "#fsb" },
+      { label: "全网英雄榜", href: "#jgjp" },
+      { label: "精品资料区", href: "#jpzlq" },
+    ],
     footer: {
       copyright: "台湾赛马会",
-      contacts: [],
+      imageUrls: [
+        "/vendor/twsaimahui/static/picture/log1.jpg",
+        "/vendor/twsaimahui/static/picture/log5.jpg",
+        "/vendor/twsaimahui/static/picture/log4.jpg",
+        "/vendor/twsaimahui/static/picture/log8.jpg",
+      ],
+      contacts: [{ label: "台湾赛马会", href: "#top" }],
     },
   },
   security: {

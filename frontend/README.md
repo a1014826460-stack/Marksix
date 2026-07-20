@@ -69,6 +69,17 @@ cd d:\pythonProject\outsource\Liuhecai
 pnpm dev:frontend
 ```
 
+## Vendor 统一运行时
+
+接入 `iframe-vendor` 站点时，保留原始 HTML、CSS 和图片，但动态数据必须由
+`/vendor/_shared/lottery-site-bridge.js` 和 `/vendor/_shared/lottery-site-runtime.js` 统一加载。Manifest 的
+`bridge.runtime` 必须声明开奖、预测、导航和页尾挂载选择器；`brand.footer.imageUrls`
+配置站点自己的页尾图片。共享运行时会对开奖和 canonical prediction modules 执行
+请求去重，并使用内存与 `sessionStorage` 的 stale-while-revalidate 缓存。
+
+已迁移的页面不得继续执行各预测模块自身的网络请求脚本；可保留其 DOM 容器、CSS
+和静态资源作为站点差异化展示基础。
+
 访问：
 
 - `http://127.0.0.1:3000/`
@@ -135,7 +146,7 @@ The `twsaimahui` pilot uses:
 
 - `sites/twsaimahui/site.manifest.ts` for identity, vendor entry, API defaults,
   selected prediction modules, branding metadata and external-origin allowlists.
-- `public/vendor/twsaimahui/site-bridge.js` for `window.LotterySiteBridge` and
+- `public/vendor/_shared/lottery-site-bridge.js` for `window.LotterySiteBridge` and
   its `lottery:*` loading/ready/error events.
 - `GET /api/sites/twsaimahui/bridge-config` for public runtime configuration.
 - `GET /api/sites/twsaimahui/draw?lottery_type=1|2|3` for normalized draw data.
