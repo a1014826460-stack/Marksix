@@ -34,6 +34,17 @@ def test_local_restart_script_manages_exactly_one_scheduler_worker_console():
     assert "Test-SchedulerWorkerHealthy" in source
 
 
+def test_local_restart_script_checks_postgres_before_stopping_healthy_processes():
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "restart-backend.ps1"
+    source = script.read_text(encoding="utf-8")
+
+    assert "function Test-DatabaseReachable" in source
+    assert "Test-NetConnection" in source
+    assert source.rindex("Test-DatabaseReachable") < source.rindex("Stop-ManagedConsoleProcesses")
+
+
 def test_dedicated_worker_cleans_up_a_partially_started_scheduler(monkeypatch):
     import scheduler_worker
 

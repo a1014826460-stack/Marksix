@@ -199,6 +199,33 @@ function Test-PortReleased {
     throw "Port $TargetPort is still occupied."
 }
 
+function Test-DatabaseReachable {
+    param(
+        [string]$DbUrl = $DefaultDbUrl
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DbUrl)) {
+        throw "DATABASE_URL must be set before starting the backend."
+    }
+
+    try {
+        $uri = [Uri]$DbUrl
+    } catch {
+        throw "DATABASE_URL is not a valid PostgreSQL URL."
+    }
+    if ($uri.Scheme -notin @("postgres", "postgresql") -or [string]::IsNullOrWhiteSpace($uri.Host)) {
+        throw "DATABASE_URL must use a PostgreSQL URL with a host."
+    }
+
+    $port = if ($uri.Port -gt 0) { $uri.Port } else { 5432 }
+    $probe = Test-NetConnection -ComputerName $uri.Host -Port $port -WarningAction SilentlyContinue
+    if (-not $probe.TcpTestSucceeded) {
+        throw "PostgreSQL is unreachable at $($uri.Host):$port. Start the local PostgreSQL service or Docker Desktop/Compose before restarting backend processes."
+    }
+
+    Write-Host "PostgreSQL TCP endpoint is reachable: $($uri.Host):$port"
+}
+
 function Start-Backend {
     param(
         [string]$DbUrl = $DefaultDbUrl
@@ -331,6 +358,7 @@ function Test-SchedulerWorkerHealthy {
     throw "Scheduler worker did not acquire its lease. Check the Scheduler Worker console."
 }
 
+Test-DatabaseReachable
 Stop-ManagedConsoleProcesses
 Stop-BackendProcesses
 Stop-BackendAdminProcesses
