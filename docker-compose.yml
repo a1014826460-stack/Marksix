@@ -65,6 +65,7 @@ services:
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      LIUHECAI_RUNTIME_ENV: "production"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
       LOTTERY_API_HOST: "0.0.0.0"
@@ -99,6 +100,7 @@ services:
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      LIUHECAI_RUNTIME_ENV: "production"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     volumes:
@@ -121,6 +123,7 @@ services:
     command: ["sh", "-c", "cd /app/src && python -m database.versioned_migrations --db-path \"$$DATABASE_URL\""]
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
+      LIUHECAI_RUNTIME_ENV: "production"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     networks:

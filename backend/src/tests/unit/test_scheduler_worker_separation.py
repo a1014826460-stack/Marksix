@@ -45,6 +45,18 @@ def test_local_restart_script_checks_postgres_before_stopping_healthy_processes(
     assert source.rindex("Test-DatabaseReachable") < source.rindex("Stop-ManagedConsoleProcesses")
 
 
+def test_local_restart_script_is_development_only_and_requires_native_postgres_service():
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "restart-backend.ps1"
+    source = script.read_text(encoding="utf-8")
+
+    assert '$env:LIUHECAI_RUNTIME_ENV = "development"' in source
+    assert "function Test-NativePostgresService" in source
+    assert "postgresql-x64-18" in source
+    assert source.rindex("Test-NativePostgresService") < source.rindex("Stop-ManagedConsoleProcesses")
+
+
 def test_dedicated_worker_cleans_up_a_partially_started_scheduler(monkeypatch):
     import scheduler_worker
 
@@ -56,6 +68,7 @@ def test_dedicated_worker_cleans_up_a_partially_started_scheduler(monkeypatch):
     monkeypatch.setattr(scheduler_worker, "init_logging", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "log_startup_risk_warnings", lambda: None)
     monkeypatch.setattr(scheduler_worker, "detect_database_engine", lambda _db_path: "postgres")
+    monkeypatch.setattr(scheduler_worker, "validate_runtime_database_target", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "try_acquire_scheduler_worker_lease", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(scheduler_worker, "release_scheduler_worker_lease", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(scheduler_worker, "_worker_lease_seconds", lambda _db_path: 30)
@@ -194,6 +207,7 @@ def test_scheduler_worker_stops_timers_when_leader_lease_renewal_fails(monkeypat
     monkeypatch.setattr(scheduler_worker, "init_logging", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "log_startup_risk_warnings", lambda: None)
     monkeypatch.setattr(scheduler_worker, "detect_database_engine", lambda _db_path: "postgres")
+    monkeypatch.setattr(scheduler_worker, "validate_runtime_database_target", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "try_acquire_scheduler_worker_lease", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(scheduler_worker, "renew_scheduler_worker_lease", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(scheduler_worker, "release_scheduler_worker_lease", lambda *_args, **_kwargs: None)

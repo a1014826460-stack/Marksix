@@ -20,6 +20,9 @@ if (Test-Path $LocalEnvFile) {
     }
 }
 
+# This launcher is exclusively for the Windows host development profile.
+$env:LIUHECAI_RUNTIME_ENV = "development"
+
 $NodeExe = (Get-Command node).Source
 $PowerShellExe = (Get-Command powershell.exe).Source
 $NextCli = Join-Path $BackendRoot "node_modules\next\dist\bin\next"
@@ -226,6 +229,17 @@ function Test-DatabaseReachable {
     Write-Host "PostgreSQL TCP endpoint is reachable: $($uri.Host):$port"
 }
 
+function Test-NativePostgresService {
+    $service = Get-Service -Name "postgresql-x64-18" -ErrorAction SilentlyContinue
+    if (-not $service) {
+        throw "Development requires the Windows PostgreSQL 18 service postgresql-x64-18. Docker Compose databases are production-only."
+    }
+    if ($service.Status -ne "Running") {
+        throw "Development PostgreSQL service postgresql-x64-18 is $($service.Status). Start it before restarting backend processes."
+    }
+    Write-Host "Development PostgreSQL service is running: postgresql-x64-18"
+}
+
 function Start-Backend {
     param(
         [string]$DbUrl = $DefaultDbUrl
@@ -358,6 +372,7 @@ function Test-SchedulerWorkerHealthy {
     throw "Scheduler worker did not acquire its lease. Check the Scheduler Worker console."
 }
 
+Test-NativePostgresService
 Test-DatabaseReachable
 Stop-ManagedConsoleProcesses
 Stop-BackendProcesses

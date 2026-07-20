@@ -121,6 +121,23 @@ frontend/public/vendor/<site_key>/
 
 ## 本地启动
 
+本地开发和生产部署为硬隔离环境，不能交叉使用配置：
+
+- 开发机只使用 Windows 原生 PostgreSQL 18：`127.0.0.1:5432`，密钥只放在
+  被忽略的 `backend/.env.local`，并由本地脚本设置
+  `LIUHECAI_RUNTIME_ENV=development`。
+- 生产机只使用 Docker Compose：根目录被忽略的 `.env` 只保存 Compose 密钥，
+  不得定义 `DATABASE_URL`；容器仅使用 `pgbouncer:6432`，并设置
+  `LIUHECAI_RUNTIME_ENV=production`。
+- 不在 Windows 开发机运行 `docker compose up` 作为数据库来源，也不在生产机运行
+  `backend/scripts/restart-backend.ps1`。
+
+开发前确认原生 PostgreSQL 服务运行：
+
+```powershell
+Get-Service postgresql-x64-18
+```
+
 前端：
 
 ```powershell
@@ -138,7 +155,7 @@ pnpm dev:frontend
 
 ```powershell
 cd d:\pythonProject\outsource\Liuhecai
-powershell -ExecutionPolicy Bypass -File .\backend\scripts\restart-backend.ps1
+pwsh -ExecutionPolicy Bypass -File .\backend\scripts\restart-backend.ps1
 ```
 
 访问入口：

@@ -169,10 +169,23 @@ cd /opt/Liuhecai
 
 ## 配置 `.env`
 
+此 `.env` 仅用于 Linux 生产服务器的 Docker Compose。开发机不应复制或加载它；
+本地开发仅使用 `backend/.env.local` 和 Windows 原生 PostgreSQL 18。
+
 ```bash
 cp .env.example .env
 nano .env
 ```
+
+必须保留：
+
+```ini
+LIUHECAI_RUNTIME_ENV=production
+```
+
+不要在生产根 `.env` 中添加 `DATABASE_URL`。`python-api`、`scheduler-worker`
+和 `db-migrate` 已由 Compose 固定注入内部 `pgbouncer:6432` DSN；部署和验证脚本
+会拒绝任何根 `.env` 的 `DATABASE_URL`，以防误连接宿主机或开发数据库。
 
 至少要修改：
 

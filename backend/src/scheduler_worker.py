@@ -17,6 +17,7 @@ from pathlib import Path
 from crawler.crawler_service import CrawlerScheduler
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine
 from logger import init_logging
+from runtime_environment import validate_runtime_database_target
 from predict.mechanisms import ensure_prediction_configs_loaded
 from tables import ensure_admin_tables
 from app_http.startup_warnings import log_startup_risk_warnings
@@ -40,6 +41,7 @@ def main() -> int:
     db_path = args.db_path
     if detect_database_engine(db_path) != "postgres":
         raise RuntimeError("调度 worker 正式运行仅支持 PostgreSQL。")
+    validate_runtime_database_target(str(db_path))
 
     ensure_admin_tables(db_path)
     ensure_prediction_configs_loaded(db_path)

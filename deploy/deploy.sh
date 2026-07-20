@@ -30,6 +30,20 @@ load_env() {
     fi
 }
 
+validate_production_environment() {
+    cd "$PROJECT_DIR"
+
+    if [ "${LIUHECAI_RUNTIME_ENV:-production}" != "production" ]; then
+        log_error "Production deployment requires LIUHECAI_RUNTIME_ENV=production"
+        exit 1
+    fi
+
+    if grep -Eq '^[[:space:]]*DATABASE_URL[[:space:]]*=' .env 2>/dev/null; then
+        log_error "Root .env must not define DATABASE_URL; production services receive pgbouncer:6432 only from docker-compose.yml"
+        exit 1
+    fi
+}
+
 check_prerequisites() {
     log_info "检查部署前置条件..."
 
@@ -271,6 +285,7 @@ main() {
     check_prerequisites
     prepare_env
     load_env
+    validate_production_environment
     validate_deploy_mode
     build_images
     start_services

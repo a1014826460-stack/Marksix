@@ -22,6 +22,19 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     set +a
 fi
 
+validate_production_environment() {
+    if [ "${LIUHECAI_RUNTIME_ENV:-production}" != "production" ]; then
+        echo -e "${RED}[ERROR]${NC} Production verification requires LIUHECAI_RUNTIME_ENV=production"
+        exit 1
+    fi
+    if grep -Eq '^[[:space:]]*DATABASE_URL[[:space:]]*=' "$PROJECT_DIR/.env" 2>/dev/null; then
+        echo -e "${RED}[ERROR]${NC} Root .env must not define DATABASE_URL; Compose injects pgbouncer:6432."
+        exit 1
+    fi
+}
+
+validate_production_environment
+
 VERIFY_HOST="${VERIFY_HOST:-${PUBLIC_HOST:-localhost}}"
 VERIFY_HTTP_RESOLVE="--resolve ${VERIFY_HOST}:80:127.0.0.1"
 VERIFY_HTTPS_RESOLVE="--resolve ${VERIFY_HOST}:443:127.0.0.1"
