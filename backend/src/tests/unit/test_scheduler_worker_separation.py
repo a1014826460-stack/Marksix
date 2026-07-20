@@ -22,6 +22,18 @@ def test_dedicated_scheduler_worker_owns_scheduler_startup():
     assert "scheduler.run_due_tasks_once()" not in source
 
 
+def test_local_restart_script_manages_exactly_one_scheduler_worker_console():
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "restart-backend.ps1"
+    source = script.read_text(encoding="utf-8")
+
+    assert "LIUHECAI_SCHEDULER_WORKER_CONSOLE" in source
+    assert "scheduler_worker.py" in source
+    assert "Stop-SchedulerWorkerProcesses" in source
+    assert "Test-SchedulerWorkerHealthy" in source
+
+
 def test_dedicated_worker_cleans_up_a_partially_started_scheduler(monkeypatch):
     import scheduler_worker
 
@@ -127,6 +139,38 @@ def test_worker_leader_lease_allows_one_holder_and_takeover_after_expiry(tmp_pat
         now=now + timedelta(seconds=31),
         lease_seconds=30,
     ) is True
+
+
+def test_scheduler_worker_health_reports_missing_active_and_expired_leases(tmp_path):
+    from domains.scheduler import service
+    from tables import ensure_admin_tables
+
+    db_path = str(tmp_path / "scheduler-worker-health.sqlite3")
+    ensure_admin_tables(db_path)
+    now = datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc)
+
+    assert service.get_scheduler_worker_health(db_path, now=now) == {
+        "status": "missing",
+        "active": False,
+        "holder_id": "",
+    }
+
+    assert service.try_acquire_scheduler_worker_lease(
+        db_path,
+        holder_id="worker-a",
+        now=now,
+        lease_seconds=30,
+    ) is True
+    assert service.get_scheduler_worker_health(db_path, now=now + timedelta(seconds=1)) == {
+        "status": "healthy",
+        "active": True,
+        "holder_id": "worker-a",
+    }
+    assert service.get_scheduler_worker_health(db_path, now=now + timedelta(seconds=31)) == {
+        "status": "expired",
+        "active": False,
+        "holder_id": "worker-a",
+    }
 
 
 def test_scheduler_worker_stops_timers_when_leader_lease_renewal_fails(monkeypatch):

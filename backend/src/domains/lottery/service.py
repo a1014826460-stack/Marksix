@@ -208,6 +208,68 @@ def get_latest_opened_draw_term(db_path: str | Path, lottery_type_id: int) -> di
     }
 
 
+def get_lottery_draw_health(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Expose expired next-draw deadlines so operators can spot a stalled feed."""
+    current = now or datetime.now(timezone.utc)
+    lotteries: list[dict[str, Any]] = []
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT lottery_type.id, lottery_type.name,
+                   latest_draw.year, latest_draw.term, latest_draw.next_time
+            FROM lottery_types AS lottery_type
+            LEFT JOIN lottery_draws AS latest_draw
+              ON latest_draw.id = (
+                  SELECT candidate.id
+                  FROM lottery_draws AS candidate
+                  WHERE candidate.lottery_type_id = lottery_type.id
+                    AND candidate.is_opened = 1
+                  ORDER BY candidate.year DESC, candidate.term DESC, candidate.id DESC
+                  LIMIT 1
+              )
+            WHERE lottery_type.status = 1
+            ORDER BY lottery_type.id
+            """
+        ).fetchall()
+
+    for row in rows:
+        next_time = str(row["next_time"] or "").strip()
+        stale = False
+        try:
+            stale = int(next_time) > 0 and datetime.fromtimestamp(
+                int(next_time) / 1000,
+                tz=timezone.utc,
+            ) < current
+        except (ValueError, OSError):
+            pass
+        year = int(row["year"] or 0)
+        term = int(row["term"] or 0)
+        lotteries.append(
+            {
+                "lottery_type_id": int(row["id"]),
+                "lottery_name": str(row["name"] or ""),
+                "current_issue": f"{year}{term}" if year and term else "",
+                "next_time": next_time,
+                "stale": stale,
+            }
+        )
+
+    stale_lottery_type_ids = [
+        int(item["lottery_type_id"])
+        for item in lotteries
+        if item["stale"]
+    ]
+    return {
+        "status": "degraded" if stale_lottery_type_ids else "healthy",
+        "stale_lottery_type_ids": stale_lottery_type_ids,
+        "lotteries": lotteries,
+    }
+
+
 def list_draws(
     db_path: str | Path,
     limit: int = 200,

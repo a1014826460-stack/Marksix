@@ -27,7 +27,16 @@ def health(ctx: RequestContext) -> None:
 
 def api_health(ctx: RequestContext) -> None:
     database_summary = ctx.state["database_summary"]
-    ctx.send_json({"ok": True, "summary": database_summary(ctx.db_path)})
+    scheduler_worker_health = ctx.state["scheduler_worker_health"]
+    lottery_draw_health = ctx.state["lottery_draw_health"]
+    ctx.send_json(
+        {
+            "ok": True,
+            "summary": database_summary(ctx.db_path),
+            "scheduler_worker": scheduler_worker_health(ctx.db_path),
+            "draws": lottery_draw_health(ctx.db_path),
+        }
+    )
 
 
 def uploads(ctx: RequestContext, legacy_images_dir) -> None:

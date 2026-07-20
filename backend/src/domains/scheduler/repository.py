@@ -382,3 +382,15 @@ def release_worker_lease(conn: Any, *, lease_name: str, holder_id: str) -> None:
         f"DELETE FROM {WORKER_LEASE_TABLE_NAME} WHERE lease_name = ? AND holder_id = ?",
         (lease_name, holder_id),
     )
+
+
+def find_worker_lease(conn: Any, *, lease_name: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        f"""
+        SELECT holder_id, lease_expires_at
+        FROM {WORKER_LEASE_TABLE_NAME}
+        WHERE lease_name = ?
+        """,
+        (lease_name,),
+    ).fetchone()
+    return dict(row) if row else None

@@ -111,6 +111,32 @@ def release_scheduler_worker_lease(db_path: str | Path, *, holder_id: str) -> No
         )
 
 
+def get_scheduler_worker_health(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Report whether the singleton scheduler worker currently owns a valid lease."""
+    current = now or datetime.now(timezone.utc)
+    with db_connect(db_path) as conn:
+        lease = repository.find_worker_lease(conn, lease_name=SCHEDULER_WORKER_LEASE_NAME)
+
+    if not lease:
+        return {"status": "missing", "active": False, "holder_id": ""}
+
+    holder_id = str(lease.get("holder_id") or "")
+    try:
+        expires_at = datetime.fromisoformat(str(lease.get("lease_expires_at") or ""))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return {"status": "expired", "active": False, "holder_id": holder_id}
+
+    if expires_at <= current:
+        return {"status": "expired", "active": False, "holder_id": holder_id}
+    return {"status": "healthy", "active": True, "holder_id": holder_id}
+
+
 def _task_key(task_type: str, payload: dict[str, Any]) -> str:
     if task_type == TASK_TYPE_AUTO_PREDICTION:
         return f"{task_type}:{payload.get('lottery_type_id')}"

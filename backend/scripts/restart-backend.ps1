@@ -28,6 +28,7 @@ $Port = 8000
 $AdminPort = 3002
 $BackendConsoleMarker = "LIUHECAI_BACKEND_CONSOLE"
 $AdminConsoleMarker = "LIUHECAI_BACKEND_ADMIN_CONSOLE"
+$SchedulerWorkerConsoleMarker = "LIUHECAI_SCHEDULER_WORKER_CONSOLE"
 
 function Get-BackendProcesses {
     Get-CimInstance Win32_Process |
@@ -53,6 +54,15 @@ function Get-BackendAdminProcesses {
         }
 }
 
+function Get-SchedulerWorkerProcesses {
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.Name -match '^python(\.exe)?$' -and
+            $_.CommandLine -and
+            $_.CommandLine -like "*backend/src/scheduler_worker.py*"
+        }
+}
+
 function Get-ManagedConsoleProcesses {
     Get-CimInstance Win32_Process |
         Where-Object {
@@ -60,7 +70,8 @@ function Get-ManagedConsoleProcesses {
             $_.CommandLine -and
             (
                 $_.CommandLine -like "*$BackendConsoleMarker*" -or
-                $_.CommandLine -like "*$AdminConsoleMarker*"
+                $_.CommandLine -like "*$AdminConsoleMarker*" -or
+                $_.CommandLine -like "*$SchedulerWorkerConsoleMarker*"
             )
         }
 }
@@ -133,6 +144,22 @@ function Stop-BackendAdminProcesses {
     }
 
     Write-Host "Stopping backend admin processes..."
+    foreach ($proc in $targets) {
+        Write-Host ("  PID {0} -> {1}" -f $proc.ProcessId, $proc.CommandLine)
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+function Stop-SchedulerWorkerProcesses {
+    $targets = Get-SchedulerWorkerProcesses
+    if (-not $targets) {
+        Write-Host "No matching scheduler worker processes found."
+        return
+    }
+
+    Write-Host "Stopping scheduler worker processes..."
     foreach ($proc in $targets) {
         Write-Host ("  PID {0} -> {1}" -f $proc.ProcessId, $proc.CommandLine)
         Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
@@ -248,14 +275,74 @@ Write-Host ''
     Write-Host ("Started backend admin PID: {0}" -f $process.Id)
 }
 
+function Start-SchedulerWorker {
+    param(
+        [string]$DbUrl = $DefaultDbUrl
+    )
+
+    if (-not (Test-Path $PythonExe)) {
+        throw "Python executable not found: $PythonExe"
+    }
+    if ([string]::IsNullOrWhiteSpace($DbUrl)) {
+        throw "DATABASE_URL must be set before starting the scheduler worker."
+    }
+
+    Write-Host "Starting scheduler worker..."
+    Write-Host "  $PythonExe backend/src/scheduler_worker.py --db_path <DATABASE_URL>"
+    $windowCommand = @"
+`$env:$SchedulerWorkerConsoleMarker = '1'
+`$Host.UI.RawUI.WindowTitle = 'Liuhecai Scheduler Worker'
+Set-Location '$ProjectRoot'
+Write-Host 'Starting Liuhecai scheduler worker' -ForegroundColor Cyan
+Write-Host ''
+& '$PythonExe' 'backend/src/scheduler_worker.py' --db_path '$DbUrl'
+"@
+
+    $process = Start-Process `
+        -FilePath $PowerShellExe `
+        -ArgumentList @('-NoExit', '-Command', $windowCommand) `
+        -WorkingDirectory $ProjectRoot `
+        -WindowStyle Normal `
+        -PassThru
+
+    Start-Sleep -Seconds 3
+
+    if ($process.HasExited) {
+        throw "Scheduler worker exited immediately with code $($process.ExitCode). See logs above."
+    }
+
+    Write-Host ("Started scheduler worker PID: {0}" -f $process.Id)
+}
+
+function Test-SchedulerWorkerHealthy {
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 3
+            if ($health.scheduler_worker.active -eq $true) {
+                Write-Host ("Scheduler worker healthy: {0}" -f $health.scheduler_worker.holder_id)
+                return
+            }
+        } catch {
+            # The HTTP API or worker may still be initializing.
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Scheduler worker did not acquire its lease. Check the Scheduler Worker console."
+}
+
 Stop-ManagedConsoleProcesses
 Stop-BackendProcesses
 Stop-BackendAdminProcesses
+Stop-SchedulerWorkerProcesses
 Test-PortReleased -TargetPort $Port
 Test-PortReleased -TargetPort $AdminPort
 Start-Backend
 Start-BackendAdmin
+Start-SchedulerWorker
+Test-SchedulerWorkerHealthy
 
 Write-Host ""
 Write-Host "Done. Backend: http://127.0.0.1:8000/"
 Write-Host "Done. Backend admin: http://127.0.0.1:3002/fackyou/login"
+Write-Host "Done. Scheduler worker: active"
