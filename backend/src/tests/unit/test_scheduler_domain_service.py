@@ -238,3 +238,51 @@ def test_scheduler_service_runs_due_tasks_and_owns_lifecycle(tmp_path, monkeypat
         {"task_type": "custom_success", "status": "done", "error_message": None},
         {"task_type": "custom_failure", "status": "failed", "error_message": "RuntimeError: boom"},
     ]
+
+
+def test_scheduler_service_recovers_stale_exhausted_run_without_reexecuting_it(tmp_path, monkeypatch):
+    """A crashed worker must not leave unlimited daily-prediction reruns behind."""
+    from domains.scheduler import service
+
+    db_path = tmp_path / "scheduler_stale_run.sqlite3"
+    ensure_admin_tables(db_path)
+    monkeypatch.setattr(service, "_task_lock_timeout_seconds", lambda _db_path: 30)
+    past = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    service.upsert_scheduler_task(
+        db_path,
+        task_type=service.TASK_TYPE_DAILY_PREDICTION,
+        payload={"schedule_date": "2026-06-27"},
+        run_at=past,
+        max_attempts=1,
+    )
+    task = service.acquire_due_scheduler_tasks(db_path, worker_id="dead-worker", limit=1)[0]
+    run_id = service.create_scheduler_task_run(db_path, task=task, worker_id="dead-worker")
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE scheduler_tasks SET locked_at = ? WHERE id = ?",
+            (past, task["id"]),
+        )
+        conn.execute(
+            "UPDATE scheduler_task_runs SET started_at = ? WHERE id = ?",
+            (past, run_id),
+        )
+
+    assert service.acquire_due_scheduler_tasks(db_path, worker_id="new-worker", limit=1) == []
+
+    with connect(db_path) as conn:
+        task_row = conn.execute(
+            "SELECT status, locked_at, locked_by, last_error FROM scheduler_tasks WHERE id = ?",
+            (task["id"],),
+        ).fetchone()
+        run_row = conn.execute(
+            "SELECT status, error_message, finished_at FROM scheduler_task_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+
+    assert task_row["status"] == "failed"
+    assert task_row["locked_at"] is None
+    assert task_row["locked_by"] is None
+    assert "stale worker" in task_row["last_error"]
+    assert run_row["status"] == "failed"
+    assert "stale worker" in run_row["error_message"]
+    assert run_row["finished_at"]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 
@@ -80,6 +82,48 @@ def test_dedicated_worker_cleans_up_a_partially_started_scheduler(monkeypatch):
         assert str(error) == "startup failed"
 
     scheduler.stop.assert_called_once_with()
+
+
+def test_worker_renews_lease_while_scheduler_startup_is_blocked(monkeypatch):
+    import scheduler_worker
+
+    renewed = threading.Event()
+    monkeypatch.setattr(
+        scheduler_worker,
+        "renew_scheduler_worker_lease",
+        lambda *_args, **_kwargs: renewed.set() or True,
+    )
+
+    stop, lost, thread = scheduler_worker.start_lease_heartbeat(
+        "postgresql://postgres:test@127.0.0.1:5432/liuhecai",
+        holder_id="worker-a",
+        lease_seconds=30,
+        interval_seconds=0.01,
+    )
+    try:
+        assert renewed.wait(timeout=1), "lease heartbeat must run independently of scheduler.start()"
+        assert not lost.is_set()
+    finally:
+        stop.set()
+        thread.join(timeout=1)
+
+
+def test_worker_detects_lost_lease_from_heartbeat(monkeypatch):
+    import scheduler_worker
+
+    monkeypatch.setattr(scheduler_worker, "renew_scheduler_worker_lease", lambda *_args, **_kwargs: False)
+
+    stop, lost, thread = scheduler_worker.start_lease_heartbeat(
+        "postgresql://postgres:test@127.0.0.1:5432/liuhecai",
+        holder_id="worker-a",
+        lease_seconds=30,
+        interval_seconds=0.01,
+    )
+    try:
+        assert lost.wait(timeout=1), "a failed renewal must make the worker relinquish leadership"
+    finally:
+        stop.set()
+        thread.join(timeout=1)
 
 
 def test_worker_does_not_schedule_duplicate_taiwan_durable_open_task():
@@ -229,3 +273,18 @@ def test_durable_scheduler_service_preserves_manual_job_completion():
     source = inspect.getsource(service.run_due_scheduler_tasks)
     assert "TASK_TYPE_MANUAL_JOB" in source
     assert "mark_scheduler_task_done" in source
+
+
+def test_scheduler_startup_does_not_bypass_the_durable_daily_prediction_lock(monkeypatch):
+    from crawler import scheduler
+
+    runner = scheduler.CrawlerScheduler("postgresql://scheduler-test")
+    triggered: list[int] = []
+    monkeypatch.setattr(scheduler, "_cfg", lambda *_args, **_kwargs: "00:00")
+    monkeypatch.setattr(scheduler, "_has_completed_daily_prediction_task", lambda *_args: False)
+    monkeypatch.setattr(scheduler, "_ensure_daily_prediction_task", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler, "_run_auto_prediction", lambda _db_path, lottery_type_id: triggered.append(lottery_type_id))
+
+    runner._run_daily_prediction_if_missed()
+
+    assert triggered == []

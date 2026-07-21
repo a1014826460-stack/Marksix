@@ -136,6 +136,38 @@ def find_due_tasks(
     return [dict(row) for row in rows]
 
 
+def fail_stale_task_runs(
+    conn: Any,
+    *,
+    stale_before: str,
+    failed_at: str,
+    message: str,
+) -> None:
+    """Close orphaned task-run records before their task lock can be reclaimed."""
+    conn.execute(
+        f"""
+        UPDATE {TASK_RUN_TABLE_NAME}
+        SET status = 'failed', error_message = ?, finished_at = ?, updated_at = ?
+        WHERE status = 'running'
+          AND started_at IS NOT NULL
+          AND started_at < ?
+        """,
+        (message, failed_at, failed_at, stale_before),
+    )
+    conn.execute(
+        f"""
+        UPDATE {TASK_TABLE_NAME}
+        SET status = 'failed', locked_at = NULL, locked_by = NULL,
+            last_error = ?, updated_at = ?
+        WHERE status = 'running'
+          AND locked_at IS NOT NULL
+          AND locked_at < ?
+          AND attempt_count >= max_attempts
+        """,
+        (message, failed_at, stale_before),
+    )
+
+
 def find_completed_task_by_payload_date(
     conn: Any,
     *,

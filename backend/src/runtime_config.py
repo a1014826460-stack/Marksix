@@ -148,6 +148,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "失败调度任务默认重试延迟。",
         "is_secret": 0,
     },
+    "crawler.daily_prediction_timeout_seconds": {
+        "value": 900,
+        "value_type": "int",
+        "description": "单个每日预测子进程最长执行秒数；超时后终止并按任务重试策略处理。",
+        "is_secret": 0,
+    },
     "crawler.taiwan_precise_open_hour": {
         "value": 22,
         "value_type": "int",

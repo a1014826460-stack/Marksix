@@ -10,6 +10,7 @@ import argparse
 import os
 import signal
 import socket
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -34,6 +35,37 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Liuhecai durable scheduler worker.")
     parser.add_argument("--db-path", "--db_path", dest="db_path", default=DEFAULT_POSTGRES_DSN or None)
     return parser
+
+
+def start_lease_heartbeat(
+    db_path: str | Path,
+    *,
+    holder_id: str,
+    lease_seconds: int,
+    interval_seconds: float | None = None,
+) -> tuple[threading.Event, threading.Event, threading.Thread]:
+    """Renew the leadership lease even while a scheduler task blocks the main thread."""
+    stop_event = threading.Event()
+    lease_lost = threading.Event()
+    interval = interval_seconds if interval_seconds is not None else max(1.0, lease_seconds / 3)
+
+    def run() -> None:
+        while not stop_event.wait(interval):
+            try:
+                renewed = renew_scheduler_worker_lease(
+                    db_path,
+                    holder_id=holder_id,
+                    lease_seconds=lease_seconds,
+                )
+            except Exception:
+                renewed = False
+            if not renewed:
+                lease_lost.set()
+                return
+
+    thread = threading.Thread(target=run, name="scheduler-lease-heartbeat", daemon=True)
+    thread.start()
+    return stop_event, lease_lost, thread
 
 
 def main() -> int:
@@ -70,17 +102,18 @@ def main() -> int:
         time.sleep(poll_seconds)
     if stopping:
         return 0
+    heartbeat_stop, lease_lost, heartbeat_thread = start_lease_heartbeat(
+        db_path,
+        holder_id=holder_id,
+        lease_seconds=lease_seconds,
+    )
     try:
         scheduler.start()
-        while not stopping:
+        while not stopping and not lease_lost.is_set():
             time.sleep(poll_seconds)
-            if not renew_scheduler_worker_lease(
-                db_path,
-                holder_id=holder_id,
-                lease_seconds=lease_seconds,
-            ):
-                stopping = True
     finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=max(1.0, lease_seconds / 3 + 1))
         scheduler.stop()
         release_scheduler_worker_lease(db_path, holder_id=holder_id)
     return 0

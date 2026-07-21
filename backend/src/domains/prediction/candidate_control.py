@@ -7,7 +7,7 @@ import itertools
 import json
 import random
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from .generation_rules import PredictionGenerationRule
 from .models import DrawTruth
@@ -46,18 +46,33 @@ def _candidate_sequences(
     available_labels: tuple[str, ...],
     width: int,
     seed: str,
-) -> list[tuple[str, ...]]:
-    candidates: list[tuple[str, ...]] = []
+    max_candidates: int = 256,
+) -> Iterator[tuple[str, ...]]:
+    """Yield a deterministic, bounded stream without materializing combinatorics."""
+    limit = max(1, int(max_candidates))
+    emitted: set[tuple[str, ...]] = set()
+
+    def emit(candidate: tuple[str, ...]) -> Iterator[tuple[str, ...]]:
+        if len(emitted) >= limit or len(candidate) != width or candidate in emitted:
+            return
+        emitted.add(candidate)
+        yield candidate
+
     baseline = _ordered_unique(predicted_labels)
     if len(baseline) == width:
-        candidates.append(baseline)
-        candidates.extend(tuple(item) for item in itertools.permutations(baseline))
+        yield from emit(baseline)
+        for candidate in itertools.permutations(baseline):
+            yield from emit(tuple(candidate))
+            if len(emitted) >= limit:
+                return
 
     pool = list(_ordered_unique(available_labels))
     _rng(seed).shuffle(pool)
     for combination in itertools.combinations(pool, width):
-        candidates.extend(tuple(item) for item in itertools.permutations(combination))
-    return list(dict.fromkeys(candidates))
+        for candidate in itertools.permutations(combination):
+            yield from emit(tuple(candidate))
+            if len(emitted) >= limit:
+                return
 
 
 def choose_controlled_labels(

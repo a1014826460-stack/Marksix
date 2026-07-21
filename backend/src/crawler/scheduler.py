@@ -108,14 +108,21 @@ def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) 
     ]
     safe_command = [redact_text(item) for item in command]
     _crawler_logger.info("Daily prediction subprocess starting: %s", safe_command)
-    completed = subprocess.run(
-        command,
-        cwd=str(src_root),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    timeout_seconds = max(30, int(_cfg(db_path, "crawler.daily_prediction_timeout_seconds", 900)))
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(src_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"daily prediction subprocess timed out after {timeout_seconds}s"
+        ) from exc
     if completed.returncode != 0:
         stderr = (completed.stderr or "").strip()
         stdout = (completed.stdout or "").strip()
@@ -1117,7 +1124,7 @@ class CrawlerScheduler:
         self._reschedule_precise_checks()
 
     def _run_daily_prediction_if_missed(self) -> None:
-        """检查今天是否已错过 daily_prediction_cron_time 且尚未执行，若是则立即补跑。"""
+        """Ensure today's durable task exists; task locking owns any catch-up execution."""
         try:
             time_str = str(_cfg(self.db_path, "daily_prediction_cron_time", "12:00")).strip()
             parts = time_str.split(":")
@@ -1135,7 +1142,8 @@ class CrawlerScheduler:
         if beijing_now < target_beijing:
             return
 
-        # 检查今天是否已经执行过
+        # A durable task is the only daily-prediction execution path.  Starting
+        # subprocesses here bypasses its lock and can duplicate a recovering run.
         today_str = beijing_now.strftime("%Y-%m-%d")
         try:
             if _has_completed_daily_prediction_task(self.db_path, today_str):
@@ -1148,23 +1156,10 @@ class CrawlerScheduler:
             pass
 
         _crawler_logger.info(
-            "Daily prediction missed for %s (scheduled %02d:%02d Beijing), running now",
+            "Daily prediction missed for %s (scheduled %02d:%02d Beijing); "
+            "the durable task loop will recover it under its task lock",
             today_str, target_hour, target_minute,
         )
-        for lt_id in [1, 2, 3]:
-            try:
-                _run_auto_prediction(self.db_path, lt_id)
-            except Exception as exc:
-                _crawler_logger.error(
-                    "Catch-up prediction lt=%s failed: %s", lt_id, exc,
-                )
-        # 补跑后检查预测数据是否覆盖到目标期号
-        try:
-            alert_prediction_gap(self.db_path)
-        except Exception:
-            pass
-        # 补跑后重新调度明天的任务
-        _ensure_daily_prediction_task(self.db_path)
 
     def stop(self) -> None:
         _crawler_logger.info("Scheduler stopping")

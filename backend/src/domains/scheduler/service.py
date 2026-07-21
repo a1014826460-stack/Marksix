@@ -210,8 +210,15 @@ def acquire_due_scheduler_tasks(db_path: str | Path, *, worker_id: str, limit: i
     now = datetime.now(timezone.utc)
     now_text = now.isoformat()
     stale_before = (now - timedelta(seconds=_task_lock_timeout_seconds(db_path))).isoformat()
+    stale_message = "stale worker lease/task lock recovered"
     tasks: list[dict[str, Any]] = []
     with db_connect(db_path) as conn:
+        repository.fail_stale_task_runs(
+            conn,
+            stale_before=stale_before,
+            failed_at=now_text,
+            message=stale_message,
+        )
         rows = repository.find_due_tasks(
             conn,
             now_text=now_text,
