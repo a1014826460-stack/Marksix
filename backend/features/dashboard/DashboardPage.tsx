@@ -7,7 +7,7 @@ import { BarChart, LineChart, PieChart } from "echarts/charts"
 import { DatasetComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from "echarts/components"
 import { CanvasRenderer } from "echarts/renderers"
 import type { EChartsOption } from "echarts"
-import { Activity, Database, RefreshCw, Server, ShieldAlert, ShieldCheck, ShieldX, Users } from "lucide-react"
+import { Activity, Database, RefreshCw, Server, ShieldAlert, ShieldCheck, ShieldX, Users, RotateCw } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,8 +21,25 @@ import { adminApi } from "@/lib/admin-api"
 
 echarts.use([BarChart, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, DatasetComponent, CanvasRenderer])
 
+// ECharts draws on Canvas, where CSS variables are not resolved as colors.
+const chartColors = {
+  primary: "#16a34a",
+  accent: "#0f766e",
+  primaryDark: "#4ade80",
+  accentDark: "#2dd4bf",
+}
+
 type DashboardData = {
   summary: Record<string, number | string>
+  traffic: {
+    today: { pv: number; uv: number; api_compat_hits: number }
+    last_7_days: {
+      summary: { pv: number; uv: number; api_compat_hits: number }
+      sites: Array<{ site_key: string; pv: number; uv: number; api_compat_hits: number }>
+      timeseries: Array<{ date: string; site_key: string; pv: number; uv: number; api_compat_hits: number }>
+    }
+  }
+  today_draws: Array<{ lottery_type_id: number; lottery_name: string; year: number; term: number; draw_time: string; is_opened: boolean; numbers: string }>
   sites: Array<{
     site_id: number
     web_id: number
@@ -59,7 +76,10 @@ type DashboardData = {
   }
   scheduler: {
     status_breakdown: Array<{ status: string; count: number }>
+    recent_tasks: Array<{ id: number; task_key: string; task_type: string; status: string; run_at: string; attempt_count: number; max_attempts: number; last_error: string; lottery_type_id: number; site_id: number }>
   }
+  worker: { status: string; active: boolean; holder_id: string }
+  draw_health: { status: string; stale_lottery_type_ids: number[]; lotteries: Array<{ lottery_type_id: number; lottery_name: string; current_issue: string; next_time: string; stale: boolean }> }
   alerts: Array<{ severity: "low" | "medium" | "high"; name: string; source: string; status: string }>
   meta: {
     generated_at: string
@@ -99,10 +119,11 @@ export function DashboardPage() {
   const [siteId, setSiteId] = useState<number | "all">("all")
   const [data, setData] = useState<DashboardData | null>(null)
   const [message, setMessage] = useState("")
+  const [retryingTaskKey, setRetryingTaskKey] = useState("")
 
   async function load() {
     try {
-      const payload = await adminApi<DashboardData>("/dashboard")
+      const payload = await adminApi<DashboardData>("/admin/dashboard")
       setData(payload)
       setMessage("")
     } catch (error) {
@@ -120,6 +141,28 @@ export function DashboardPage() {
     () => (siteId === "all" ? null : data?.sites.find((item) => item.site_id === siteId) || null),
     [data, siteId],
   )
+  const todayDraws = data?.today_draws || []
+  const drawHealthLotteries = data?.draw_health?.lotteries || []
+  const schedulerTasks = data?.scheduler?.recent_tasks || []
+  const trafficToday = data?.traffic?.today || { pv: 0, uv: 0, api_compat_hits: 0 }
+  const trafficLast7Days = data?.traffic?.last_7_days || { summary: { pv: 0, uv: 0, api_compat_hits: 0 }, sites: [], timeseries: [] }
+  const chartPalette = theme === "dark"
+    ? { primary: chartColors.primaryDark, accent: chartColors.accentDark }
+    : chartColors
+
+  async function retryFailedTask(taskKey: string) {
+    const task = schedulerTasks.find((item) => item.task_key === taskKey)
+    if (!task || task.status !== "failed") return
+    setRetryingTaskKey(taskKey)
+    try {
+      await adminApi(`/admin/dashboard/scheduler-tasks/${task.id}/retry`, { method: "POST" })
+      await load()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "任务重试失败")
+    } finally {
+      setRetryingTaskKey("")
+    }
+  }
 
   const siteScaleOption = useMemo<EChartsOption>(() => {
     const filtered = (data?.sites || []).filter((item) => siteId === "all" || item.site_id === siteId)
@@ -143,15 +186,15 @@ export function DashboardPage() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "hsl(var(--primary))" },
-                { offset: 1, color: "hsl(var(--accent))" },
+                { offset: 0, color: chartPalette.primary },
+                { offset: 1, color: chartPalette.accent },
               ],
             },
           },
         },
       ],
     }
-  }, [data, siteId])
+  }, [chartPalette, data, siteId])
 
   const shareOption = useMemo<EChartsOption>(() => ({
     animationDuration: 300,
@@ -165,12 +208,12 @@ export function DashboardPage() {
           name: item.name,
           value: item.value,
           itemStyle: {
-            color: index % 2 === 0 ? "hsl(var(--primary))" : "hsl(var(--accent))",
+            color: index % 2 === 0 ? chartPalette.primary : chartPalette.accent,
           },
         })),
       },
     ],
-  }), [data])
+  }), [chartPalette, data])
 
   const errorTrendOption = useMemo<EChartsOption>(() => ({
     animationDuration: 300,
@@ -187,16 +230,16 @@ export function DashboardPage() {
         smooth: true,
         showSymbol: false,
         data: data?.trend.error_logs_7d.map((item) => item.count) || [],
-        lineStyle: { width: 3, color: "hsl(var(--primary))" },
+        lineStyle: { width: 3, color: chartPalette.primary },
         areaStyle: { color: "rgba(0,0,0,0.06)" },
       },
     ],
-  }), [data])
+  }), [chartPalette, data])
 
   const summaryCards = [
+    { label: "今日 PV", value: Number(trafficToday.pv || 0), icon: Activity },
+    { label: "今日 UV", value: Number(trafficToday.uv || 0), icon: Users },
     { label: "启用站点", value: Number(data?.summary.enabled_sites || 0), icon: Server },
-    { label: "总模式数", value: Number(data?.summary.total_modes || 0), icon: Database },
-    { label: "总采集记录", value: Number(data?.summary.total_records || 0), icon: Activity },
     { label: "异常登录指纹", value: Number(data?.security.current_failed_fingerprints || 0), icon: ShieldAlert },
     { label: "错误日志(7天)", value: Number(data?.summary.error_logs_7d || 0), icon: ShieldX },
     { label: "调度待处理", value: Number(data?.summary.scheduler_pending || 0), icon: Users },
@@ -219,8 +262,8 @@ export function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {summaryCards.map((item) => (
             <Card key={item.label}>
               <CardContent className="flex items-center justify-between p-4">
@@ -236,9 +279,61 @@ export function DashboardPage() {
               </CardContent>
             </Card>
           ))}
-        </div>
+          </div>
 
-        <Tabs defaultValue="overview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>前端访问流量</CardTitle>
+              <CardDescription>五个彩票前端站点的第一方访问统计；PV 为页面访问次数，UV 为去重访客数。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border bg-background p-4">
+                <div className="text-xs text-muted-foreground">今日 PV</div>
+                <div className="mt-2 text-2xl font-semibold"><AnimatedNumber value={Number(trafficToday.pv || 0)} /></div>
+              </div>
+              <div className="rounded-lg border bg-background p-4">
+                <div className="text-xs text-muted-foreground">今日 UV</div>
+                <div className="mt-2 text-2xl font-semibold"><AnimatedNumber value={Number(trafficToday.uv || 0)} /></div>
+              </div>
+              <div className="rounded-lg border bg-background p-4">
+                <div className="text-xs text-muted-foreground">近 7 天 PV / UV</div>
+                <div className="mt-2 text-2xl font-semibold tabular-nums">{formatNumber(trafficLast7Days.summary.pv)} / {formatNumber(trafficLast7Days.summary.uv)}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>近 7 天站点访问排行</CardTitle>
+              <CardDescription>按前端页面访问量排序；仅统计已部署追踪器的访问。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>站点</TableHead>
+                    <TableHead>PV</TableHead>
+                    <TableHead>UV</TableHead>
+                    <TableHead>兼容接口请求</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trafficLast7Days.sites.length ? trafficLast7Days.sites.map((site) => (
+                    <TableRow key={site.site_key}>
+                      <TableCell className="font-medium">{site.site_key}</TableCell>
+                      <TableCell>{formatNumber(site.pv)}</TableCell>
+                      <TableCell>{formatNumber(site.uv)}</TableCell>
+                      <TableCell>{formatNumber(site.api_compat_hits)}</TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">暂无访问数据；用户访问站点后将自动记录。</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
             <TabsTrigger value="overview">站点概览</TabsTrigger>
             <TabsTrigger value="security">安全情况</TabsTrigger>
@@ -383,6 +478,25 @@ export function DashboardPage() {
           <TabsContent value="draw" className="space-y-4">
             <Card>
               <CardHeader>
+                <CardTitle>今日开奖状态</CardTitle>
+                <CardDescription>按北京时间汇总今日各彩种记录</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {todayDraws.length ? todayDraws.map((row) => (
+                  <div key={`${row.lottery_type_id}-${row.term}`} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{row.lottery_name}</span>
+                      <Badge variant={row.is_opened ? "default" : "secondary"}>{row.is_opened ? "已开奖" : "待开奖"}</Badge>
+                    </div>
+                    <div className="mt-2 text-sm">{row.year} 年第 {row.term} 期</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{row.draw_time}</div>
+                    {row.is_opened ? <div className="mt-2 text-sm tabular-nums">{row.numbers}</div> : null}
+                  </div>
+                )) : <div className="text-sm text-muted-foreground">今日暂无开奖记录。</div>}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
                 <CardTitle>最近开奖审计</CardTitle>
                 <CardDescription>真实反映开奖、补开、同步等状态</CardDescription>
               </CardHeader>
@@ -414,6 +528,36 @@ export function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="ops" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Worker 健康</CardTitle>
+                  <CardDescription>由单实例租约实时判断</CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold">{data?.worker.active ? "运行正常" : "需要处理"}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">租约状态：{data?.worker.status || "-"}</div>
+                    {data?.worker.holder_id ? <div className="mt-1 text-xs text-muted-foreground">{data.worker.holder_id}</div> : null}
+                  </div>
+                  <Badge variant={data?.worker.active ? "default" : "destructive"}>{data?.worker.active ? "Healthy" : "Offline"}</Badge>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>逾期未开奖</CardTitle>
+                  <CardDescription>下一开奖时间已过且无新已开奖数据</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {drawHealthLotteries.filter((item) => item.stale).length ? drawHealthLotteries.filter((item) => item.stale).map((item) => (
+                    <div key={item.lottery_type_id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                      <span>{item.lottery_name} · {item.current_issue || "无期号"}</span>
+                      <Badge variant="destructive">逾期</Badge>
+                    </div>
+                  )) : <div className="text-sm text-muted-foreground">暂无逾期未开奖彩种。</div>}
+                </CardContent>
+              </Card>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -450,6 +594,26 @@ export function DashboardPage() {
                 </CardContent>
               </Card>
             </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>失败任务快捷处置</CardTitle>
+                <CardDescription>仅将失败任务重新排入队列；实际执行仍由唯一 worker 完成。</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {schedulerTasks.filter((item) => item.status === "failed").length ? schedulerTasks.filter((item) => item.status === "failed").map((item) => (
+                  <div key={item.task_key} className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="font-medium">{item.task_type}</div>
+                      <div className="text-xs text-muted-foreground break-all">{item.last_error || item.task_key}</div>
+                    </div>
+                    <Button size="sm" onClick={() => retryFailedTask(item.task_key)} disabled={retryingTaskKey === item.task_key}>
+                      <RotateCw className="mr-1 h-4 w-4" />
+                      {retryingTaskKey === item.task_key ? "处理中" : "重新排队"}
+                    </Button>
+                  </div>
+                )) : <div className="text-sm text-muted-foreground">暂无失败任务。</div>}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="logs" className="space-y-4">

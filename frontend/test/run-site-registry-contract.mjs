@@ -15,14 +15,27 @@ function toDataModule(source) {
 }
 
 const manifestModule = toDataModule(compileModule("frontend/lib/site-platform/site-manifest.ts"))
-const twsaimahuiManifestModule = toDataModule(
-  compileModule("frontend/sites/twsaimahui/site.manifest.ts")
-    .replace('"@/lib/site-platform/site-manifest"', JSON.stringify(manifestModule))
+function manifestModuleFor(siteKey) {
+  return toDataModule(
+    compileModule(`frontend/sites/${siteKey}/site.manifest.ts`)
+      .replace('"@/lib/site-platform/site-manifest"', JSON.stringify(manifestModule))
+  )
+}
+
+const manifests = Object.fromEntries(
+  ["shengshi8800", "twsaimahui", "twcaibawang", "twjinniu", "twcf888", "twssz"].map(
+    (siteKey) => [siteKey, manifestModuleFor(siteKey)]
+  )
 )
 const sitesModule = toDataModule(
   compileModule("frontend/lib/sites.ts")
     .replace(/[@]\/lib\/site-platform\/site-manifest/g, manifestModule)
-    .replace(/[@]\/sites\/twsaimahui\/site\.manifest/g, twsaimahuiManifestModule)
+    .replace(/[@]\/sites\/shengshi8800\/site\.manifest/g, manifests.shengshi8800)
+    .replace(/[@]\/sites\/twsaimahui\/site\.manifest/g, manifests.twsaimahui)
+    .replace(/[@]\/sites\/twcaibawang\/site\.manifest/g, manifests.twcaibawang)
+    .replace(/[@]\/sites\/twjinniu\/site\.manifest/g, manifests.twjinniu)
+    .replace(/[@]\/sites\/twcf888\/site\.manifest/g, manifests.twcf888)
+    .replace(/[@]\/sites\/twssz\/site\.manifest/g, manifests.twssz)
 )
 const registryModule = toDataModule(
   compileModule("frontend/lib/site-registry.ts").replace('"@/lib/sites"', JSON.stringify(sitesModule))

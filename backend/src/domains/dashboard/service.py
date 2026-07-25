@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from db import connect
+from domains.lottery.service import get_lottery_draw_health
+from domains.scheduler.service import get_scheduler_worker_health
+from domains.traffic.service import get_traffic_overview, get_traffic_timeseries
 from tables import ensure_admin_tables
 
 
@@ -48,9 +51,25 @@ def _safe_float(value: Any) -> float:
 def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
     ensure_admin_tables(db_path)
     now = datetime.now(timezone.utc)
+    beijing_today = (now + timedelta(hours=8)).date().isoformat()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=6)
     timeline_cutoff = now - timedelta(days=30)
+    today_traffic = get_traffic_overview(
+        db_path,
+        date_from=today_start.isoformat(),
+        date_to=(today_start + timedelta(days=1)).isoformat(),
+    )
+    weekly_traffic = get_traffic_overview(
+        db_path,
+        date_from=week_start.isoformat(),
+        date_to=(today_start + timedelta(days=1)).isoformat(),
+    )
+    traffic_timeseries = get_traffic_timeseries(
+        db_path,
+        date_from=week_start.isoformat(),
+        date_to=(today_start + timedelta(days=1)).isoformat(),
+    )
 
     with connect(db_path) as conn:
         sites = [dict(row) for row in conn.execute(
@@ -66,11 +85,27 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
         ).fetchall()]
         latest_draws = [dict(row) for row in conn.execute(
             """
-            SELECT DISTINCT ON (lottery_type_id)
-                lottery_type_id, year, term, draw_time, next_time, is_opened, updated_at
-            FROM lottery_draws
-            ORDER BY lottery_type_id, draw_time DESC, id DESC
+            SELECT d.lottery_type_id, d.year, d.term, d.draw_time, d.next_time, d.is_opened, d.updated_at
+            FROM lottery_draws AS d
+            WHERE d.id = (
+                SELECT candidate.id
+                FROM lottery_draws AS candidate
+                WHERE candidate.lottery_type_id = d.lottery_type_id
+                ORDER BY candidate.draw_time DESC, candidate.id DESC
+                LIMIT 1
+            )
             """
+        ).fetchall()]
+        today_draw_rows = [dict(row) for row in conn.execute(
+            """
+            SELECT d.lottery_type_id, l.name AS lottery_name, d.year, d.term,
+                   d.draw_time, d.is_opened, d.numbers
+            FROM lottery_draws AS d
+            JOIN lottery_types AS l ON l.id = d.lottery_type_id
+            WHERE substr(d.draw_time, 1, 10) = ?
+            ORDER BY d.draw_time ASC, d.id ASC
+            """,
+            (beijing_today,),
         ).fetchall()]
         fetched_modes_rows = [dict(row) for row in conn.execute(
             """
@@ -117,7 +152,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
         ).fetchall()]
         scheduler_pending_rows = [dict(row) for row in conn.execute(
             """
-            SELECT task_key, task_type, status, run_at, attempt_count, max_attempts, last_error, lottery_type_id, site_id
+            SELECT id, task_key, task_type, status, run_at, attempt_count, max_attempts, last_error, lottery_type_id, site_id
             FROM scheduler_tasks
             ORDER BY updated_at DESC, id DESC
             LIMIT 20
@@ -152,7 +187,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             """,
             ("alert.email_recipients",),
         ).fetchone()
-        admin_user = conn.execute(
+        admin_user_row = conn.execute(
             """
             SELECT username, display_name, last_login_at
             FROM admin_users
@@ -160,6 +195,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             LIMIT 1
             """
         ).fetchone()
+        admin_user = dict(admin_user_row) if admin_user_row else None
         session_count_row = conn.execute(
             "SELECT COUNT(*) AS count FROM admin_sessions"
         ).fetchone()
@@ -289,6 +325,27 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
     done_tasks = sum(_safe_int(row.get("count")) for row in scheduler_status_rows if str(row.get("status")) == "done")
 
     unresolved_alerts: list[dict[str, Any]] = []
+    worker_health = get_scheduler_worker_health(db_path, now=now)
+    draw_health = get_lottery_draw_health(db_path, now=now)
+    if not worker_health["active"]:
+        unresolved_alerts.append(
+            {
+                "severity": "high",
+                "name": "调度 worker 未运行或租约已过期",
+                "source": "scheduler_worker",
+                "status": str(worker_health["status"]),
+            }
+        )
+    for lottery in draw_health["lotteries"]:
+        if lottery["stale"]:
+            unresolved_alerts.append(
+                {
+                    "severity": "high",
+                    "name": f"{lottery['lottery_name']} 逾期未开奖",
+                    "source": "lottery_draw_health",
+                    "status": f"当前期 {lottery['current_issue'] or '-'} 的下一开奖时间已过期",
+                }
+            )
     if failed_tasks:
         unresolved_alerts.append(
             {
@@ -367,6 +424,26 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             "auth_warning_count": auth_error_count,
         },
         "sites": site_cards,
+        "traffic": {
+            "today": today_traffic["summary"],
+            "last_7_days": {
+                "summary": weekly_traffic["summary"],
+                "sites": weekly_traffic["sites"],
+                "timeseries": traffic_timeseries["items"],
+            },
+        },
+        "today_draws": [
+            {
+                "lottery_type_id": _safe_int(row.get("lottery_type_id")),
+                "lottery_name": str(row.get("lottery_name") or ""),
+                "year": _safe_int(row.get("year")),
+                "term": _safe_int(row.get("term")),
+                "draw_time": str(row.get("draw_time") or ""),
+                "is_opened": bool(row.get("is_opened")),
+                "numbers": str(row.get("numbers") or ""),
+            }
+            for row in today_draw_rows
+        ],
         "site_share": site_share,
         "lottery_types": [
             {
@@ -418,6 +495,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             ],
             "recent_tasks": [
                 {
+                    "id": _safe_int(row.get("id")),
                     "task_key": str(row.get("task_key") or ""),
                     "task_type": str(row.get("task_type") or ""),
                     "status": str(row.get("status") or ""),
@@ -431,6 +509,8 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
                 for row in scheduler_pending_rows
             ],
         },
+        "worker": worker_health,
+        "draw_health": draw_health,
         "alerts": unresolved_alerts[:20],
         "meta": {
             "generated_at": now.isoformat(),

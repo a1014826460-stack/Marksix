@@ -4,7 +4,7 @@ const adapter: ExistingDomAdapter = {
   siteKey: "twsaimahui",
   mode: "existing-dom-only",
   draw: { resource: "draw", selectors: [".KJ-TabBox"] },
-  predictions: { resource: "predictions", selectors: [] },
+  predictions: { resource: "predictions", selectors: ["#content-area"] },
   navigation: { selector: "#nav2", fixedBehavior: "existing-script" },
   footer: {
     selector: "img[src='static/picture/log1.jpg']",

@@ -42,6 +42,53 @@ def _legacy(
 # Only dependencies from non-commented script tags in twsaimahui/index.html
 # belong here. The compatibility route owns the exact endpoint/num mapping.
 _DEPENDENCIES: tuple[SitePageDependency, ...] = (
+    # twssz is a supplied static page: no original JS endpoint or mode ID is
+    # available. These are reviewed backend equivalents for each mapped vendor
+    # table, not a claim about the original vendor identifiers.
+    *(
+        SitePageDependency(
+            site_key="twssz",
+            page_path="/vendor/twssz/index.html",
+            source_path="frontend/public/vendor/twssz/index.html",
+            endpoint=module_name,
+            mode_ids=(mode_id,),
+        )
+        for module_name, mode_id in (
+            ("七肖（后端替代）", 44),
+            ("四肖", 78),
+            ("10码（后端替代）", 481),
+            ("三肖", 69),
+            ("8码（后端替代）", 51),
+            ("二肖（后端替代）", 43),
+            ("五码（后端替代）", 66),
+            ("两组连肖连尾（后端替代）", 5),
+            ("精选24码", 34),
+            ("极品大小", 57),
+            ("家野二肖", 14),
+            ("三头中特", 12),
+            ("特料必杀一头", 20),
+            ("特料精准七尾", 74),
+            ("特料特码单双", 28),
+            ("特料绝版杀肖", 42),
+            ("特料八肖来财", 48),
+            ("特料特码九肖", 49),
+            ("特料平特一肖", 56),
+            ("特料原创双波", 38),
+            ("特料平特三肖连", 470),
+            ("特料合数大小", 279),
+            ("特料四头必中", 483),
+            ("特料家禽野兽", 14),
+            ("平特一尾", 54),
+            ("8肖16码", 60),
+            ("内幕五不中（后端替代）", 481),
+            ("绝杀7码（后端替代）", 481),
+            ("综合一句中特", 46),
+            ("综合三行中特", 53),
+            ("综合合数单双", 132),
+            ("三肖六码（后端替代）", 69),
+            ("双波10码", 38),
+        )
+    ),
     # Shengshi8800 is the reachable legacy shell for site 4. Only scripts
     # loaded by its non-commented index.html are prediction dependencies.
     *(

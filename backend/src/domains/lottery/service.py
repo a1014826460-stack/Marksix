@@ -422,6 +422,16 @@ def save_draw(
             raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
 
     with connect(db_path) as conn:
+        if draw_id is not None:
+            existing = conn.execute(
+                "SELECT is_opened FROM lottery_draws WHERE id = ?",
+                (draw_id,),
+            ).fetchone()
+            if not existing:
+                raise KeyError(f"draw_id={draw_id} 不存在")
+            if bool(existing["is_opened"]):
+                raise ValueError("已开奖记录禁止修改")
+
         duplicate = (
             conn.execute(
                 """
@@ -530,6 +540,12 @@ def delete_draw(db_path: str | Path, draw_id: int) -> None:
     """Delete a draw record."""
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
-        cur = conn.execute("DELETE FROM lottery_draws WHERE id = ?", (draw_id,))
-        if cur.rowcount == 0:
+        existing = conn.execute(
+            "SELECT is_opened FROM lottery_draws WHERE id = ?",
+            (draw_id,),
+        ).fetchone()
+        if not existing:
             raise KeyError(f"draw_id={draw_id} 不存在")
+        if bool(existing["is_opened"]):
+            raise ValueError("已开奖记录禁止删除")
+        cur = conn.execute("DELETE FROM lottery_draws WHERE id = ?", (draw_id,))

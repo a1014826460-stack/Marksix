@@ -6,6 +6,7 @@ import {
   type RegisteredSiteKey,
 } from "@/lib/site-registry"
 import twsaimahuiManifest from "@/sites/twsaimahui/site.manifest"
+import twsszManifest from "@/sites/twssz/site.manifest"
 import {
   getSiteArticleDetail,
   getSiteHomepageModules,
@@ -21,6 +22,7 @@ const expectedKeys = [
   "twcaibawang",
   "twjinniu",
   "twcf888",
+  "twssz",
 ] as const satisfies readonly RegisteredSiteKey[]
 
 const keys: readonly RegisteredSiteKey[] = getAllSiteKeys()
@@ -42,6 +44,9 @@ if (
   twsaimahui.vendorIndexPath !== twsaimahuiManifest.frontend.vendorIndexPath
 ) {
   throw new Error("twsaimahui registry configuration must be derived from its manifest")
+}
+if (getRegisteredSite("twssz").defaultWebId !== twsszManifest.identity.webId) {
+  throw new Error("twssz registry configuration must be derived from its manifest")
 }
 const crossSiteOverrideContext = resolveSiteApiContext(
   "twjinniu",

@@ -390,6 +390,8 @@ def get_public_site_page_data(
     history_limit: int = 8,
     lottery_type_id: int | None = None,
     mode_ids: list[int] | None = None,
+    history_web_start: int | None = None,
+    history_web_end: int | None = None,
 ) -> dict[str, Any]:
     """公开页数据按站点模块配置读取历史记录，不在这里主动生成预测。"""
     site = resolve_public_site(db_path, site_id=site_id, domain=domain)
@@ -426,8 +428,8 @@ def get_public_site_page_data(
                 history_limit,
                 mode_id=int(row["mode_id"] or 0),
                 lottery_type_id=effective_lottery_type_id,
-                web_start=int(site.get("web_id") or 0),
-                web_end=int(site.get("web_id") or 0),
+                web_start=(history_web_start if history_web_start is not None else int(site.get("web_id") or 0)),
+                web_end=(history_web_end if history_web_end is not None else int(site.get("web_id") or 0)),
             )
         except Exception as exc:
             logger.warning(

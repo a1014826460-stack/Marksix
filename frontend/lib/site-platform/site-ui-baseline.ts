@@ -42,4 +42,11 @@ export const SITE_UI_BASELINES: Readonly<Record<string, SiteUiBaseline>> = Objec
     navigationSentinel: "#nav2",
     footerSentinel: ".pop-xyz-footer",
   },
+  twssz: {
+    routePath: "/twssz",
+    vendorEntry: "/vendor/twssz/index.html",
+    drawSentinel: "iframe[src='kai.html']",
+    navigationSentinel: "#nav2",
+    footerSentinel: ".cgi-body",
+  },
 })

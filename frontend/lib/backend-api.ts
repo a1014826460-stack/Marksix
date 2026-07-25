@@ -163,6 +163,8 @@ type PublicSiteRequestOptions = {
   domain?: string     // 域名过滤
   historyLimit?: number // 每个预测模块返回的最大历史行数
   lotteryType?: number
+  historyWebStart?: number
+  historyWebEnd?: number
 }
 
 /**
@@ -186,6 +188,8 @@ export async function getPublicSitePageData(options: PublicSiteRequestOptions = 
       domain: options.domain,
       history_limit: options.historyLimit ?? 8,
       lottery_type: options.lotteryType,
+      history_web_start: options.historyWebStart,
+      history_web_end: options.historyWebEnd,
     },
   })
 }

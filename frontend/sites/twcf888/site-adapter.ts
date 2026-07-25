@@ -4,7 +4,7 @@ const adapter: ExistingDomAdapter = {
   siteKey: "twcf888",
   mode: "existing-dom-only",
   draw: { resource: "draw", selectors: ["#twcf888-kj-iframe"] },
-  predictions: { resource: "predictions", selectors: [] },
+  predictions: { resource: "predictions", selectors: ["#twcf888-dynamic-homepage"] },
   navigation: { selector: "#nav2", fixedBehavior: "existing-script" },
   footer: { selector: ".pop-xyz-footer", imageUrls: [], behavior: "existing-markup" },
 }

@@ -530,5 +530,32 @@ def seed_bootstrap_data(conn: Any, now: str) -> None:
             ),
         )
 
+    twssz_exists = conn.execute(
+        "SELECT id FROM managed_sites WHERE web_id = ? LIMIT 1",
+        (9,),
+    ).fetchone()
+    if not twssz_exists:
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            """,
+            (
+                9,
+                9,
+                "台湾神算子",
+                "www.twssz.com",
+                taiwan_lottery_id,
+                "twssz",
+                "",
+                "Seeded bootstrap site for twssz vendor integration.",
+                now,
+                now,
+            ),
+        )
+
     _sync_modules(conn)
     seed_yijuzhenyan_text_pool(conn, now=now)

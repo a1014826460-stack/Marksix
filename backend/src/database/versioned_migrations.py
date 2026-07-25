@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 6
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -147,11 +147,136 @@ def _sync_shengshi8800_page_authorization(conn: Any) -> None:
             ("shengshi8800",),
         )
 
+def _install_twssz_site_profile(conn: Any) -> None:
+    """Register the supplied twssz site and its reviewed replacement modes."""
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    now = utc_now()
+    if conn.table_exists("site_blueprint_profiles"):
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (blueprint_name) DO UPDATE SET
+                required_mode_ids_json = excluded.required_mode_ids_json,
+                known_unavailable_mode_ids_json = excluded.known_unavailable_mode_ids_json,
+                blocked_items_json = excluded.blocked_items_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "twssz",
+                json.dumps(list(required_mode_ids_for_site_key("twssz")), ensure_ascii=False),
+                "[]",
+                "[]",
+                now,
+                now,
+            ),
+        )
+
+    if conn.table_exists("managed_sites"):
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                web_id = excluded.web_id,
+                name = excluded.name,
+                domain = excluded.domain,
+                lottery_type_id = excluded.lottery_type_id,
+                enabled = excluded.enabled,
+                blueprint_name = excluded.blueprint_name,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                9,
+                9,
+                "台湾神算子",
+                "www.twssz.com",
+                3,
+                1,
+                "twssz",
+                "",
+                "Seeded migration site for twssz vendor integration.",
+                now,
+                now,
+            ),
+        )
+
+    # The managed-site record must exist before synchronizing its module rows.
+    if conn.table_exists("site_prediction_modules"):
+        from domains.prediction.generation_service import sync_site_prediction_modules
+
+        sync_site_prediction_modules(conn, site_id=9)
+
+
+# The supplied table contains only three-digit vendor terms.  They are imported
+# with year 0 so they cannot be mistaken for verified calendar draw records.
+_TWSSZ_STATIC_PREDICTION_HISTORY: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("204", ("兔,牛,猪,龙,蛇,羊,鼠", "兔,牛,猪,龙", "28,04,09,32,21,42,12,30,45,43", "兔,牛,猪", "28,04,09,32,21,42,12,30", "兔,牛", "28,04,09,32,21")),
+    ("203", ("兔,蛇,狗,鸡,龙,猴,鼠", "兔,蛇,狗,鸡", "40,28,11,18,12,10,45,29,46,06", "兔,蛇,狗", "40,28,11,18,12,10,45,29", "兔,蛇", "40,28,11,18,12")),
+    ("202", ("羊,鼠,狗,牛,鸡,猴,蛇", "羊,鼠,狗,牛", "12,36,28,18,23,22,45,38,02,11", "羊,鼠,狗", "12,36,28,18,23,22,45,38", "羊,鼠", "12,36,28,18,23")),
+    ("201", ("鸡,兔,羊,马,猴,蛇,猪", "鸡,兔,羊,马", "34,46,36,14,31,30,11,13,02,38", "鸡,兔,羊", "34,46,36,14,31,30,11,13", "鸡,兔", "34,46,36,14,31")),
+    ("200", ("鼠,蛇,虎,鸡,马,龙,狗", "鼠,蛇,虎,鸡", "19,31,28,18,23,05,49,39,37,34", "鼠,蛇,虎", "19,31,28,18,23,05,49,39", "鼠,蛇", "19,31,28,18,23")),
+    ("199", ("虎,狗,鸡,龙,牛,猴,羊", "虎,狗,鸡,龙", "41,05,13,33,22,37,08,20,34,32", "虎,狗,鸡", "41,05,13,33,22,37,08,20", "虎,狗", "41,05,13,33,22")),
+    ("198", ("虎,鼠,猴,龙,蛇,狗,羊", "虎,鼠,猴,龙", "17,05,01,30,07,33,28,13,36,03", "虎,鼠,猴", "17,05,01,30,07,33,28,13", "虎,鼠", "17,05,01,30,07")),
+    ("197", ("猪,马,鸡,兔,狗,虎,猴", "猪,马,鸡,兔", "20,44,49,13,12,46,37,48,02,01", "猪,马,鸡", "20,44,49,13,12,46,37,48", "猪,马", "20,44,49,13,12")),
+)
+
+_TWSSZ_STATIC_HISTORY_MODULES: tuple[tuple[str, int], ...] = (
+    ("mode_payload_44", 44),
+    ("mode_payload_78", 78),
+    ("mode_payload_481", 481),
+    ("mode_payload_69", 69),
+    ("mode_payload_51", 51),
+    ("mode_payload_43", 43),
+    ("mode_payload_66", 66),
+)
+
+
+def _import_twssz_static_prediction_history(conn: Any) -> None:
+    """Make the vendor-supplied A级猛料 history available to the common API."""
+    from utils.created_prediction_store import (
+        ensure_created_prediction_table,
+        upsert_created_prediction_row,
+    )
+
+    for value_index, (table_name, mode_id) in enumerate(_TWSSZ_STATIC_HISTORY_MODULES):
+        ensure_created_prediction_table(conn, table_name, commit=False)
+        for term, values in _TWSSZ_STATIC_PREDICTION_HISTORY:
+            upsert_created_prediction_row(
+                conn,
+                table_name,
+                {
+                    "type": "3",
+                    "year": "0",
+                    "term": term,
+                    "web": "9",
+                    "web_id": "9",
+                    "modes_id": str(mode_id),
+                    "content": values[value_index],
+                },
+                commit=False,
+            )
+
+
+def _sync_twssz_expanded_page_authorization(conn: Any) -> None:
+    """Authorize the reviewed closest-mode mappings for every twssz data table."""
+    _install_twssz_site_profile(conn)
+
 
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
     Migration(3, "sync_shengshi8800_page_authorization", _sync_shengshi8800_page_authorization),
+    Migration(4, "install_twssz_vendor_site", _install_twssz_site_profile),
+    Migration(5, "import_twssz_static_prediction_history", _import_twssz_static_prediction_history),
+    Migration(6, "sync_twssz_expanded_page_authorization", _sync_twssz_expanded_page_authorization),
 )
 
 

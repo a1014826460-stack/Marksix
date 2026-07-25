@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -43,15 +43,21 @@ type AdminShellProps = {
   actions?: ReactNode
 }
 
-const SIDEBAR_EXPANDED = 256
+const SIDEBAR_DEFAULT_WIDTH = 256
 const SIDEBAR_COLLAPSED = 56
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 420
+const SIDEBAR_WIDTH_STORAGE_KEY = "liuhecai-admin-sidebar-width"
 
 export function AdminShell({ title, description, children, actions }: AdminShellProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = useState<{ display_name: string; username: string } | null>(null)
   const [collapsed, setCollapsed] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
+  const [isResizing, setIsResizing] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const resizeStart = useRef<{ x: number; width: number } | null>(null)
 
   useEffect(() => {
     if (pathname === "/login") return
@@ -59,6 +65,38 @@ export function AdminShell({ title, description, children, actions }: AdminShell
       .then((data) => setUser(data.user))
       .catch(() => router.replace("/login"))
   }, [pathname, router])
+
+  useEffect(() => {
+    const storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY))
+    if (Number.isFinite(storedWidth)) {
+      setSidebarWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, storedWidth)))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isResizing) return
+
+    function onPointerMove(event: PointerEvent) {
+      if (!resizeStart.current) return
+      const nextWidth = resizeStart.current.width + event.clientX - resizeStart.current.x
+      setSidebarWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, nextWidth)))
+    }
+
+    function onPointerUp() {
+      if (resizeStart.current) {
+        window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth))
+      }
+      resizeStart.current = null
+      setIsResizing(false)
+    }
+
+    window.addEventListener("pointermove", onPointerMove)
+    window.addEventListener("pointerup", onPointerUp)
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove)
+      window.removeEventListener("pointerup", onPointerUp)
+    }
+  }, [isResizing, sidebarWidth])
 
   async function logout() {
     try {
@@ -68,7 +106,19 @@ export function AdminShell({ title, description, children, actions }: AdminShell
     }
   }
 
-  const sidebarW = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED
+  const sidebarW = collapsed ? SIDEBAR_COLLAPSED : sidebarWidth
+
+  function beginSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (collapsed || window.innerWidth < 768) return
+    event.preventDefault()
+    resizeStart.current = { x: event.clientX, width: sidebarWidth }
+    setIsResizing(true)
+  }
+
+  function resetSidebarWidth() {
+    setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)
+    window.localStorage.removeItem(SIDEBAR_WIDTH_STORAGE_KEY)
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -84,7 +134,7 @@ export function AdminShell({ title, description, children, actions }: AdminShell
       {/* 侧边栏 */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 h-screen border-r border-border bg-card p-3 transition-all duration-200",
+          "fixed left-0 top-0 z-50 h-screen border-r border-border bg-card p-3 transition-[width,transform] duration-200",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
         style={{ width: sidebarW }}
@@ -127,6 +177,20 @@ export function AdminShell({ title, description, children, actions }: AdminShell
           })}
         </nav>
 
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-label="拖动调整侧边栏宽度"
+            onPointerDown={beginSidebarResize}
+            onDoubleClick={resetSidebarWidth}
+            className={cn(
+              "absolute -right-1 top-0 hidden h-full w-2 cursor-col-resize touch-none md:block",
+              isResizing && "bg-primary/20",
+            )}
+            title="拖动调整宽度，双击恢复默认"
+          />
+        )}
+
         {/* 折叠按钮 — 仅桌面端显示 */}
         <button
           onClick={() => setCollapsed((v) => !v)}
@@ -139,7 +203,7 @@ export function AdminShell({ title, description, children, actions }: AdminShell
 
       {/* 主区域 */}
       <main
-        className="min-w-0 flex-1 p-3 md:p-6 transition-all duration-200"
+        className="min-w-0 flex-1 p-3 md:p-6 transition-[margin] duration-200"
         style={{ marginLeft: sidebarW }}
       >
         {/* 移动端顶栏：汉堡菜单 + 用户信息 */}

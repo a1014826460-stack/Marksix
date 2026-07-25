@@ -83,11 +83,15 @@ export async function getSitePredictionModules(context: SiteApiContext) {
   const vendorModules = parseModules(
     context.searchParams.get("vendor_modules") || context.searchParams.get("modules")
   )
+  const historyWebStart = context.siteKey === "twssz" ? 1 : context.webId
+  const historyWebEnd = context.siteKey === "twssz" ? 1000 : context.webId
   const [sitePageData, homepageModules] = await Promise.all([
     getPublicSitePageData({
       siteId: context.siteId,
       historyLimit: context.historyLimit,
       lotteryType: context.lotteryType,
+      historyWebStart,
+      historyWebEnd,
     }),
     context.searchParams.get("include_vendor") === "0"
       ? Promise.resolve(null)

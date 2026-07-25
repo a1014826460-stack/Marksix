@@ -327,6 +327,21 @@ def mark_scheduler_task_failed(db_path: str | Path, task: dict[str, Any], exc: E
         )
 
 
+def retry_failed_scheduler_task(db_path: str | Path, *, task_id: int) -> dict[str, Any]:
+    """Requeue a terminally failed task for the singleton worker to acquire."""
+    now_text = datetime.now(timezone.utc).isoformat()
+    with db_connect(db_path) as conn:
+        task = repository.retry_failed_task(
+            conn,
+            task_id=int(task_id),
+            run_at=now_text,
+            updated_at=now_text,
+        )
+    if not task:
+        raise ValueError("仅允许重新执行失败的调度任务")
+    return task | {"last_error": str(task.get("last_error") or "")}
+
+
 def run_due_scheduler_tasks(
     db_path: str | Path,
     *,

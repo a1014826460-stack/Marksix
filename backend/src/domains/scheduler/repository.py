@@ -334,6 +334,21 @@ def mark_task_failed(
     )
 
 
+def retry_failed_task(conn: Any, *, task_id: int, run_at: str, updated_at: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        f"""
+        UPDATE {TASK_TABLE_NAME}
+        SET status = 'pending', run_at = ?, attempt_count = 0,
+            locked_at = NULL, locked_by = NULL, last_error = NULL, updated_at = ?
+        WHERE id = ? AND status = 'failed'
+        RETURNING id, task_key, task_type, status, run_at, attempt_count, max_attempts,
+                  last_error, lottery_type_id, site_id
+        """,
+        (run_at, updated_at, task_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def find_manual_job_by_id(conn: Any, job_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         f"""

@@ -37,11 +37,11 @@ export default defineVendorSiteManifest({
       "tiandi_2xiao",
     ],
     runtime: {
-      drawSelector: ".vendor-shared-draw-mount",
-      predictionSelector: "#vendor-shared-predictions",
-      footerSelector: "#vendor-site-footer",
+      drawSelector: ".KJ-TabBox",
+      predictionSelector: "#content-area",
+      footerSelector: "img[src='static/picture/log1.jpg']",
       navigationSelector: "#nav2",
-      legacyPredictionScripts: "disabled",
+      legacyPredictionScripts: "enabled",
     },
   },
   brand: {

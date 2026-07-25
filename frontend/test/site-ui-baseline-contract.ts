@@ -6,6 +6,7 @@ const expectedSiteKeys = [
   "twcaibawang",
   "twjinniu",
   "twcf888",
+  "twssz",
 ] as const
 
 for (const siteKey of expectedSiteKeys) {

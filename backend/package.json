@@ -7,6 +7,8 @@
     "dev": "next dev",
     "lint": "echo Use root command: pnpm lint:backend-admin",
     "start": "next start"
+    ,"test:admin-shell-contract": "node features/admin-shell/admin-shell-contract.mjs",
+    "test:dashboard-api-contract": "node features/dashboard/dashboard-api-contract.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

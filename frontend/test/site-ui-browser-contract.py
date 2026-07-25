@@ -43,6 +43,14 @@ SITES = (
         "nav": "#nav2",
         "footer": ".pop-xyz-footer",
     },
+    {
+        "key": "twssz",
+        "path": "/twssz",
+        "frame": "/vendor/twssz/index.html",
+        "draw": "iframe[src='kai.html']",
+        "nav": "#nav2",
+        "footer": ".cgi-body",
+    },
 )
 
 
@@ -96,8 +104,21 @@ def main() -> None:
                             "twsaimahui": "TwsaimahuiSiteData",
                             "twjinniu": "TwjinniuSiteData",
                             "twcf888": "Twcf888SiteData",
+                            "twssz": "TwsszSiteData",
                         }[site["key"]],
                     ), f"{site['key']} must expose its existing-DOM data adapter"
+                if site["key"] == "twssz":
+                    external_requests = []
+                    page.on(
+                        "request",
+                        lambda request: external_requests.append(request.url)
+                        if request.url.startswith(("http://", "https://"))
+                        and "127.0.0.1:3000" not in request.url
+                        else None,
+                    )
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_timeout(500)
+                    assert not external_requests, "twssz must not request external origins"
                 page.close()
         finally:
             browser.close()

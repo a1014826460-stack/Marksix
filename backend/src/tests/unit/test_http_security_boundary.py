@@ -69,6 +69,48 @@ def test_public_site_page_clamps_history_limit_without_changing_payload_shape():
     assert ctx.handler.response_status == HTTPStatus.OK
 
 
+def test_public_site_page_passes_a_bounded_shared_history_range_to_the_service():
+    handler = StubHandler(
+        "/api/public/site-page?site_id=9&lottery_type=3&history_web_start=1&history_web_end=1000"
+    )
+    ctx = RequestContext(handler, "GET")
+    expected_payload = {"site": {}, "draw": {}, "modules": []}
+
+    with patch("routes.public_routes.get_public_site_page_data", return_value=expected_payload) as get_site_page:
+        public_routes.site_page(ctx)
+
+    assert get_site_page.call_args.kwargs["history_web_start"] == 1
+    assert get_site_page.call_args.kwargs["history_web_end"] == 1000
+    assert ctx.handler.response_status == HTTPStatus.OK
+
+
+def test_public_site_page_rejects_invalid_or_reversed_shared_history_ranges():
+    invalid_ctx = RequestContext(
+        StubHandler("/api/public/site-page?history_web_start=not-a-number"), "GET"
+    )
+    with pytest.raises(ValidationError, match="history_web_start 必须为整数"):
+        public_routes.site_page(invalid_ctx)
+
+    reversed_ctx = RequestContext(
+        StubHandler("/api/public/site-page?history_web_start=1000&history_web_end=1"), "GET"
+    )
+    with pytest.raises(ValidationError, match="history_web_end 不能小于 history_web_start"):
+        public_routes.site_page(reversed_ctx)
+
+
+def test_public_site_page_clamps_shared_history_range_before_the_service_call():
+    ctx = RequestContext(
+        StubHandler("/api/public/site-page?history_web_start=999999&history_web_end=999999"), "GET"
+    )
+    expected_payload = {"site": {}, "draw": {}, "modules": []}
+
+    with patch("routes.public_routes.get_public_site_page_data", return_value=expected_payload) as get_site_page:
+        public_routes.site_page(ctx)
+
+    assert get_site_page.call_args.kwargs["history_web_start"] == 100_000
+    assert get_site_page.call_args.kwargs["history_web_end"] == 100_000
+
+
 def test_bounded_integer_parser_rejects_negative_and_malformed_values():
     from app_http.security import parse_bounded_int
 

@@ -4,6 +4,7 @@ import { getPublicSitePageData, getVendorHomepageModules } from "@/lib/backend-a
 import { buildPredictionModulesForSite } from "@/lib/prediction-adapters"
 import { getSiteConfig } from "@/lib/sites"
 import { SiteDataReadySignal } from "@/components/site-platform/SiteDataReadySignal"
+import Script from "next/script"
 
 export default async function TwcaibawangPage() {
   const site = getSiteConfig("twcaibawang")
@@ -36,6 +37,8 @@ export default async function TwcaibawangPage() {
   return (
     <>
       <SiteTrafficTracker siteKey="twcaibawang" eventType="site_page_view" path="/twcaibawang" />
+      <Script src="/vendor/_shared/lottery-site-data-client.js" strategy="beforeInteractive" />
+      <Script src="/vendor/twcaibawang.com/site-data-adapter.js" strategy="beforeInteractive" />
       <SiteDataReadySignal siteKey="twcaibawang" />
       {cssPaths.map((href) => (
         <link key={href} rel="stylesheet" href={href} />

@@ -381,7 +381,7 @@ def test_lottery_service_list_draws_preserves_admin_payload_shape(tmp_path):
     assert payload["draws"][0]["is_opened"] is True
 
 
-def test_lottery_service_delete_draw_preserves_admin_delete_behavior(tmp_path):
+def test_lottery_service_rejects_changes_to_opened_draws(tmp_path):
     from domains.lottery import service
 
     db_path = tmp_path / "delete_draw.sqlite3"
@@ -413,21 +413,33 @@ def test_lottery_service_delete_draw_preserves_admin_delete_behavior(tmp_path):
         ).fetchone()
         draw_id = int(row["id"])
 
-    service.delete_draw(db_path, draw_id)
-
-    with connect(db_path) as conn:
-        deleted = conn.execute(
-            "SELECT id FROM lottery_draws WHERE id = ?",
-            (draw_id,),
-        ).fetchone()
-    assert deleted is None
-
     try:
         service.delete_draw(db_path, draw_id)
-    except KeyError as exc:
-        assert str(draw_id) in str(exc)
+    except ValueError as exc:
+        assert "已开奖" in str(exc)
     else:
-        raise AssertionError("missing draw id delete should fail")
+        raise AssertionError("opened draw delete should fail")
+
+    try:
+        service.save_draw(
+            db_path,
+            {
+                "lottery_type_id": 3,
+                "year": 2026,
+                "term": 188,
+                "numbers": "08,09,10,11,12,13,14",
+                "draw_time": "2026-06-27 22:30:00",
+                "next_time": "1782570600000",
+                "status": True,
+                "is_opened": True,
+                "next_term": 189,
+            },
+            draw_id=draw_id,
+        )
+    except ValueError as exc:
+        assert "已开奖" in str(exc)
+    else:
+        raise AssertionError("opened draw update should fail")
 
 
 def test_lottery_service_save_draw_preserves_admin_create_and_backfill_behavior(tmp_path):

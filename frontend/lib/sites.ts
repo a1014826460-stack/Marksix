@@ -1,7 +1,12 @@
 import type { LotteryGame } from "@/lib/lotteryData"
 import type { Metadata } from "next"
 import type { VendorSiteManifest } from "@/lib/site-platform/site-manifest"
+import shengshi8800Manifest from "@/sites/shengshi8800/site.manifest"
 import twsaimahuiManifest from "@/sites/twsaimahui/site.manifest"
+import twcaibawangManifest from "@/sites/twcaibawang/site.manifest"
+import twjinniuManifest from "@/sites/twjinniu/site.manifest"
+import twcf888Manifest from "@/sites/twcf888/site.manifest"
+import twsszManifest from "@/sites/twssz/site.manifest"
 
 export type FrontendSiteConfig = {
   siteKey: string
@@ -72,7 +77,9 @@ export function toFrontendSiteConfig(manifest: VendorSiteManifest): FrontendSite
 
 const SITE_CONFIGS: FrontendSiteConfig[] = [
   {
-    siteKey: "shengshi8800",
+    ...toFrontendSiteConfig(shengshi8800Manifest),
+    routePath: "/",
+    vendorIndexPath: "/vendor/shengshi8800/embed.html?type=3&web=4",
     renderMode: "legacy-shell",
     capabilities: {
       sitePage: true,
@@ -81,18 +88,6 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       predictionModules: true,
       trafficEvents: true,
     },
-    routePath: "/",
-    vendorIndexPath: "/vendor/shengshi8800/embed.html?type=3&web=4",
-    domains: ["localhost", "127.0.0.1"],
-    legacyPublicBasePath: "/vendor/shengshi8800",
-    defaultGame: "taiwan",
-    defaultSiteId: 4,
-    defaultWebId: 4,
-    defaultLotteryTypeId: 3,
-    forumTitle: "台湾六合彩论坛",
-    metadataTitle: "全网最准尽在台湾六合彩论坛",
-    metadataDescription: "全网最准尽在台湾六合彩论坛",
-    faviconPath: "/favicon.ico",
     headerImagePath: "/vendor/shengshi8800/static/picture/header.jpg",
     embedPath: "/vendor/shengshi8800/embed.html",
     shellCssPaths: [
@@ -102,8 +97,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
   },
   toFrontendSiteConfig(twsaimahuiManifest),
   {
-    siteKey: "twcaibawang",
-    renderMode: "react-home",
+    ...toFrontendSiteConfig(twcaibawangManifest),
     capabilities: {
       sitePage: true,
       homepageModules: true,
@@ -111,18 +105,6 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       predictionModules: true,
       trafficEvents: true,
     },
-    routePath: "/twcaibawang",
-    vendorIndexPath: "/vendor/twcaibawang.com/index.html",
-    domains: ["www.twcaibawang.com", "twcaibawang.com"],
-    legacyPublicBasePath: "/vendor/twcaibawang.com",
-    defaultGame: "hongkong",
-    defaultSiteId: 5,
-    defaultWebId: 5,
-    defaultLotteryTypeId: 3,
-    forumTitle: "香港天天彩",
-    metadataTitle: "台湾彩霸王：聚合全网高手",
-    metadataDescription: "台湾彩霸王：聚合全网高手",
-    faviconPath: "/vendor/twcaibawang.com/static/image/favicon.ico",
     pageCssPaths: [
       "/vendor/twcaibawang.com/static/css/main.css",
       "/vendor/twcaibawang.com/static/css/custom.css",
@@ -131,8 +113,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     ],
   },
   {
-    siteKey: "twjinniu",
-    renderMode: "react-home",
+    ...toFrontendSiteConfig(twjinniuManifest),
     capabilities: {
       sitePage: true,
       homepageModules: true,
@@ -140,31 +121,13 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       predictionModules: true,
       trafficEvents: true,
     },
-    routePath: "/twjinniu",
-    vendorIndexPath: "/vendor/twjinniu/index.html",
-    domains: [
-      "www.twtongtian.com",
-      "twtongtian.com",
-      "www.twjinniu.com",
-      "twjinniu.com",
-    ],
-    legacyPublicBasePath: "/vendor/twjinniu",
-    defaultGame: "taiwan",
-    defaultSiteId: 7,
-    defaultWebId: 7,
-    defaultLotteryTypeId: 3,
-    forumTitle: "台湾通天网",
-    metadataTitle: "台湾通天网",
-    metadataDescription: "台湾通天网 | 聚合全网高手",
-    faviconPath: "/vendor/twjinniu/static/favicon.ico",
     pageCssPaths: [
       "/vendor/twjinniu/static/css/main.css",
       "/vendor/twjinniu/static/css/custom.css",
     ],
   },
   {
-    siteKey: "twcf888",
-    renderMode: "react-home",
+    ...toFrontendSiteConfig(twcf888Manifest),
     capabilities: {
       sitePage: true,
       homepageModules: true,
@@ -172,24 +135,13 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       predictionModules: true,
       trafficEvents: true,
     },
-    routePath: "/twcf888",
-    vendorIndexPath: "/vendor/twcf888.com/index.html",
-    domains: ["www.twcf888.com", "twcf888.com"],
-    legacyPublicBasePath: "/vendor/twcf888.com",
-    defaultGame: "taiwan",
-    defaultSiteId: 8,
-    defaultWebId: 8,
-    defaultLotteryTypeId: 3,
-    forumTitle: "台湾创富网",
-    metadataTitle: "台湾创富网",
-    metadataDescription: "台湾创富网 | 聚合全网高手资料",
-    faviconPath: "/vendor/twcf888.com/static/favicon.ico",
     pageCssPaths: [
       "/vendor/twcf888.com/static/css/main.css",
       "/vendor/twcf888.com/static/css/custom.css",
       "/vendor/twcf888.com/static/css/style.css",
     ],
   },
+  toFrontendSiteConfig(twsszManifest),
 ]
 
 export function getAllSiteConfigs() {

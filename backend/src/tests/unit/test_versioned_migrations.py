@@ -245,6 +245,126 @@ def test_migration_three_upserts_shengshi8800_profile_and_only_migrates_default_
     ]
 
 
+def test_migration_four_registers_twssz_profile_and_site_identity(tmp_path):
+    """The new vendor site must have a deployable profile without manual DB edits."""
+    import json
+
+    from db import connect
+    from database.versioned_migrations import _install_twssz_site_profile
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    db_path = str(tmp_path / "twssz-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE site_blueprint_profiles (
+                blueprint_name TEXT PRIMARY KEY,
+                required_mode_ids_json TEXT NOT NULL,
+                known_unavailable_mode_ids_json TEXT NOT NULL,
+                blocked_items_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY,
+                web_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                domain TEXT,
+                lottery_type_id INTEGER,
+                enabled INTEGER NOT NULL,
+                blueprint_name TEXT,
+                announcement TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        _install_twssz_site_profile(conn)
+        profile = conn.execute(
+            "SELECT required_mode_ids_json FROM site_blueprint_profiles WHERE blueprint_name = 'twssz'"
+        ).fetchone()
+        site = conn.execute(
+            "SELECT id, web_id, name, domain, lottery_type_id, enabled, blueprint_name FROM managed_sites WHERE id = 9"
+        ).fetchone()
+
+    assert profile is not None
+    assert tuple(json.loads(str(profile["required_mode_ids_json"]))) == required_mode_ids_for_site_key("twssz")
+    assert dict(site) == {
+        "id": 9,
+        "web_id": 9,
+        "name": "台湾神算子",
+        "domain": "www.twssz.com",
+        "lottery_type_id": 3,
+        "enabled": 1,
+        "blueprint_name": "twssz",
+    }
+
+
+def test_migration_five_imports_twssz_static_prediction_history_into_created_tables(monkeypatch):
+    """The vendor's supplied historical table must be available through the shared API."""
+    from database import versioned_migrations
+
+    ensured: list[tuple[str, bool]] = []
+    inserted: list[tuple[str, dict[str, str], bool]] = []
+
+    monkeypatch.setattr(
+        "utils.created_prediction_store.ensure_created_prediction_table",
+        lambda _conn, table_name, *, commit: ensured.append((table_name, commit)),
+    )
+    monkeypatch.setattr(
+        "utils.created_prediction_store.upsert_created_prediction_row",
+        lambda _conn, table_name, row_data, *, commit: inserted.append((table_name, row_data, commit)),
+    )
+
+    versioned_migrations._import_twssz_static_prediction_history(object())
+
+    assert ensured == [
+        ("mode_payload_44", False),
+        ("mode_payload_78", False),
+        ("mode_payload_481", False),
+        ("mode_payload_69", False),
+        ("mode_payload_51", False),
+        ("mode_payload_43", False),
+        ("mode_payload_66", False),
+    ]
+    assert len(inserted) == 56
+    assert all(row[1]["type"] == "3" and row[1]["web"] == "9" for row in inserted)
+    assert all(row[1]["year"] == "0" for row in inserted)
+    assert all(row[2] is False for row in inserted)
+    assert inserted[0] == (
+        "mode_payload_44",
+        {
+            "type": "3",
+            "year": "0",
+            "term": "204",
+            "web": "9",
+            "web_id": "9",
+            "modes_id": "44",
+            "content": "兔,牛,猪,龙,蛇,羊,鼠",
+        },
+        False,
+    )
+    assert inserted[-1] == (
+        "mode_payload_66",
+        {
+            "type": "3",
+            "year": "0",
+            "term": "197",
+            "web": "9",
+            "web_id": "9",
+            "modes_id": "66",
+            "content": "20,44,49,13,12",
+        },
+        False,
+    )
+
+
 def test_compose_runs_migrations_from_the_source_directory_before_api_and_worker_start():
     from pathlib import Path
 
@@ -293,6 +413,8 @@ def test_worker_validates_schema_before_loading_dynamic_prediction_configs(monke
     monkeypatch.setattr(scheduler_worker, "init_logging", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "log_startup_risk_warnings", lambda: None)
     monkeypatch.setattr(scheduler_worker, "detect_database_engine", lambda _db_path: "postgres")
+    # This test covers schema/config ordering, not runtime endpoint policy.
+    monkeypatch.setattr(scheduler_worker, "validate_runtime_database_target", lambda _db_path: None)
     monkeypatch.setattr(scheduler_worker, "try_acquire_scheduler_worker_lease", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(scheduler_worker, "_task_poll_interval_seconds", lambda _db_path: 0)
     monkeypatch.setattr(scheduler_worker, "_worker_lease_seconds", lambda _db_path: 30)

@@ -14,6 +14,7 @@ from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
 from app_http.router import Router
 from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
+from core.errors import ValidationError
 from domains.sites.service import get_public_notice
 from domains.traffic.service import record_traffic_event
 
@@ -39,6 +40,10 @@ def site_page(ctx: RequestContext) -> None:
         field_name="history_limit",
     )
     lottery_type = ctx.query_value("lottery_type")
+    history_web_start = _parse_optional_history_web_id(ctx.query_value("history_web_start"), "history_web_start")
+    history_web_end = _parse_optional_history_web_id(ctx.query_value("history_web_end"), "history_web_end")
+    if history_web_start is not None and history_web_end is not None and history_web_end < history_web_start:
+        raise ValidationError("history_web_end 不能小于 history_web_start")
     raw_mode_ids = str(ctx.query_value("mode_ids", "") or "").strip()
     mode_ids = []
     if raw_mode_ids:
@@ -60,7 +65,21 @@ def site_page(ctx: RequestContext) -> None:
             history_limit=history_limit,
             lottery_type_id=int(lottery_type) if lottery_type not in (None, "") else None,
             mode_ids=mode_ids or None,
+            history_web_start=history_web_start,
+            history_web_end=history_web_end,
         )
+    )
+
+
+def _parse_optional_history_web_id(value: object, field_name: str) -> int | None:
+    """Validate the optional shared-history scope before it reaches SQL filters."""
+    if value in (None, ""):
+        return None
+    return parse_bounded_int(
+        value,
+        default=1,
+        maximum=100_000,
+        field_name=field_name,
     )
 
 

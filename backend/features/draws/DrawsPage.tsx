@@ -330,6 +330,15 @@ export function DrawsPage() {
     await load(targetPage)
   }
 
+  function openEditor(row: Draw) {
+    if (row.is_opened) {
+      toast.error("已开奖记录禁止修改")
+      return
+    }
+    setEditing(row)
+    setFormOpen(true)
+  }
+
   return (
     <AdminShell
       title="开奖记录管理"
@@ -518,23 +527,18 @@ export function DrawsPage() {
                       <TableCell className="border-r border-border">{row.next_term}</TableCell>
                       <TableCell>
                         <div className="flex gap-1 flex-nowrap">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditing(row)
-                              setFormOpen(true)
-                            }}
-                          >
-                            修改
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => remove(row.id)}
-                          >
-                            删除
-                          </Button>
+                          {row.is_opened ? (
+                            <span className="px-2 py-1 text-xs text-muted-foreground">已开奖记录已锁定</span>
+                          ) : (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => openEditor(row)}>
+                                修改
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => remove(row.id)}>
+                                删除
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
