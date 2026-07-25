@@ -22,6 +22,10 @@
     "site:sync-manifests": "node scripts/sync-site-manifests.mjs",
     "site:scaffold": "node scripts/scaffold-vendor-site.mjs",
     "site:validate": "node scripts/validate-vendor-site.mjs",
+    "site:test-ui-baseline": "node frontend/test/run-site-ui-baseline-contract.mjs",
+    "site:test-data-client": "node frontend/test/site-data-client-contract.mjs",
+    "site:test-adapter-registry": "node frontend/test/run-site-adapter-registry-contract.mjs",
+    "site:test-ui-browser": "D:\\python\\python.exe frontend/test/site-ui-browser-contract.py",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint"
   },

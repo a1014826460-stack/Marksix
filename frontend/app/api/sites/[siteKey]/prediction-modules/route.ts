@@ -1,6 +1,7 @@
 import { buildOptionsResponse, jsonWithCors } from "@/lib/api/cors"
 import { getSitePredictionModules } from "@/lib/site-api-service"
 import { resolveSiteApiContext } from "@/lib/site-registry"
+import { siteDataCacheHeaders } from "@/lib/site-platform/site-data-cache"
 
 export const runtime = "nodejs"
 
@@ -12,7 +13,10 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const { siteKey } = await context.params
     const { searchParams } = new URL(request.url)
-    return jsonWithCors(await getSitePredictionModules(resolveSiteApiContext(siteKey, searchParams)))
+    return jsonWithCors(
+      await getSitePredictionModules(resolveSiteApiContext(siteKey, searchParams)),
+      { headers: siteDataCacheHeaders("predictions") }
+    )
   } catch (error) {
     return jsonWithCors(
       { ok: false, error: error instanceof Error ? error.message : "Request failed" },

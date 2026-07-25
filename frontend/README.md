@@ -69,16 +69,31 @@ cd d:\pythonProject\outsource\Liuhecai
 pnpm dev:frontend
 ```
 
-## Vendor 统一运行时
+## UI 保持的数据接入
 
-接入 `iframe-vendor` 站点时，保留原始 HTML、CSS 和图片，但动态数据必须由
-`/vendor/_shared/lottery-site-bridge.js` 和 `/vendor/_shared/lottery-site-runtime.js` 统一加载。Manifest 的
-`bridge.runtime` 必须声明开奖、预测、导航和页尾挂载选择器；`brand.footer.imageUrls`
-配置站点自己的页尾图片。共享运行时会对开奖和 canonical prediction modules 执行
-请求去重，并使用内存与 `sessionStorage` 的 stale-while-revalidate 缓存。
+五站不使用共享 UI runtime。供应商提供的 HTML、CSS、JS、图片和既有 renderer 是视觉真相；
+共享层只负责规范 API、请求去重、会话缓存与加载状态，不创建或替换 DOM。
 
-已迁移的页面不得继续执行各预测模块自身的网络请求脚本；可保留其 DOM 容器、CSS
-和静态资源作为站点差异化展示基础。
+- 浏览器数据客户端：`public/vendor/_shared/lottery-site-data-client.js`
+- 站点适配器：`public/vendor/<vendor-directory>/site-data-adapter.js`
+- 安全配置：`sites/<siteKey>/site-adapter.ts`，固定为 `existing-dom-only`
+- UI 基线：`lib/site-platform/site-ui-baseline.ts`
+
+数据客户端使用：
+
+```js
+const client = window.LotterySiteDataClient.create({ siteKey: "example-site" })
+const draw = await client.loadDraw({ lotteryType: 3 })
+const predictions = await client.loadPredictions({ lotteryType: 3, historyLimit: 8 })
+```
+
+返回值固定为 `{ state: "ready" | "stale" | "error", data?, error?, source }`。开奖缓存为
+5 秒新鲜 / 60 秒陈旧回退；预测缓存为 60 秒新鲜 / 15 分钟陈旧回退。所有请求均使用同源
+`/api/sites/<siteKey>/draw` 和 `/api/sites/<siteKey>/prediction-modules`。
+
+共享脚本不得调用 `document.createElement`、`appendChild`、`replaceChildren`、`innerHTML`、
+`document.write`，不得注入 CSS，也不得禁用或改写供应商预测脚本。变更导航、页尾、开奖或
+预测 UI 必须先取得用户明确授权。
 
 访问：
 
@@ -136,20 +151,11 @@ Public page traffic is collected by `components/SiteTrafficTracker.tsx`. It uses
 The frontend endpoint forwards to Python backend `/api/public/traffic-events`,
 where raw IP addresses are hashed before storage.
 
-## Vendor Site Bridge Pilot
+## Vendor 数据接入试点
 
-Vendor UI is not standardized. Supplied HTML, JavaScript, CSS and images stay
-under `public/vendor/<siteKey>/`; configuration and data access are added by a
-manifest and optional browser bridge.
-
-The `twsaimahui` pilot uses:
-
-- `sites/twsaimahui/site.manifest.ts` for identity, vendor entry, API defaults,
-  selected prediction modules, branding metadata and external-origin allowlists.
-- `public/vendor/_shared/lottery-site-bridge.js` for `window.LotterySiteBridge` and
-  its `lottery:*` loading/ready/error events.
-- `GET /api/sites/twsaimahui/bridge-config` for public runtime configuration.
-- `GET /api/sites/twsaimahui/draw?lottery_type=1|2|3` for normalized draw data.
+`twsaimahui` 是数据客户端的试点。它在原 `site-bridge.js` 后加载数据客户端与
+`site-data-adapter.js`，但继续使用原开奖 iframe、导航、预测脚本与页尾图片。适配器只会
+预加载规范数据并派发 `site-data:ready`；不会挂载共享 UI。
 
 To scaffold and validate a new vendor site:
 
@@ -161,6 +167,5 @@ pnpm site:sync-manifests
 pnpm site:validate --site-key example-site
 ```
 
-Do not guess how an unknown vendor module consumes prediction rows. The supplied
-page must either listen to `lottery:prediction-ready` or declare a reviewed
-adapter and DOM selector mapping.
+不要猜测未知供应商模块如何消费预测行。页面必须声明经审核的 existing-DOM adapter 与选择器
+合同；不存在安全既有节点时，保持空选择器，不新增挂载容器。

@@ -1,6 +1,6 @@
 # Manifest Contract
 
-Use `frontend/sites/<siteKey>/site.manifest.ts` as the source of site identity and bridge behavior.
+Use the site registry and `frontend/sites/<siteKey>/site-adapter.ts` as the source of identity and existing-DOM integration behavior.
 
 ## Mandatory values
 
@@ -8,14 +8,13 @@ Use `frontend/sites/<siteKey>/site.manifest.ts` as the source of site identity a
 - `identity.domains`, `routePath`, `siteId`, `webId`, `defaultLotteryType`: actual operational identity, never guessed from UI text.
 - `frontend.vendorIndexPath`: existing path under `/vendor/`.
 - `frontend.legacyPublicBasePath`: vendor asset base.
-- `bridge.api`: same-origin compatibility bases. Use `""` and `/api/kaijiang` unless an approved alternate is required.
-- `bridge.predictionModuleKeys`: only modules explicitly selected by the user or verified from supplied JavaScript.
-- `bridge.runtime`: selectors for `drawSelector`, `predictionSelector`, `footerSelector`, and `navigationSelector`, plus `legacyPredictionScripts`. Use `"disabled"` only after disabling all independent prediction fetch scripts.
-- `brand`: logo/footer/navigation/contact values for shared DOM-slot injection. Set `brand.footer.imageUrls` for footer images; these do not overwrite the vendor's header or other UI automatically.
+- API calls: use same-origin `/api/sites/<siteKey>/draw` and `/api/sites/<siteKey>/prediction-modules`; preserve all existing backend compatibility endpoints for vendor scripts.
+- `site-adapter.ts`: set `mode: "existing-dom-only"`; selectors identify existing draw, prediction, navigation and footer nodes only. Empty prediction selector arrays are valid when no safe existing target exists.
+- Footer, logo and navigation configuration describes existing assets and markup. It is not permission for shared DOM-slot injection.
 - `security`: exact external executable/navigation origins approved for the supplied archive.
 
 ## Data usage
 
-Load `/vendor/_shared/lottery-site-bridge.js` with `data-site-key`, then `/vendor/_shared/lottery-site-runtime.js`. Call `window.LotterySiteRuntime.mount({ bridge: window.LotterySiteBridge })` once. The shared renderer uses the configured selector mounts and supports per-site visual CSS overrides.
+Load `/vendor/_shared/lottery-site-data-client.js`, then the site-owned `site-data-adapter.js`. Do not call a shared UI runtime or add a shared visual container.
 
-Call `window.LotterySiteBridge.getPredictionModules()` for canonical prediction modules and `getDraw()` for normalized draw data. Listen to bridge events if the supplied UI owns rendering. Add a dedicated adapter plus fixtures when the supplied JS requires a proprietary field shape.
+Call `window.LotterySiteDataClient.create({ siteKey })`, then `loadPredictions()` or `loadDraw()`. The client returns `{ state, data?, error?, source }` and manages request de-duplication plus bounded session cache fallback. A dedicated adapter may map data to approved existing nodes only when that mapping has been reviewed.
