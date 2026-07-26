@@ -158,6 +158,7 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     471: _rule("head", _special_head),
     481: _rule("number_exclusion", _special_number, prefix_width=2),
     483: _rule("head", _special_head),
+    485: _rule("number_exclusion", _special_number, prefix_width=2),
 }
 
 

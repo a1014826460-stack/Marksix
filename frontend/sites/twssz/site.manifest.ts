@@ -6,8 +6,8 @@ export default defineVendorSiteManifest({
   bridge: {
     api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" },
     autoLoad: { draw: true, prediction: true },
-    predictionModuleKeys: ["7xiao7ma", "sixiao_sima", "wensha10ma", "3zxt", "4xiao8ma", "pt2xiao", "title_66", "title_5", "ma24", "daxiao", "title_14", "3tou", "juesha1wei", "title_74", "danshuangtema", "juesha3xiao", "title_48", "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "title_279", "sitouzhongte", "pt1wei", "9xiao12ma", "6xzt", "3hang", "title_132"],
-    runtime: { drawSelector: "iframe[src='kai.html']", predictionSelector: "#top_15", footerSelector: ".cgi-body", navigationSelector: "#nav2", legacyPredictionScripts: "enabled" },
+    predictionModuleKeys: ["7xiao7ma", "sixiao_sima", "wensha10ma", "3zxt", "4xiao8ma", "pt2xiao", "title_66", "title_5", "ma24", "daxiao", "3tou", "juesha1wei", "juesha1xiao", "juesha2xiao", "jueshabanbo", "title_74", "danshuangtema", "juesha3xiao", "title_48", "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "title_279", "sitouzhongte", "pt1wei", "9xiao12ma", "6xzt", "3hang", "title_132", "title_143", "sanxiao_siwei_xiao", "sanxiao_siwei_wei", "wuzhong5ma", "title_47"],
+    runtime: { drawSelector: "iframe[src='kai.html']", predictionSelector: "#top_15", footerSelector: "#legacy-attribute-anchor", navigationSelector: "#nav2", legacyPredictionScripts: "enabled" },
   },
   brand: { siteName: "台湾神算子", navigation: [], footer: { copyright: "台湾神算子" } },
   security: { externalScriptOrigins: [], externalNavigationOrigins: [] },

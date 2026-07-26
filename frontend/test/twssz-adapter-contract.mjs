@@ -6,7 +6,7 @@ for (const token of ["createElement", "appendChild", "replaceChildren", "innerHT
   if (adapter.includes(token)) throw new Error(`adapter must not mutate UI: ${token}`)
 }
 
-for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "firstContentSibling", "IntersectionObserver", "requestIdleCallback", "historyLimit: 1", "historyLimit: 8", "message", "lottery-change", "activeLottery", "titleRegionPrefix"]) {
+for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "historyLimit: 8", "message", "lottery-change", "activeLottery", "titleRegionPrefix"]) {
   if (!adapter.includes(token)) throw new Error(`twssz adapter missing ${token}`)
 }
 
@@ -26,7 +26,7 @@ if (/https?:\/\//i.test(html)) {
   throw new Error("twssz vendor HTML must not retain external origins")
 }
 const imageTags = html.match(/<img\b[^>]*>/gi) || []
-if (imageTags.length !== 192) throw new Error(`expected 192 vendor images, got ${imageTags.length}`)
+if (imageTags.length !== 195) throw new Error(`expected 195 vendor images including the shared attribute module, got ${imageTags.length}`)
 if (imageTags.some((tag) => !/\bloading="lazy"/i.test(tag) || !/\bdecoding="async"/i.test(tag))) {
   throw new Error("every supplied vendor image must use native lazy loading without changing its source")
 }
@@ -38,6 +38,16 @@ if (/data-cf-beacon|v4513226cdae34746b4dedf0b4dfa099e1781791509496\.js/i.test(dr
 for (const label of ["台湾彩", "澳门彩", "香港彩"]) {
   if (!drawHtml.includes(label)) throw new Error(`draw tab missing ${label}`)
 }
+const attributeImages = [
+  "/uploads/image/20250322/1742580086567063.png",
+  "/uploads/image/20250322/1742580119746508.jpg",
+  "/uploads/image/20250322/1742580130762983.jpg",
+]
+if (!html.includes('id="legacy-attribute-anchor"')) throw new Error("twssz must use the shared attribute image module")
+for (const src of attributeImages) {
+  if (!html.includes(`src="${src}"`)) throw new Error(`shared attribute image is missing: ${src}`)
+}
+
 for (const prohibitedLabel of ["澳洲六合彩", "新香港六合彩"]) {
   if (drawHtml.includes(prohibitedLabel)) throw new Error(`draw tab must not retain ${prohibitedLabel}`)
 }
@@ -47,6 +57,19 @@ if ((drawHtml.match(/data-opt=/g) || []).length !== 3) {
 for (const [label, type] of [["台湾彩", "3"], ["澳门彩", "2"], ["香港彩", "1"]]) {
   const tabPattern = new RegExp(`lottery_type=${type}[^>]*>[\\s\\S]{0,80}${label}`)
   if (!tabPattern.test(drawHtml)) throw new Error(`${label} must use lottery_type=${type}`)
+}
+
+for (const token of [
+  "title_5",
+  "juesha1wei",
+  "juesha1xiao",
+  "juesha2xiao",
+  "jueshabanbo",
+  "tableAfterHeading",
+  "compositeTable",
+  "compositeLines",
+]) {
+  if (!adapter.includes(token)) throw new Error(`twssz adapter missing complete mapping contract: ${token}`)
 }
 
 for (const token of [

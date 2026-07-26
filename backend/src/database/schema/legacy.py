@@ -506,6 +506,7 @@ def ensure_site_specific_prediction_tables(conn: Any, pk_sql: str) -> None:
         (471, "两头中特"),
         (472, "绝杀1肖"),
         (473, "绝杀2肖"),
+        (485, "内幕5不中"),
     )
     for modes_id, title in definitions:
         ensure_basic_prediction_payload_table(

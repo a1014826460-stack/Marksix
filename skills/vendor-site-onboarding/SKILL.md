@@ -76,16 +76,30 @@ var siteConfig = {
    code must verify both `event.origin` and `event.source` against the known
    draw iframe before calling `selectLottery(lotteryType)`. Do not infer the
    selected lottery from visual tab text.
-10. For a proprietary renderer, document a site-specific mapping from the canonical response to its existing DOM. If no safe existing selector exists, leave the selector list empty; never introduce a shared mount node.
-11. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
+10. Before rendering, create a complete **visible prediction table mapping**:
+    `vendor heading/row -> canonical module key (or approved nearest replacement) -> existing DOM target -> API term/prediction/result/status fields`.
+    Every visible historical row in a mapped table must receive the active
+    lottery response. Never leave a vendor term, prediction, draw, `对/错`,
+    `?????`, or other historical hit text as a fallback. If a module has no
+    exact backend capability, document the approved replacement in the mapping
+    and render `暂无后端资料` until that replacement responds; ask the user when
+    no safe replacement has been approved.
+11. For composite vendor blocks, map all approved backend modules into the
+    existing block using only existing text nodes. A renderer may combine API
+    rows, but it must label each replacement and must not claim vendor static
+    results are backend results.
+12. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
 
-12. Add a browser contract test that clicks all three draw tabs and, for each
+13. Add a browser contract test that clicks all three draw tabs and, for each
     tab, proves: (a) prediction request `lottery_type` equals the selected
     draw value; (b) mapped prediction data is from that response; and (c) a
     generic title such as `A级猛料大公开` displays the configured regional
-    prefix. Also prove `siteConfig` contains only 台湾彩、澳门彩、香港彩 and no
-    legacy domain, site name, regional prefix or external navigation URL
-    remains in active vendor scripts.
+    prefix. The test must request at least eight distinctive historical API
+    rows, assert each mapped table contains its selected-lottery marker,
+    `result.text` and `result.isCorrect` label, and assert representative
+    vendor static sentinels are absent. Also prove `siteConfig` contains only
+    台湾彩、澳门彩、香港彩 and no legacy domain, site name, regional prefix or
+    external navigation URL remains in active vendor scripts.
 
 ## Non-negotiable UI boundary
 
@@ -93,6 +107,38 @@ var siteConfig = {
 - Do not use `lottery-site-runtime.js`, `LotterySiteRuntime.mount()`, shared UI mount selectors, or `legacyPredictionScripts: "disabled"` for an existing site.
 - Do not replace supplied HTML/CSS/JS, navigation labels, footer images, layout, or script execution. A UI change needs explicit user approval in a separate task.
 - Treat `frontend/lib/site-platform/site-ui-baseline.ts` and each `site-adapter.ts` as the regression contract. Browser verification must prove original draw, navigation and footer sentinels remain present.
+
+## Unified Attribute Image Module
+
+When the product requirement explicitly replaces a vendor page's trailing static
+table or gallery, use this single **属性知识** module. It contains exactly the
+three managed, same-origin images in this order. Keep the wrapper classes and
+IDs unchanged so every site has one stable module contract:
+
+```html
+<div class="box pad" id="legacy-attribute-anchor">
+  <div class="list-title">属性知识</div>
+  <div id="legacy-attribute-gallery">
+    <img src="/uploads/image/20250322/1742580086567063.png" width="100%" loading="lazy" decoding="async">
+    <img src="/uploads/image/20250322/1742580119746508.jpg" width="100%" loading="lazy" decoding="async">
+    <img src="/uploads/image/20250322/1742580130762983.jpg" width="100%" loading="lazy" decoding="async">
+  </div>
+</div>
+```
+
+- Do not use the legacy `httpApi` variable, runtime `innerHTML`, or a script to
+  construct this module. The fixed same-origin URLs work in iframe-vendor and
+  direct vendor entry pages, avoid an undeclared global, and do not add a
+  synchronous DOM write.
+- Do not add, remove, reorder, or substitute its three images per site.
+- `loading="lazy"` and `decoding="async"` are required; they preserve the
+  supplied visual width while deferring image decode/load until needed.
+- Replace only the explicitly approved terminal static table/galleries. Do not
+  remove ordinary prediction tables, navigation, draw markup, or a vendor
+  footer as part of this replacement.
+- Add the module selector to the site adapter/footer contract and write a
+  browser test that asserts the three ordered `src` values and no external
+  image origin.
 
 ## Data readiness
 

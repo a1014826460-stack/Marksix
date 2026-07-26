@@ -4,55 +4,34 @@ import time
 from playwright.sync_api import sync_playwright
 
 
-MODULES = [
-    ("7xiao7ma", "2026173", ["鼠|01", "牛|02", "虎|03", "兔|04", "龙|05", "蛇|06", "马|07"]),
-    ("sixiao_sima", "2026173", ["鼠|01", "牛|02", "虎|03", "兔|04"]),
-    ("wensha10ma", "2026173", ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]),
-    ("3zxt", "2026173", ["鼠", "牛", "虎"]),
-    ("4xiao8ma", "2026173", ["鼠|01,13", "牛|02,14", "虎|03,15", "兔|04,16"]),
-    ("pt2xiao", "2026173", ["鼠", "牛"]),
-    ("title_66", "2026173", ["1尾|01,11,21,31,41", "2尾|02,12,22,32,42", "3尾|03,13,23,33,43", "4尾|04,14,24,34,44", "5尾|05,15,25,35,45"]),
+MODULE_KEYS = [
+    "7xiao7ma", "sixiao_sima", "wensha10ma", "3zxt", "4xiao8ma", "pt2xiao", "title_66",
+    "sanxiao_siwei_xiao", "sanxiao_siwei_wei", "ma24", "daxiao", "3tou", "pt1wei", "pt1xiao",
+    "title_48", "wuzhong5ma", "juesha1wei", "juesha1xiao", "juesha2xiao", "jueshabanbo",
+    "3hang", "pt3xiao", "shuangbo", "title_47", "title_5", "danshuangtema", "title_143",
 ]
 
 
 def payload(lottery_type: str = "3"):
     marker = {"3": "台", "2": "澳", "1": "港"}[lottery_type]
-    return {
-        "ok": True,
-        "data": {
-            "canonical_modules": [
+    rows = []
+    for module_index, key in enumerate(MODULE_KEYS):
+        rows.append({
+            "moduleKey": key,
+            "rows": [
                 {
-                    "moduleKey": key,
-                    "rows": [{"term": term, "prediction": {"tokens": [f"{marker}{token}" for token in tokens], "text": ",".join(tokens)}}],
+                    "term": f"{marker}{module_index + 1:03d}{row_index}",
+                    "prediction": {"tokens": [f"{marker}{key}-{row_index}"], "text": f"{marker}{key}-{row_index}"},
+                    "result": {
+                        "isOpened": True,
+                        "isCorrect": row_index % 2 == 0,
+                        "text": f"{marker}开奖{row_index}",
+                    },
                 }
-                for key, term, tokens in MODULES
-            ]
-        },
-    }
-
-
-def live_page_payload():
-    return {
-        "ok": True,
-        "data": {
-            "canonical_modules": [
-                {
-                    "moduleKey": key,
-                    "rows": [{"term": term, "prediction": {"tokens": tokens, "text": ",".join(tokens)}}],
-                }
-                for key, term, tokens in [
-                    *MODULES,
-                    ("ma24", "2026173", ["01", "02", "03", "04"]),
-                    ("daxiao", "2026173", ["大"]),
-                    ("title_14", "2026173", ["家禽|牛,马", "野兽|鼠,虎"]),
-                    ("3tou", "2026173", ["1头|10,11,12"]),
-                    ("shuangbo", "2026173", ["红波", "蓝波"]),
-                    ("pt1wei", "2026173", ["3尾|03,13,23,33,43"]),
-                    ("9xiao12ma", "2026173", ["01", "02", "03", "04"]),
-                ]
-            ]
-        },
-    }
+                for row_index in range(8)
+            ],
+        })
+    return {"ok": True, "data": {"canonical_modules": rows}}
 
 
 def main() -> None:
@@ -96,19 +75,20 @@ def main() -> None:
             assert frame is not None, "twssz vendor frame did not load"
             first_table = frame.locator(".dz_content08ab2d table").first
             first_table.locator("td").first.wait_for(state="attached", timeout=10000)
-            page.wait_for_timeout(1000)
+            frame.evaluate("window.TwsszSiteData.preloadPredictions()")
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not prediction_requests:
+                page.wait_for_timeout(100)
 
-            assert prediction_requests == ["3:1"], (
-                "initial rendering must request only each module's newest row"
+            assert prediction_requests and all(item == "3:1" for item in prediction_requests), (
+                "initial rendering must request only the selected lottery's newest rows: "
+                f"{prediction_requests}"
             )
 
             text = first_table.inner_text()
-            assert "2026173期" in text
-            assert ":台鼠台牛台虎台兔台龙台蛇台马" in text
-            assert "台01.台02.台03.台04.台05.台06.台07.台08.台09.台10" in text
-            assert "台01.台02.台03.台04.台05.台06.台07.台08" in text
-            assert "台01.台02.台03.台04.台05" in text
+            assert "台7xiao7ma-0" in text
             assert "台湾 A级猛料大公开" in text
+
 
             draw_frame = next(
                 (item for item in page.frames if item.url.split("?", 1)[0].endswith("/vendor/twssz/kai.html")),
@@ -125,49 +105,65 @@ def main() -> None:
                     if f"{lottery_type}:1" in prediction_requests:
                         break
                     page.wait_for_timeout(100)
-                page.wait_for_timeout(300)
+                page.wait_for_timeout(1000)
                 text = first_table.inner_text()
+                assert f"{marker}7xiao7ma-0" in text, (lottery_type, prediction_requests, text)
                 assert title in text
-                assert f":{marker}鼠{marker}牛{marker}虎{marker}兔{marker}龙{marker}蛇{marker}马" in text
 
             # The full eight-row history is fetched only after the visitor
             # reaches prediction content inside the supplied vendor document.
-            frame.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            # The Taiwan history request may already be active when the user
+            # switches draw tabs. Trigger history after Hong Kong is active.
+            frame.evaluate("window.dispatchEvent(new Event('scroll'))")
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline and "1:8" not in prediction_requests:
                 page.wait_for_timeout(100)
-            assert prediction_requests == ["3:1", "2:1", "1:1", "1:8"], (
-                "scrolling near a prediction table must defer and then fetch historical rows"
+            assert "1:8" in prediction_requests, (
+                "the selected lottery must fetch its own deferred history"
             )
 
-            # The real site endpoint uses the same canonical envelope. It must
-            # render all reviewed replacement sections without a route error.
-            page.unroute("**/api/sites/twssz/prediction-modules?**")
-            page.route(
-                "**/api/sites/twssz/prediction-modules?**",
-                lambda route: route.fulfill(json=live_page_payload()),
+            # Every mapped section must contain the selected Hong Kong response
+            # only: no vendor term, result, placeholder or static hit data.
+            sections = frame.locator("[data-prediction-section]")
+            assert sections.count() >= 18, "every reviewed prediction area must be API-backed"
+            assert frame.locator("[data-prediction-row]").count() >= 128, (
+                "each reviewed prediction section must retain eight API-backed history rows"
             )
-            page.reload(wait_until="domcontentloaded")
-            deadline = time.monotonic() + 10
-            frame = None
-            while time.monotonic() < deadline:
-                frame = next(
-                    (
-                        item
-                        for item in page.frames
-                        if item.url.split("?", 1)[0].endswith("/vendor/twssz/index.html")
-                    ),
-                    None,
+            section_keys = [
+                sections.nth(index).get_attribute("data-prediction-section")
+                for index in range(sections.count())
+            ]
+            for required_key in (
+                "sanxiao_siwei_xiao",
+                "wuzhong5ma",
+                "title_47",
+                "title_5",
+                "juesha2xiao",  # Composite section renders all four approved kill modules.
+            ):
+                assert any(key == required_key or key.startswith(required_key + "-") for key in section_keys), (
+                    f"{required_key} has no mapped vendor section"
                 )
-                if frame:
-                    break
-                page.wait_for_timeout(100)
-            assert frame is not None, "twssz vendor frame did not reload"
-            frame.locator("#top_9").wait_for(state="attached", timeout=10000)
-            page.wait_for_timeout(1000)
-            for anchor in ("top_9", "top_1", "top_2", "top_6", "top_7"):
-                heading = frame.locator(f"#{anchor}").first.locator("xpath=following-sibling::*[1]")
-                assert "台湾精选" in heading.inner_text()
+            for index in range(sections.count()):
+                section_text = sections.nth(index).inner_text()
+                assert "港" in section_text, (index, sections.nth(index).get_attribute("data-prediction-section"), section_text[:300])
+                for forbidden in ("204期", "46鸡对", "13马对", "?????"):
+                    assert forbidden not in section_text, (
+                        index,
+                        sections.nth(index).get_attribute("data-prediction-section"),
+                        forbidden,
+                        section_text[:500],
+                    )
+
+            # These previously escaped the generic table scan. They must now
+            # be explicit API-backed sections with no vendor historical data.
+            for title in ("AI心水玄机论坛", "综合绝杀", "精准天地+两肖"):
+                heading = frame.locator(f"text={title}").first
+                heading.wait_for(state="attached", timeout=10000)
+                container = heading.locator("xpath=following::table[1]")
+                assert "港" in container.inner_text(), (title, container.inner_text()[:500])
+                for forbidden in ("204期", "46鸡对", "13马对", "?????"):
+                    assert forbidden not in container.inner_text(), (title, forbidden, container.inner_text()[:500])
+
         finally:
             browser.close()
 

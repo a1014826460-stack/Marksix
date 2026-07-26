@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 8
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -270,6 +270,34 @@ def _sync_twssz_expanded_page_authorization(conn: Any) -> None:
     _install_twssz_site_profile(conn)
 
 
+def _sync_twssz_four_zodiac_module(conn: Any) -> None:
+    """Install the 4-zodiac payload table and refresh Twssz authorization."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_basic_prediction_payload_table
+
+    ensure_basic_prediction_payload_table(
+        conn,
+        auto_increment_primary_key("id", conn.engine),
+        modes_id=47,
+        title="4肖中特",
+    )
+    _install_twssz_site_profile(conn)
+
+
+def _install_twssz_five_no_hit_module(conn: Any) -> None:
+    """Create the reviewed mode-485 payload table and refresh Twssz access."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_basic_prediction_payload_table
+
+    ensure_basic_prediction_payload_table(
+        conn,
+        auto_increment_primary_key("id", conn.engine),
+        modes_id=485,
+        title="内幕5不中",
+    )
+    _install_twssz_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -277,6 +305,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(4, "install_twssz_vendor_site", _install_twssz_site_profile),
     Migration(5, "import_twssz_static_prediction_history", _import_twssz_static_prediction_history),
     Migration(6, "sync_twssz_expanded_page_authorization", _sync_twssz_expanded_page_authorization),
+    Migration(7, "install_twssz_five_no_hit_module", _install_twssz_five_no_hit_module),
+    Migration(8, "sync_twssz_four_zodiac_module", _sync_twssz_four_zodiac_module),
 )
 
 

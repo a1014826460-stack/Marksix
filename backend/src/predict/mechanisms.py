@@ -1090,6 +1090,23 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "特码号码落入预测的 24 个号码则命中。",
         ),
     ),
+    "wuzhong5ma": PredictionConfig(
+        key="wuzhong5ma",
+        title="内幕5不中",
+        default_table="mode_payload_485",
+        default_modes_id=485,
+        labels=tuple(f"{number:02d}" for number in range(1, 50)),
+        label_count=5,
+        outcome_loader=special_number_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_number_content,
+        content_formatter=format_24_numbers,
+        hit_checker=excludes_hit,
+        explanation=(
+            "内幕5不中从01-49中选择5个号码作为排除号码。",
+            "特码号码不在这5个号码内时按命中计算。",
+        ),
+    ),
     "shuangbo": PredictionConfig(
         key="shuangbo",
         title="双波中特",
