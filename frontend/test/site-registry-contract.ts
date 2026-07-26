@@ -38,6 +38,10 @@ for (const siteKey of expectedKeys) {
 }
 
 const context = resolveSiteApiContext("twjinniu", new URLSearchParams("history_limit=3"))
+const maxHistoryContext = resolveSiteApiContext("twssz", new URLSearchParams("history_limit=99"))
+if (maxHistoryContext.historyLimit !== 20) {
+  throw new Error("site prediction APIs must cap history_limit at 20")
+}
 const twsaimahui = getRegisteredSite("twsaimahui")
 if (
   twsaimahui.defaultWebId !== twsaimahuiManifest.identity.webId ||

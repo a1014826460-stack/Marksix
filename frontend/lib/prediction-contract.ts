@@ -391,11 +391,30 @@ export function canonicalizeVendorHomepageModules(data: VendorHomepageModulesRes
   })
 }
 
+function canonicalRowIssueKey(row: CanonicalPredictionRow) {
+  return cleanText(row.issue) || [cleanText(row.year), cleanText(row.term)].filter(Boolean).join("-")
+}
+
+function deduplicateCanonicalRows(rows: CanonicalPredictionRow[]) {
+  const seen = new Set<string>()
+  return rows.filter((row) => {
+    const issue = canonicalRowIssueKey(row)
+    if (!issue) return true
+    if (seen.has(issue)) return false
+    seen.add(issue)
+    return true
+  })
+}
+
+function deduplicateCanonicalModuleRows(module: CanonicalPredictionModule): CanonicalPredictionModule {
+  return { ...module, rows: deduplicateCanonicalRows(module.rows) }
+}
+
 export function buildCanonicalPredictionModules(input: CanonicalPredictionBuildInput) {
   return [
     ...canonicalizePublicSitePageData(input.sitePageData),
     ...canonicalizeVendorHomepageModules(input.vendorHomepageModules),
-  ]
+  ].map(deduplicateCanonicalModuleRows)
 }
 
 export function findCanonicalPredictionModule(

@@ -65,7 +65,7 @@ def test_public_site_page_clamps_history_limit_without_changing_payload_shape():
     with patch("routes.public_routes.get_public_site_page_data", return_value=expected_payload) as get_site_page:
         public_routes.site_page(ctx)
 
-    assert get_site_page.call_args.kwargs["history_limit"] == 50
+    assert get_site_page.call_args.kwargs["history_limit"] == 20
     assert ctx.handler.response_status == HTTPStatus.OK
 
 

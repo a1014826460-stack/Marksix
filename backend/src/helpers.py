@@ -725,19 +725,19 @@ def apply_lottery_draw_overlay(
     return normalized_rows
 
 
-def build_mode_payload_row_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
-    """为 created / public 双来源记录构造去重键，保证同期期号优先采用 created。"""
+def build_mode_payload_row_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    """为 created / public 双来源记录构造期号去重键，保证 created 优先。"""
     type_value = normalize_issue_part(row.get("type"))
     year = normalize_issue_part(row.get("year"))
     term = normalize_issue_part(row.get("term"))
-    web_value = normalize_issue_part(row.get("web_id") or row.get("web"))
     if year or term:
-        return (type_value, year, term, web_value)
+        # A site may have several source records for one issue. Public pages
+        # expose one historical row per issue, independent of source web_id.
+        return (type_value, year, term)
     return (
         type_value,
         normalize_issue_part(row.get("source_record_id")),
         normalize_issue_part(row.get("id")),
-        web_value,
     )
 
 
@@ -748,7 +748,7 @@ def merge_preferred_mode_payload_rows(
 ) -> list[dict[str, Any]]:
     """合并 created / public 两套来源，保留 created 优先级并按期号去重。"""
     merged: list[dict[str, Any]] = []
-    seen_keys: set[tuple[str, str, str, str]] = set()
+    seen_keys: set[tuple[str, str, str]] = set()
 
     for row in [*preferred_rows, *fallback_rows]:
         row_key = build_mode_payload_row_key(row)

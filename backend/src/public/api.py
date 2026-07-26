@@ -231,7 +231,10 @@ def load_public_module_history(
             config.default_table,
         )
         history_sources: list[str] = []
-        preferred_limit = max(history_limit * 2, history_limit)
+        # Generated rows may contain several records for the same issue. Read a
+        # bounded wider window before merging so deduplication can still supply
+        # the requested number of distinct periods.
+        source_limit = max(history_limit * 20, 100)
 
         preferred_rows: list[dict[str, Any]] = []
         if getattr(conn, "engine", "") == "postgres" and created_table_exists(conn, history_table):
@@ -239,7 +242,7 @@ def load_public_module_history(
                 conn,
                 table_name=history_table,
                 schema_name=CREATED_SCHEMA_NAME,
-                limit=preferred_limit,
+                limit=source_limit,
                 lottery_type_id=lottery_type_id,
                 web_start=web_start,
                 web_end=web_end,
@@ -249,11 +252,16 @@ def load_public_module_history(
                 history_sources.append(CREATED_SCHEMA_NAME)
 
         fallback_rows: list[dict[str, Any]] = []
-        if len(preferred_rows) < history_limit and conn.table_exists(history_table):
+        preferred_unique_rows = merge_preferred_mode_payload_rows(
+            preferred_rows,
+            [],
+            history_limit,
+        )
+        if len(preferred_unique_rows) < history_limit and conn.table_exists(history_table):
             fallback_rows = load_mode_payload_rows_from_source(
                 conn,
                 table_name=history_table,
-                limit=max(history_limit * 3, history_limit),
+                limit=source_limit,
                 lottery_type_id=lottery_type_id,
                 web_start=web_start,
                 web_end=web_end,

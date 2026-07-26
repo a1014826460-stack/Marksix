@@ -70,7 +70,7 @@ var siteConfig = {
    <script src="site-data-adapter.js"></script>
    ```
 7. Implement `site-data-adapter.js` as an existing-DOM-only adapter. It may use `LotterySiteDataClient` and dispatch `site-data:ready`, but it must not create, replace, remove, move or style DOM nodes; it must not disable or rewrite supplied scripts.
-8. Use `loadDraw({ lotteryType })` and `loadPredictions({ lotteryType, historyLimit })` for each of the three configured lottery IDs. They call same-origin `/api/sites/<siteKey>/draw` and `/api/sites/<siteKey>/prediction-modules`, de-duplicate requests and use bounded `sessionStorage` stale fallback. Do not expose Python backend URLs to browser code.
+8. Use `loadDraw({ lotteryType })` and `loadPredictions({ lotteryType, historyLimit })` for each of the three configured lottery IDs. They call same-origin `/api/sites/<siteKey>/draw` and `/api/sites/<siteKey>/prediction-modules`, de-duplicate requests and use bounded `sessionStorage` stale fallback. Do not expose Python backend URLs to browser code. The public API accepts at most 20 distinct issues.
 9. If the draw UI is in an iframe, make its tab handler send a same-origin
    `postMessage({ type: "lottery-change", siteKey, lotteryType })`; parent
    code must verify both `event.origin` and `event.source` against the known
@@ -88,9 +88,55 @@ var siteConfig = {
     existing block using only existing text nodes. A renderer may combine API
     rows, but it must label each replacement and must not claim vendor static
     results are backend results.
-12. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
+12. Write a **DOM slot contract** for every prediction section before coding:
+    `vendor selector -> retained labels -> dynamic term/value/result slots ->
+    canonical module key(s) -> token formatter -> history-index alignment`.
+    Register an explicit named renderer for every section. Never use a generic
+    `rowDisplay`/whole-row renderer as a fallback.
+13. Render only the dynamic slots, never an enclosing `tr`, `table`, `div`, or
+    section container. Preserve the supplied labels, punctuation, colours and
+    structure. Fixed grids must update their existing cells in order (for
+    example, `tr.zt24mtr td` for 24码); paired history layouts must update their
+    header and detail rows independently; composite layouts must name every
+    backend key and align all module rows by term/history index. Format raw API
+    tokens before writing them: do not expose implementation separators such as
+    `生肖|号码`, raw arrays, or a generic `【tokens】 开 result` sentence unless
+    that exact sentence is the vendor slot contract.
+14. When data is absent, clear only the mapped dynamic slot and show
+    `暂无后端资料` in that slot. Do not leave vendor terms, predictions, results,
+    `对/错`, `?????`, or hit highlights visible anywhere in the mapped row.
+15. Treat `historyLimit` as a limit of **distinct issues**, not source-record
+    count. Canonical module rows must be de-duplicated by the normalized issue
+    (`issue`, otherwise `year + term`) before a vendor adapter maps history
+    indices. Retain the first/latest row deterministically; never fill extra
+    vendor rows by repeating an earlier issue. Clear unused existing rows.
+    Before selecting the request limit, count the supplied HTML's complete
+    issue groups for every mapped section (a paired header/detail layout is
+    one group, a multi-row card is one group). Set the site request to the
+    largest required count, capped at 20: `min(max(sectionIssueGroups), 20)`.
+    Never infer eight or ten from a generic default: a ten-group section must
+    receive ten rows even when another section has only eight groups. Every
+    renderer must still stop at its own existing group count.
+16. Add a browser contract test that verifies representative formatted slots:
+    retained labels remain present, values land in their exact selector/cell,
+    multi-module sections use both responses, raw token separators are absent,
+    vendor static sentinels are absent, and duplicate API records for one issue
+    yield one visible issue row. A test that merely finds API text somewhere in
+    a section is insufficient.
+    For every complex/repeated card, the contract must enumerate its exact
+    container selector, each dynamic child slot, and literal vendor sentinels
+    (old domain, term, numbers, result text and marketing copy) that must be
+    absent after render. Do not use sibling-count/offset selection for a
+    semantic block when the vendor provides a stable class, heading or slot
+    selector; write a dedicated renderer for that block instead.
+    A complex multi-line module (for example, a header plus two number rows,
+    cards with four sub-lines, or four composite kill categories) must always
+    have a dedicated formatter and named renderer. It must write only the
+    pre-existing child text slots for term, labels, values and result; never
+    collapse the section into a generic summary sentence.
+17. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
 
-13. Add a browser contract test that clicks all three draw tabs and, for each
+18. Add a browser contract test that clicks all three draw tabs and, for each
     tab, proves: (a) prediction request `lottery_type` equals the selected
     draw value; (b) mapped prediction data is from that response; and (c) a
     generic title such as `A级猛料大公开` displays the configured regional

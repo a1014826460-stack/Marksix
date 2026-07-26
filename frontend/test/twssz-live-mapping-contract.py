@@ -4,12 +4,32 @@ import time
 from playwright.sync_api import sync_playwright
 
 
+MODULE_ROWS = {
+    "7xiao7ma": [["猴", "龙", "羊", "马", "猪", "狗", "鼠"]],
+    "sixiao_sima": [["猴", "龙", "羊", "马"]],
+    "wensha10ma": [["35", "47", "24", "38", "27", "39", "13", "33", "43", "15"]],
+    "3zxt": [["猴", "龙", "羊"]],
+    "4xiao8ma": [["35", "47", "24", "38", "27", "39", "13", "33"]],
+    "pt2xiao": [["猴", "龙"]],
+    # title_66 is the approved closest replacement for the supplied
+    # 15码中特 cards. Its five tail groups can generate the card's 3/5-tail
+    # and 15/9-code slots without inventing vendor data.
+    "title_66": [["2尾|02,12,22", "4尾|04,14,24", "6尾|06,16,26", "8尾|08,18,28", "0尾|10,20,30"]],
+    "sanxiao_siwei_xiao": [["羊", "蛇", "虎", "马"], ["虎", "马", "猴", "兔"]],
+    "sanxiao_siwei_wei": [["3", "7", "6", "5"], ["4", "9", "8", "6"]],
+    "ma24": [
+        [f"{value:02d}" for value in range(1, 25)],
+        [f"{value:02d}" for value in range(25, 49)],
+    ],
+    "title_48": [["猴", "龙", "羊", "马", "猪", "狗", "鼠", "35", "47", "24", "38"]],
+}
 MODULE_KEYS = [
-    "7xiao7ma", "sixiao_sima", "wensha10ma", "3zxt", "4xiao8ma", "pt2xiao", "title_66",
-    "sanxiao_siwei_xiao", "sanxiao_siwei_wei", "ma24", "daxiao", "3tou", "pt1wei", "pt1xiao",
-    "title_48", "wuzhong5ma", "juesha1wei", "juesha1xiao", "juesha2xiao", "jueshabanbo",
-    "3hang", "pt3xiao", "shuangbo", "title_47", "title_5", "danshuangtema", "title_143",
+    *MODULE_ROWS,
+    "daxiao", "3tou", "pt1wei", "pt1xiao", "title_48", "wuzhong5ma",
+    "juesha1wei", "juesha1xiao", "juesha2xiao", "jueshabanbo", "3hang",
+    "pt3xiao", "shuangbo", "title_47", "title_5", "danshuangtema", "title_143",
 ]
+
 
 
 def payload(lottery_type: str = "3"):
@@ -20,15 +40,22 @@ def payload(lottery_type: str = "3"):
             "moduleKey": key,
             "rows": [
                 {
-                    "term": f"{marker}{module_index + 1:03d}{row_index}",
-                    "prediction": {"tokens": [f"{marker}{key}-{row_index}"], "text": f"{marker}{key}-{row_index}"},
+                    "term": str(207 - row_index),
+                    "prediction": {
+                        "tokens": (
+                        MODULE_ROWS[key][row_index % len(MODULE_ROWS[key])]
+                        if key in {"sanxiao_siwei_xiao", "sanxiao_siwei_wei"}
+                        else MODULE_ROWS.get(key, [[f"{marker}{key}-{row_index}"]])[row_index % len(MODULE_ROWS.get(key, [[f"{marker}{key}-{row_index}"]]))]
+                    ),
+                        "text": f"{marker}{key}-{row_index}",
+                    },
                     "result": {
-                        "isOpened": True,
+                        "isOpened": row_index != 0,
                         "isCorrect": row_index % 2 == 0,
-                        "text": f"{marker}开奖{row_index}",
+                        "text": f"{marker}开奖{row_index}" if row_index else "待开奖",
                     },
                 }
-                for row_index in range(8)
+                for row_index in range(10)
             ],
         })
     return {"ok": True, "data": {"canonical_modules": rows}}
@@ -75,6 +102,7 @@ def main() -> None:
             assert frame is not None, "twssz vendor frame did not load"
             first_table = frame.locator(".dz_content08ab2d table").first
             first_table.locator("td").first.wait_for(state="attached", timeout=10000)
+            assert "暂无期号" not in frame.locator("body").inner_text()
             frame.evaluate("window.TwsszSiteData.preloadPredictions()")
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline and not prediction_requests:
@@ -86,8 +114,10 @@ def main() -> None:
             )
 
             text = first_table.inner_text()
-            assert "台7xiao7ma-0" in text
             assert "台湾 A级猛料大公开" in text
+            assert "七肖" in text and "猴龙羊马猪狗鼠" in text
+            assert "⑩码" in text and "35.47.24.38.27.39.13.33.43.15" in text
+            assert "【" not in text, "A级表必须保留供应商字段布局，而非通用原始 token 行"
 
 
             draw_frame = next(
@@ -107,8 +137,8 @@ def main() -> None:
                     page.wait_for_timeout(100)
                 page.wait_for_timeout(1000)
                 text = first_table.inner_text()
-                assert f"{marker}7xiao7ma-0" in text, (lottery_type, prediction_requests, text)
                 assert title in text
+                assert "七肖" in text and "⑩码" in text, text
 
             # The full eight-row history is fetched only after the visitor
             # reaches prediction content inside the supplied vendor document.
@@ -116,11 +146,84 @@ def main() -> None:
             # switches draw tabs. Trigger history after Hong Kong is active.
             frame.evaluate("window.dispatchEvent(new Event('scroll'))")
             deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and "1:8" not in prediction_requests:
+            while time.monotonic() < deadline and "1:10" not in prediction_requests:
                 page.wait_for_timeout(100)
-            assert "1:8" in prediction_requests, (
+            assert "1:10" in prediction_requests, (
                 "the selected lottery must fetch its own deferred history"
             )
+
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and "207期" not in first_table.inner_text():
+                page.wait_for_timeout(100)
+
+            # A future prediction has no draw result. It must render exactly as
+            # 待开奖, never as a made-up missed result such as 待开奖错.
+            assert "待开奖错" not in frame.locator("body").inner_text()
+
+            grade_text = first_table.inner_text()
+            assert "207期" in grade_text and "七肖" in grade_text and "猴龙羊马猪狗鼠" in grade_text, grade_text
+            assert "⑩码" in grade_text and "35.47.24.38.27.39.13.33.43.15" in grade_text
+            assert "开：待开奖" in grade_text
+            assert "暂无期号" not in frame.locator("body").inner_text()
+
+            lianxiao_rows = frame.locator("#top_14 + table + div tr")
+            assert lianxiao_rows.count() == 32
+            assert "198期" in lianxiao_rows.nth(18).inner_text(), "16 existing linked groups need 16 API rows"
+
+            lianxiao = frame.locator("#top_14 + table + div").first
+            lianxiao_text = lianxiao.inner_text()
+            assert "207期" in lianxiao_text and "开 待开奖" in lianxiao_text, lianxiao_text
+            assert "【3.7尾】【6.5尾】" in lianxiao_text and "【羊蛇】【虎马】" in lianxiao_text
+            assert "港sanxiao_siwei_xiao" not in lianxiao_text
+
+            m24_rows = frame.locator("[data-prediction-section='ma24'] tr.zt24mtr")
+            assert m24_rows.count() >= 4
+            assert m24_rows.nth(0).locator("td").first.inner_text() == "01"
+            assert m24_rows.nth(1).locator("td").last.inner_text() == "24"
+            assert m24_rows.nth(2).locator("td").first.inner_text() == "25"
+            assert m24_rows.nth(3).locator("td").last.inner_text() == "48"
+            ma24_headings = frame.locator("[data-site-slot='ma24-heading']")
+            assert ma24_headings.count() == 8
+            assert "207期 精选24码" in ma24_headings.first.inner_text()
+            assert "待加载期" not in ma24_headings.first.inner_text()
+            assert "准确率绝对100" not in ma24_headings.first.inner_text()
+
+            # 精准四肖标题后的 15 码中特是独立的复杂卡片。所有既有槽位必须
+            # 替换为后端数据，不能仅让相邻区域含有 API 文本就通过。
+            cards = frame.locator(".bbzhong122")
+            assert cards.count() == 8
+            first_card_text = cards.first.inner_text()
+            assert "香港 15码中特" in first_card_text
+            assert "207期必中三尾：2-4-6" in first_card_text
+            assert "207期必中五尾：2-4-6-8-0" in first_card_text
+            assert "必中15码：02.12.22.04.14.24.06.16.26.08.18.28.10.20.30" in first_card_text
+            assert "必中九码：02.12.22.04.14.24.06.16.26" in first_card_text
+            assert "207期一尾一码：（02）" in first_card_text
+            for forbidden in ("执笔先生", "gat566.cc", "205期必中三尾", "单车变宝马", "14.24.04.18.48"):
+                assert forbidden not in first_card_text, (forbidden, first_card_text)
+
+            # AI心水 uses its supplied multi-line card layout. It must not be
+            # routed through the generic sibling-offset summary renderer.
+            ai_root = frame.locator("[data-prediction-section='title_48-ai']")
+            assert ai_root.count() == 1
+            ai_text = ai_root.inner_text()
+            assert "207期" in ai_text and "生肖:猴龙羊马猪狗" in ai_text
+            assert "35.47.24.38" in ai_text
+            assert "AI心水玄机论坛：" not in ai_text
+            assert "待加载期" not in ai_text
+            # The frontend must not repeat a response row when the backend
+            # contains duplicate issue records. Empty vendor rows remain empty.
+            pingte_wei = frame.locator("#top_3").locator("xpath=following-sibling::div[contains(@class, 'dz_content08ab2d')][1]")
+            pingte_wei_text = pingte_wei.inner_text()
+            assert pingte_wei_text.count("207期") == 1
+            assert pingte_wei_text.count("206期") == 1
+            assert "暂无期号" not in pingte_wei_text
+
+            tiandi = frame.get_by_text("精准天地+两肖", exact=True).locator("xpath=ancestor::table[1]/following-sibling::table[1]")
+            tiandi_text = tiandi.inner_text()
+            assert tiandi_text.count("207期") == 1
+            assert tiandi_text.count("206期") == 1
+            assert "暂无期号" not in tiandi_text
 
             # Every mapped section must contain the selected Hong Kong response
             # only: no vendor term, result, placeholder or static hit data.
@@ -145,14 +248,22 @@ def main() -> None:
                 )
             for index in range(sections.count()):
                 section_text = sections.nth(index).inner_text()
-                assert "港" in section_text, (index, sections.nth(index).get_attribute("data-prediction-section"), section_text[:300])
-                for forbidden in ("204期", "46鸡对", "13马对", "?????"):
+                section_key = sections.nth(index).get_attribute("data-prediction-section")
+                # Presentation-only cards such as 一头一码 legitimately render
+                # the selected canonical values without a regional marker.
+                if not (str(section_key).startswith("3tou-head") or section_key == "aaa-grade"):
+                    assert "港" in section_text, (index, section_key, section_text[:300])
+            for forbidden in ("46鸡对", "13马对", "?????"):
                     assert forbidden not in section_text, (
                         index,
                         sections.nth(index).get_attribute("data-prediction-section"),
                         forbidden,
                         section_text[:500],
                     )
+
+            body_text = frame.locator("body").inner_text()
+            for forbidden in ("暂无期号", "暂无后端资料", "待加载期"):
+                assert forbidden not in body_text, forbidden
 
             # These previously escaped the generic table scan. They must now
             # be explicit API-backed sections with no vendor historical data.
@@ -161,8 +272,13 @@ def main() -> None:
                 heading.wait_for(state="attached", timeout=10000)
                 container = heading.locator("xpath=following::table[1]")
                 assert "港" in container.inner_text(), (title, container.inner_text()[:500])
-                for forbidden in ("204期", "46鸡对", "13马对", "?????"):
+                for forbidden in ("46鸡对", "13马对", "?????"):
                     assert forbidden not in container.inner_text(), (title, forbidden, container.inner_text()[:500])
+
+            composite = frame.get_by_text("综合绝杀", exact=True).locator("xpath=ancestor::table[1]/following-sibling::table[1]")
+            composite_text = composite.inner_text()
+            for label in ("(1)尾", "(1)肖", "(2)肖", "(1)半波"):
+                assert label in composite_text, (label, composite_text[:1000])
 
         finally:
             browser.close()

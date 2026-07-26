@@ -39,7 +39,7 @@ function getRegisteredSiteByDefaultSiteId(siteId: number) {
 
 function parsePositiveInt(value: string | null, fallback: number) {
   const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 20) : fallback
 }
 
 function parseLotteryType(value: string | null, fallback: 1 | 2 | 3): 1 | 2 | 3 {
