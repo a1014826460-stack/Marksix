@@ -73,9 +73,10 @@
   var historicalModulesByLottery = {};
   var historicalRequestsByLottery = {};
   var historyActivated = false;
-  // The supplied page has ten issue groups in its largest prediction blocks.
+  // The supplied 连肖连尾 section has sixteen existing issue groups. Each
+  // renderer still stops at its own existing group count.
   // Individual renderers still stop at their own existing group count.
-  var TWSSZ_HISTORY_LIMIT = 10;
+  var TWSSZ_HISTORY_LIMIT = 16;
 
   // Each renderer owns a vendor-specific slot contract. The targets are only
   // existing vendor nodes; no renderer may replace an entire row or container.
@@ -252,6 +253,14 @@
   function drawValue(row) {
     var result = row && row.result || {};
     return result.text || "待开奖";
+  }
+
+  function resultCode(row) {
+    var result = row && row.result || {};
+    var code = String(result.code || "").match(/\d{1,2}/);
+    if (!code) code = String(result.text || "").match(/(?:开奖|开)\D*(\d{1,2})(?!\d)/);
+    var value = code && (code[1] || code[0]);
+    return value ? String(value).padStart(2, "0") : "";
   }
 
   function displayResult(row, hitLabel) {
@@ -600,17 +609,19 @@
         leaves.forEach(function (leaf, leafIndex) {
           leaf.textContent = (codeValues[leafIndex] || "") + (leafIndex < codeValues.length - 1 ? "." : "");
           if (leafIndex < codeValues.length) leaf.setAttribute("color", "#FF0000");
+          // The `bgcolor` marker belongs to the supplied number node, so
+          // updating it preserves the vendor's own yellow hit treatment.
+          leaf.removeAttribute("bgcolor");
         });
       });
       // The supplied line already contains nested number fonts. Reuse the
       // matching existing one for a yellow special-number highlight.
-      var special = row && row.result && row.result.isOpened && String(row.result.text || "").match(/\d{1,2}/);
-      var specialNumber = special && (special[0].length === 1 ? "0" + special[0] : special[0]);
+      var specialNumber = row && row.result && row.result.isOpened && resultCode(row);
       Array.prototype.forEach.call(lines, function (line) {
         var numberFont = Array.prototype.filter.call(line.querySelectorAll("font"), function (node) {
-          return !node.children.length && String(node.textContent || "").trim() === specialNumber;
+          return !node.children.length && String(node.textContent || "").replace(/\D/g, "") === specialNumber;
         })[0];
-        if (numberFont) numberFont.setAttribute("color", "#FFFF00");
+        if (numberFont) numberFont.setAttribute("bgcolor", "#FFFF00");
       });
       if (footer) {
         footer.setAttribute("data-site-slot", "fifteen-code-footer");
@@ -1033,7 +1044,7 @@
     lottery = lottery || activeLottery;
     var lotteryType = lottery.lotteryType;
     if (historicalRequestsByLottery[lotteryType]) return historicalRequestsByLottery[lotteryType];
-    historicalRequestsByLottery[lotteryType] = preload("predictions", { lotteryType: lotteryType, historyLimit: 10, includeVendor: false }).then(function (result) {
+    historicalRequestsByLottery[lotteryType] = preload("predictions", { lotteryType: lotteryType, historyLimit: TWSSZ_HISTORY_LIMIT, includeVendor: false }).then(function (result) {
       var modules = modulesFrom(result);
       if (!modules || !Object.keys(modules).length) modules = latestModulesByLottery[lotteryType] || {};
       historicalModulesByLottery[lotteryType] = modules;

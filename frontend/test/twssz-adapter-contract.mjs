@@ -6,7 +6,7 @@ for (const token of ["createElement", "appendChild", "replaceChildren", "innerHT
   if (adapter.includes(token)) throw new Error(`adapter must not mutate UI: ${token}`)
 }
 
-for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "historyLimit: 10", "message", "lottery-change", "activeLottery", "titleRegionPrefix"]) {
+for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "TWSSZ_HISTORY_LIMIT = 16", "historyLimit: TWSSZ_HISTORY_LIMIT", "message", "lottery-change", "activeLottery", "titleRegionPrefix", "function resultCode", "setAttribute(\"bgcolor\", \"#FFFF00\")"]) {
   if (!adapter.includes(token)) throw new Error(`twssz adapter missing ${token}`)
 }
 

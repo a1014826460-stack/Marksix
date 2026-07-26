@@ -52,10 +52,15 @@ def payload(lottery_type: str = "3"):
                     "result": {
                         "isOpened": row_index != 0,
                         "isCorrect": row_index % 2 == 0,
-                        "text": f"{marker}开奖{row_index}" if row_index else "待开奖",
+                        # The leading issue proves hit formatting must use the
+                        # canonical code instead of the first text number.
+                        "code": "02",
+                        "text": f"{marker}第999期，开奖02" if row_index else "待开奖",
                     },
                 }
-                for row_index in range(10)
+                # The supplied 连肖连尾 section has sixteen existing issue
+                # groups, so its complete request must provide every slot.
+                for row_index in range(16)
             ],
         })
     return {"ok": True, "data": {"canonical_modules": rows}}
@@ -146,10 +151,10 @@ def main() -> None:
             # switches draw tabs. Trigger history after Hong Kong is active.
             frame.evaluate("window.dispatchEvent(new Event('scroll'))")
             deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and "1:10" not in prediction_requests:
+            while time.monotonic() < deadline and "1:16" not in prediction_requests:
                 page.wait_for_timeout(100)
-            assert "1:10" in prediction_requests, (
-                "the selected lottery must fetch its own deferred history"
+            assert "1:16" in prediction_requests, (
+                "the selected lottery must request all sixteen supplied history groups"
             )
 
             deadline = time.monotonic() + 10
@@ -168,7 +173,7 @@ def main() -> None:
 
             lianxiao_rows = frame.locator("#top_14 + table + div tr")
             assert lianxiao_rows.count() == 32
-            assert "198期" in lianxiao_rows.nth(18).inner_text(), "16 existing linked groups need 16 API rows"
+            assert "192期" in lianxiao_rows.nth(30).inner_text(), "16 existing linked groups need 16 API rows"
 
             lianxiao = frame.locator("#top_14 + table + div").first
             lianxiao_text = lianxiao.inner_text()
@@ -201,6 +206,16 @@ def main() -> None:
             assert "207期一尾一码：（02）" in first_card_text
             for forbidden in ("执笔先生", "gat566.cc", "205期必中三尾", "单车变宝马", "14.24.04.18.48"):
                 assert forbidden not in first_card_text, (forbidden, first_card_text)
+
+            # A hit must use the vendor's existing yellow background marker,
+            # rather than yellow foreground text that is not visually clear.
+            hit_number = cards.nth(1).locator("font[bgcolor='#FFFF00']")
+            assert hit_number.count() == 2 and all(
+                hit_number.nth(index).inner_text().strip(".") == "02"
+                for index in range(hit_number.count())
+            ), (
+                "命中号码必须使用供应商既有的黄色高亮节点"
+            )
 
             # AI心水 uses its supplied multi-line card layout. It must not be
             # routed through the generic sibling-offset summary renderer.
