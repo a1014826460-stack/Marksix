@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -298,6 +298,28 @@ def _install_twssz_five_no_hit_module(conn: Any) -> None:
     _install_twssz_site_profile(conn)
 
 
+def _relax_prediction_control_prefix_uniqueness(conn: Any) -> None:
+    """Allow future generation when cross-site prefix diversity is exhausted."""
+    if getattr(conn, "engine", "") != "postgres":
+        return
+
+    rows = conn.execute(
+        """
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'prediction_generation_controls'
+        """
+    ).fetchall()
+    for row in rows:
+        index_name = str(row["indexname"] or "")
+        index_def = str(row["indexdef"] or "").lower()
+        if not index_name or "unique" not in index_def or "prefix_hash" not in index_def:
+            continue
+        escaped_name = index_name.replace('"', '""')
+        conn.execute(f'DROP INDEX IF EXISTS "{escaped_name}"')
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -307,6 +329,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(6, "sync_twssz_expanded_page_authorization", _sync_twssz_expanded_page_authorization),
     Migration(7, "install_twssz_five_no_hit_module", _install_twssz_five_no_hit_module),
     Migration(8, "sync_twssz_four_zodiac_module", _sync_twssz_four_zodiac_module),
+    Migration(9, "relax_prediction_control_prefix_uniqueness", _relax_prediction_control_prefix_uniqueness),
 )
 
 

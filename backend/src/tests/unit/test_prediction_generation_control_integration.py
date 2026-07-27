@@ -102,6 +102,94 @@ def test_control_plan_forces_cross_site_prefix_and_same_site_adjacent_difference
     assert other_site.prefix_signature != adjacent.prefix_signature
 
 
+def test_control_plan_reuses_prefix_when_binary_future_mode_is_exhausted(monkeypatch, tmp_path):
+    """A diversity preference must not prevent all sites from generating a future row."""
+    db_path = str(tmp_path / "binary-prefix-fallback.sqlite3")
+    ensure_admin_tables(db_path)
+    config = PREDICTION_CONFIGS["daxiao"]
+    monkeypatch.setattr(service, "choose_target_hit", lambda *_args, **_kwargs: True)
+
+    with connect(db_path) as conn:
+        first = _plan_persisted_future_control(
+            conn=conn, config=config, lottery_type=3, site_id=4, site_web_id=4,
+            draw={"year": 2026, "term": 177}, truth=_truth(),
+            simulation_config=SimulationConfig(target_hit_rate=1.0),
+            mechanism_key="daxiao", predicted_labels=("大",),
+        )
+        assert first is not None
+        first_reservation = reserve_control(
+            conn,
+            lottery_type_id=3,
+            year=2026,
+            term=177,
+            mode_id=57,
+            web_id=4,
+            rule_id=first.rule_id,
+            rule_revision=first.rule_revision,
+            target_hit=first.target_hit,
+            verified_hit=first.verified_hit,
+            signature=first.signature,
+            prefix_signature=first.prefix_signature,
+            created_at="2026-07-27T00:00:00Z",
+        )
+        assert first_reservation["reserved"] is True
+
+        second = _plan_persisted_future_control(
+            conn=conn, config=config, lottery_type=3, site_id=5, site_web_id=5,
+            draw={"year": 2026, "term": 177}, truth=_truth(),
+            simulation_config=SimulationConfig(target_hit_rate=1.0),
+            mechanism_key="daxiao", predicted_labels=("大",),
+        )
+
+    assert second is not None
+    assert second.prefix_signature == first.prefix_signature
+
+
+def test_process_module_persists_binary_future_rows_for_multiple_sites(monkeypatch, tmp_path):
+    """Every site must receive a future row even when its prefix repeats."""
+    db_path = str(tmp_path / "binary-multiple-sites.sqlite3")
+    ensure_admin_tables(db_path)
+    config = PREDICTION_CONFIGS["daxiao"]
+    persisted_rows: list[dict] = []
+
+    monkeypatch.setattr(service, "_resolve_prediction_config_with_mode_fallback", lambda *_args: (config, "daxiao", False))
+    monkeypatch.setattr(service.generation_repository, "get_future_draw_truth", lambda *_args, **_kwargs: _truth())
+    monkeypatch.setattr(service, "choose_target_hit", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        service,
+        "predict",
+        lambda **_kwargs: {
+            "prediction": {"labels": ["大"], "content": "大"},
+            "mode": {"resolved_labels": list(config.labels)},
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "_persist_generated_row",
+        lambda _conn, _table, row_data, allow_overwrite, *, commit=True:
+            persisted_rows.append(dict(row_data)) or {"action": "inserted"},
+    )
+
+    reports: list[dict] = []
+    with connect(db_path) as conn:
+        for site_id, web_id in ((4, 4), (5, 5)):
+            reports.append(service._process_single_module(
+                conn=conn,
+                module_row={"id": site_id, "mechanism_key": "daxiao", "mode_id": 57},
+                draws=[], future_draws=[{"year": 2026, "term": 177, "numbers_str": "", "_future": True}],
+                future_only=True, safety_draw_map={(2026, 177): True}, lottery_type=3,
+                site_id=site_id, site_web_id=web_id, db_path=db_path, default_target_hit_rate=0.65,
+                simulation_config=SimulationConfig(target_hit_rate=1.0), zodiac_map={"27": "虎"},
+                color_map={"27": "绿波"}, trigger="test", allow_overwrite=True,
+                resolve_prediction_table_for_mode=lambda _conn, _mode_id, _default: "mode_payload_57",
+                build_generated_prediction_row_data=lambda **kwargs: kwargs,
+            ))
+
+    assert [report["inserted"] for report in reports] == [1, 1]
+    assert [report["errors"] for report in reports] == [0, 0]
+    assert len(persisted_rows) == 2
+
+
 def test_default_future_row_carries_an_internal_control_plan_without_result_fields(monkeypatch, tmp_path):
     db_path = str(tmp_path / "controlled-default-row.sqlite3")
     ensure_admin_tables(db_path)

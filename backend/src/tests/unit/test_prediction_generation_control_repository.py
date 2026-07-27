@@ -33,7 +33,7 @@ def _reserve(
     )
 
 
-def test_cross_site_same_prefix_cannot_be_reserved(tmp_path):
+def test_cross_site_same_prefix_can_be_reserved(tmp_path):
     db_path = str(tmp_path / "controls.sqlite3")
     ensure_admin_tables(db_path)
     with connect(db_path) as conn:
@@ -56,7 +56,7 @@ def test_cross_site_same_prefix_cannot_be_reserved(tmp_path):
         ).fetchone()
 
     assert first == {"reserved": True, "reason": ""}
-    assert second == {"reserved": False, "reason": "cross_site_prefix_conflict"}
+    assert second == {"reserved": True, "reason": ""}
     assert "虎" not in str(dict(stored))
     assert "猪" not in str(dict(stored))
 

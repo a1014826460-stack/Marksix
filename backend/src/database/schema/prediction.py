@@ -322,8 +322,8 @@ def ensure_prediction_tables(conn: Any, pk_sql: str) -> None:
         """
     )
 
-    # Internal-only future-generation bookkeeping. Candidate hashes prevent
-    # duplicate reservations without retaining the future draw itself.
+    # Internal-only future-generation bookkeeping. A site may reserve only one
+    # candidate per issue/mode; cross-site prefix diversity is best-effort.
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS prediction_generation_controls (
@@ -341,8 +341,7 @@ def ensure_prediction_tables(conn: Any, pk_sql: str) -> None:
             prefix_hash TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(lottery_type_id, year, term, mode_id, web_id),
-            UNIQUE(lottery_type_id, year, term, mode_id, prefix_hash)
+            UNIQUE(lottery_type_id, year, term, mode_id, web_id)
         )
         """
     )

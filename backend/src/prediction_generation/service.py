@@ -680,33 +680,48 @@ def _plan_persisted_future_control(
         mode_id=int(config.default_modes_id),
         web_id=int(site_web_id),
     )
+    # Prefix variation is desirable between sites, but some small candidate
+    # spaces (for example 大/小) cannot satisfy it for every enabled site.
+    # In that case, retain the verified hit policy and permit a repeated prefix.
+    same_issue_prefix_hashes = {str(row["prefix_hash"]) for row in same_issue_controls}
+    rejected_prefixes = set(rejected_prefix_hashes or ())
+    candidate_kwargs = {
+        "config": config,
+        "rule": rule,
+        "truth": truth,
+        "predicted_labels": tuple(predicted_labels),
+        "should_hit": target_hit,
+        "forbidden_prefixes": set(),
+        "forbidden_signatures": set(),
+        "forbidden_signature_hashes": (
+            {str(row["signature_hash"]) for row in adjacent_controls}
+            | set(rejected_signature_hashes or ())
+        ),
+        "seed": (
+            f"controlled-candidate:{site_id}:{site_web_id}:{lottery_type}:"
+            f"{config.default_modes_id}:{year}:{term}:{mechanism_key}:{int(attempt)}"
+        ),
+        "conn": conn,
+    }
     try:
         candidate = choose_controlled_labels(
-            config=config,
-            rule=rule,
-            truth=truth,
-            predicted_labels=tuple(predicted_labels),
-            should_hit=target_hit,
-            forbidden_prefixes=set(),
-            forbidden_signatures=set(),
-            forbidden_prefix_hashes=(
-                {str(row["prefix_hash"]) for row in same_issue_controls}
-                | set(rejected_prefix_hashes or ())
-            ),
-            forbidden_signature_hashes=(
-                {str(row["signature_hash"]) for row in adjacent_controls}
-                | set(rejected_signature_hashes or ())
-            ),
-            seed=(
-                f"controlled-candidate:{site_id}:{site_web_id}:{lottery_type}:"
-                f"{config.default_modes_id}:{year}:{term}:{mechanism_key}:{int(attempt)}"
-            ),
-            conn=conn,
+            **candidate_kwargs,
+            forbidden_prefix_hashes=same_issue_prefix_hashes | rejected_prefixes,
         )
     except ControlledCandidateUnavailable as exc:
-        raise _PersistedFutureControlUnavailable(
-            f"mode_id={int(config.default_modes_id or 0)}: controlled candidate unavailable"
-        ) from exc
+        if rejected_prefixes:
+            raise _PersistedFutureControlUnavailable(
+                f"mode_id={int(config.default_modes_id or 0)}: controlled candidate unavailable"
+            ) from exc
+        try:
+            candidate = choose_controlled_labels(
+                **candidate_kwargs,
+                forbidden_prefix_hashes=set(),
+            )
+        except ControlledCandidateUnavailable as fallback_exc:
+            raise _PersistedFutureControlUnavailable(
+                f"mode_id={int(config.default_modes_id or 0)}: controlled candidate unavailable"
+            ) from fallback_exc
     return _PersistedFutureControl(
         labels=candidate.labels,
         signature=candidate.signature,

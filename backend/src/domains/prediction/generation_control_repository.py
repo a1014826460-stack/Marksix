@@ -49,18 +49,6 @@ def reserve_control(
     """Reserve a site candidate without exposing its raw signature to callers."""
     signature_hash = _signature_hash(signature)
     prefix_hash = _signature_hash(prefix_signature)
-    existing_prefix = conn.execute(
-        """
-        SELECT 1
-        FROM prediction_generation_controls
-        WHERE lottery_type_id = ? AND year = ? AND term = ? AND mode_id = ? AND prefix_hash = ?
-        LIMIT 1
-        """,
-        (int(lottery_type_id), int(year), int(term), int(mode_id), prefix_hash),
-    ).fetchone()
-    if existing_prefix:
-        return {"reserved": False, "reason": "cross_site_prefix_conflict"}
-
     existing_site = conn.execute(
         """
         SELECT 1
