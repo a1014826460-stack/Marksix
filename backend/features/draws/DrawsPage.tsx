@@ -48,6 +48,15 @@ type AutoFillResult = {
   created: Array<{ year: number; term: number; numbers: string; draw_time: string }>
 }
 
+type AutoFillSettings = {
+  enabled: boolean
+  count: number
+  time: string
+  timezone: "UTC"
+  last_run: { status: string; finished_at: string | null; error: string } | null
+  next_run_at: string | null
+}
+
 function formatDateInput(date: Date) {
   const yyyy = date.getFullYear()
   const mm = String(date.getMonth() + 1).padStart(2, "0")
@@ -112,6 +121,8 @@ export function DrawsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [autoFillCount, setAutoFillCount] = useState("12")
   const [autoFilling, setAutoFilling] = useState(false)
+  const [autoFillSettings, setAutoFillSettings] = useState<AutoFillSettings | null>(null)
+  const [autoFillSettingsSaving, setAutoFillSettingsSaving] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
 
   // Column resize (mouse + touch)
@@ -167,11 +178,12 @@ export function DrawsPage() {
   const load = useCallback(async (currentPage?: number, currentPageSize?: number): Promise<Draw[]> => {
     const p = currentPage ?? page
     const ps = currentPageSize ?? pageSize
-    const [drawData, lotteryData] = await Promise.all([
+    const [drawData, lotteryData, autoFillSettingsData] = await Promise.all([
       adminApi<{ draws: Draw[]; total: number; page: number; page_size: number; total_pages: number }>(
         `/admin/draws?lottery_type_id=${TAIWAN_LOTTERY_ID}&page=${p}&page_size=${ps}`,
       ),
       adminApi<{ lottery_types: LotteryType[] }>("/admin/lottery-types"),
+      adminApi<{ ok: true; data: AutoFillSettings }>("/admin/draws/auto-fill-future/settings"),
     ])
     setRows(drawData.draws)
     if (typeof drawData.total === "number") setTotal(drawData.total)
@@ -179,6 +191,7 @@ export function DrawsPage() {
     if (typeof drawData.page === "number") setPage(drawData.page)
     if (typeof drawData.page_size === "number") setPageSize(drawData.page_size)
     setLotteries(lotteryData.lottery_types)
+    setAutoFillSettings(autoFillSettingsData.data)
     return drawData.draws
   }, [page, pageSize])
 
@@ -364,6 +377,39 @@ export function DrawsPage() {
     }
   }
 
+  async function saveAutoFillSettings() {
+    if (!autoFillSettings) return
+    const count = Number(autoFillSettings.count)
+    if (!Number.isInteger(count) || count < 1 || count > 60) {
+      toast.error("自动填写期数必须在 1 到 60 之间")
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(autoFillSettings.time)) {
+      toast.error("每日执行时间必须为 HH:mm 格式")
+      return
+    }
+    setAutoFillSettingsSaving(true)
+    try {
+      const result = await adminApi<{ ok: true; data: AutoFillSettings }>(
+        "/admin/draws/auto-fill-future/settings",
+        {
+          method: "PUT",
+          body: jsonBody({
+            enabled: autoFillSettings.enabled,
+            count,
+            time: autoFillSettings.time,
+          }),
+        },
+      )
+      setAutoFillSettings((current) => current ? { ...current, ...result.data } : result.data)
+      toast.success("自动填写设置已保存")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存自动填写设置失败")
+    } finally {
+      setAutoFillSettingsSaving(false)
+    }
+  }
+
   function openEditor(row: Draw) {
     if (row.is_opened) {
       toast.error("已开奖记录禁止修改")
@@ -418,6 +464,53 @@ export function DrawsPage() {
             新增开奖记录
           </Button>
         </div>
+
+        <Card className="p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <div className="min-w-48">
+              <h2 className="text-base font-semibold">台湾彩自动填写设置</h2>
+              <p className="text-sm text-muted-foreground">每天自动补齐未来开奖，既有记录不会覆盖。</p>
+            </div>
+            <label className="flex h-9 items-center gap-2 text-sm whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={autoFillSettings?.enabled ?? false}
+                disabled={!autoFillSettings || autoFillSettingsSaving}
+                onChange={(event) => setAutoFillSettings((current) => current ? { ...current, enabled: event.target.checked } : current)}
+              />
+              启用自动填写
+            </label>
+            <Field label="保留未来期数" className="w-full lg:w-32">
+              <Input
+                type="number"
+                min={1}
+                max={60}
+                value={autoFillSettings?.count ?? ""}
+                disabled={!autoFillSettings || autoFillSettingsSaving}
+                onChange={(event) => setAutoFillSettings((current) => current ? { ...current, count: Number(event.target.value) } : current)}
+              />
+            </Field>
+            <Field label="每日执行时间（UTC）" className="w-full lg:w-40">
+              <Input
+                type="time"
+                value={autoFillSettings?.time ?? ""}
+                disabled={!autoFillSettings || autoFillSettingsSaving}
+                onChange={(event) => setAutoFillSettings((current) => current ? { ...current, time: event.target.value } : current)}
+              />
+            </Field>
+            <Button type="button" onClick={saveAutoFillSettings} disabled={!autoFillSettings || autoFillSettingsSaving}>
+              <Save className="mr-1 h-4 w-4" />
+              保存自动填写设置
+            </Button>
+          </div>
+          {autoFillSettings && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              服务器时区：{autoFillSettings.timezone}；
+              {autoFillSettings.next_run_at ? `下次执行：${autoFillSettings.next_run_at}` : "尚未计划下次执行"}
+              {autoFillSettings.last_run ? `；上次执行：${autoFillSettings.last_run.status}` : ""}
+            </p>
+          )}
+        </Card>
 
         <div
           className={`relative z-20 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[720px] opacity-100" : "max-h-0 opacity-0"}`}

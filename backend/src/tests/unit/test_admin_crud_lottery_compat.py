@@ -1,6 +1,38 @@
 from __future__ import annotations
 
 from random import Random
+
+import pytest
+
+
+def test_taiwan_future_autofill_settings_defaults_and_validation(tmp_path):
+    from domains.lottery.service import (
+        get_taiwan_future_autofill_settings,
+        parse_taiwan_future_autofill_settings,
+        save_taiwan_future_autofill_settings,
+    )
+
+    db_path = tmp_path / "taiwan-autofill-settings.sqlite3"
+    settings = get_taiwan_future_autofill_settings(db_path)
+    assert settings == {"enabled": False, "count": 12, "time": "00:00", "timezone": "UTC"}
+
+    saved = save_taiwan_future_autofill_settings(
+        db_path,
+        {"enabled": True, "count": 18, "time": "07:45"},
+        changed_by="admin",
+    )
+    assert saved == {"enabled": True, "count": 18, "time": "07:45", "timezone": "UTC"}
+    assert get_taiwan_future_autofill_settings(db_path) == saved
+
+    for payload in (
+        {"enabled": "yes", "count": 12, "time": "07:45"},
+        {"enabled": True, "count": 0, "time": "07:45"},
+        {"enabled": True, "count": 61, "time": "07:45"},
+        {"enabled": True, "count": 12, "time": "24:00"},
+        {"enabled": True, "count": 12, "time": "7:45"},
+    ):
+        with pytest.raises(ValueError):
+            parse_taiwan_future_autofill_settings(payload)
 from pathlib import Path
 
 from db import connect

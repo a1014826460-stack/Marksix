@@ -124,6 +124,24 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "每日自动预测触发时间（北京时间），格式 HH:mm。管理员可在后台修改。",
         "is_secret": 0,
     },
+    "taiwan_future_autofill.enabled": {
+        "value": False,
+        "value_type": "bool",
+        "description": "是否按每日设定时间自动补齐台湾彩未来开奖记录。",
+        "is_secret": 0,
+    },
+    "taiwan_future_autofill.count": {
+        "value": 12,
+        "value_type": "int",
+        "description": "台湾彩自动填写需要保留的未来开奖记录期数，范围 1 到 60。",
+        "is_secret": 0,
+    },
+    "taiwan_future_autofill.time": {
+        "value": "00:00",
+        "value_type": "time",
+        "description": "台湾彩自动填写每日执行时间（服务器时区 UTC），格式 HH:mm。",
+        "is_secret": 0,
+    },
     "history_backfill_delay_after_draw": {
         "value": 15,
         "value_type": "int",
@@ -1433,8 +1451,12 @@ def validate_config_value(key: str, value: Any, value_type: str) -> tuple[bool, 
 
     if value_type == "time":
         import re as _re
-        if _re.match(r"^\d{1,2}:\d{2}(:\d{2})?$", str(value).strip()):
-            return True, ""
+        text = str(value).strip()
+        match = _re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$", text)
+        if match:
+            hour, minute, second = (int(part) if part is not None else 0 for part in match.groups())
+            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                return True, ""
         return False, f"'{key}' 需要 HH:mm 或 HH:mm:ss 时间格式，当前值: {value}"
 
     # 字符串类型不做校验

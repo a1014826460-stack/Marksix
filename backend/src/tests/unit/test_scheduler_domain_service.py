@@ -166,6 +166,49 @@ def test_scheduler_service_detects_completed_daily_prediction_for_schedule_date(
     assert not service.has_completed_daily_prediction_task(db_path, "2026-06-28")
 
 
+def test_taiwan_future_autofill_schedule_catches_up_once_and_rolls_to_next_utc_day(tmp_path):
+    from domains.lottery.service import save_taiwan_future_autofill_settings
+    from domains.scheduler import service
+
+    db_path = tmp_path / "taiwan-autofill-schedule.sqlite3"
+    ensure_admin_tables(db_path)
+    save_taiwan_future_autofill_settings(
+        db_path,
+        {"enabled": True, "count": 12, "time": "07:45"},
+        changed_by="admin",
+    )
+    now = datetime(2026, 7, 27, 8, 0, tzinfo=timezone.utc)
+
+    service.ensure_taiwan_future_autofill_task(db_path, now=now)
+    due = service.acquire_due_scheduler_tasks(db_path, worker_id="worker-a", limit=1)
+    assert len(due) == 1
+    assert due[0]["task_key"] == "taiwan_future_draw_autofill:2026-07-27"
+
+    service.mark_scheduler_task_done(db_path, int(due[0]["id"]))
+    service.ensure_taiwan_future_autofill_task(db_path, now=now)
+    with connect(db_path) as conn:
+        next_task = conn.execute(
+            "SELECT task_key, run_at, status FROM scheduler_tasks WHERE task_key = ?",
+            ("taiwan_future_draw_autofill:2026-07-28",),
+        ).fetchone()
+    assert next_task["status"] == "pending"
+    assert next_task["run_at"] == "2026-07-28T07:45:00+00:00"
+
+
+def test_taiwan_future_autofill_schedule_is_not_created_when_disabled(tmp_path):
+    from domains.scheduler import service
+
+    db_path = tmp_path / "taiwan-autofill-disabled.sqlite3"
+    ensure_admin_tables(db_path)
+    service.ensure_taiwan_future_autofill_task(
+        db_path,
+        now=datetime(2026, 7, 27, 8, 0, tzinfo=timezone.utc),
+    )
+    with connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) AS count FROM scheduler_tasks").fetchone()["count"]
+    assert count == 0
+
+
 def test_scheduler_service_runs_due_tasks_and_owns_lifecycle(tmp_path, monkeypatch):
     from domains.scheduler import service
 

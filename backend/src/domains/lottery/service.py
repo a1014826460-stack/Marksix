@@ -19,7 +19,7 @@ from helpers import (
     parse_bool,
     sync_lottery_type_next_time_from_latest_draw,
 )
-from runtime_config import get_config_from_conn
+from runtime_config import get_config, get_config_from_conn, upsert_system_config
 from tables import ensure_admin_tables
 
 
@@ -79,6 +79,64 @@ def _resolve_taiwan_draw_clock(conn: Any) -> tuple[int, int, int]:
         except ValueError:
             continue
     return 22, 30, 0
+
+
+TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX = "taiwan_future_autofill."
+TAIWAN_FUTURE_AUTOFILL_TIMEZONE = "UTC"
+
+
+def parse_taiwan_future_autofill_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate the complete administrator-managed Taiwan future-draw schedule."""
+    if not isinstance(payload, dict):
+        raise ValueError("自动填写设置必须是对象")
+    enabled = payload.get("enabled")
+    count = payload.get("count")
+    time_text = payload.get("time")
+    if not isinstance(enabled, bool):
+        raise ValueError("自动填写启用状态必须是布尔值")
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 60:
+        raise ValueError("自动填写期数必须在 1 到 60 之间")
+    if not isinstance(time_text, str) or len(time_text) != 5:
+        raise ValueError("自动填写时间必须为 HH:mm 格式")
+    try:
+        hour_text, minute_text = time_text.split(":", 1)
+        hour, minute = int(hour_text), int(minute_text)
+    except (ValueError, TypeError):
+        raise ValueError("自动填写时间必须为 HH:mm 格式") from None
+    if not (hour_text.isdigit() and minute_text.isdigit() and 0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("自动填写时间必须为 HH:mm 格式")
+    return {"enabled": enabled, "count": count, "time": time_text, "timezone": TAIWAN_FUTURE_AUTOFILL_TIMEZONE}
+
+
+def get_taiwan_future_autofill_settings(db_path: str | Path) -> dict[str, Any]:
+    """Return the effective persisted Taiwan future-draw schedule in server time."""
+    return parse_taiwan_future_autofill_settings(
+        {
+            "enabled": get_config(db_path, f"{TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX}enabled", False),
+            "count": get_config(db_path, f"{TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX}count", 12),
+            "time": get_config(db_path, f"{TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX}time", "00:00"),
+        }
+    )
+
+
+def save_taiwan_future_autofill_settings(
+    db_path: str | Path,
+    payload: dict[str, Any],
+    *,
+    changed_by: str,
+) -> dict[str, Any]:
+    """Persist all Taiwan auto-fill settings after complete request validation."""
+    settings = parse_taiwan_future_autofill_settings(payload)
+    ensure_admin_tables(db_path)
+    for key, value in (("enabled", settings["enabled"]), ("count", settings["count"]), ("time", settings["time"])):
+        upsert_system_config(
+            db_path,
+            key=f"{TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX}{key}",
+            value=value,
+            changed_by=changed_by,
+            change_reason="更新台湾彩自动填写设置",
+        )
+    return settings
 
 
 def autofill_taiwan_future_draws(

@@ -69,3 +69,34 @@ def test_run_due_tasks_keeps_postgres_backup_failure_alert_callback(monkeypatch)
     assert calls == [
         ("backup_alert", ("scheduler-task-loop.sqlite3", "boom", 2, True)),
     ]
+
+
+def test_taiwan_future_autofill_task_executes_configured_target_and_schedules_next(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    runner = scheduler.CrawlerScheduler("taiwan-autofill.sqlite3")
+    task = {
+        "task_type": scheduler.TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+        "payload_json": '{"schedule_date":"2026-07-27"}',
+    }
+    monkeypatch.setattr(
+        scheduler.lottery_service,
+        "get_taiwan_future_autofill_settings",
+        lambda _db_path: {"enabled": True, "count": 18, "time": "07:45", "timezone": "UTC"},
+    )
+    monkeypatch.setattr(
+        scheduler.lottery_service,
+        "autofill_taiwan_future_draws",
+        lambda db_path, *, count: calls.append(("autofill", (db_path, count))) or {"created_count": 2},
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "_ensure_taiwan_future_autofill_task",
+        lambda db_path: calls.append(("schedule_next", db_path)),
+    )
+
+    runner._execute_task(task)
+
+    assert calls == [
+        ("autofill", ("taiwan-autofill.sqlite3", 18)),
+        ("schedule_next", "taiwan-autofill.sqlite3"),
+    ]

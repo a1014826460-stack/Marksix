@@ -189,6 +189,21 @@ def find_completed_task_by_payload_date(
     return dict(row) if row else None
 
 
+def find_task_schedule_status(conn: Any, *, task_type: str) -> dict[str, Any] | None:
+    """Return the latest durable task summary without exposing task payload internals."""
+    row = conn.execute(
+        f"""
+        SELECT task_key, status, run_at, last_finished_at, last_error
+        FROM {TASK_TABLE_NAME}
+        WHERE task_type = ?
+        ORDER BY run_at DESC, id DESC
+        LIMIT 1
+        """,
+        (task_type,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def try_acquire_task(
     conn: Any,
     *,

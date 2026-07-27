@@ -88,6 +88,7 @@ def test_config_routes_reject_an_admin_who_is_not_super_admin():
         (admin_crawler_routes.register, "/api/admin/crawler/run-all", "POST"),
         (admin_draw_routes.register, "/api/admin/draws", "POST"),
         (admin_draw_routes.register, "/api/admin/draws/auto-fill-future", "POST"),
+        (admin_draw_routes.register, "/api/admin/draws/auto-fill-future/settings", "PUT"),
         (admin_log_routes.register, "/api/admin/logs/export", "GET"),
         (admin_alert_routes.register, "/api/admin/alert/test-email", "POST"),
     ],

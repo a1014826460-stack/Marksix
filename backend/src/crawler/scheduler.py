@@ -30,6 +30,7 @@ from crawler.tasks import (  # noqa: F401 - 兼容导出
     TASK_TYPE_DAILY_PREDICTION,
     TASK_TYPE_POSTGRES_BACKUP,
     TASK_TYPE_TAIWAN_PRECISE_OPEN,
+    TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
     _task_lock_timeout_seconds,
     _task_poll_interval_seconds,
     _task_retry_delay_seconds,
@@ -37,6 +38,7 @@ from crawler.tasks import (  # noqa: F401 - 兼容导出
     ensure_daily_prediction_task,
     ensure_postgres_backup_tasks,
     ensure_taiwan_precise_open_task,
+    ensure_taiwan_future_autofill_task,
     has_completed_daily_prediction_task,
     mark_scheduler_task_done,
     mark_scheduler_task_failed,
@@ -201,6 +203,7 @@ _run_due_scheduler_tasks = run_due_scheduler_tasks
 _ensure_taiwan_precise_open_task = ensure_taiwan_precise_open_task
 _ensure_daily_prediction_task = ensure_daily_prediction_task
 _ensure_postgres_backup_tasks = ensure_postgres_backup_tasks
+_ensure_taiwan_future_autofill_task = ensure_taiwan_future_autofill_task
 _has_completed_daily_prediction_task = has_completed_daily_prediction_task
 
 # HK/Macau 的 collector URL（优先读 lottery_types.collect_url，回退到此默认值）
@@ -1115,6 +1118,7 @@ class CrawlerScheduler:
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
         _ensure_postgres_backup_tasks(self.db_path)
+        _ensure_taiwan_future_autofill_task(self.db_path)
         # Taiwan precise opening is durable so restarts cannot lose the next draw.
         _ensure_taiwan_precise_open_task(self.db_path)
         # 如果今天配置的时间已过且今天尚未执行过预测，立即补跑一次
@@ -1333,6 +1337,7 @@ class CrawlerScheduler:
         if not self._running:
             return
         try:
+            _ensure_taiwan_future_autofill_task(self.db_path)
             self._run_due_tasks()
         except Exception as exc:
             _crawler_logger.error("Task loop iteration failed: %s", exc)
@@ -1429,6 +1434,20 @@ class CrawlerScheduler:
             result = run_postgres_backup(self.db_path, payload)
             _crawler_logger.info("PostgresBackup done: %s", result)
             _ensure_postgres_backup_tasks(self.db_path)
+            return
+        if task_type == TASK_TYPE_TAIWAN_FUTURE_AUTOFILL:
+            settings = lottery_service.get_taiwan_future_autofill_settings(self.db_path)
+            if settings["enabled"]:
+                result = lottery_service.autofill_taiwan_future_draws(
+                    self.db_path,
+                    count=int(settings["count"]),
+                )
+                _crawler_logger.info(
+                    "Taiwan future draw autofill complete: created=%s preserved=%s",
+                    result.get("created_count"),
+                    result.get("preserved_existing_count"),
+                )
+            _ensure_taiwan_future_autofill_task(self.db_path)
             return
         if task_type == "manual_job":
             self._execute_manual_job(task, payload)

@@ -110,6 +110,32 @@ def test_admin_autofill_future_draw_defaults_to_twelve():
     autofill.assert_called_once_with(ctx.db_path, count=12)
 
 
+def test_admin_autofill_settings_contract_and_actor_mapping():
+    read_ctx = make_ctx("/api/admin/draws/auto-fill-future/settings")
+    settings = {"enabled": True, "count": 12, "time": "07:45", "timezone": "UTC"}
+    status = {"last_run": None, "next_run_at": "2026-07-28T07:45:00+00:00"}
+    with patch("routes.admin_draw_routes.get_taiwan_future_autofill_settings", return_value=settings), patch(
+        "routes.admin_draw_routes.get_taiwan_future_autofill_schedule_status", return_value=status
+    ):
+        admin_draw_routes.get_autofill_future_settings(read_ctx)
+    assert response_json(read_ctx) == {"ok": True, "data": settings | status}
+
+    write_ctx = make_ctx(
+        "/api/admin/draws/auto-fill-future/settings",
+        "PUT",
+        {"enabled": True, "count": 20, "time": "08:30"},
+    )
+    write_ctx.state["current_user"] = {"id": 1, "username": "alice", "role": "admin"}
+    with patch("routes.admin_draw_routes.save_taiwan_future_autofill_settings", return_value=settings) as save:
+        admin_draw_routes.save_autofill_future_settings(write_ctx)
+    save.assert_called_once_with(
+        write_ctx.db_path,
+        {"enabled": True, "count": 20, "time": "08:30"},
+        changed_by="alice",
+    )
+    assert response_json(write_ctx) == {"ok": True, "data": settings}
+
+
 def test_admin_autofill_future_draw_exact_route_wins_over_draw_detail_prefix():
     router = Router()
     admin_draw_routes.register(router)

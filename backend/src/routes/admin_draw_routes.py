@@ -3,7 +3,13 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from admin.crud import delete_draw, list_draws, save_draw
-from domains.lottery.service import autofill_taiwan_future_draws, get_latest_opened_draw_term
+from domains.lottery.service import (
+    autofill_taiwan_future_draws,
+    get_latest_opened_draw_term,
+    get_taiwan_future_autofill_settings,
+    save_taiwan_future_autofill_settings,
+)
+from domains.scheduler.service import get_taiwan_future_autofill_schedule_status
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
@@ -18,6 +24,18 @@ def register(router: Router) -> None:
         "POST",
         "/api/admin/draws/auto-fill-future",
         autofill_future_draws,
+        guard=require_admin,
+    )
+    router.add(
+        "GET",
+        "/api/admin/draws/auto-fill-future/settings",
+        get_autofill_future_settings,
+        guard=require_admin,
+    )
+    router.add(
+        "PUT",
+        "/api/admin/draws/auto-fill-future/settings",
+        save_autofill_future_settings,
         guard=require_admin,
     )
     router.add_regex(None, r"^/api/admin/draws/\d+$", draw_detail, guard=require_admin)
@@ -58,6 +76,22 @@ def autofill_future_draws(ctx: RequestContext) -> None:
     count = _parse_autofill_count(payload.get("count", 12))
     result = autofill_taiwan_future_draws(ctx.db_path, count=count)
     ctx.send_json({"ok": True, "data": result}, HTTPStatus.CREATED)
+
+
+def get_autofill_future_settings(ctx: RequestContext) -> None:
+    settings = get_taiwan_future_autofill_settings(ctx.db_path)
+    status = get_taiwan_future_autofill_schedule_status(ctx.db_path)
+    ctx.send_json({"ok": True, "data": settings | status})
+
+
+def save_autofill_future_settings(ctx: RequestContext) -> None:
+    user = ctx.state.get("current_user") or {}
+    settings = save_taiwan_future_autofill_settings(
+        ctx.db_path,
+        ctx.read_json(),
+        changed_by=str(user.get("username") or "unknown"),
+    )
+    ctx.send_json({"ok": True, "data": settings})
 
 
 def draw_detail(ctx: RequestContext) -> None:

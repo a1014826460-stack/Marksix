@@ -15,6 +15,7 @@ from domains.scheduler.service import (
     TASK_TYPE_DAILY_PREDICTION,
     TASK_TYPE_POSTGRES_BACKUP,
     TASK_TYPE_TAIWAN_PRECISE_OPEN,
+    TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
     _json_dumps,
     _task_key,
     _task_lock_timeout_seconds,
@@ -142,6 +143,10 @@ def ensure_postgres_backup_tasks(
     )
 
 
+def ensure_taiwan_future_autofill_task(db_path: str | Path) -> None:
+    return _service.ensure_taiwan_future_autofill_task(db_path)
+
+
 def enqueue_manual_daily_prediction_task(
     db_path: str | Path,
     *,
@@ -161,6 +166,7 @@ __all__ = [
     "TASK_TYPE_TAIWAN_PRECISE_OPEN",
     "TASK_TYPE_DAILY_PREDICTION",
     "TASK_TYPE_POSTGRES_BACKUP",
+    "TASK_TYPE_TAIWAN_FUTURE_AUTOFILL",
     "SCHEDULE_SCOPE_AUTO",
     "SCHEDULE_SCOPE_MANUAL",
     "_task_poll_interval_seconds",
@@ -179,5 +185,6 @@ __all__ = [
     "ensure_taiwan_precise_open_task",
     "ensure_daily_prediction_task",
     "ensure_postgres_backup_tasks",
+    "ensure_taiwan_future_autofill_task",
     "enqueue_manual_daily_prediction_task",
 ]

@@ -9,6 +9,12 @@ for (const token of [
   "setAutoFilling",
   "created_count",
   "preserved_existing_count",
+  '"/admin/draws/auto-fill-future/settings"',
+  "台湾彩自动填写设置",
+  "启用自动填写",
+  "每日执行时间（UTC）",
+  "保存自动填写设置",
+  "setAutoFillSettings",
 ]) {
   if (!source.includes(token)) throw new Error(`draw autofill UI missing ${token}`)
 }

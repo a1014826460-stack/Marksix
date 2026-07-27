@@ -1705,6 +1705,30 @@ def _persist_generated_row(
     return upsert_created_prediction_row(conn, table_name, row_data, commit=commit)
 
 
+def _find_existing_future_row(
+    conn: Any,
+    table_name: str,
+    *,
+    lottery_type: int,
+    year: int,
+    term: int,
+    site_web_id: int,
+) -> dict[str, Any] | None:
+    """Look up an already-persisted future result before reserving control state."""
+    if getattr(conn, "engine", "") != "postgres":
+        return None
+    return find_existing_created_row(
+        conn,
+        table_name,
+        {
+            "type": str(lottery_type),
+            "year": str(year),
+            "term": str(term),
+            "web": str(site_web_id),
+        },
+    )
+
+
 # ── 结构化模块日志 ──────────────────────────────────────
 
 
@@ -1886,6 +1910,18 @@ def _process_single_module(
         try:
             is_future = bool(draw.get("_future"))
             draw_key = (draw["year"], draw["term"])
+            if is_future:
+                existing_future_row = _find_existing_future_row(
+                    conn,
+                    table_name,
+                    lottery_type=int(lottery_type),
+                    year=int(draw["year"]),
+                    term=int(draw["term"]),
+                    site_web_id=int(site_web_id),
+                )
+                if existing_future_row:
+                    module_report["skipped_existing"] += 1
+                    continue
             safe_res_code = _resolve_safe_res_code(draw, draw_key, safety_draw_map)
             truth = None
             if int(lottery_type) == 3 and is_future and draw_key in safety_draw_map:

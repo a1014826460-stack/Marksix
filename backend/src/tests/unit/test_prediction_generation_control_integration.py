@@ -304,6 +304,63 @@ def test_process_module_discards_control_when_created_row_is_skipped(monkeypatch
     assert control_count == 0
 
 
+def test_process_module_reports_existing_future_row_without_control_conflict_error(monkeypatch, tmp_path):
+    """A repeat future-generation request must recognize its persisted row first."""
+    db_path = str(tmp_path / "existing-future-row-control.sqlite3")
+    ensure_admin_tables(db_path)
+    config = PREDICTION_CONFIGS["pt3xiao"]
+
+    monkeypatch.setattr(
+        service,
+        "_resolve_prediction_config_with_mode_fallback",
+        lambda *_args: (config, "pt3xiao", False),
+    )
+    monkeypatch.setattr(
+        service.generation_repository,
+        "get_future_draw_truth",
+        lambda *_args, **_kwargs: _truth(),
+    )
+    monkeypatch.setattr(
+        service,
+        "_find_existing_future_row",
+        lambda *_args, **_kwargs: {"id": "c42", "created_at": "2026-07-27T04:00:00+00:00"},
+    )
+    generate_calls: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "_generate_single_draw_row",
+        lambda **_kwargs: generate_calls.append("generated"),
+    )
+
+    with connect(db_path) as conn:
+        report = service._process_single_module(
+            conn=conn,
+            module_row={"id": 1, "mechanism_key": "pt3xiao", "mode_id": 470},
+            draws=[],
+            future_draws=[{"year": 2026, "term": 131, "numbers_str": "", "_future": True}],
+            future_only=True,
+            safety_draw_map={(2026, 131): True},
+            lottery_type=3,
+            site_id=7,
+            site_web_id=4,
+            db_path=db_path,
+            default_target_hit_rate=0.65,
+            simulation_config=SimulationConfig(target_hit_rate=1.0),
+            zodiac_map={"27": "虎"},
+            color_map={"27": "绿波"},
+            trigger="admin_generate_all",
+            allow_overwrite=True,
+            resolve_prediction_table_for_mode=lambda _conn, _mode_id, _default: "mode_payload_470",
+            build_generated_prediction_row_data=lambda **kwargs: kwargs,
+        )
+
+    assert report["inserted"] == 0
+    assert report["updated"] == 0
+    assert report["skipped_existing"] == 1
+    assert report["errors"] == 0
+    assert generate_calls == []
+
+
 def test_process_module_rolls_back_control_when_created_row_persistence_fails(monkeypatch, tmp_path):
     db_path = str(tmp_path / "failed-created-row-control.sqlite3")
     ensure_admin_tables(db_path)

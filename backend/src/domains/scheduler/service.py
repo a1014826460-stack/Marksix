@@ -10,6 +10,7 @@ from typing import Any, Callable
 from crawler.collectors import _cfg
 from db import connect as db_connect
 from security.redaction import redact_value
+from domains.lottery.service import get_taiwan_future_autofill_settings
 
 from . import repository
 
@@ -19,6 +20,7 @@ TASK_TYPE_AUTO_PREDICTION = "auto_prediction"
 TASK_TYPE_TAIWAN_PRECISE_OPEN = "taiwan_precise_open"
 TASK_TYPE_DAILY_PREDICTION = "daily_prediction"
 TASK_TYPE_POSTGRES_BACKUP = "postgres_backup"
+TASK_TYPE_TAIWAN_FUTURE_AUTOFILL = "taiwan_future_draw_autofill"
 SCHEDULE_SCOPE_AUTO = "auto"
 SCHEDULE_SCOPE_MANUAL = "manual"
 TASK_TYPE_MANUAL_JOB = "manual_job"
@@ -146,6 +148,8 @@ def _task_key(task_type: str, payload: dict[str, Any]) -> str:
         return f"{task_type}:{payload.get('schedule_date')}"
     if task_type == TASK_TYPE_POSTGRES_BACKUP:
         return f"{task_type}:{payload.get('schedule_date')}:{payload.get('schedule_time')}"
+    if task_type == TASK_TYPE_TAIWAN_FUTURE_AUTOFILL:
+        return f"{task_type}:{payload.get('schedule_date')}"
     return f"{task_type}:{_json_dumps(payload)}"
 
 
@@ -250,6 +254,76 @@ def has_completed_daily_prediction_task(db_path: str | Path, schedule_date: str)
                 schedule_date=schedule_date,
             )
         )
+
+
+def _parse_utc_schedule_time(value: object) -> tuple[int, int]:
+    text = str(value or "").strip()
+    try:
+        hour_text, minute_text = text.split(":", 1)
+        hour, minute = int(hour_text), int(minute_text)
+    except (TypeError, ValueError):
+        return 0, 0
+    if not (len(text) == 5 and hour_text.isdigit() and minute_text.isdigit() and 0 <= hour <= 23 and 0 <= minute <= 59):
+        return 0, 0
+    return hour, minute
+
+
+def _has_completed_task_for_date(db_path: str | Path, *, task_type: str, schedule_date: str) -> bool:
+    with db_connect(db_path) as conn:
+        return bool(repository.find_completed_task_by_payload_date(conn, task_type=task_type, schedule_date=schedule_date))
+
+
+def ensure_taiwan_future_autofill_task(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Persist today's due task or tomorrow's task after today's successful run."""
+    settings = get_taiwan_future_autofill_settings(db_path)
+    if not settings["enabled"]:
+        return
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+    hour, minute = _parse_utc_schedule_time(settings["time"])
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    schedule_date = target.strftime("%Y-%m-%d")
+    if current >= target and _has_completed_task_for_date(
+        db_path,
+        task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+        schedule_date=schedule_date,
+    ):
+        target += timedelta(days=1)
+        schedule_date = target.strftime("%Y-%m-%d")
+    upsert_scheduler_task(
+        db_path,
+        task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+        payload={"schedule_date": schedule_date},
+        run_at=target.isoformat(),
+        max_attempts=3,
+        schedule_scope=SCHEDULE_SCOPE_AUTO,
+    )
+
+
+def get_taiwan_future_autofill_schedule_status(db_path: str | Path) -> dict[str, Any]:
+    """Return display-safe scheduled task state for the draw management page."""
+    with db_connect(db_path) as conn:
+        row = repository.find_task_schedule_status(conn, task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL)
+    if not row:
+        return {"last_run": None, "next_run_at": None}
+    status = str(row.get("status") or "")
+    last_run = None
+    if status in {"done", "failed"}:
+        last_run = {
+            "status": status,
+            "finished_at": row.get("last_finished_at"),
+            "error": str(row.get("last_error") or "") if status == "failed" else "",
+        }
+    return {
+        "last_run": last_run,
+        "next_run_at": row.get("run_at") if status in {"pending", "running"} else None,
+    }
 
 
 def create_scheduler_task_run(
