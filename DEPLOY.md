@@ -68,6 +68,24 @@ docker compose -f docker-compose.frontend-node.yml build frontend
 docker compose -f docker-compose.frontend-node.yml up -d
 ```
 
+HTTPS frontend nodes must copy
+`deploy/nginx.frontend-node.ssl.conf.example` to the ignored
+`deploy/nginx.frontend-node.conf.local`, replace its domain names, and set:
+
+```ini
+NGINX_CONF_SOURCE=./deploy/nginx.frontend-node.conf.local
+PUBLIC_SCHEME=https
+NGINX_EXPECT_HTTPS=1
+```
+
+Frontend-only node policy: always run `docker compose -f
+docker-compose.frontend-node.yml ...`; never use `docker-compose.yml` on
+these nodes. Before replacing a legacy full stack, archive its PostgreSQL
+dump, `.env`, certificates, and `backend/data`, then remove the residual
+`postgres`, `pgbouncer`, `python-api`, `scheduler-worker`, `db-migrate`, and
+`backend-admin` containers and volumes. Do not copy the database or backend
+runtime data to a frontend node.
+
 中心服务器的 Nginx 配置必须包含 `location ^~ /central-api/api/` 与
 `location ^~ /central-api/uploads/`。现有 HTTPS 配置使用
 `deploy/nginx.conf.local` 时，也必须从 `deploy/nginx.domain.ssl.conf.example`

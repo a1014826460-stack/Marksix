@@ -29,6 +29,7 @@ yarn-error.log*
 .env.production
 .env.development
 deploy/nginx.conf.local
+deploy/nginx.frontend-node.conf.local
 ops/frp-target-b/frpc.local.toml
 
 # vercel
@@ -73,4 +74,3 @@ frontend/public/data/Images/mode_474/animals/
 # Junction to backend/data/ — not real files, ignore entirely
 frontend/public/data/
 backend/data/logs/
-
