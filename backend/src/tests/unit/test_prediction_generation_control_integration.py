@@ -6,7 +6,7 @@ from domains.prediction.generation_control_repository import reserve_control
 from domains.prediction.models import DrawTruth
 from domains.prediction.simulation_service import SimulationConfig
 from prediction_generation import service
-from prediction_generation.service import _plan_persisted_future_control
+from prediction_generation.service import _build_future_draws, _plan_persisted_future_control
 from predict.mechanisms import PREDICTION_CONFIGS
 from tables import ensure_admin_tables
 
@@ -64,6 +64,67 @@ def test_control_plan_guarantees_sixty_percent_across_two_generation_batches(tmp
             outcomes.append(plan.verified_hit)
 
     assert validate_rolling_hit_rate(outcomes, policy=AccuracyPolicy()) == []
+
+
+def test_batch_generation_includes_requested_next_issue_when_using_previous_draw_as_reference(monkeypatch):
+    """A next-issue-only request must reach modules with its target future draw."""
+    captured: list[list[dict]] = []
+
+    class _Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(service, "ensure_prediction_configs_loaded", lambda *_args: None)
+    monkeypatch.setattr(service, "_resolve_generation_context", lambda *_args: (4, "测试站点"))
+    monkeypatch.setattr(service, "connect", lambda *_args: _Connection())
+    monkeypatch.setattr(service, "load_fixed_data_maps", lambda *_args: ({}, {}))
+    monkeypatch.setattr(service, "_default_target_hit_rate", lambda *_args: 0.65)
+    monkeypatch.setattr(service, "_simulation_config", lambda *_args: SimulationConfig())
+    monkeypatch.setattr(service, "_max_terms_per_year", lambda *_args: 365)
+    monkeypatch.setattr(
+        service.generation_repository,
+        "list_enabled_site_prediction_modules",
+        lambda *_args, **_kwargs: [{"id": 1, "mechanism_key": "daxiao", "mode_id": 57}],
+    )
+    monkeypatch.setattr(service, "list_opened_draws_in_issue_range", lambda *_args: [])
+    monkeypatch.setattr(
+        service,
+        "find_latest_opened_draw_before_issue",
+        lambda *_args: {"year": 2026, "term": 176, "numbers_str": "07,41,15,49,12,34,32"},
+    )
+    monkeypatch.setattr(service, "_build_safety_draw_map", lambda *_args: {})
+    monkeypatch.setattr(service, "_log_module_result", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        service,
+        "_process_single_module",
+        lambda **kwargs: captured.append(kwargs["future_draws"]) or {
+            "inserted": 1,
+            "updated": 0,
+            "skipped_existing": 0,
+            "errors": 0,
+        },
+    )
+
+    result = service.generate_prediction_batch(
+        "fake-db",
+        site_id=4,
+        lottery_type=3,
+        start_issue=(2026, 177),
+        end_issue=(2026, 177),
+        mechanism_keys=["daxiao"],
+        future_periods=1,
+        future_only=True,
+        trigger="test",
+        sync_site_modules=lambda *_args: None,
+        resolve_prediction_table_for_mode=lambda *_args: "mode_payload_57",
+        build_generated_prediction_row_data=lambda **kwargs: kwargs,
+    )
+
+    assert [[(draw["year"], draw["term"]) for draw in draws] for draws in captured] == [[(2026, 177)]]
+    assert result["inserted"] == 1
 
 
 def test_control_plan_forces_cross_site_prefix_and_same_site_adjacent_difference(tmp_path):
