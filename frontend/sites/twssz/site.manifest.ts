@@ -2,7 +2,7 @@ import { defineVendorSiteManifest } from "@/lib/site-platform/site-manifest"
 
 export default defineVendorSiteManifest({
   identity: { siteKey: "twssz", domains: ["www.twssz.com", "twssz.com"], routePath: "/twssz", siteId: 9, webId: 9, defaultLotteryType: 3 },
-  frontend: { renderMode: "iframe-vendor", vendorIndexPath: "/vendor/twssz/index.html", legacyPublicBasePath: "/vendor/twssz", defaultGame: "taiwan", forumTitle: "台湾神算子", metadataTitle: "台湾神算子", metadataDescription: "台湾神算子" },
+  frontend: { renderMode: "iframe-vendor", vendorIndexPath: "/vendor/twssz/index.html", legacyPublicBasePath: "/vendor/twssz", defaultGame: "taiwan", forumTitle: "台湾神算子", metadataTitle: "台湾神算子，算无遗漏", metadataDescription: "台湾神算子", faviconPath: "/vendor/twssz/static/file/favicon.ico" },
   bridge: {
     api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" },
     autoLoad: { draw: true, prediction: true },

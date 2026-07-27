@@ -35,6 +35,12 @@ if (/COMPLETE_SECTION_MAPPINGS[\s\S]*?(?:\{[^}]*\})/.test(adapter) && !adapter.i
 }
 
 const html = fs.readFileSync("frontend/public/vendor/twssz/index.html", "utf8")
+if (!html.includes("<title>台湾神算子，算无遗漏</title>")) {
+  throw new Error("twssz vendor page must expose the configured browser title")
+}
+if (!html.includes('rel="icon" href="static/file/favicon.ico"')) {
+  throw new Error("twssz vendor page must use its supplied favicon")
+}
 if (html.includes("204期")) {
   throw new Error("twssz source must not retain any static 204期 prediction text")
 }
