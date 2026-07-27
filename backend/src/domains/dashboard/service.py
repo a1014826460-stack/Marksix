@@ -229,6 +229,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
                 "web_id": web_id,
                 "name": str(site.get("name") or ""),
                 "domain": str(site.get("domain") or ""),
+                "blueprint_name": str(site.get("blueprint_name") or ""),
                 "enabled": bool(site.get("enabled")),
                 "lottery_name": str(site.get("lottery_name") or ""),
                 "modes_count": _safe_int(fetched_modes.get("modes_count")),
@@ -246,6 +247,24 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
     total_records = sum(item["records_count"] for item in site_cards)
     total_prediction_modules = sum(item["prediction_modules"] for item in site_cards)
     enabled_sites = sum(1 for item in site_cards if item["enabled"])
+
+    site_context_by_key = {
+        str(item.get("blueprint_name") or ""): item
+        for item in site_cards
+        if str(item.get("blueprint_name") or "")
+    }
+    traffic_sites = []
+    for item in weekly_traffic["sites"]:
+        context = site_context_by_key.get(str(item.get("site_key") or ""), {})
+        traffic_sites.append(
+            {
+                **item,
+                "web_id": _safe_int(context.get("web_id") or item.get("web_id")),
+                "name": str(context.get("name") or item.get("name") or item.get("site_key") or ""),
+                "domain": str(context.get("domain") or item.get("domain") or ""),
+            }
+        )
+    traffic_sites.sort(key=lambda item: (item["web_id"] <= 0, item["web_id"], item["site_key"]))
 
     draw_audit_per_day: dict[str, int] = {(
         week_start + timedelta(days=i)
@@ -428,7 +447,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             "today": today_traffic["summary"],
             "last_7_days": {
                 "summary": weekly_traffic["summary"],
-                "sites": weekly_traffic["sites"],
+                "sites": traffic_sites,
                 "timeseries": traffic_timeseries["items"],
             },
         },

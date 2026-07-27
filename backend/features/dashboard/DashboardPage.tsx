@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import ReactEChartsCore from "echarts-for-react/lib/core"
 import * as echarts from "echarts/core"
-import { BarChart, LineChart, PieChart } from "echarts/charts"
+import { BarChart, LineChart } from "echarts/charts"
 import { DatasetComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from "echarts/components"
 import { CanvasRenderer } from "echarts/renderers"
 import type { EChartsOption } from "echarts"
@@ -13,13 +13,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useTheme } from "@/components/theme-provider"
 import { adminApi } from "@/lib/admin-api"
 
-echarts.use([BarChart, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, DatasetComponent, CanvasRenderer])
+echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, DatasetComponent, CanvasRenderer])
 
 // ECharts draws on Canvas, where CSS variables are not resolved as colors.
 const chartColors = {
@@ -35,7 +34,15 @@ type DashboardData = {
     today: { pv: number; uv: number; api_compat_hits: number }
     last_7_days: {
       summary: { pv: number; uv: number; api_compat_hits: number }
-      sites: Array<{ site_key: string; pv: number; uv: number; api_compat_hits: number }>
+      sites: Array<{
+        site_key: string
+        web_id: number
+        name: string
+        domain: string
+        pv: number
+        uv: number
+        api_compat_hits: number
+      }>
       timeseries: Array<{ date: string; site_key: string; pv: number; uv: number; api_compat_hits: number }>
     }
   }
@@ -45,6 +52,7 @@ type DashboardData = {
     web_id: number
     name: string
     domain: string
+    blueprint_name: string
     enabled: boolean
     lottery_name: string
     modes_count: number
@@ -56,7 +64,6 @@ type DashboardData = {
     latest_draw_term: number
     next_time: string
   }>
-  site_share: Array<{ site_id: number; name: string; value: number; share: number }>
   trend: {
     draw_audit_7d: Array<{ date: string; count: number }>
     error_logs_7d: Array<{ date: string; count: number }>
@@ -116,7 +123,6 @@ function AnimatedNumber({ value }: { value: number }) {
 
 export function DashboardPage() {
   const { theme } = useTheme()
-  const [siteId, setSiteId] = useState<number | "all">("all")
   const [data, setData] = useState<DashboardData | null>(null)
   const [message, setMessage] = useState("")
   const [retryingTaskKey, setRetryingTaskKey] = useState("")
@@ -137,10 +143,6 @@ export function DashboardPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const selectedSite = useMemo(
-    () => (siteId === "all" ? null : data?.sites.find((item) => item.site_id === siteId) || null),
-    [data, siteId],
-  )
   const todayDraws = data?.today_draws || []
   const drawHealthLotteries = data?.draw_health?.lotteries || []
   const schedulerTasks = data?.scheduler?.recent_tasks || []
@@ -164,56 +166,72 @@ export function DashboardPage() {
     }
   }
 
-  const siteScaleOption = useMemo<EChartsOption>(() => {
-    const filtered = (data?.sites || []).filter((item) => siteId === "all" || item.site_id === siteId)
+  const trafficTrendOption = useMemo<EChartsOption>(() => {
+    const dailyTraffic = new Map<string, { pv: number; uv: number }>()
+    for (const item of trafficLast7Days.timeseries) {
+      const aggregate = dailyTraffic.get(item.date) || { pv: 0, uv: 0 }
+      aggregate.pv += item.pv
+      aggregate.uv += item.uv
+      dailyTraffic.set(item.date, aggregate)
+    }
+    const dates = Array.from(dailyTraffic.keys()).sort()
     return {
       animationDuration: 300,
       tooltip: { trigger: "axis" },
       grid: { left: 36, right: 18, top: 24, bottom: 24 },
-      xAxis: { type: "category", data: filtered.map((item) => item.name), axisLabel: { interval: 0 } },
+      legend: { data: ["PV", "UV"] },
+      xAxis: { type: "category", data: dates.map((date) => date.slice(5)) },
       yAxis: { type: "value" },
       series: [
         {
-          name: "采集记录",
-          type: "bar",
-          data: filtered.map((item) => item.records_count),
-          itemStyle: {
-            borderRadius: [8, 8, 0, 0],
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: chartPalette.primary },
-                { offset: 1, color: chartPalette.accent },
-              ],
-            },
-          },
+          name: "PV",
+          type: "line",
+          smooth: true,
+          data: dates.map((date) => dailyTraffic.get(date)?.pv || 0),
+          lineStyle: { width: 3, color: chartPalette.primary },
+          itemStyle: { color: chartPalette.primary },
+        },
+        {
+          name: "UV",
+          type: "line",
+          smooth: true,
+          data: dates.map((date) => dailyTraffic.get(date)?.uv || 0),
+          lineStyle: { width: 3, color: chartPalette.accent },
+          itemStyle: { color: chartPalette.accent },
         },
       ],
     }
-  }, [chartPalette, data, siteId])
+  }, [chartPalette, trafficLast7Days.timeseries])
 
-  const shareOption = useMemo<EChartsOption>(() => ({
-    animationDuration: 300,
-    tooltip: { trigger: "item" },
-    legend: { bottom: 0 },
-    series: [
-      {
-        type: "pie",
-        radius: ["54%", "76%"],
-        data: (data?.site_share || []).map((item, index) => ({
-          name: item.name,
-          value: item.value,
-          itemStyle: {
-            color: index % 2 === 0 ? chartPalette.primary : chartPalette.accent,
-          },
-        })),
+  const siteTrafficOption = useMemo<EChartsOption>(() => {
+    const sites = [...trafficLast7Days.sites].sort((a, b) => a.web_id - b.web_id)
+    return {
+      animationDuration: 300,
+      tooltip: { trigger: "axis" },
+      grid: { left: 36, right: 18, top: 24, bottom: 58 },
+      legend: { data: ["PV", "UV"] },
+      xAxis: {
+        type: "category",
+        data: sites.map((site) => `${site.web_id} · ${site.name}`),
+        axisLabel: { interval: 0, rotate: 24 },
       },
-    ],
-  }), [chartPalette, data])
+      yAxis: { type: "value" },
+      series: [
+        {
+          name: "PV",
+          type: "bar",
+          data: sites.map((site) => site.pv),
+          itemStyle: { borderRadius: [6, 6, 0, 0], color: chartPalette.primary },
+        },
+        {
+          name: "UV",
+          type: "bar",
+          data: sites.map((site) => site.uv),
+          itemStyle: { borderRadius: [6, 6, 0, 0], color: chartPalette.accent },
+        },
+      ],
+    }
+  }, [chartPalette, trafficLast7Days.sites])
 
   const errorTrendOption = useMemo<EChartsOption>(() => ({
     animationDuration: 300,
@@ -305,28 +323,32 @@ export function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle>近 7 天站点访问排行</CardTitle>
-              <CardDescription>按前端页面访问量排序；仅统计已部署追踪器的访问。</CardDescription>
+              <CardDescription>按 Web ID 从小到大排列；仅统计已部署追踪器的访问。</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>站点</TableHead>
+                    <TableHead>Web ID</TableHead>
+                    <TableHead>站点名</TableHead>
+                    <TableHead>域名</TableHead>
                     <TableHead>PV</TableHead>
                     <TableHead>UV</TableHead>
                     <TableHead>兼容接口请求</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {trafficLast7Days.sites.length ? trafficLast7Days.sites.map((site) => (
+                  {trafficLast7Days.sites.length ? [...trafficLast7Days.sites].sort((a, b) => a.web_id - b.web_id).map((site) => (
                     <TableRow key={site.site_key}>
-                      <TableCell className="font-medium">{site.site_key}</TableCell>
+                      <TableCell className="font-medium">{site.web_id || "-"}</TableCell>
+                      <TableCell>{site.name || site.site_key}</TableCell>
+                      <TableCell>{site.domain || "-"}</TableCell>
                       <TableCell>{formatNumber(site.pv)}</TableCell>
                       <TableCell>{formatNumber(site.uv)}</TableCell>
                       <TableCell>{formatNumber(site.api_compat_hits)}</TableCell>
                     </TableRow>
                   )) : (
-                    <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">暂无访问数据；用户访问站点后将自动记录。</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">暂无访问数据；用户访问站点后将自动记录。</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -343,33 +365,16 @@ export function DashboardPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+            <div className="grid gap-4 xl:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle>站点采集规模</CardTitle>
-                      <CardDescription>按站点对比采集记录规模</CardDescription>
-                    </div>
-                    <Select value={String(siteId)} onValueChange={(value) => setSiteId(value === "all" ? "all" : Number(value))}>
-                      <SelectTrigger className="w-[160px]">
-                        <SelectValue placeholder="全部站点" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">全部站点</SelectItem>
-                        {data?.sites.map((item) => (
-                          <SelectItem key={item.site_id} value={String(item.site_id)}>
-                            {item.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <CardTitle>流量趋势（PV / UV）</CardTitle>
+                  <CardDescription>近 7 天全部前端站点的页面访问量与去重访客数。</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ReactEChartsCore
                     echarts={echarts}
-                    option={siteScaleOption}
+                    option={trafficTrendOption}
                     style={{ height: 320 }}
                     notMerge
                     lazyUpdate
@@ -380,13 +385,13 @@ export function DashboardPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>站点占比</CardTitle>
-                  <CardDescription>按采集记录占比</CardDescription>
+                  <CardTitle>站点流量对比</CardTitle>
+                  <CardDescription>按 Web ID 展示近 7 天各站点的 PV 与 UV。</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ReactEChartsCore
                     echarts={echarts}
-                    option={shareOption}
+                    option={siteTrafficOption}
                     style={{ height: 320 }}
                     notMerge
                     lazyUpdate
@@ -398,12 +403,12 @@ export function DashboardPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>站点详情</CardTitle>
-                <CardDescription>{selectedSite ? `当前查看：${selectedSite.name}` : "全部站点"}</CardDescription>
+                <CardTitle>站点配置</CardTitle>
+                <CardDescription>展示受管理站点的基础配置和预测模块状态。</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {(selectedSite ? [selectedSite] : data?.sites || []).map((item) => (
+                  {(data?.sites || []).map((item) => (
                     <div key={item.site_id} className="rounded-lg border bg-background p-4">
                       <div className="flex items-center justify-between">
                         <div className="font-medium">{item.name}</div>
@@ -413,12 +418,12 @@ export function DashboardPage() {
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                         <div>
-                          <div className="text-muted-foreground">采集记录</div>
-                          <div className="font-semibold">{formatNumber(item.records_count)}</div>
+                          <div className="text-muted-foreground">Web ID</div>
+                          <div className="font-semibold">{item.web_id || "-"}</div>
                         </div>
                         <div>
-                          <div className="text-muted-foreground">模式数</div>
-                          <div className="font-semibold">{formatNumber(item.modes_count)}</div>
+                          <div className="text-muted-foreground">域名</div>
+                          <div className="truncate font-semibold" title={item.domain}>{item.domain || "-"}</div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">预测模块</div>

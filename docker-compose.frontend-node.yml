@@ -1,0 +1,47 @@
+# Frontend-only site node. It intentionally has no database, Python API,
+# migration, scheduler, or administration service; all dynamic data comes
+# from the central API configured in .env.frontend-node.
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    container_name: liuhecai-frontend
+    restart: unless-stopped
+    environment:
+      LOTTERY_BACKEND_BASE_URL: "${LOTTERY_BACKEND_BASE_URL:?Set LOTTERY_BACKEND_BASE_URL to the central API}"
+      LOTTERY_UPLOADS_BASE_URL: "${LOTTERY_UPLOADS_BASE_URL:?Set LOTTERY_UPLOADS_BASE_URL to the central uploads API}"
+      LOTTERY_SITE_ID: "${LOTTERY_SITE_ID:-9}"
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - frontend-node-network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: liuhecai-nginx
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ${NGINX_CONF_SOURCE:-./deploy/nginx.frontend-node.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/ssl:/etc/nginx/ssl:ro
+    networks:
+      - frontend-node-network
+
+networks:
+  frontend-node-network:
+    driver: bridge

@@ -180,6 +180,9 @@ def test_traffic_metrics_aggregate_pv_uv_and_api_compat_hits(tmp_path):
     assert twjinniu["pv"] == 3
     assert twjinniu["uv"] == 3
     assert twjinniu["api_compat_hits"] == 1
+    assert twjinniu["web_id"] == 7
+    assert twjinniu["name"] == "site-7"
+    assert twjinniu["domain"] == "www.twjinniu.com"
 
     assert timeseries["items"] == [
         {

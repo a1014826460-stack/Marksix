@@ -69,21 +69,61 @@ def test_dashboard_prioritizes_public_site_traffic_metrics(tmp_path):
     record_traffic_event(
         db_path,
         {
-            "site_key": "twsaimahui",
+            "site_key": "twjinniu",
             "event_type": "vendor_page_view",
-            "path": "/twsaimahui",
-            "route": "/twsaimahui",
+            "path": "/twjinniu",
+            "route": "/twjinniu",
             "visitor_id": "traffic-test-visitor",
             "occurred_at": now.isoformat(),
         },
     )
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE managed_sites
+            SET web_id = 9, name = '台湾神算子', domain = 'www.twssz.com'
+            WHERE blueprint_name = 'twssz'
+            """,
+        )
+    record_traffic_event(
+        db_path,
+        {
+            "site_key": "twssz",
+            "event_type": "vendor_page_view",
+            "path": "/twssz",
+            "route": "/twssz",
+            "visitor_id": "traffic-test-visitor-2",
+            "occurred_at": now.isoformat(),
+        },
+    )
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE public_site_traffic_events SET site_id = NULL, web_id = NULL WHERE site_key = 'twssz'"
+        )
 
     payload = get_dashboard_overview(db_path)
 
-    assert payload["traffic"]["today"]["pv"] == 1
-    assert payload["traffic"]["today"]["uv"] == 1
+    assert payload["traffic"]["today"]["pv"] == 2
+    assert payload["traffic"]["today"]["uv"] == 2
     assert payload["traffic"]["last_7_days"]["sites"] == [
-        {"site_key": "twsaimahui", "pv": 1, "uv": 1, "api_compat_hits": 0}
+        {
+            "site_key": "twjinniu",
+            "web_id": 7,
+            "name": "台湾金牛论坛",
+            "domain": "www.twtongtian.com",
+            "pv": 1,
+            "uv": 1,
+            "api_compat_hits": 0,
+        },
+        {
+            "site_key": "twssz",
+            "web_id": 9,
+            "name": "台湾神算子",
+            "domain": "www.twssz.com",
+            "pv": 1,
+            "uv": 1,
+            "api_compat_hits": 0,
+        },
     ]
 
 

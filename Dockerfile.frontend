@@ -35,7 +35,6 @@ COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/standalone/n
 COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/standalone/frontend ./
 COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/public ./public
-COPY --chown=nextjs:nodejs backend/data/Images ./backend/data/Images
 
 USER nextjs
 

@@ -40,6 +40,39 @@ pwsh -File .\scripts\check-no-secrets.ps1
 此外，`scheduler-worker` 是独立的持久化调度进程：它执行抓取、批量生成和备份任务；
 `python-api` 仅提供 HTTP 接口，不再在自身进程中启动调度 timer。部署时必须保持该容器运行。
 
+## 多服务器集群
+
+中心服务器 `207.56.3.82` 使用完整的 [docker-compose.yml](/d:/pythonProject/outsource/Liuhecai/docker-compose.yml)：
+
+- 运行 PostgreSQL、PgBouncer、`python-api`、`scheduler-worker`、`backend-admin`、`frontend` 与 Nginx。
+- 承载前五个前端站点和唯一可写的数据库、后台管理及调度任务。
+- 通过 `https://www.tw8800.com/central-api/api` 提供统一 Python API；`/api/*` 仍保留给当前站点的 Next.js 兼容接口，不能作为跨服务器地址。
+
+其余服务器只能使用 [docker-compose.frontend-node.yml](/d:/pythonProject/outsource/Liuhecai/docker-compose.frontend-node.yml)：
+
+- 仅运行 `frontend` 与 Nginx；不得运行 PostgreSQL、PgBouncer、`python-api`、`scheduler-worker`、`db-migrate` 或 `backend-admin`。
+- 从 `.env.frontend-node.example` 复制 `.env`，并保留：
+
+```ini
+LOTTERY_BACKEND_BASE_URL=https://www.tw8800.com/central-api/api
+LOTTERY_UPLOADS_BASE_URL=https://www.tw8800.com/central-api/uploads
+```
+
+- 图片、开奖、预测和站点配置均由中心 API 返回，因此不会复制数据库或出现跨节点数据分叉。
+- 前端节点部署命令：
+
+```bash
+cp .env.frontend-node.example .env
+# 修改 LOTTERY_SITE_ID、PUBLIC_HOST、NGINX_CONF_SOURCE 与证书配置
+docker compose -f docker-compose.frontend-node.yml build frontend
+docker compose -f docker-compose.frontend-node.yml up -d
+```
+
+中心服务器的 Nginx 配置必须包含 `location ^~ /central-api/api/` 与
+`location ^~ /central-api/uploads/`。现有 HTTPS 配置使用
+`deploy/nginx.conf.local` 时，也必须从 `deploy/nginx.domain.ssl.conf.example`
+同步这两个区块后再重建 Nginx。
+
 对外访问入口：
 
 - `/` -> `frontend`

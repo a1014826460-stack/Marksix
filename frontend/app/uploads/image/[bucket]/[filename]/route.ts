@@ -1,16 +1,13 @@
-import { readFile } from "node:fs/promises"
-import { existsSync } from "node:fs"
-import path from "node:path"
-
 const LEGACY_BUCKET = "20250322"
 const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000/api"
-const LEGACY_IMAGE_DIR_CANDIDATES = [
-  path.resolve(process.cwd(), "backend", "data", "Images"),
-  path.resolve(process.cwd(), "..", "backend", "data", "Images"),
-]
+
+function extensionOf(filename: string) {
+  const dot = filename.lastIndexOf(".")
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : ""
+}
 
 function contentTypeFor(filename: string) {
-  const ext = path.extname(filename).toLowerCase()
+  const ext = extensionOf(filename)
   switch (ext) {
     case ".png":
       return "image/png"
@@ -37,46 +34,36 @@ export async function GET(
 
   // Only allow a bare filename so this compatibility route cannot escape the
   // legacy image directory on disk.
-  const safeFilename = path.basename(filename)
-  if (safeFilename !== filename) {
+  if (!filename || filename.includes("/") || filename.includes("\\") || filename === "." || filename === "..") {
     return new Response("Not Found", { status: 404 })
   }
 
-  const proxied = await proxyLegacyImage(bucket, safeFilename)
+  const proxied = await proxyLegacyImage(bucket, filename)
   if (proxied) {
     return proxied
   }
 
-  const localBaseDir = LEGACY_IMAGE_DIR_CANDIDATES.find((candidate) => existsSync(candidate))
-  if (!localBaseDir) {
-    return new Response("Not Found", { status: 404 })
-  }
-
-  const filePath = path.join(localBaseDir, safeFilename)
-
-  try {
-    const body = await readFile(filePath)
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "Content-Type": contentTypeFor(safeFilename),
-        "Cache-Control": "no-store",
-      },
-    })
-  } catch {
-    return new Response("Not Found", { status: 404 })
-  }
+  return new Response("Not Found", { status: 404 })
 }
 
 function resolveBackendOrigin() {
-  const raw = (process.env.LOTTERY_BACKEND_BASE_URL || DEFAULT_BACKEND_BASE_URL).trim()
+  const raw = (
+    process.env.LOTTERY_UPLOADS_BASE_URL ||
+    process.env.LOTTERY_BACKEND_BASE_URL ||
+    DEFAULT_BACKEND_BASE_URL
+  ).trim()
   const normalized = raw.replace(/\/+$/, "")
   return new URL(normalized)
 }
 
 async function proxyLegacyImage(bucket: string, filename: string) {
   try {
-    const backendUrl = new URL(`/uploads/image/${bucket}/${filename}`, resolveBackendOrigin())
+    const origin = resolveBackendOrigin()
+    const imagePath = `image/${encodeURIComponent(bucket)}/${encodeURIComponent(filename)}`
+    const backendUrl = new URL(
+      origin.pathname.endsWith("/uploads") ? imagePath : `/uploads/${imagePath}`,
+      origin,
+    )
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (!response.ok) {
       return null

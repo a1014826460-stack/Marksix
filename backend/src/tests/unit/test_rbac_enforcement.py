@@ -87,6 +87,7 @@ def test_config_routes_reject_an_admin_who_is_not_super_admin():
     [
         (admin_crawler_routes.register, "/api/admin/crawler/run-all", "POST"),
         (admin_draw_routes.register, "/api/admin/draws", "POST"),
+        (admin_draw_routes.register, "/api/admin/draws/auto-fill-future", "POST"),
         (admin_log_routes.register, "/api/admin/logs/export", "GET"),
         (admin_alert_routes.register, "/api/admin/alert/test-email", "POST"),
     ],
@@ -100,6 +101,17 @@ def test_high_risk_admin_routes_reject_non_admin_before_handler(register, path, 
     router.dispatch(ctx)
 
     assert ctx.handler.response_status == 403
+
+
+def test_draw_detail_route_does_not_treat_named_actions_as_numeric_ids():
+    router = Router()
+    admin_draw_routes.register(router)
+    ctx = make_ctx("/api/admin/draws/not-a-draw-id", method="POST")
+    ctx.state["current_user"] = {"id": 1, "role": "admin"}
+
+    router.dispatch(ctx)
+
+    assert ctx.handler.response_status == 404
 
 
 def test_site_permissions_allow_only_granted_site_for_operator(tmp_path):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from unittest.mock import patch
 
 from routes import (
@@ -9,6 +10,7 @@ from routes import (
     admin_lottery_routes,
     admin_site_routes,
 )
+from app_http.router import Router
 from tests.helpers.api_contract import make_ctx, response_json
 
 
@@ -80,6 +82,54 @@ def test_admin_latest_term_contract_and_query_mapping():
     latest_term.assert_called_once_with(ctx.db_path, 3)
     assert ctx.handler.response_status == 200
     assert response_json(ctx) == payload
+
+
+def test_admin_autofill_future_draw_contract():
+    ctx = make_ctx("/api/admin/draws/auto-fill-future", "POST", {"count": 8})
+    payload = {
+        "requested_count": 8,
+        "created_count": 8,
+        "preserved_existing_count": 1,
+        "created": [],
+    }
+
+    with patch(
+        "routes.admin_draw_routes.autofill_taiwan_future_draws", return_value=payload
+    ) as autofill:
+        admin_draw_routes.autofill_future_draws(ctx)
+
+    autofill.assert_called_once_with(ctx.db_path, count=8)
+    assert ctx.handler.response_status == 201
+    assert response_json(ctx) == {"ok": True, "data": payload}
+
+
+def test_admin_autofill_future_draw_defaults_to_twelve():
+    ctx = make_ctx("/api/admin/draws/auto-fill-future", "POST", {})
+    with patch("routes.admin_draw_routes.autofill_taiwan_future_draws", return_value={}) as autofill:
+        admin_draw_routes.autofill_future_draws(ctx)
+    autofill.assert_called_once_with(ctx.db_path, count=12)
+
+
+def test_admin_autofill_future_draw_exact_route_wins_over_draw_detail_prefix():
+    router = Router()
+    admin_draw_routes.register(router)
+    ctx = make_ctx("/api/admin/draws/auto-fill-future", "POST", {"count": 3})
+    ctx.state["current_user"] = {"id": 1, "role": "admin"}
+
+    with patch("routes.admin_draw_routes.autofill_taiwan_future_draws", return_value={}) as autofill:
+        router.dispatch(ctx)
+
+    autofill.assert_called_once_with(ctx.db_path, count=3)
+    assert ctx.handler.response_status == 201
+
+
+@pytest.mark.parametrize("count", [0, 61, "12", True, 1.0])
+def test_admin_autofill_future_draw_rejects_invalid_count(count):
+    ctx = make_ctx("/api/admin/draws/auto-fill-future", "POST", {"count": count})
+    with patch("routes.admin_draw_routes.autofill_taiwan_future_draws") as autofill:
+        with pytest.raises(ValueError, match="1 到 60"):
+            admin_draw_routes.autofill_future_draws(ctx)
+    autofill.assert_not_called()
 
 
 def test_admin_backfill_logs_contract_and_query_mapping():

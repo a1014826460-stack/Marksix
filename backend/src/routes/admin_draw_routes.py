@@ -3,7 +3,7 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from admin.crud import delete_draw, list_draws, save_draw
-from domains.lottery.service import get_latest_opened_draw_term
+from domains.lottery.service import autofill_taiwan_future_draws, get_latest_opened_draw_term
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
@@ -14,7 +14,13 @@ from app_http.auth import require_admin
 def register(router: Router) -> None:
     router.add("GET", "/api/admin/draws", list_draw_routes, guard=require_admin)
     router.add("POST", "/api/admin/draws", create_draw, guard=require_admin)
-    router.add_prefix(None, "/api/admin/draws/", draw_detail, guard=require_admin)
+    router.add(
+        "POST",
+        "/api/admin/draws/auto-fill-future",
+        autofill_future_draws,
+        guard=require_admin,
+    )
+    router.add_regex(None, r"^/api/admin/draws/\d+$", draw_detail, guard=require_admin)
     router.add("GET", "/api/admin/lottery-draws/latest-term", latest_term, guard=require_admin)
 
 
@@ -39,6 +45,19 @@ def list_draw_routes(ctx: RequestContext) -> None:
 
 def create_draw(ctx: RequestContext) -> None:
     ctx.send_json({"draw": save_draw(ctx.db_path, ctx.read_json())}, HTTPStatus.CREATED)
+
+
+def _parse_autofill_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 60:
+        raise ValueError("自动填写期数必须在 1 到 60 之间")
+    return value
+
+
+def autofill_future_draws(ctx: RequestContext) -> None:
+    payload = ctx.read_json()
+    count = _parse_autofill_count(payload.get("count", 12))
+    result = autofill_taiwan_future_draws(ctx.db_path, count=count)
+    ctx.send_json({"ok": True, "data": result}, HTTPStatus.CREATED)
 
 
 def draw_detail(ctx: RequestContext) -> None:

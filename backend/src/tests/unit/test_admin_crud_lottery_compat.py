@@ -1,9 +1,175 @@
 from __future__ import annotations
 
+from random import Random
 from pathlib import Path
 
 from db import connect
 from tables import ensure_admin_tables
+
+
+def test_taiwan_future_draw_candidate_enforces_recent_positional_constraints():
+    from domains.lottery.service import _is_valid_taiwan_future_candidate
+
+    recent = [
+        [1, 2, 3, 4, 5, 6, 7],
+        [8, 9, 10, 11, 12, 13, 14],
+    ]
+
+    assert _is_valid_taiwan_future_candidate([15, 16, 17, 18, 19, 20, 21], recent)
+    assert not _is_valid_taiwan_future_candidate([1, 16, 17, 18, 19, 20, 21], recent)
+    assert not _is_valid_taiwan_future_candidate([15, 2, 17, 18, 19, 20, 21], recent)
+    assert not _is_valid_taiwan_future_candidate([15, 16, 3, 18, 19, 20, 21], recent)
+    assert not _is_valid_taiwan_future_candidate([15, 16, 17, 18, 19, 20, 7], recent)
+    assert not _is_valid_taiwan_future_candidate([1, 2, 3, 4, 5, 6, 7], recent)
+    assert not _is_valid_taiwan_future_candidate([15, 15, 17, 18, 19, 20, 21], recent)
+
+
+def _insert_taiwan_draw(
+    conn,
+    *,
+    year: int,
+    term: int,
+    numbers: str,
+    draw_time: str,
+    is_opened: int,
+) -> int:
+    row = conn.execute(
+        """
+        INSERT INTO lottery_draws (
+            lottery_type_id, year, term, numbers, draw_time, next_time, status,
+            is_opened, next_term, created_at, updated_at
+        )
+        VALUES (3, ?, ?, ?, ?, '', 1, ?, ?, ?, ?)
+        RETURNING id
+        """,
+        (
+            year,
+            term,
+            numbers,
+            draw_time,
+            is_opened,
+            term + 1,
+            "2026-06-27T00:00:00+00:00",
+            "2026-06-27T00:00:00+00:00",
+        ),
+    ).fetchone()
+    return int(row["id"])
+
+
+def test_autofill_taiwan_future_draws_preserves_existing_future_rows(tmp_path):
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-future.sqlite3"
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        conn.execute("UPDATE lottery_types SET draw_time = '22:30:00' WHERE id = 3")
+        _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=100,
+            numbers="01,02,03,04,05,06,07",
+            draw_time="2026-04-10 22:30:00",
+            is_opened=1,
+        )
+        existing_id = _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=102,
+            numbers="08,09,10,11,12,13,14",
+            draw_time="2026-04-12 22:30:00",
+            is_opened=0,
+        )
+
+    result = autofill_taiwan_future_draws(db_path, count=12, rng=Random(7))
+
+    assert result["requested_count"] == 12
+    assert result["created_count"] == 12
+    assert result["preserved_existing_count"] == 1
+    assert len(result["created"]) == 12
+    assert all(len(row["numbers"].split(",")) == 7 for row in result["created"])
+    assert all(row["term"] != 102 for row in result["created"])
+
+    with connect(db_path) as conn:
+        existing_after = conn.execute(
+            "SELECT id, numbers, is_opened FROM lottery_draws WHERE id = ?", (existing_id,)
+        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT numbers FROM lottery_draws
+            WHERE lottery_type_id = 3
+            ORDER BY year, term, id
+            """
+        ).fetchall()
+
+    assert dict(existing_after) == {
+        "id": existing_id,
+        "numbers": "08,09,10,11,12,13,14",
+        "is_opened": 0,
+    }
+    parsed_rows = [[int(number) for number in row["numbers"].split(",")] for row in rows]
+    for index, numbers in enumerate(parsed_rows):
+        assert len(numbers) == 7
+        assert len(set(numbers)) == 7
+        for previous in parsed_rows[max(0, index - 10):index]:
+            assert numbers != previous
+            assert all(numbers[position] != previous[position] for position in (0, 1, 2, 6))
+
+
+def test_autofill_taiwan_future_draws_skips_first_existing_future_issue(tmp_path):
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-first-existing.sqlite3"
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=100,
+            numbers="01,02,03,04,05,06,07",
+            draw_time="2026-04-10 22:30:00",
+            is_opened=1,
+        )
+        existing_id = _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=101,
+            numbers="08,09,10,11,12,13,14",
+            draw_time="2026-04-11 22:30:00",
+            is_opened=0,
+        )
+
+    result = autofill_taiwan_future_draws(db_path, count=2, rng=Random(11))
+
+    assert result["created_count"] == 2
+    assert result["preserved_existing_count"] == 1
+    assert all(row["term"] != 101 for row in result["created"])
+    with connect(db_path) as conn:
+        existing_after = conn.execute(
+            "SELECT numbers FROM lottery_draws WHERE id = ?", (existing_id,)
+        ).fetchone()
+    assert existing_after["numbers"] == "08,09,10,11,12,13,14"
+
+
+def test_autofill_taiwan_future_draws_rejects_invalid_count_and_missing_baseline(tmp_path):
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-invalid.sqlite3"
+    ensure_admin_tables(db_path)
+
+    for count in (0, 61):
+        try:
+            autofill_taiwan_future_draws(db_path, count=count)
+        except ValueError as exc:
+            assert "1 到 60" in str(exc)
+        else:
+            raise AssertionError("invalid count should fail")
+
+    try:
+        autofill_taiwan_future_draws(db_path)
+    except ValueError as exc:
+        assert "已开奖" in str(exc)
+    else:
+        raise AssertionError("missing opened baseline should fail")
 
 
 def test_admin_crud_lottery_compat_delegates_to_domain_service(monkeypatch):

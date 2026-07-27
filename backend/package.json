@@ -6,8 +6,9 @@
     "build": "cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
     "dev": "next dev",
     "lint": "echo Use root command: pnpm lint:backend-admin",
-    "start": "next start"
-    ,"test:admin-shell-contract": "node features/admin-shell/admin-shell-contract.mjs",
+    "start": "next start",
+    "test:draws-auto-fill-contract": "node features/draws/draws-auto-fill-contract.mjs",
+    "test:admin-shell-contract": "node features/admin-shell/admin-shell-contract.mjs",
     "test:dashboard-api-contract": "node features/dashboard/dashboard-api-contract.mjs"
   },
   "dependencies": {

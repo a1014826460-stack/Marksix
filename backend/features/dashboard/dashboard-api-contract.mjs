@@ -20,6 +20,12 @@ for (const required of [
   "今日 PV",
   "今日 UV",
   "近 7 天站点访问排行",
+  "流量趋势（PV / UV）",
+  "Web ID",
+  "域名",
+  "web_id - b.web_id",
+  "name: \"PV\"",
+  "name: \"UV\"",
 ]) {
   if (!source.includes(required)) throw new Error(`dashboard must prioritize public-site traffic: ${required}`)
 }

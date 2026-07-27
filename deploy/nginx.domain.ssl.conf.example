@@ -72,6 +72,24 @@ server {
         access_log off;
     }
 
+    # Central raw API for frontend-only nodes. Keep this separate from /api/,
+    # which remains owned by the local Next.js compatibility layer.
+    location ^~ /central-api/api/ {
+        proxy_pass http://python-api:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /central-api/uploads/ {
+        proxy_pass http://python-api:8000/uploads/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # ---- Frontend Next.js API proxy ----
     # See deploy/nginx.conf for full routing documentation
     location /api/ {

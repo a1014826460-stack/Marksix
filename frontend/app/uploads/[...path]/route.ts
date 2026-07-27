@@ -1,15 +1,12 @@
-import { readFile } from "node:fs/promises"
-import { existsSync } from "node:fs"
-import path from "node:path"
-
 const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000/api"
-const LEGACY_IMAGE_DIR_CANDIDATES = [
-  path.resolve(process.cwd(), "backend", "data", "Images"),
-  path.resolve(process.cwd(), "..", "backend", "data", "Images"),
-]
+
+function extensionOf(filename: string) {
+  const dot = filename.lastIndexOf(".")
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : ""
+}
 
 function contentTypeFor(filename: string) {
-  const ext = path.extname(filename).toLowerCase()
+  const ext = extensionOf(filename)
   switch (ext) {
     case ".png":
       return "image/png"
@@ -42,8 +39,8 @@ export async function GET(
     return new Response("Not Found", { status: 404 })
   }
 
-  const filename = path.basename(rest.join("/"))
-  if (!filename) {
+  const filename = rest.join("/")
+  if (!filename || rest.some((segment) => !segment || segment === "." || segment === "..")) {
     return new Response("Not Found", { status: 404 })
   }
 
@@ -52,28 +49,15 @@ export async function GET(
     return proxied
   }
 
-  const localBaseDir = LEGACY_IMAGE_DIR_CANDIDATES.find((candidate) => existsSync(candidate))
-  if (!localBaseDir) {
-    return new Response("Not Found", { status: 404 })
-  }
-
-  const filePath = path.join(localBaseDir, kind, modeDir, filename)
-  try {
-    const body = await readFile(filePath)
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "Content-Type": contentTypeFor(filename),
-        "Cache-Control": "no-store",
-      },
-    })
-  } catch {
-    return new Response("Not Found", { status: 404 })
-  }
+  return new Response("Not Found", { status: 404 })
 }
 
 function resolveBackendOrigin() {
-  const raw = (process.env.LOTTERY_BACKEND_BASE_URL || DEFAULT_BACKEND_BASE_URL).trim()
+  const raw = (
+    process.env.LOTTERY_UPLOADS_BASE_URL ||
+    process.env.LOTTERY_BACKEND_BASE_URL ||
+    DEFAULT_BACKEND_BASE_URL
+  ).trim()
   const normalized = raw.replace(/\/+$/, "")
   return new URL(normalized)
 }
@@ -81,7 +65,11 @@ function resolveBackendOrigin() {
 async function proxyUpload(pathSegments: string[]) {
   try {
     const safePath = pathSegments.map((segment) => encodeURIComponent(segment)).join("/")
-    const backendUrl = new URL(`/uploads/${safePath}`, resolveBackendOrigin())
+    const origin = resolveBackendOrigin()
+    const backendUrl = new URL(
+      origin.pathname.endsWith("/uploads") ? safePath : `/uploads/${safePath}`,
+      origin,
+    )
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (!response.ok) {
       return null

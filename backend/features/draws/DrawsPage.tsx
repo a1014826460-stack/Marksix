@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Plus, Save } from "lucide-react"
+import { Plus, Save, WandSparkles } from "lucide-react"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,13 @@ import { DrawBallDisplay, DrawBallDisplayProvider, DrawBallDisplayToggles } from
 import type { Draw, LotteryType } from "@/features/shared/types"
 
 const TAIWAN_LOTTERY_ID = 3
+
+type AutoFillResult = {
+  requested_count: number
+  created_count: number
+  preserved_existing_count: number
+  created: Array<{ year: number; term: number; numbers: string; draw_time: string }>
+}
 
 function formatDateInput(date: Date) {
   const yyyy = date.getFullYear()
@@ -103,6 +110,8 @@ export function DrawsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
+  const [autoFillCount, setAutoFillCount] = useState("12")
+  const [autoFilling, setAutoFilling] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
 
   // Column resize (mouse + touch)
@@ -330,6 +339,31 @@ export function DrawsPage() {
     await load(targetPage)
   }
 
+  async function autoFillFutureDraws() {
+    const count = Number(autoFillCount)
+    if (!Number.isInteger(count) || count < 1 || count > 60) {
+      toast.error("自动填写期数必须在 1 到 60 之间")
+      return
+    }
+    if (!confirm(`确认自动新增 ${count} 期台湾彩未来开奖记录吗？已有未来期号将跳过保留。`)) return
+
+    setAutoFilling(true)
+    try {
+      const result = await adminApi<{ ok: true; data: AutoFillResult }>(
+        "/admin/draws/auto-fill-future",
+        { method: "POST", body: jsonBody({ count }) },
+      )
+      await load(1)
+      toast.success(
+        `已新增 ${result.data.created_count} 期；保留已有未来期 ${result.data.preserved_existing_count} 期`,
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "自动填写失败，请稍后重试。")
+    } finally {
+      setAutoFilling(false)
+    }
+  }
+
   function openEditor(row: Draw) {
     if (row.is_opened) {
       toast.error("已开奖记录禁止修改")
@@ -350,12 +384,32 @@ export function DrawsPage() {
             彩种：{taiwanLottery?.name || "台湾彩"}
           </span>
           <div className="flex-1" />
+          <Input
+            type="number"
+            min={1}
+            max={60}
+            aria-label="自动填写未来期数"
+            value={autoFillCount}
+            onChange={(event) => setAutoFillCount(event.target.value)}
+            disabled={autoFilling}
+            className="h-9 w-20"
+          />
+          <Button
+            type="button"
+            onClick={autoFillFutureDraws}
+            disabled={autoFilling}
+            variant="outline"
+          >
+            <WandSparkles className="mr-1 h-4 w-4" />
+            自动填写开奖记录
+          </Button>
           <Button
             onClick={() => {
               const nextOpen = !formOpen
               setEditing(null)
               setFormOpen(nextOpen)
             }}
+            disabled={autoFilling}
             className="group relative overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95"
           >
             <Plus

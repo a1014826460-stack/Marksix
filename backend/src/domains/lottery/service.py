@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import random
+import secrets
 from typing import Any
 
 from db import connect, utc_now
@@ -17,7 +19,211 @@ from helpers import (
     parse_bool,
     sync_lottery_type_next_time_from_latest_draw,
 )
+from runtime_config import get_config_from_conn
 from tables import ensure_admin_tables
+
+
+def _parse_taiwan_draw_numbers(raw: str) -> list[int] | None:
+    """Parse the seven-number Taiwan draw storage format without normalizing it."""
+    try:
+        numbers = [int(part.strip()) for part in str(raw).split(",")]
+    except (TypeError, ValueError):
+        return None
+    if len(numbers) != 7 or len(set(numbers)) != 7 or any(number < 1 or number > 49 for number in numbers):
+        return None
+    return numbers
+
+
+def _is_valid_taiwan_future_candidate(candidate: list[int], recent: list[list[int]]) -> bool:
+    """Check the Taiwan future-draw safeguards against the latest ten valid rows."""
+    if len(candidate) != 7 or len(set(candidate)) != 7:
+        return False
+    if any(number < 1 or number > 49 for number in candidate):
+        return False
+    for previous in recent[-10:]:
+        if len(previous) != 7:
+            continue
+        if candidate == previous:
+            return False
+        if any(candidate[index] == previous[index] for index in (0, 1, 2, 6)):
+            return False
+    return True
+
+
+def _next_issue(year: int, term: int, max_terms: int) -> tuple[int, int]:
+    """Advance one Taiwan issue, rolling into the next configured issue year."""
+    next_year, next_term = int(year), int(term) + 1
+    if next_term > max_terms:
+        next_year += 1
+        next_term = 1
+    return next_year, next_term
+
+
+def _resolve_taiwan_draw_clock(conn: Any) -> tuple[int, int, int]:
+    """Resolve the configured daily Taiwan draw clock, with a safe default."""
+    row = conn.execute("SELECT draw_time FROM lottery_types WHERE id = 3").fetchone()
+    candidates = [
+        str(row["draw_time"] or "").strip() if row else "",
+        str(get_config_from_conn(conn, "draw.taiwan_default_draw_time", "22:30") or "").strip(),
+        "22:30",
+    ]
+    for value in candidates:
+        try:
+            parts = [int(part) for part in value.split(":")]
+            if len(parts) not in {2, 3}:
+                continue
+            hour, minute = parts[:2]
+            second = parts[2] if len(parts) == 3 else 0
+            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                return hour, minute, second
+        except ValueError:
+            continue
+    return 22, 30, 0
+
+
+def autofill_taiwan_future_draws(
+    db_path: str | Path,
+    *,
+    count: int = 12,
+    rng: random.Random | None = None,
+) -> dict[str, Any]:
+    """Atomically create missing Taiwan future draws without changing existing rows."""
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 60:
+        raise ValueError("自动填写期数必须在 1 到 60 之间")
+
+    ensure_admin_tables(db_path)
+    generator = rng or secrets.SystemRandom()
+    now = utc_now()
+
+    with connect(db_path) as conn:
+        if conn.engine == "postgres":
+            # Transaction-scoped lock serializes allocation of Taiwan issue numbers.
+            conn.execute("SELECT pg_advisory_xact_lock(?)", (3_003_003,))
+        else:
+            conn.execute("BEGIN IMMEDIATE")
+
+        try:
+            max_terms = int(get_config_from_conn(conn, "prediction.max_terms_per_year", 365))
+        except (TypeError, ValueError):
+            max_terms = 365
+        if max_terms < 1:
+            max_terms = 365
+
+        latest_opened = conn.execute(
+            """
+            SELECT id, year, term, draw_time
+            FROM lottery_draws
+            WHERE lottery_type_id = 3 AND is_opened = 1
+            ORDER BY year DESC, term DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if not latest_opened:
+            raise ValueError("无法自动填写：尚无台湾彩已开奖记录作为起点")
+
+        latest_year = int(latest_opened["year"])
+        latest_term = int(latest_opened["term"])
+        first_year, first_term = _next_issue(latest_year, latest_term, max_terms)
+        try:
+            latest_draw_at = datetime.strptime(
+                str(latest_opened["draw_time"] or "").strip(), "%Y-%m-%d %H:%M:%S"
+            )
+        except ValueError as exc:
+            raise ValueError("无法自动填写：最新已开奖记录的开奖时间格式无效") from exc
+
+        hour, minute, second = _resolve_taiwan_draw_clock(conn)
+        cursor_time = (latest_draw_at + timedelta(days=1)).replace(
+            hour=hour, minute=minute, second=second, microsecond=0
+        )
+        future_rows = conn.execute(
+            """
+            SELECT id, year, term, numbers, draw_time
+            FROM lottery_draws
+            WHERE lottery_type_id = 3
+              AND is_opened = 0
+              AND (year > ? OR (year = ? AND term >= ?))
+            ORDER BY year, term, id
+            """,
+            (first_year, first_year, first_term),
+        ).fetchall()
+        existing_by_issue = {(int(row["year"]), int(row["term"])): row for row in future_rows}
+
+        historical_rows = conn.execute(
+            """
+            SELECT numbers
+            FROM lottery_draws
+            WHERE lottery_type_id = 3
+              AND (year < ? OR (year = ? AND term <= ?))
+            ORDER BY year DESC, term DESC, id DESC
+            LIMIT 10
+            """,
+            (latest_year, latest_year, latest_term),
+        ).fetchall()
+        recent = [parsed for row in reversed(historical_rows) if (parsed := _parse_taiwan_draw_numbers(row["numbers"]))]
+
+        created: list[dict[str, Any]] = []
+        preserved_existing_count = 0
+        cursor_year, cursor_term = first_year, first_term
+        while len(created) < count:
+            existing = existing_by_issue.get((cursor_year, cursor_term))
+            if existing:
+                preserved_existing_count += 1
+                parsed = _parse_taiwan_draw_numbers(existing["numbers"])
+                if parsed:
+                    recent.append(parsed)
+            else:
+                candidate: list[int] | None = None
+                for _ in range(10_000):
+                    sampled = list(generator.sample(range(1, 50), 7))
+                    if _is_valid_taiwan_future_candidate(sampled, recent):
+                        candidate = sampled
+                        break
+                if candidate is None:
+                    raise RuntimeError("无法在 10000 次尝试内生成符合约束的台湾彩号码")
+
+                next_year, next_term = _next_issue(cursor_year, cursor_term, max_terms)
+                draw_time = cursor_time.strftime("%Y-%m-%d %H:%M:%S")
+                next_draw_time = (cursor_time + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                numbers = ",".join(f"{number:02d}" for number in candidate)
+                conn.execute(
+                    """
+                    INSERT INTO lottery_draws (
+                        lottery_type_id, year, term, numbers, draw_time, next_time,
+                        status, is_opened, next_term, created_at, updated_at
+                    )
+                    VALUES (3, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?)
+                    """,
+                    (
+                        cursor_year,
+                        cursor_term,
+                        numbers,
+                        draw_time,
+                        draw_time_to_unix_ms(next_draw_time),
+                        next_term,
+                        now,
+                        now,
+                    ),
+                )
+                created.append(
+                    {
+                        "year": cursor_year,
+                        "term": cursor_term,
+                        "numbers": numbers,
+                        "draw_time": draw_time,
+                    }
+                )
+                recent.append(candidate)
+
+            cursor_year, cursor_term = _next_issue(cursor_year, cursor_term, max_terms)
+            cursor_time += timedelta(days=1)
+
+        _sync_lottery_type_next_time(conn, 3, now)
+        return {
+            "requested_count": count,
+            "created_count": len(created),
+            "preserved_existing_count": preserved_existing_count,
+            "created": created,
+        }
 
 
 def _load_taiwan_placeholder_previous_draw_ids(

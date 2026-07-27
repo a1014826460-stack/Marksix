@@ -231,8 +231,9 @@ def record_traffic_event(
     return _event_row(row)
 
 
-def _count_distinct_visitor_sql() -> str:
-    return "COUNT(DISTINCT CASE WHEN visitor_id != '' THEN visitor_id ELSE ip_hash END)"
+def _count_distinct_visitor_sql(table_alias: str = "") -> str:
+    prefix = f"{table_alias}." if table_alias else ""
+    return f"COUNT(DISTINCT CASE WHEN {prefix}visitor_id != '' THEN {prefix}visitor_id ELSE {prefix}ip_hash END)"
 
 
 def get_traffic_overview(
@@ -256,14 +257,26 @@ def get_traffic_overview(
         ).fetchone()
         site_rows = conn.execute(
             f"""
-            SELECT site_key,
+            SELECT events.site_key,
+                   COALESCE(MAX(events.web_id), MAX(managed.web_id), 0) AS web_id,
+                   COALESCE(MAX(managed.name), events.site_key) AS name,
+                   COALESCE(MAX(managed.domain), '') AS domain,
                    COUNT(*) AS pv,
-                   {_count_distinct_visitor_sql()} AS uv,
-                   SUM(CASE WHEN event_type = 'api_compat_hit' THEN 1 ELSE 0 END) AS api_compat_hits
-            FROM public_site_traffic_events
+                   {_count_distinct_visitor_sql("events")} AS uv,
+                   SUM(CASE WHEN events.event_type = 'api_compat_hit' THEN 1 ELSE 0 END) AS api_compat_hits
+            FROM public_site_traffic_events AS events
+            LEFT JOIN managed_sites AS managed ON managed.id = (
+                SELECT candidate.id
+                FROM managed_sites AS candidate
+                WHERE candidate.id = events.site_id
+                   OR candidate.web_id = events.web_id
+                   OR candidate.blueprint_name = events.site_key
+                ORDER BY candidate.id ASC
+                LIMIT 1
+            )
             {where}
-            GROUP BY site_key
-            ORDER BY pv DESC, site_key ASC
+            GROUP BY events.site_key
+            ORDER BY web_id ASC, events.site_key ASC
             """,
             params,
         ).fetchall()
@@ -311,6 +324,9 @@ def get_traffic_overview(
         "sites": [
             {
                 "site_key": str(row["site_key"] or ""),
+                "web_id": int(row["web_id"] or 0),
+                "name": str(row["name"] or row["site_key"] or ""),
+                "domain": str(row["domain"] or ""),
                 "pv": int(row["pv"] or 0),
                 "uv": int(row["uv"] or 0),
                 "api_compat_hits": int(row["api_compat_hits"] or 0),
