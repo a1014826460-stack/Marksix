@@ -2227,31 +2227,22 @@ def generate_prediction_batch(
         if not draws:
             raise ValueError("指定期号范围内没有可用的已开奖数据。")
 
-        # When the UI requests the next issue itself, its range starts at the
-        # target future issue.  The fallback draw is already the immediately
-        # preceding opened draw, so generate from that reference without
-        # filtering the result back out by the original request range.
+        # A future-only request addresses target issue(s), while the fallback
+        # draw is only a generation reference. Generate enough offsets to
+        # reach the requested end issue, then keep the requested range.
         future_draw_start_issue = start_issue
         future_draw_end_issue = end_issue
+        effective_future_periods = int(future_periods or 0)
         if future_only and int(future_periods or 0) > 0:
             latest_draw_issue = (int(draws[-1]["year"]), int(draws[-1]["term"]))
-            first_future_issue = compute_next_issue(
-                latest_draw_issue[0],
-                latest_draw_issue[1],
-                1,
-                max_terms_per_year=max_terms_per_year,
+            target_offset = (end_issue[0] - latest_draw_issue[0]) * max_terms_per_year + (
+                end_issue[1] - latest_draw_issue[1]
             )
-            if first_future_issue == start_issue:
-                future_draw_start_issue = first_future_issue
-                future_draw_end_issue = compute_next_issue(
-                    latest_draw_issue[0],
-                    latest_draw_issue[1],
-                    int(future_periods),
-                    max_terms_per_year=max_terms_per_year,
-                )
+            if target_offset > 0:
+                effective_future_periods = max(effective_future_periods, target_offset)
 
         future_draws = _build_future_draws(
-            draws, future_periods, future_draw_start_issue, future_draw_end_issue,
+            draws, effective_future_periods, future_draw_start_issue, future_draw_end_issue,
             future_only, max_terms_per_year,
         )
         safety_draw_map = _build_safety_draw_map(conn, lottery_type)
