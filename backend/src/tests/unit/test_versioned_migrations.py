@@ -199,6 +199,7 @@ def test_migration_nine_drops_only_the_prefix_hash_unique_constraint():
 
     assert len(conn.statements) == 2
     assert "pg_constraint" in conn.statements[0]
+    assert "conname AS constraint_name" in conn.statements[0]
     assert "DROP CONSTRAINT" in conn.statements[1]
     assert "prefix_key" in conn.statements[1]
 

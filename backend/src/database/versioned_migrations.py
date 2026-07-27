@@ -308,7 +308,7 @@ def _relax_prediction_control_prefix_uniqueness(conn: Any) -> None:
         SELECT constraint_name, constraint_definition
         FROM (
             SELECT
-                constraint_name,
+                conname AS constraint_name,
                 pg_get_constraintdef(oid) AS constraint_definition
             FROM pg_constraint
             WHERE conrelid = 'prediction_generation_controls'::regclass
