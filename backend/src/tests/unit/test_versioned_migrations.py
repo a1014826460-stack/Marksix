@@ -168,6 +168,41 @@ def test_migration_command_rejects_sqlite_targets():
         run_migrations("migration-test.sqlite3")
 
 
+def test_migration_nine_drops_only_the_prefix_hash_unique_constraint():
+    from database.versioned_migrations import _relax_prediction_control_prefix_uniqueness
+
+    class _Cursor:
+        def fetchall(self):
+            return [
+                {
+                    "constraint_name": "prediction_generation_controls_prefix_key",
+                    "constraint_definition": "UNIQUE (lottery_type_id, year, term, mode_id, prefix_hash)",
+                },
+                {
+                    "constraint_name": "prediction_generation_controls_site_key",
+                    "constraint_definition": "UNIQUE (lottery_type_id, year, term, mode_id, web_id)",
+                },
+            ]
+
+    class _Connection:
+        engine = "postgres"
+
+        def __init__(self):
+            self.statements: list[str] = []
+
+        def execute(self, sql, _params=None):
+            self.statements.append(str(sql))
+            return _Cursor()
+
+    conn = _Connection()
+    _relax_prediction_control_prefix_uniqueness(conn)
+
+    assert len(conn.statements) == 2
+    assert "pg_constraint" in conn.statements[0]
+    assert "DROP CONSTRAINT" in conn.statements[1]
+    assert "prefix_key" in conn.statements[1]
+
+
 def test_migration_three_upserts_shengshi8800_profile_and_only_migrates_default_site_four_rows(tmp_path):
     """Site 4's reachable-page profile must be explicit on already deployed DBs."""
     from db import connect

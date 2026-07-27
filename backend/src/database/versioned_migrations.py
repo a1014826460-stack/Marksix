@@ -305,19 +305,26 @@ def _relax_prediction_control_prefix_uniqueness(conn: Any) -> None:
 
     rows = conn.execute(
         """
-        SELECT indexname, indexdef
-        FROM pg_indexes
-        WHERE schemaname = current_schema()
-          AND tablename = 'prediction_generation_controls'
+        SELECT constraint_name, constraint_definition
+        FROM (
+            SELECT
+                constraint_name,
+                pg_get_constraintdef(oid) AS constraint_definition
+            FROM pg_constraint
+            WHERE conrelid = 'prediction_generation_controls'::regclass
+              AND contype = 'u'
+        ) AS unique_constraints
         """
     ).fetchall()
     for row in rows:
-        index_name = str(row["indexname"] or "")
-        index_def = str(row["indexdef"] or "").lower()
-        if not index_name or "unique" not in index_def or "prefix_hash" not in index_def:
+        constraint_name = str(row["constraint_name"] or "")
+        constraint_definition = str(row["constraint_definition"] or "").lower()
+        if not constraint_name or "prefix_hash" not in constraint_definition:
             continue
-        escaped_name = index_name.replace('"', '""')
-        conn.execute(f'DROP INDEX IF EXISTS "{escaped_name}"')
+        escaped_name = constraint_name.replace('"', '""')
+        conn.execute(
+            f'ALTER TABLE prediction_generation_controls DROP CONSTRAINT IF EXISTS "{escaped_name}"'
+        )
 
 
 MIGRATIONS: tuple[Migration, ...] = (
