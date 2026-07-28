@@ -27,6 +27,18 @@ def test_new_session_persists_only_a_hash_and_authenticates_with_the_bearer_valu
     assert auth_user_from_token(db_path, stored["token"]) is None
 
 
+def test_new_admin_session_defaults_to_forty_eight_hours(tmp_path):
+    from db import connect
+
+    db_path = str(tmp_path / "forty-eight-hour-session.sqlite3")
+    ensure_admin_tables(db_path)
+    login = login_user(db_path, "admin", "admin123")
+
+    expires_at = datetime.fromisoformat(login["expires_at"])
+    remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    assert 47 * 60 * 60 + 55 * 60 <= remaining <= 48 * 60 * 60
+
+
 def test_legacy_plaintext_session_rows_are_invalidated_during_schema_upgrade(tmp_path):
     from db import connect
 

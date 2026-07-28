@@ -53,7 +53,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "auth.session_ttl_seconds": {
-        "value": 86400,
+        "value": 172800,
         "value_type": "int",
         "description": "管理员会话过期秒数。",
         "is_secret": 0,

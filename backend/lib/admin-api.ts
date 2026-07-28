@@ -41,6 +41,16 @@ export type AdminApiError = Error & {
   locked?: boolean
   attemptCount?: number
   maxAttempts?: number
+  status?: number
+}
+
+const LOGIN_PATH = "/login"
+let redirectingToLogin = false
+
+function redirectToLoginAfterSessionExpiry() {
+  if (typeof window === "undefined" || redirectingToLogin || window.location.pathname === LOGIN_PATH) return
+  redirectingToLogin = true
+  window.location.replace(`${window.location.origin}/fackyou${LOGIN_PATH}`)
 }
 
 export async function adminApi<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -79,9 +89,11 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
       apiError.detail ||
       (rawText.trim() ? rawText : buildHttpErrorMessage(response.status))
     const err = new Error(message) as AdminApiError
+    err.status = response.status
     if (apiError.locked) err.locked = true
     if (apiError.attempt_count != null) err.attemptCount = apiError.attempt_count
     if (apiError.max_attempts != null) err.maxAttempts = apiError.max_attempts
+    if (response.status === 401) redirectToLoginAfterSessionExpiry()
     throw err
   }
 

@@ -6,6 +6,11 @@ for (const token of ["localStorage", "onPointerDown", "onPointerMove", "SIDEBAR_
   if (!source.includes(token)) throw new Error(`resizable sidebar contract missing: ${token}`)
 }
 
+const adminApi = fs.readFileSync("lib/admin-api.ts", "utf8")
+for (const token of ["response.status === 401", "redirectToLoginAfterSessionExpiry", "window.location.replace"]) {
+  if (!adminApi.includes(token)) throw new Error(`expired-session redirect contract missing: ${token}`)
+}
+
 const draws = fs.readFileSync("features/draws/DrawsPage.tsx", "utf8")
 if (!draws.includes("row.is_opened ?")) {
   throw new Error("opened draw actions must be conditionally disabled")

@@ -39,10 +39,10 @@ def _password_iterations(db_path: str | Path | None = None) -> int:
 
 def _session_ttl_seconds(db_path: str | Path) -> int:
     try:
-        value = get_config(db_path, "auth.session_ttl_seconds", 86400)
+        value = get_config(db_path, "auth.session_ttl_seconds", 172800)
         return max(60, int(value))
     except (TypeError, ValueError):
-        return 86400
+        return 172800
 
 
 def hash_password(password: str, salt: str | None = None, db_path: str | Path | None = None) -> str:
