@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as _datetime_mod
 import html
 import json
 import mimetypes
@@ -7,6 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from http import HTTPStatus
+
+
+def _json_serializable_default(obj: Any) -> str:
+    """Convert common non-JSON types (e.g. datetime) to ISO strings."""
+    if isinstance(obj, (_datetime_mod.datetime, _datetime_mod.date)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 from .security import cors_allowed_origin
 
@@ -33,7 +41,7 @@ class ResponseWriter:
         self._handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def send_json(self, data: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        body = json.dumps(data, ensure_ascii=False, indent=2, default=_json_serializable_default).encode("utf-8")
         self._handler.send_response(status)
         self.send_cors_headers()
         self._send_pending_headers()

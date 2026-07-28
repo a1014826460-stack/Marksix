@@ -47,6 +47,17 @@ def test_local_restart_script_checks_postgres_before_stopping_healthy_processes(
     assert source.rindex("Test-DatabaseReachable") < source.rindex("Stop-ManagedConsoleProcesses")
 
 
+def test_local_restart_script_applies_pending_schema_migrations_before_restart():
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "restart-backend.ps1"
+    source = script.read_text(encoding="utf-8")
+
+    assert "function Invoke-PendingSchemaMigrations" in source
+    assert "database.versioned_migrations" in source
+    assert source.rindex("Invoke-PendingSchemaMigrations") < source.rindex("Stop-ManagedConsoleProcesses")
+
+
 def test_local_restart_script_is_development_only_and_requires_native_postgres_service():
     from pathlib import Path
 

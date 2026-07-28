@@ -171,6 +171,37 @@ function Stop-SchedulerWorkerProcesses {
     Start-Sleep -Seconds 2
 }
 
+function Clear-SchedulerWorkerLease {
+    param(
+        [string]$DbUrl = $DefaultDbUrl
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DbUrl)) {
+        Write-Host "Skipping scheduler worker lease cleanup: no DATABASE_URL."
+        return
+    }
+
+    Write-Host "Clearing stale scheduler worker lease..."
+    Push-Location (Join-Path $BackendRoot "src")
+    try {
+        & $PythonExe -c @"
+import sys; sys.path.insert(0, '.')
+from domains.scheduler.repository import WORKER_LEASE_TABLE_NAME
+from db import connect
+with connect('$DbUrl') as conn:
+    deleted = conn.execute(
+        f"DELETE FROM {WORKER_LEASE_TABLE_NAME} WHERE lease_name = 'crawler_scheduler'"
+    ).rowcount
+    print(f'Cleared {deleted} stale lease(s).')
+"@
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Warning: lease cleanup exited with code $LASTEXITCODE. The new worker will retry automatically."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Stop-ManagedConsoleProcesses {
     $targets = Get-ManagedConsoleProcesses
     if (-not $targets) {
@@ -227,6 +258,30 @@ function Test-DatabaseReachable {
     }
 
     Write-Host "PostgreSQL TCP endpoint is reachable: $($uri.Host):$port"
+}
+
+function Invoke-PendingSchemaMigrations {
+    param(
+        [string]$DbUrl = $DefaultDbUrl
+    )
+
+    if (-not (Test-Path $PythonExe)) {
+        throw "Python executable not found: $PythonExe"
+    }
+    if ([string]::IsNullOrWhiteSpace($DbUrl)) {
+        throw "DATABASE_URL must be set before applying schema migrations."
+    }
+
+    Write-Host "Applying pending PostgreSQL schema migrations..."
+    Push-Location (Join-Path $BackendRoot "src")
+    try {
+        & $PythonExe -m database.versioned_migrations --db_path $DbUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "Schema migration failed with exit code $LASTEXITCODE. Existing backend processes were not stopped."
+        }
+    } finally {
+        Pop-Location
+    }
 }
 
 function Test-NativePostgresService {
@@ -374,10 +429,12 @@ function Test-SchedulerWorkerHealthy {
 
 Test-NativePostgresService
 Test-DatabaseReachable
+Invoke-PendingSchemaMigrations
 Stop-ManagedConsoleProcesses
 Stop-BackendProcesses
 Stop-BackendAdminProcesses
 Stop-SchedulerWorkerProcesses
+Clear-SchedulerWorkerLease
 Test-PortReleased -TargetPort $Port
 Test-PortReleased -TargetPort $AdminPort
 Start-Backend

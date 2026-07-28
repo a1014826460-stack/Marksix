@@ -1964,15 +1964,20 @@ def _process_single_module(
                     if mechanism_key not in simulation_report["mechanisms_skipped"]:
                         simulation_report["mechanisms_skipped"].append(mechanism_key)
                     module_report["warnings"].append(
-                        f"mode_id={mode_id}: future generation skipped because its unverified rule cannot control accuracy"
+                        f"mode_id={mode_id}: strict accuracy control is unavailable; generating a safe fallback prediction"
                     )
-                    continue
+                    # The generic generator must not receive an unsupported
+                    # truth/control combination. It only needs the future flag
+                    # and an empty result code to create a non-leaking fallback.
+                    truth = None
 
             rejected_prefix_hashes: set[str] = set()
             rejected_signature_hashes: set[str] = set()
             row_data: dict[str, Any] | None = None
             control_plan: _PersistedFutureControl | None = None
             simulation_should_hit: bool | None = None
+            control_savepoint: str | None = None
+            fallback_reason = ""
             for control_attempt in range(2):
                 try:
                     row_data = _generate_single_draw_row(
@@ -1992,12 +1997,7 @@ def _process_single_module(
                         rejected_signature_hashes=rejected_signature_hashes,
                     )
                 except _PersistedFutureControlUnavailable as exc:
-                    module_report["errors"] += 1
-                    if not module_report["error_message"]:
-                        module_report["error_message"] = str(exc)
-                    module_report["warnings"].append(
-                        f"mode_id={mode_id}: future generation was not persisted because no legal controlled candidate exists"
-                    )
+                    fallback_reason = str(exc)
                     row_data = None
                     break
 
@@ -2032,6 +2032,7 @@ def _process_single_module(
                 _rollback_control_savepoint(conn, control_savepoint)
                 control_savepoint = None
                 if reservation.get("reason") == "site_issue_already_reserved":
+                    fallback_reason = "site issue control was already reserved"
                     row_data = None
                     break
                 rejected_prefix_hashes.add(signature_hash(control_plan.prefix_signature))
@@ -2039,8 +2040,29 @@ def _process_single_module(
                 row_data = None
                 control_plan = None
 
+            if row_data is None and is_future and int(lottery_type) == 3:
+                # A complete future issue takes priority over optional accuracy and
+                # uniqueness control. Never expose truth data in this fallback.
+                row_data = _generate_single_draw_row(
+                    draw=draw, mode_id=mode_id, is_future=is_future,
+                    safe_res_code=safe_res_code, lottery_type=lottery_type,
+                    site_web_id=site_web_id, config=config, table_name=table_name,
+                    db_path=db_path, default_target_hit_rate=default_target_hit_rate,
+                    zodiac_map=zodiac_map, build_row=build_generated_prediction_row_data,
+                    conn=conn, truth=None, simulation_config=None,
+                    simulation_state=None, site_id=int(site_id),
+                    mechanism_key=mechanism_key,
+                )
+                row_data.pop("_generation_control", None)
+                simulation_should_hit = row_data.pop("_simulation_should_hit", None)
+                control_plan = None
+                module_report["warnings"].append(
+                    f"mode_id={mode_id}: strict candidate constraints were relaxed to generate the required future prediction"
+                    + (f" ({fallback_reason})" if fallback_reason else "")
+                )
+
             if row_data is None:
-                if "control_savepoint" in locals() and control_savepoint is not None:
+                if control_savepoint is not None:
                     _rollback_control_savepoint(conn, control_savepoint)
                     control_savepoint = None
                 simulation_report["skipped"] += 1

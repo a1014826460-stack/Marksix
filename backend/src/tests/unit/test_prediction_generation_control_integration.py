@@ -817,7 +817,7 @@ def test_process_module_replans_after_one_control_reservation_conflict(monkeypat
     assert "_generation_control" not in persisted_rows[0]
 
 
-def test_process_module_blocks_unverified_future_rule_without_persisting(monkeypatch, tmp_path):
+def test_process_module_generates_unverified_future_rule_without_persisting_control(monkeypatch, tmp_path):
     db_path = str(tmp_path / "blocked-control.sqlite3")
     ensure_admin_tables(db_path)
     dynamic_config = type(
@@ -837,8 +837,18 @@ def test_process_module_blocks_unverified_future_rule_without_persisting(monkeyp
         "get_future_draw_truth",
         lambda *_args, **_kwargs: _truth(),
     )
-    monkeypatch.setattr(service, "_generate_single_draw_row", lambda **_kwargs: calls.append("generate"))
-    monkeypatch.setattr(service, "_persist_generated_row", lambda *_args, **_kwargs: calls.append("persist"))
+    monkeypatch.setattr(
+        service,
+        "_generate_single_draw_row",
+        lambda **_kwargs: calls.append("generate") or {
+            "type": "3", "year": "2026", "term": "131", "web": "4", "res_code": "", "content": "fallback",
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "_persist_generated_row",
+        lambda *_args, **_kwargs: calls.append("persist") or {"action": "inserted"},
+    )
 
     with connect(db_path) as conn:
         report = service._process_single_module(
@@ -862,10 +872,10 @@ def test_process_module_blocks_unverified_future_rule_without_persisting(monkeyp
             build_generated_prediction_row_data=lambda **kwargs: kwargs,
         )
 
-    assert report["inserted"] == 0
+    assert report["inserted"] == 1
     assert report["simulation"]["skipped"] == 1
-    assert any("unverified rule" in warning for warning in report["warnings"])
-    assert calls == []
+    assert any("strict accuracy control is unavailable" in warning for warning in report["warnings"])
+    assert calls == ["generate", "persist"]
 
 
 def test_process_module_does_not_apply_legacy_diversity_after_control_reservation(monkeypatch, tmp_path):
@@ -927,7 +937,7 @@ def test_process_module_does_not_apply_legacy_diversity_after_control_reservatio
     assert persisted_rows[0]["content"] == "虎,猪,羊"
 
 
-def test_process_module_refuses_to_persist_when_all_controlled_prefixes_are_reserved(monkeypatch, tmp_path):
+def test_process_module_persists_fallback_when_all_controlled_prefixes_are_reserved(monkeypatch, tmp_path):
     db_path = str(tmp_path / "exhausted-prefixes.sqlite3")
     ensure_admin_tables(db_path)
     config = PREDICTION_CONFIGS["pt3xiao"]
@@ -945,8 +955,15 @@ def test_process_module_refuses_to_persist_when_all_controlled_prefixes_are_rese
     )
     monkeypatch.setattr(
         service,
+        "_plan_persisted_future_control",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            service._PersistedFutureControlUnavailable("controlled candidate unavailable")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
         "_persist_generated_row",
-        lambda _conn, _table, row_data, allow_overwrite: persisted_rows.append(dict(row_data)) or {"action": "inserted"},
+        lambda _conn, _table, row_data, allow_overwrite, **_kwargs: persisted_rows.append(dict(row_data)) or {"action": "inserted"},
     )
 
     with connect(db_path) as conn:
@@ -981,6 +998,7 @@ def test_process_module_refuses_to_persist_when_all_controlled_prefixes_are_rese
             build_generated_prediction_row_data=lambda **kwargs: kwargs,
         )
 
-    assert report["inserted"] == 0
-    assert report["errors"] == 1
-    assert persisted_rows == []
+    assert report["inserted"] == 1
+    assert report["errors"] == 0
+    assert persisted_rows[0]["res_code"] == ""
+    assert any("strict candidate constraints were relaxed" in warning for warning in report["warnings"])

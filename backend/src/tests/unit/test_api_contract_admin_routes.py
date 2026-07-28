@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import pytest
 from unittest.mock import patch
 
@@ -289,6 +290,21 @@ def test_admin_logs_contract_and_query_mapping():
     )
     assert ctx.handler.response_status == 200
     assert response_json(ctx) == payload
+
+
+def test_admin_log_detail_serializes_postgres_datetime_fields():
+    ctx = make_ctx("/api/admin/logs/31096")
+    detail = {
+        "id": 31096,
+        "level": "ERROR",
+        "created_at": datetime(2026, 7, 28, 6, 42, 19, tzinfo=timezone.utc),
+    }
+
+    with patch("domains.logs.service.get_log_detail", return_value=detail):
+        admin_log_routes.log_detail(ctx)
+
+    assert ctx.handler.response_status == 200
+    assert response_json(ctx)["created_at"] == "2026-07-28T06:42:19+00:00"
 
 
 def test_admin_logs_export_contract_and_query_mapping():
