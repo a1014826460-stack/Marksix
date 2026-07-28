@@ -296,6 +296,13 @@ def ensure_taiwan_future_autofill_task(
     ):
         target += timedelta(days=1)
         schedule_date = target.strftime("%Y-%m-%d")
+    task_key = _task_key(TASK_TYPE_TAIWAN_FUTURE_AUTOFILL, {"schedule_date": schedule_date})
+    with db_connect(db_path) as conn:
+        existing = repository.find_task_by_key(conn, task_key)
+    # A failed attempt remains pending until its configured retry time.  Do not
+    # overwrite its audit trail or retry delay on each scheduler poll.
+    if existing and str(existing.get("status") or "") in {"pending", "running"}:
+        return
     upsert_scheduler_task(
         db_path,
         task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
@@ -309,20 +316,27 @@ def ensure_taiwan_future_autofill_task(
 def get_taiwan_future_autofill_schedule_status(db_path: str | Path) -> dict[str, Any]:
     """Return display-safe scheduled task state for the draw management page."""
     with db_connect(db_path) as conn:
-        row = repository.find_task_schedule_status(conn, task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL)
-    if not row:
-        return {"last_run": None, "next_run_at": None}
-    status = str(row.get("status") or "")
+        latest_run = repository.find_latest_task_by_status(
+            conn,
+            task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+            statuses=("done", "failed"),
+        )
+        next_task = repository.find_latest_task_by_status(
+            conn,
+            task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+            statuses=("pending", "running"),
+        )
     last_run = None
-    if status in {"done", "failed"}:
+    if latest_run:
+        status = str(latest_run.get("status") or "")
         last_run = {
             "status": status,
-            "finished_at": row.get("last_finished_at"),
-            "error": str(row.get("last_error") or "") if status == "failed" else "",
+            "finished_at": latest_run.get("last_finished_at"),
+            "error": str(latest_run.get("last_error") or "") if status == "failed" else "",
         }
     return {
         "last_run": last_run,
-        "next_run_at": row.get("run_at") if status in {"pending", "running"} else None,
+        "next_run_at": next_task.get("run_at") if next_task else None,
     }
 
 

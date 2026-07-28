@@ -21,11 +21,21 @@ if (!adapter.includes('tailLabel.textContent = "⑤码"')) {
   throw new Error("twssz adapter must preserve the original five-number label")
 }
 
-for (const token of ["renderGradeHistory", "renderLinkedGroups", "renderMa24Grid", "renderFifteenCodeHistory", "renderAiForumHistory", "renderStructuredHistory", "renderCompositeKillHistory", "renderDaxiaoHistory", "renderEightXiaoHistory", "renderFiveNotHistory", "renderThreeXiaoHistory", "renderDoubleWaveHistory", "renderOneHeadHistory", "renderAaaGradeHistory", "data-site-slot", "tr.zt24mtr", ".bbzhong122", "title_66"]) {
+for (const token of ["renderGradeHistory", "renderLinkedGroups", "renderMa24Grid", "renderFifteenCodeHistory", "renderAiForumHistory", "renderJiaYeErXiaoHistory", "renderTeLiaoHistory", "renderDanShuangHistory", "renderCompositeKillHistory", "renderDaxiaoHistory", "renderEightXiaoHistory", "renderFiveNotHistory", "renderThreeXiaoHistory", "renderDoubleWaveHistory", "renderOneHeadHistory", "renderAaaGradeHistory", "data-site-slot", "tr.zt24mtr", ".bbzhong122", "title_66"]) {
   if (!adapter.includes(token)) throw new Error(`twssz adapter missing DOM-slot renderer contract: ${token}`)
 }
 if (adapter.includes('sixiao_sima", title: "精准四肖", target: function () { return targetAfter("top_13"')) {
   throw new Error("15码中特 card must not use a fragile top_13 sibling-offset mapping")
+}
+for (const prohibited of ["rotateNumbers", "style.backgroundColor"]) {
+  if (adapter.includes(prohibited)) throw new Error(`twssz complex prediction modules must not use fabricated or generic rendering: ${prohibited}`)
+}
+for (const required of [
+  '{ key: "pt2xiao", title: "家野二肖", renderer: renderJiaYeErXiaoHistory }',
+  '{ key: "juesha1wei", title: "精选特料专区", renderer: renderTeLiaoHistory }',
+  '{ key: "danshuangtema", title: "单双中特", renderer: renderDanShuangHistory }'
+]) {
+  if (!adapter.includes(required)) throw new Error(`twssz module must use its dedicated renderer: ${required}`)
 }
 for (const prohibited of ["rowDisplay", "replaceRowText", "replaceLeafText", "renderStandardSection"]) {
   if (adapter.includes(prohibited)) throw new Error(`twssz must not use whole-row renderer: ${prohibited}`)
@@ -41,8 +51,11 @@ if (!html.includes("<title>台湾神算子，算无遗漏</title>")) {
 if (!html.includes('rel="icon" href="static/file/favicon.ico"')) {
   throw new Error("twssz vendor page must use its supplied favicon")
 }
-if (html.includes("204期")) {
-  throw new Error("twssz source must not retain any static 204期 prediction text")
+if (!html.includes('<link rel="shortcut icon" href="static/file/favicon.ico" type="image/x-icon">')) {
+  throw new Error("twssz vendor page must expose the supplied favicon to legacy browsers")
+}
+for (const staticIssue of ["204期", "203期", "202期", "201期", "200期", "199期", "198期", "197期"]) {
+  if (html.includes(staticIssue)) throw new Error(`twssz source must not retain static prediction text: ${staticIssue}`)
 }
 for (const staticPlaceholder of ["待加载期", "暂无后端资料", "精选24码;准确率绝对100%;大胆下注!"]) {
   if (html.includes(staticPlaceholder)) {
@@ -51,6 +64,9 @@ for (const staticPlaceholder of ["待加载期", "暂无后端资料", "精选24
 }
 if ((html.match(/class="bbzhong122"/g) || []).length !== 8) {
   throw new Error("15码中特 must retain its eight supplied card containers")
+}
+if ((html.match(/class="zt24mtr"/g) || []).length !== 16) {
+  throw new Error("精选24码 must retain eight fixed two-row number grids")
 }
 for (const staticPrediction of [
   "执笔先生（gat566.cc）15码中特",

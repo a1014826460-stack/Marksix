@@ -88,11 +88,11 @@
     // supplied 15码中特 cards; shiwu_mazhong is not a public API module.
     { key: "title_66", title: "15码中特", renderer: renderFifteenCodeHistory },
     { key: "title_48", title: "AI心水玄机论坛", renderer: renderAiForumHistory },
-    { key: "pt2xiao", title: "家野二肖", target: function () { return targetAfter("top_8", 0, 2); }, rows: allRows, fallbackKey: "pt2xiao", renderer: renderStructuredHistory },
+    { key: "pt2xiao", title: "家野二肖", renderer: renderJiaYeErXiaoHistory },
     { key: "3tou", title: "三头中特", target: function () { return targetAfter("top_8", 1, 2); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "title_5", title: "精准天地+两肖", renderer: renderTiandiHistory },
     { key: "juesha2xiao", title: "综合绝杀", target: compositeTable, renderer: renderCompositeKillHistory },
-    { key: "juesha1wei", title: "特料公开", target: function () { return targetAfter("top_1", 0, 2); }, rows: allRows, renderer: renderStructuredHistory },
+    { key: "juesha1wei", title: "精选特料专区", renderer: renderTeLiaoHistory },
     { key: "pt1wei", title: "平特一尾", target: function () { return targetAfter("top_3", 0, 3); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "title_48", title: "8肖16码", renderer: renderEightXiaoHistory },
@@ -104,7 +104,7 @@
     { key: "pt3xiao", title: "三肖六码", renderer: renderThreeXiaoHistory },
     { key: "shuangbo", title: "双波10码", renderer: renderDoubleWaveHistory },
     { key: "title_47", title: "四肖中特", target: function () { return targetAfter("top_8", 2, 2); }, rows: allRows, renderer: renderStructuredHistory },
-    { key: "danshuangtema", title: "单双中特", target: function () { return window.document.querySelector("#con_jihuadanshuang50000ww_1"); }, rows: allParagraphs, renderer: renderStructuredHistory },
+    { key: "danshuangtema", title: "单双中特", renderer: renderDanShuangHistory },
     { key: "title_143", title: "一波中特", target: function () { return window.document.querySelector("#con_jihuadanshuang50000ww_2"); }, rows: allParagraphs, renderer: renderStructuredHistory },
     { key: "3tou", title: "一头一码", renderer: renderOneHeadHistory }
   ];
@@ -191,13 +191,23 @@
   }
 
   function moduleRow(module, index) {
-    var rows = module && Array.isArray(module.rows) ? module.rows : [];
+    var rows = distinctModuleRows(module);
     return rows[index] || null;
+  }
+
+  function distinctModuleRows(module) {
+    var seen = {};
+    return (module && Array.isArray(module.rows) ? module.rows : []).filter(function (row) {
+      var issue = String(row && (row.issue || row.term || "")).replace(/期$/, "");
+      if (!issue || seen[issue]) return false;
+      seen[issue] = true;
+      return true;
+    });
   }
 
   function moduleRowForTerm(module, referenceRow, fallbackIndex) {
     var term = referenceRow && String(referenceRow.term || referenceRow.issue || "").replace(/期$/, "");
-    var rows = module && Array.isArray(module.rows) ? module.rows : [];
+    var rows = distinctModuleRows(module);
     if (term) {
       var matched = rows.filter(function (row) {
         return String(row.term || row.issue || "").replace(/期$/, "") === term;
@@ -285,6 +295,11 @@
       return;
     }
     node.textContent = value;
+  }
+
+  function clearNodeText(node) {
+    if (!node) return;
+    textNodes(node).forEach(function (text) { text.nodeValue = ""; });
   }
 
   function predictionLeaves(root) {
@@ -507,7 +522,7 @@
         // Each issue heading is the existing row directly before its first
         // 12-number row. Preserve its layout and replace only its text slot.
         var headingCell = headingRow.querySelector("td");
-        if (headingCell) setNodeText(headingCell, row ? termValue(row) + " 精选24码" : "");
+        if (headingCell) setNodeText(headingCell, row ? termValue(row) + " 精选24码;准确率绝对100%;大胆下注!" : "");
       }
       Array.prototype.slice.call(rows[index].querySelectorAll("td")).concat(
         rows[index + 1] ? Array.prototype.slice.call(rows[index + 1].querySelectorAll("td")) : []
@@ -517,6 +532,74 @@
       });
       historyIndex += 1;
     }
+  }
+
+  function tablesAfterTop8() {
+    var anchor = matchingAnchor("top_8", 0);
+    var heading = anchor && anchor.nextElementSibling;
+    var scope = heading && heading.nextElementSibling;
+    return scope ? scope.querySelectorAll("table") : [];
+  }
+
+  // 家野二肖 has eight one-row cards followed by a fixed livestock legend.
+  // The term, category, zodiac pair and draw result each retain their supplied
+  // slot instead of collapsing the card into a generic API summary.
+  function renderJiaYeErXiaoHistory(mapping, module) {
+    var tables = tablesAfterTop8();
+    var domestic = ["牛", "马", "羊", "鸡", "狗", "猪"];
+    Array.prototype.slice.call(tables, 1, 9).forEach(function (table, index) {
+      var row = moduleRow(module, index);
+      var cell = table.querySelector("td");
+      if (!cell) return;
+      table.setAttribute("data-prediction-section", mapping.key);
+      table.setAttribute("data-prediction-row", String(index));
+      var zodiacs = zodiacValues(row).slice(0, 2);
+      var category = zodiacs.some(function (value) { return domestic.indexOf(value) >= 0; }) ? "家禽" : "野兽";
+      var term = slot(cell, "jia-ye-term", function (root) { return root.querySelector("p > font b"); });
+      var value = slot(cell, "jia-ye-value", function (root) { return root.querySelector("font[color='#0000FF']"); });
+      var result = slot(cell, "jia-ye-result", function (root) { return root.querySelector("font[color='#ff0000']"); });
+      if (term) term.textContent = row ? termValue(row) : "";
+      if (value) value.textContent = row ? "【" + category + "+" + zodiacs.join("") + "】" : "";
+      if (result) result.textContent = row ? openedResult(row) : "";
+    });
+  }
+
+  function teLiaoTable() {
+    var anchor = matchingAnchor("top_1", 0);
+    return anchor && anchor.nextElementSibling && anchor.nextElementSibling.nextElementSibling;
+  }
+
+  // 特料专区 keeps its supplied one-row announcement layout. The API has one
+  // approved replacement stream, so absent entries remain explicit blanks.
+  function renderTeLiaoHistory(mapping, module) {
+    var table = teLiaoTable();
+    if (!table) return;
+    table.setAttribute("data-prediction-section", mapping.key);
+    Array.prototype.forEach.call(table.querySelectorAll("tr"), function (tr, index) {
+      var row = moduleRow(module, index);
+      var cell = tr.querySelector("td");
+      if (!cell) return;
+      tr.setAttribute("data-prediction-row", String(index));
+      var issue = slot(cell, "teliao-term", function (root) { return root.querySelector("a strong span span span span span"); });
+      var value = slot(cell, "teliao-value", function (root) { return Array.prototype.filter.call(root.querySelectorAll("span"), function (node) { return String(node.textContent || "").trim() && node !== issue; })[0]; });
+      var status = slot(cell, "teliao-status", function (root) { return root.querySelector("td > strong:last-child"); });
+      if (issue) issue.textContent = row ? termValue(row).replace("期", "") : "";
+      if (value) value.textContent = row ? predictionTokens(row).map(firstValue).join("·") : "";
+      if (status) status.textContent = row ? (row.result && row.result.isOpened ? openedResult(row) : "待开奖") : "";
+    });
+  }
+
+  function renderDanShuangHistory(mapping, module) {
+    var target = window.document.querySelector("#con_jihuadanshuang50000ww_1");
+    if (!target) return;
+    target.setAttribute("data-prediction-section", mapping.key);
+    Array.prototype.forEach.call(target.querySelectorAll("p"), function (line, index) {
+      var row = moduleRow(module, index);
+      line.setAttribute("data-prediction-row", String(index));
+      var values = predictionTokens(row).map(firstValue);
+      var label = values.join("") || "";
+      replaceExistingText(line, row ? termValue(row) + "《" + label + "》" + openedResult(row, "√") : "");
+    });
   }
 
   function vendorPredictionScopes() {
@@ -656,13 +739,15 @@
   }
 
   function aiNumbers(row) {
-    var values = numericTokenValues(row);
-    zodiacNumberGroups(row, 8).forEach(function (group) {
-      (ZODIAC_NUMBERS[group.zodiac] || []).forEach(function (number) {
-        if (values.length < 10 && values.indexOf(number) === -1) values.push(number);
-      });
+    return numericTokenValues(row).slice(0, 10);
+  }
+
+  function aiLabelSlot(cell, name, prefix) {
+    return slot(cell, name, function (root) {
+      return Array.prototype.filter.call(root.querySelectorAll("font"), function (candidate) {
+        return String(candidate.textContent || "").trim().indexOf(prefix) === 0;
+      })[0];
     });
-    return values.slice(0, 10);
   }
 
   // AI心水 has a multi-line vendor card, so its title, term, zodiac and number
@@ -710,15 +795,14 @@
       var tails = selectedNumbers.map(function (number) { return number.charAt(1); }).filter(function (tail, tailIndex, all) {
         return all.indexOf(tail) === tailIndex;
       }).slice(0, 5).join("");
-      Array.prototype.filter.call(cell.querySelectorAll("font"), function (candidate) {
-        return candidate !== zodiac && candidate !== numbers && !candidate.contains(numbers);
-      }).forEach(function (candidate) {
-        var label = String(candidate.textContent || "").trim();
-        if (label.indexOf("波色:") === 0) replaceExistingText(candidate, row ? "波色:" + waves : "");
-        else if (label.indexOf("大小:") === 0) replaceExistingText(candidate, row ? "大小:" + (largeCount >= 5 ? "大" : "小") : "");
-        else if (label.indexOf("尾数:") === 0) replaceExistingText(candidate, row ? "尾数:" + tails : "");
-        else replaceExistingText(candidate, "");
-      });
+      // Label slots are captured before static content is cleared, then reused
+      // on subsequent lottery switches without rediscovering by old text.
+      var waveSlot = aiLabelSlot(cell, "ai-wave", "波色:");
+      var sizeSlot = aiLabelSlot(cell, "ai-size", "大小:");
+      var tailSlot = aiLabelSlot(cell, "ai-tail", "尾数:");
+      if (waveSlot) replaceExistingText(waveSlot, "波色:" + (row ? waves : ""));
+      if (sizeSlot) replaceExistingText(sizeSlot, "大小:" + (row ? (largeCount >= 5 ? "大" : "小") : ""));
+      if (tailSlot) replaceExistingText(tailSlot, "尾数:" + (row ? tails : ""));
     });
   }
   function killSummary(row, label) {
@@ -807,7 +891,9 @@
     var table = tableInsideAfter("top_13", 0, 1);
     if (!table) return;
     table.setAttribute("data-prediction-section", mapping.key);
-    Array.prototype.slice.call(table.querySelectorAll("tr")).forEach(function (tr, index) {
+    // The first vendor row is a decorative separator beneath the title.
+    // It has no prediction slot and must remain untouched.
+    Array.prototype.slice.call(table.querySelectorAll("tr")).slice(1).forEach(function (tr, index) {
       var row = moduleRow(module, index);
       var cell = tr.querySelector("td");
       if (!cell) return;
@@ -867,21 +953,14 @@
     });
   }
 
-  function rotateNumbers(numbers, amount) {
-    if (!numbers.length) return [];
-    amount = amount % numbers.length;
-    return numbers.slice(amount).concat(numbers.slice(0, amount));
-  }
-
   function renderFiveNotHistory(mapping, module) {
     var table = tableInsideAfter("top_10", 0, 1);
     if (!table) return;
     table.setAttribute("data-prediction-section", mapping.key);
-    pairedHistoryRows(table, module, function (header, detail, row, index) {
+    pairedHistoryRows(table, module, function (header, detail, row) {
       var numbers = numericTokenValues(row).slice(0, 5);
-      var alternative = rotateNumbers(numbers, index + 1);
       replaceExistingText(header, row ? termValue(row) + " 『内幕⑤不中』开 " + openedResult(row, "准") : "");
-      replaceExistingText(detail, row ? "【" + numbers.join(".") + "】\n【" + alternative.join(".") + "】" : "");
+      replaceExistingText(detail, row ? "【" + numbers.join(".") + "】" : "");
     });
   }
 
@@ -913,14 +992,19 @@
     var table = tableInsideAfter("top_6", 0, 2);
     if (!table) return;
     table.setAttribute("data-prediction-section", mapping.key);
-    pairedHistoryRows(table, module, function (header, detail, row, index) {
-      var waves = zodiacValues(row).slice(0, 2);
-      var lines = waves.map(function (wave, waveIndex) {
-        var values = rotateNumbers(WAVE_NUMBERS[wave] || [], index + waveIndex).slice(0, 10);
-        return wave + ":" + values.join(".");
+    pairedHistoryRows(table, module, function (header, detail, row) {
+      var tokens = predictionTokens(row);
+      var groups = [];
+      tokens.forEach(function (token) {
+        var raw = String(token == null ? "" : token);
+        var label = firstValue(raw);
+        var values = (raw.split("|").slice(1).join("|").match(/\d{1,2}/g) || []).map(function (value) {
+          return value.length === 1 ? "0" + value : value;
+        });
+        if (label && values.length) groups.push(label + ":" + values.slice(0, 10).join("."));
       });
       replaceExistingText(header, row ? termValue(row) + " 『双波10码』开 " + openedResult(row) : "");
-      replaceExistingText(detail, row ? lines.join("\n") : "");
+      replaceExistingText(detail, row ? groups.slice(0, 2).join("\n") : "");
     });
   }
 
@@ -997,6 +1081,14 @@
     return selected.slice(0, 9);
   }
 
+  function clearDynamicPredictionText(root) {
+    if (!root) return;
+    textNodes(root).forEach(function (node) {
+      var value = String(node.nodeValue || "");
+      if (/\b(?:19\d|20\d|\d{3})期|待开奖|\?{3,}|(?:\d{2}[鼠牛虎兔龙蛇马羊猴鸡狗猪](?:对|错)?)/.test(value)) node.nodeValue = "";
+    });
+  }
+
   function renderAaaGradeHistory(moduleByKey) {
     var module = moduleByKey["7xiao7ma"];
     aaaTables().forEach(function (table, index) {
@@ -1023,6 +1115,9 @@
 
   function clearStaticPredictionPayload() {
     // During deferred loading, no vendor prediction, result or hit text is exposed.
+    window.document.querySelectorAll("[data-site-slot='aaa-grade-card']").forEach(function (table) {
+      clearDynamicPredictionText(table);
+    });
     clearUnmappedStaticPredictionText();
     renderCompleteSections({});
   }

@@ -182,6 +182,43 @@ def test_autofill_taiwan_future_draws_skips_first_existing_future_issue(tmp_path
     assert existing_after["numbers"] == "08,09,10,11,12,13,14"
 
 
+def test_autofill_taiwan_future_draws_treats_count_as_total_future_target(tmp_path):
+    """A scheduled target includes preserved future rows rather than adding to them."""
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-total-target.sqlite3"
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=100,
+            numbers="01,02,03,04,05,06,07",
+            draw_time="2026-04-10 22:30:00",
+            is_opened=1,
+        )
+        existing_id = _insert_taiwan_draw(
+            conn,
+            year=2026,
+            term=101,
+            numbers="08,09,10,11,12,13,14",
+            draw_time="2026-04-11 22:30:00",
+            is_opened=0,
+        )
+
+    result = autofill_taiwan_future_draws(db_path, count=1, rng=Random(11), target_total=True)
+
+    assert result["created_count"] == 0
+    assert result["preserved_existing_count"] == 1
+    with connect(db_path) as conn:
+        future_rows = conn.execute(
+            "SELECT id, numbers, is_opened FROM lottery_draws WHERE lottery_type_id = 3 AND is_opened = 0"
+        ).fetchall()
+    assert [dict(row) for row in future_rows] == [
+        {"id": existing_id, "numbers": "08,09,10,11,12,13,14", "is_opened": 0}
+    ]
+
+
 def test_autofill_taiwan_future_draws_rejects_invalid_count_and_missing_baseline(tmp_path):
     from domains.lottery.service import autofill_taiwan_future_draws
 

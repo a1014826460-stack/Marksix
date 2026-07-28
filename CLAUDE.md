@@ -12,6 +12,14 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Commands
 
+## Server Operation Authorization
+
+Without explicit user authorization in the current task, do not connect to,
+synchronize with, build on, restart, migrate, configure, or otherwise modify
+any server. Local implementation, testing, commits, and pushes do not imply
+deployment authorization. When authorization is granted, limit work to the
+named hosts and actions, and preserve runtime files before deployment.
+
 ### Python Backend API
 
 ```powershell

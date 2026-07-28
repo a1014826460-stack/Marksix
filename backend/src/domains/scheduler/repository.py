@@ -189,19 +189,37 @@ def find_completed_task_by_payload_date(
     return dict(row) if row else None
 
 
-def find_task_schedule_status(conn: Any, *, task_type: str) -> dict[str, Any] | None:
-    """Return the latest durable task summary without exposing task payload internals."""
+def find_latest_task_by_status(
+    conn: Any,
+    *,
+    task_type: str,
+    statuses: tuple[str, ...],
+) -> dict[str, Any] | None:
+    """Return the latest task in the requested state without exposing payloads."""
+    if not statuses:
+        return None
+    placeholders = ", ".join("?" for _ in statuses)
     row = conn.execute(
         f"""
         SELECT task_key, status, run_at, last_finished_at, last_error
         FROM {TASK_TABLE_NAME}
         WHERE task_type = ?
+          AND status IN ({placeholders})
         ORDER BY run_at DESC, id DESC
         LIMIT 1
         """,
-        (task_type,),
+        (task_type, *statuses),
     ).fetchone()
     return dict(row) if row else None
+
+
+def find_task_schedule_status(conn: Any, *, task_type: str) -> dict[str, Any] | None:
+    """Compatibility helper returning the most recently scheduled task."""
+    return find_latest_task_by_status(
+        conn,
+        task_type=task_type,
+        statuses=("pending", "running", "done", "failed"),
+    )
 
 
 def try_acquire_task(

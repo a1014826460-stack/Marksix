@@ -168,6 +168,7 @@ def test_scheduler_start_enqueues_taiwan_durable_open_task(monkeypatch):
     monkeypatch.setattr(scheduler, "sync_all_lottery_type_next_times", lambda *_args, **_kwargs: {"checked": 0, "updated": 0})
     monkeypatch.setattr(scheduler, "_ensure_daily_prediction_task", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(scheduler, "_ensure_postgres_backup_tasks", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler, "_ensure_taiwan_future_autofill_task", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(scheduler, "_ensure_taiwan_precise_open_task", lambda db_path: enqueued.append(db_path))
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_auto_open", lambda _self: None)
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_auto_crawl", lambda _self: None)

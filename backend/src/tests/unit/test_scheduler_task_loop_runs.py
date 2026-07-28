@@ -86,7 +86,7 @@ def test_taiwan_future_autofill_task_executes_configured_target_and_schedules_ne
     monkeypatch.setattr(
         scheduler.lottery_service,
         "autofill_taiwan_future_draws",
-        lambda db_path, *, count: calls.append(("autofill", (db_path, count))) or {"created_count": 2},
+        lambda db_path, *, count, target_total: calls.append(("autofill", (db_path, count, target_total))) or {"created_count": 2},
     )
     monkeypatch.setattr(
         scheduler,
@@ -97,6 +97,6 @@ def test_taiwan_future_autofill_task_executes_configured_target_and_schedules_ne
     runner._execute_task(task)
 
     assert calls == [
-        ("autofill", ("taiwan-autofill.sqlite3", 18)),
+        ("autofill", ("taiwan-autofill.sqlite3", 18, True)),
         ("schedule_next", "taiwan-autofill.sqlite3"),
     ]

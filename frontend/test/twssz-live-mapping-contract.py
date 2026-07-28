@@ -11,6 +11,7 @@ MODULE_ROWS = {
     "3zxt": [["猴", "龙", "羊"]],
     "4xiao8ma": [["35", "47", "24", "38", "27", "39", "13", "33"]],
     "pt2xiao": [["猴", "龙"]],
+    "danshuangtema": [["单", "双", "单"]],
     # title_66 is the approved closest replacement for the supplied
     # 15码中特 cards. Its five tail groups can generate the card's 3/5-tail
     # and 15/9-code slots without inventing vendor data.
@@ -189,9 +190,10 @@ def main() -> None:
             assert m24_rows.nth(3).locator("td").last.inner_text() == "48"
             ma24_headings = frame.locator("[data-site-slot='ma24-heading']")
             assert ma24_headings.count() == 8
-            assert "207期 精选24码" in ma24_headings.first.inner_text()
+            for index in range(8):
+                heading = ma24_headings.nth(index).inner_text()
+                assert f"{207 - index}期 精选24码;准确率绝对100%;大胆下注!" in heading, heading
             assert "待加载期" not in ma24_headings.first.inner_text()
-            assert "准确率绝对100" not in ma24_headings.first.inner_text()
 
             # 精准四肖标题后的 15 码中特是独立的复杂卡片。所有既有槽位必须
             # 替换为后端数据，不能仅让相邻区域含有 API 文本就通过。
@@ -222,10 +224,34 @@ def main() -> None:
             ai_root = frame.locator("[data-prediction-section='title_48-ai']")
             assert ai_root.count() == 1
             ai_text = ai_root.inner_text()
-            assert "207期" in ai_text and "生肖:猴龙羊马猪狗" in ai_text
-            assert "35.47.24.38" in ai_text
+            assert "207期" in ai_text and "＜嫩＞" in ai_text
+            assert "生肖:猴龙羊马猪狗" in ai_text and "35.47.24.38" in ai_text
+            for label in ("波色:", "大小:", "尾数:"):
+                assert label in ai_text, ai_text
+            assert "07.19" not in ai_text, "AI module must not invent zodiac-derived numbers"
             assert "AI心水玄机论坛：" not in ai_text
             assert "待加载期" not in ai_text
+
+            aaa_cards = frame.locator("[data-site-slot='aaa-grade-card']")
+            assert aaa_cards.count() == 8
+            assert frame.locator("[data-prediction-section='grade-a'] [data-site-slot='aaa-grade-card']").count() == 0
+            for index in range(8):
+                card = aaa_cards.nth(index)
+                assert card.locator("tr").count() == 5
+                assert card.locator("tr").nth(0).locator("td").count() == 1
+                assert f"{207 - index}期 AAA级大公开" in card.inner_text()
+
+            jia_ye = frame.get_by_text("家野二肖", exact=True).locator("xpath=ancestor::table[1]/following-sibling::div[1]")
+            jia_ye_text = jia_ye.inner_text()
+            assert "207期 【野兽+猴龙】 开 待开奖" in jia_ye_text, jia_ye_text
+            assert "206期 【野兽+猴龙】 开 港第999期，开奖02错" in jia_ye_text, jia_ye_text
+            assert "家禽：牛、马、羊、鸡、狗、猪" in jia_ye_text
+            assert "野兽：鼠、虎、兔、龙、蛇、猴" in jia_ye_text
+
+            dan_shuang = frame.locator("#con_jihuadanshuang50000ww_1")
+            dan_shuang_text = dan_shuang.inner_text()
+            for term in range(207, 199, -1):
+                assert f"{term}期" in dan_shuang_text, dan_shuang_text
             # The frontend must not repeat a response row when the backend
             # contains duplicate issue records. Empty vendor rows remain empty.
             pingte_wei = frame.locator("#top_3").locator("xpath=following-sibling::div[contains(@class, 'dz_content08ab2d')][1]")
@@ -266,7 +292,7 @@ def main() -> None:
                 section_key = sections.nth(index).get_attribute("data-prediction-section")
                 # Presentation-only cards such as 一头一码 legitimately render
                 # the selected canonical values without a regional marker.
-                if not (str(section_key).startswith("3tou-head") or section_key == "aaa-grade"):
+                if not (str(section_key).startswith("3tou-head") or section_key in {"aaa-grade", "pt2xiao", "danshuangtema"}):
                     assert "港" in section_text, (index, section_key, section_text[:300])
             for forbidden in ("46鸡对", "13马对", "?????"):
                     assert forbidden not in section_text, (

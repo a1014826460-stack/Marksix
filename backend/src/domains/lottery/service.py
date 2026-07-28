@@ -144,8 +144,13 @@ def autofill_taiwan_future_draws(
     *,
     count: int = 12,
     rng: random.Random | None = None,
+    target_total: bool = False,
 ) -> dict[str, Any]:
-    """Atomically create missing Taiwan future draws without changing existing rows."""
+    """Atomically fill Taiwan future draws without changing existing rows.
+
+    Manual use requests ``count`` new rows. Scheduled use passes
+    ``target_total=True`` so count means the total number of future rows to retain.
+    """
     if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 60:
         raise ValueError("自动填写期数必须在 1 到 60 之间")
 
@@ -221,11 +226,13 @@ def autofill_taiwan_future_draws(
 
         created: list[dict[str, Any]] = []
         preserved_existing_count = 0
+        future_issue_count = 0
         cursor_year, cursor_term = first_year, first_term
-        while len(created) < count:
+        while (future_issue_count if target_total else len(created)) < count:
             existing = existing_by_issue.get((cursor_year, cursor_term))
             if existing:
                 preserved_existing_count += 1
+                future_issue_count += 1
                 parsed = _parse_taiwan_draw_numbers(existing["numbers"])
                 if parsed:
                     recent.append(parsed)
@@ -271,6 +278,7 @@ def autofill_taiwan_future_draws(
                     }
                 )
                 recent.append(candidate)
+                future_issue_count += 1
 
             cursor_year, cursor_term = _next_issue(cursor_year, cursor_term, max_terms)
             cursor_time += timedelta(days=1)
@@ -280,6 +288,7 @@ def autofill_taiwan_future_draws(
             "requested_count": count,
             "created_count": len(created),
             "preserved_existing_count": preserved_existing_count,
+            "target_total": target_total,
             "created": created,
         }
 

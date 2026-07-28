@@ -1441,6 +1441,7 @@ class CrawlerScheduler:
                 result = lottery_service.autofill_taiwan_future_draws(
                     self.db_path,
                     count=int(settings["count"]),
+                    target_total=True,
                 )
                 _crawler_logger.info(
                     "Taiwan future draw autofill complete: created=%s preserved=%s",

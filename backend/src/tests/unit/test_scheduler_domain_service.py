@@ -209,6 +209,87 @@ def test_taiwan_future_autofill_schedule_is_not_created_when_disabled(tmp_path):
     assert count == 0
 
 
+def test_taiwan_future_autofill_schedule_preserves_a_pending_retry(tmp_path):
+    """Polling must not erase a failed-attempt record or bypass its retry delay."""
+    from domains.lottery.service import save_taiwan_future_autofill_settings
+    from domains.scheduler import service
+
+    db_path = tmp_path / "taiwan-autofill-pending-retry.sqlite3"
+    ensure_admin_tables(db_path)
+    save_taiwan_future_autofill_settings(
+        db_path,
+        {"enabled": True, "count": 12, "time": "07:45"},
+        changed_by="admin",
+    )
+    now = datetime(2026, 7, 27, 8, 0, tzinfo=timezone.utc)
+    task_key = "taiwan_future_draw_autofill:2026-07-27"
+    retry_at = "2026-07-27T08:05:00+00:00"
+
+    service.ensure_taiwan_future_autofill_task(db_path, now=now)
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE scheduler_tasks
+            SET attempt_count = 1, run_at = ?, last_error = ?
+            WHERE task_key = ?
+            """,
+            (retry_at, "RuntimeError: database unavailable", task_key),
+        )
+
+    service.ensure_taiwan_future_autofill_task(db_path, now=now)
+
+    with connect(db_path) as conn:
+        task = conn.execute(
+            "SELECT status, attempt_count, run_at, last_error FROM scheduler_tasks WHERE task_key = ?",
+            (task_key,),
+        ).fetchone()
+    assert dict(task) == {
+        "status": "pending",
+        "attempt_count": 1,
+        "run_at": retry_at,
+        "last_error": "RuntimeError: database unavailable",
+    }
+
+
+def test_taiwan_future_autofill_status_keeps_last_failure_visible_with_next_task(tmp_path):
+    from domains.scheduler import service
+
+    db_path = tmp_path / "taiwan-autofill-status.sqlite3"
+    ensure_admin_tables(db_path)
+    service.upsert_scheduler_task(
+        db_path,
+        task_type=service.TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+        payload={"schedule_date": "2026-07-27"},
+        run_at="2026-07-27T07:45:00+00:00",
+    )
+    service.upsert_scheduler_task(
+        db_path,
+        task_type=service.TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
+        payload={"schedule_date": "2026-07-28"},
+        run_at="2026-07-28T07:45:00+00:00",
+    )
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE scheduler_tasks
+            SET status = 'failed', last_finished_at = ?, last_error = ?
+            WHERE task_key = ?
+            """,
+            ("2026-07-27T07:46:00+00:00", "RuntimeError: database unavailable", "taiwan_future_draw_autofill:2026-07-27"),
+        )
+
+    status = service.get_taiwan_future_autofill_schedule_status(db_path)
+
+    assert status == {
+        "last_run": {
+            "status": "failed",
+            "finished_at": "2026-07-27T07:46:00+00:00",
+            "error": "RuntimeError: database unavailable",
+        },
+        "next_run_at": "2026-07-28T07:45:00+00:00",
+    }
+
+
 def test_scheduler_service_runs_due_tasks_and_owns_lifecycle(tmp_path, monkeypatch):
     from domains.scheduler import service
 
