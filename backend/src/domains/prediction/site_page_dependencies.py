@@ -42,6 +42,66 @@ def _legacy(
 # Only dependencies from non-commented script tags in twsaimahui/index.html
 # belong here. The compatibility route owns the exact endpoint/num mapping.
 _DEPENDENCIES: tuple[SitePageDependency, ...] = (
+    # Twbst528 homepage and its reviewed 141-156 article pages. Each article
+    # page has an explicit existing-DOM renderer in static-article-data-adapter.
+    *(
+        SitePageDependency(
+            site_key="twbst528",
+            page_path=page_path,
+            source_path=source_path,
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for mechanism_key, mode_id, page_path, source_path in (
+            ("yijuzhenyan", 50, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("shuangbo", 38, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("7xiao7ma", 44, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("pt2xiao", 43, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("jueshabanbo", 58, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("pt1wei", 54, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("daxiao", 57, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("4xiao8ma", 51, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("pt1xiao", 56, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_5", 5, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_47", 47, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("pt3xiao", 470, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("juesha1xiao", 472, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("danshuangtema", 28, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("juesha1wei", 20, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("juesha3xiao", 42, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("3tou", 12, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("qinqi", 26, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("shujinguang", 44, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("9xzt", 49, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_15", 15, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_74", 74, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("6xzt", 46, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("liuxiao18ma", 484, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("hllx", 8, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("wensha10ma", 481, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("9xiao12ma", 60, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("heibai3xiao", 45, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_48", 48, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("3zxt", 69, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_197", 197, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("juesha2xiao", 473, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("dxztt1", 108, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("qianhou_texiao", 219, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("sihangzhongte", 482, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("siji3", 61, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("siduanzhongte", 479, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("wuzhong5ma", 485, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("title_198", 198, "/vendor/twbst528/141.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("sitouzhongte", 483, "/vendor/twbst528/143.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("title_14", 14, "/vendor/twbst528/144.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("title_279", 279, "/vendor/twbst528/147.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("title_66", 66, "/vendor/twbst528/149.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("3hang", 53, "/vendor/twbst528/150.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("title_132", 132, "/vendor/twbst528/151.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("qinqi", 26, "/vendor/twbst528/152.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+            ("3tou", 12, "/vendor/twbst528/154.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
+        )
+    ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is
     # available. These are reviewed backend equivalents for each mapped vendor
     # table, not a claim about the original vendor identifiers.

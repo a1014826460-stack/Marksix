@@ -72,6 +72,7 @@
   var latestModulesByLottery = {};
   var historicalModulesByLottery = {};
   var historicalRequestsByLottery = {};
+  var compositeLineSlots = [];
   var historyActivated = false;
   // The supplied 连肖连尾 section has sixteen existing issue groups. Each
   // renderer still stops at its own existing group count.
@@ -97,9 +98,6 @@
     { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "title_48", title: "8肖16码", renderer: renderEightXiaoHistory },
     { key: "wuzhong5ma", title: "内幕⑤不中", renderer: renderFiveNotHistory },
-    { key: "juesha1xiao", title: "绝杀7码", target: function () { return followingParagraphs("top_4", 0, 0, 1)[0]; }, rows: function () { return followingParagraphs("top_4", 0, 0, 8); }, renderer: renderStructuredHistory },
-    { key: "juesha2xiao", title: "绝杀二肖", target: function () { return followingParagraphs("top_4", 0, 8, 1)[0]; }, rows: function () { return followingParagraphs("top_4", 0, 8, 8); }, renderer: renderStructuredHistory },
-    { key: "jueshabanbo", title: "绝杀半波", target: function () { return followingParagraphs("top_4", 0, 16, 1)[0]; }, rows: function () { return followingParagraphs("top_4", 0, 16, 8); }, renderer: renderStructuredHistory },
     { key: "3hang", title: "综合资料", target: function () { return targetAfter("top_2", 0, 2); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "pt3xiao", title: "三肖六码", renderer: renderThreeXiaoHistory },
     { key: "shuangbo", title: "双波10码", renderer: renderDoubleWaveHistory },
@@ -295,6 +293,47 @@
       return;
     }
     node.textContent = value;
+  }
+
+  // Some supplied slots begin with whitespace-only nodes. Reuse those nodes
+  // so rendering never replaces the vendor's element hierarchy.
+  function setExistingText(node, value) {
+    var nodes = textNodes(node);
+    if (!nodes.length) {
+      node.textContent = value;
+      return;
+    }
+    nodes[0].nodeValue = value;
+    nodes.slice(1).forEach(function (text) { text.nodeValue = ""; });
+  }
+
+  function setDirectText(node, value) {
+    if (!node) return;
+    var text = Array.prototype.filter.call(node.childNodes, function (child) {
+      return child.nodeType === 3;
+    })[0];
+    if (text) text.nodeValue = value;
+  }
+
+  function directTextNodes(node) {
+    return Array.prototype.filter.call(node && node.childNodes || [], function (child) {
+      return child.nodeType === 3;
+    });
+  }
+
+  // Paired vendor cards keep the issue, blue module label, "开", and result
+  // in four existing slots. Updating the card font instead of its <tr> keeps
+  // the supplied alignment and result colours intact.
+  function writePairedHeader(header, row, title, hitLabel) {
+    var outer = header && header.querySelector("td > p > b > font");
+    if (!outer) return;
+    var label = outer.querySelector("font[color='#0000FF']");
+    var result = outer.querySelector("font[color='#FF0000']");
+    var text = directTextNodes(outer);
+    if (text[0]) text[0].nodeValue = row ? termValue(row) + " " : "";
+    if (label) setExistingText(label, title);
+    if (text.length > 1) text[1].nodeValue = row ? "开 " : "";
+    if (result) setExistingText(result, row ? openedResult(row, hitLabel) : "");
   }
 
   function clearNodeText(node) {
@@ -513,16 +552,17 @@
     for (var index = 0; index < rows.length; index += 2) {
       var row = moduleRow(module, historyIndex);
       var values = numberValues(row);
-      // The supplied grid has a three-row issue group: one heading followed
-      // by two .zt24mtr rows. Locate the heading from the pair's table rows,
-      // not from sibling offsets that can cross into the prior issue.
-      var headingRow = rows[index].previousElementSibling;
+      // Each vendor issue group keeps its heading, an image row, then the two
+      // number rows. Walk to the preceding single-cell heading rather than
+      // treating that image row as the title.
+      var headingRow = rows[index];
+      while ((headingRow = headingRow.previousElementSibling)) {
+        if (headingRow.querySelectorAll("td").length === 1) break;
+      }
       if (headingRow) {
         headingRow.setAttribute("data-site-slot", "ma24-heading");
-        // Each issue heading is the existing row directly before its first
-        // 12-number row. Preserve its layout and replace only its text slot.
-        var headingCell = headingRow.querySelector("td");
-        if (headingCell) setNodeText(headingCell, row ? termValue(row) + " 精选24码;准确率绝对100%;大胆下注!" : "");
+        var headingSlot = headingRow.querySelector("td span[style*='color: #000000']") || headingRow.querySelector("td");
+        if (headingSlot) setExistingText(headingSlot, row ? termValue(row) + " 精选24码;准确率绝对100%;大胆下注!" : "");
       }
       Array.prototype.slice.call(rows[index].querySelectorAll("td")).concat(
         rows[index + 1] ? Array.prototype.slice.call(rows[index + 1].querySelectorAll("td")) : []
@@ -808,7 +848,7 @@
   function killSummary(row, label) {
     if (!row) return "";
     var values = predictionTokens(row).map(firstValue).filter(Boolean).join("·");
-    return termValue(row) + "稳杀" + label + "【" + values + "】开" + displayResult(row);
+    return termValue(row) + "稳杀" + label + "【" + values + "】开" + (row.result && row.result.isOpened ? "" : "?????");
   }
 
   // 综合绝杀 contains four fixed historical text blocks in one vendor cell.
@@ -824,44 +864,34 @@
       { sourceHeading: "绝杀一头", heading: "绝杀一头", key: "juesha1xiao", label: "(1)头" },
       { sourceHeading: "绝杀一行", heading: "绝杀一行", key: "jueshabanbo", label: "(1)行" }
     ];
-    var text = textNodes(target);
-    blocks.forEach(function (block) {
-      var headingIndex = -1;
-      text.some(function (node, index) {
-        if (String(node.nodeValue || "").indexOf(block.sourceHeading) === -1) return false;
-        headingIndex = index;
-        return true;
-      });
-      if (headingIndex < 0) return;
-      var headingNode = text[headingIndex];
-      headingNode.nodeValue = headingNode.nodeValue.replace(block.sourceHeading, block.heading);
-      var nextHeadingIndex = text.length;
-      for (var nextIndex = headingIndex + 1; nextIndex < text.length; nextIndex += 1) {
-        if (/绝杀(?:二肖|二尾|一头|一行|一肖|半波)/.test(String(text[nextIndex].nodeValue || ""))) {
-          nextHeadingIndex = nextIndex;
-          break;
+    var container = target.querySelector("span[style*='font-size: 13pt']");
+    if (!container) return;
+    var nodes = Array.prototype.slice.call(container.childNodes);
+    nodes.forEach(function (node, index) {
+      if (node.nodeType === 1 && node.tagName === "FONT" && /绝杀(?:二肖|二尾|一头|一行)/.test(node.textContent || "")) {
+        var blockIndex = blocks.map(function (block) { return block.sourceHeading; }).indexOf((node.textContent || "").replace(/[（）()]/g, ""));
+        if (blockIndex >= 0) node.textContent = "（" + blocks[blockIndex].heading + "）";
+        if (blockIndex < 0) return;
+        var nextHeading = nodes.slice(index + 1).findIndex(function (candidate) {
+          return candidate.nodeType === 1 && candidate.tagName === "FONT" && /绝杀(?:二肖|二尾|一头|一行)/.test(candidate.textContent || "");
+        });
+        var blockNodes = nodes.slice(index + 1, nextHeading < 0 ? nodes.length : index + 1 + nextHeading);
+        if (!compositeLineSlots[blockIndex]) {
+          compositeLineSlots[blockIndex] = blockNodes.filter(function (candidate) {
+            return candidate.nodeType === 3 && /稳杀/.test(String(candidate.nodeValue || ""));
+          }).slice(0, 8);
         }
+        var lines = compositeLineSlots[blockIndex];
+        lines.forEach(function (lineNode, rowIndex) {
+          var row = moduleRow(moduleByKey[blocks[blockIndex].key], rowIndex);
+          lineNode.nodeValue = row ? killSummary(row, blocks[blockIndex].label) : "";
+          var resultNode = nodes[nodes.indexOf(lineNode) + 1];
+          if (resultNode && resultNode.nodeType === 1 && resultNode.tagName === "FONT") {
+            setExistingText(resultNode, row && row.result && row.result.isOpened ? displayResult(row) : "");
+            resultNode.setAttribute("data-prediction-row", blocks[blockIndex].key + "-" + rowIndex);
+          }
+        });
       }
-      // The supplied table has a heading font followed by eight empty font
-      // slots. Static cleanup clears their text, so identify the slots from
-      // the original BR/font structure rather than their current content.
-      var headingFont = headingNode.parentElement;
-      var historyNodes = [];
-      for (var nodeIndex = headingIndex + 1; nodeIndex < nextHeadingIndex; nodeIndex += 1) {
-        var candidate = text[nodeIndex];
-        if (candidate.parentElement && candidate.parentElement.tagName === "FONT" && candidate.parentElement !== headingFont) {
-          historyNodes.push(candidate);
-        }
-      }
-      historyNodes = historyNodes.slice(0, 8);
-      historyNodes.forEach(function (node, index) {
-        var row = moduleRow(moduleByKey[block.key], index);
-        node.parentElement.setAttribute("data-prediction-row", block.key + "-" + index);
-        node.nodeValue = row ? killSummary(row, block.label) : "";
-      });
-      text.slice(headingIndex + 1, nextHeadingIndex).filter(function (node) {
-        return historyNodes.indexOf(node) === -1;
-      }).forEach(function (node) { node.nodeValue = ""; });
     });
   }
 
@@ -945,11 +975,12 @@
     table.setAttribute("data-prediction-section", mapping.key);
     pairedHistoryRows(table, module, function (header, detail, row) {
       var groups = zodiacNumberGroups(row, 8);
-      replaceExistingText(header, row ? termValue(row) + " ╔8肖16码╗开 " + openedResult(row) : "");
+      writePairedHeader(header, row, "╔8肖16码╗");
       var lines = [groups.slice(0, 4), groups.slice(4, 8)].map(function (line) {
         return line.map(function (group) { return group.zodiac + group.numbers.join("."); }).join("");
       });
-      replaceExistingText(detail, row ? lines.join("\n") : "");
+      var detailSlot = detail.querySelector("td > p > b > font");
+      if (detailSlot) setExistingText(detailSlot, row ? lines.join("\n") : "");
     });
   }
 
@@ -959,8 +990,9 @@
     table.setAttribute("data-prediction-section", mapping.key);
     pairedHistoryRows(table, module, function (header, detail, row) {
       var numbers = numericTokenValues(row).slice(0, 5);
-      replaceExistingText(header, row ? termValue(row) + " 『内幕⑤不中』开 " + openedResult(row, "准") : "");
-      replaceExistingText(detail, row ? "【" + numbers.join(".") + "】" : "");
+      writePairedHeader(header, row, "『内幕⑤不中』", "准");
+      var slots = predictionLeaves(detail);
+      slots.forEach(function (slot, valueIndex) { slot.textContent = row ? numbers[valueIndex] || "" : ""; });
     });
   }
 
@@ -977,8 +1009,9 @@
     pairedHistoryRows(table, module, function (header, detail, row) {
       var zodiacs = zodiacValues(row).slice(0, 3);
       var category = zodiacs.some(function (value) { return "鼠牛虎猴狗猪".indexOf(value) >= 0; }) ? "凶丑" : "吉美";
-      replaceExistingText(header, row ? termValue(row) + " ╔三肖六码╗开 " + openedResult(row) : "");
-      replaceExistingText(detail, row ? "【" + category + "】【" + zodiacs.join("") + "】\n【" + xiaoNumbers(row).join("-") + "】" : "");
+      writePairedHeader(header, row, "╔三肖六码╗");
+      var detailSlot = detail.querySelector("td > p > b > font");
+      if (detailSlot) setExistingText(detailSlot, row ? "【" + category + "】【" + zodiacs.join("") + "】\n【" + xiaoNumbers(row).join("-") + "】" : "");
     });
   }
 
@@ -1003,8 +1036,18 @@
         });
         if (label && values.length) groups.push(label + ":" + values.slice(0, 10).join("."));
       });
-      replaceExistingText(header, row ? termValue(row) + " 『双波10码』开 " + openedResult(row) : "");
-      replaceExistingText(detail, row ? groups.slice(0, 2).join("\n") : "");
+      writePairedHeader(header, row, "『双波10码』");
+      var waveSlots = Array.prototype.filter.call(detail.querySelectorAll("td > p > font > font"), function (node) {
+        return /^(?:blue|green|red)$/i.test(node.getAttribute("color") || "");
+      });
+      waveSlots.forEach(function (slot, groupIndex) {
+        var label = groups[groupIndex] ? groups[groupIndex].split(":", 1)[0] + ":" : "";
+        setDirectText(slot, row ? label : "");
+        predictionLeaves(slot).forEach(function (numberSlot, numberIndex) {
+          var values = groups[groupIndex] ? groups[groupIndex].split(":")[1].split(".") : [];
+          numberSlot.textContent = row ? values[numberIndex] || "" : "";
+        });
+      });
     });
   }
 
@@ -1094,12 +1137,19 @@
     aaaTables().forEach(function (table, index) {
       var row = moduleRow(module, index);
       var rows = table.querySelectorAll("tr");
-      aaaCardRoot(table).setAttribute("data-prediction-section", "aaa-grade");
+      table.setAttribute("data-prediction-section", "aaa-grade");
       table.setAttribute("data-prediction-row", String(index));
-      if (rows[0]) replaceExistingText(rows[0], row ? termValue(row) + " AAA级大公开;准确率绝对100%;大胆下注!" : "");
+      if (rows[0]) setExistingText(rows[0].querySelector("strong") || rows[0], row ? termValue(row) + " AAA级大公开;准确率绝对100%;大胆下注!" : "");
       [9, 8, 7, 6].forEach(function (count, rowIndex) {
         if (!rows[rowIndex + 1]) return;
-        replaceExistingText(rows[rowIndex + 1], row ? termValue(row) + "⑨⑧⑦⑥".charAt(rowIndex) + "肖中特:" + aaaZodiacs(row).slice(0, count).join("") : "");
+        var outer = rows[rowIndex + 1].querySelector("font[color='#fa035a']");
+        if (!outer) return;
+        setDirectText(outer, row ? termValue(row) + "⑨⑧⑦⑥".charAt(rowIndex) + "肖中特:" : "");
+        Array.prototype.filter.call(outer.children, function (child) {
+          return child.tagName === "FONT" || child.tagName === "SPAN";
+        }).forEach(function (valueSlot, valueIndex) {
+          setExistingText(valueSlot, row ? aaaZodiacs(row)[valueIndex] || "" : "");
+        });
       });
     });
   }

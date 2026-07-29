@@ -29,6 +29,8 @@ from vendor.homepage_modules import get_vendor_module_source_mode_ids
         ("twsaimahui", 6),
         ("twjinniu", 7),
         ("twcf888", 8),
+        ("twssz", 9),
+        ("twbst528", 10),
     ),
 )
 def test_site_blueprint_equals_manifest_required_modes(site_key, web_id):
@@ -191,6 +193,49 @@ def test_runtime_audit_reports_missing_disabled_and_extra_mode_ids(tmp_path):
     assert report["blocked_dependency_sources"] == [
         "frontend/lib/twcf888-articles.ts"
     ]
+
+
+def test_runtime_audit_resolves_web_ten_to_the_twbst528_manifest(tmp_path):
+    db_path = str(tmp_path / "twbst528_site_module_audit.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY,
+                web_id INTEGER NOT NULL,
+                domain TEXT,
+                lottery_type_id INTEGER,
+                blueprint_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE site_prediction_modules (
+                id INTEGER PRIMARY KEY,
+                site_id INTEGER NOT NULL,
+                mechanism_key TEXT NOT NULL,
+                mode_id INTEGER NOT NULL,
+                status INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO managed_sites (id, web_id, domain, lottery_type_id, blueprint_name) VALUES (10, 10, 'www.twbst528.com', 3, 'twbst528')"
+        )
+        conn.execute(
+            "INSERT INTO site_prediction_modules (id, site_id, mechanism_key, mode_id, status) VALUES (1, 10, 'yijuzhenyan', 50, 1)"
+        )
+
+        report = audit_runtime_module_sets(conn, site_ids=[10])[0]
+
+    expected = list(required_mode_ids_for_site_key("twbst528"))
+    assert report["site_id"] == 10
+    assert report["web_id"] == 10
+    assert report["blueprint_name"] == "twbst528"
+    assert report["manifest_mode_ids"] == expected
+    assert report["enabled_mode_ids"] == [50]
+    assert report["missing_from_runtime"] == [mode_id for mode_id in expected if mode_id != 50]
 
 
 def test_reconcile_disables_active_mode_absent_from_manifest(tmp_path):
@@ -420,13 +465,13 @@ def test_reconciliation_script_validates_schema_without_importing_bootstrap_ddl(
     assert "_apply_legacy_schema_bootstrap" not in script_text
 
 
-def test_reconciliation_script_audits_the_shengshi8800_document_and_defaults_to_site_four():
+def test_reconciliation_script_audits_the_shengshi8800_document_and_all_managed_vendor_sites():
     script_path = Path(__file__).resolve().parents[3] / "scripts" / "reconcile_site_prediction_modules.py"
     script_text = script_path.read_text(encoding="utf-8")
 
     assert "parse_shengshi8800_document_mode_ids" in script_text
-    assert 'default="4,5,6,7,8"' in script_text
-    assert 'or [4, 5, 6, 7, 8]' in script_text
+    assert 'default="4,5,6,7,8,9,10"' in script_text
+    assert 'or [4, 5, 6, 7, 8, 9, 10]' in script_text
 
 
 def test_twcaibawang_vendor_composite_source_map_is_auditable():

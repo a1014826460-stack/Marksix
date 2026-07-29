@@ -26,6 +26,7 @@
     "site:test-data-client": "node frontend/test/site-data-client-contract.mjs",
     "site:test-adapter-registry": "node frontend/test/run-site-adapter-registry-contract.mjs",
     "site:test-ui-browser": "D:\\python\\python.exe frontend/test/site-ui-browser-contract.py",
+    "site:test-unified-footer": "node frontend/test/unified-site-footer-contract.mjs",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint"
   },

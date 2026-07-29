@@ -21,7 +21,7 @@ from .site_page_dependencies import (
 
 def _normalize_site_ids(site_ids: Iterable[int] | None) -> list[int]:
     if site_ids is None:
-        return [5, 6, 7, 8]
+        return [4, 5, 6, 7, 8, 9, 10]
     return sorted({int(site_id) for site_id in site_ids if int(site_id) > 0})
 
 
@@ -52,6 +52,8 @@ def _manifest_site_key(site: dict[str, Any] | None) -> str | None:
         6: "twsaimahui",
         7: "twjinniu",
         8: "twcf888",
+        9: "twssz",
+        10: "twbst528",
     }.get(web_id)
 
 

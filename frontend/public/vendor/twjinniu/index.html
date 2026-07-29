@@ -499,45 +499,34 @@ function setHomepageHtml(element, html) { if (!element) { return; } element.inne
     loadLiveModules(currentLotteryType);
 })();
     </script>
-    <!--图库---->
-    <div class='box pad' id='legacy-attribute-anchor'>
-        <style>
-            .foot-img { padding: 10px 0 4px; text-align: center; }
-            .copyright { margin: 8px 0; line-height: 1.8; color: #333; font-size: 14px; }
-        </style>
-        <div class='list-title'>属性知识</div>
-        <div id="legacy-attribute-gallery"></div>
-        <script>
-            let img1 = 'static/picture/1742580086567063.png';
-            let img2 = 'static/picture/1742580119746508.jpg';
-            let img3 = 'static/picture/1742580130762983.jpg';
-            var galleryHtml = `<img src="${img1}" width="100%"/>` +
-                `<img src="${img2}" width="100%"/>` +
-                `<img src="${img3}" width="100%"/>`;
-            var galleryEl = document.getElementById("legacy-attribute-gallery");
-            if (galleryEl) {
-                galleryEl.innerHTML = galleryHtml;
-            }
-        </script>
-    </div>
-    <div class='box pad'>
-        <div class='foot-img'>
-            <p class='copyright'>说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
-            <p class='copyright'>论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
-            <p class='copyright'>【台湾通天网】域名：www.twtongtian.com
-                <br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾通天网
-                <br>
-            </p>
-        </div>
-    </div>
-    <a href='#fhdb'>
-        <p align='center'>
-            <span style='font-weight:700'>
-                <font size='6' face='微软雅黑'>返回顶部</font>
-            </span>
-        </p>
-    </a>
-    <div style="height: 20px;"></div>
 </div>
+
+  <div class="legacy-site-footer" style="width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;">
+  <div class="box pad" id="legacy-attribute-anchor">
+    <div class="list-title">属性知识</div>
+    <div id="legacy-attribute-gallery">
+      <img src="/uploads/image/20250322/1742580086567063.png" width="100%" loading="lazy" decoding="async">
+      <img src="/uploads/image/20250322/1742580119746508.jpg" width="100%" loading="lazy" decoding="async">
+      <img src="/uploads/image/20250322/1742580130762983.jpg" width="100%" loading="lazy" decoding="async">
+    </div>
+  </div>
+  <div class="box pad">
+    <div class="foot-img">
+      <p class="copyright">说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
+      <p class="copyright">论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
+      <p class="copyright">【台湾通天网】域名：twtongtian.com
+        <br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾通天网
+        <br>
+      </p>
+    </div>
+  </div>
+  <a href="#fhdb">
+    <p align="center">
+      <span style="font-weight:700">
+        <font size="6" face="微软雅黑">返回顶部</font>
+      </span>
+    </p>
+  </a>
+  </div>
 </body>
 </html>

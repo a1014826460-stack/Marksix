@@ -1079,30 +1079,33 @@ function renderImageModule(module: PublicModule | null, anchor: string, title: s
         </div>`
 }
 
-function renderAttributeFooter(siteDomain: string) {
+function renderUnifiedSiteFooter(siteName: string, siteDomain: string) {
   const img1 = `/uploads/image/20250322/1742580086567063.png`
   const img2 = `/uploads/image/20250322/1742580119746508.jpg`
   const img3 = `/uploads/image/20250322/1742580130762983.jpg`
+  const footerName = siteName || "台湾彩霸王"
   const footerDomain = siteDomain || "twcaibawang.com"
 
-  return `<div class="box pad" id="legacy-attribute-anchor">
+  return `<div class="legacy-site-footer" style="width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;">
+		<div class="box pad" id="legacy-attribute-anchor">
 			<div class="list-title">属性知识</div>
 			<div id="legacy-attribute-gallery">
-				<img src="${escapeAttr(img1)}" width="100%"/>
-				<img src="${escapeAttr(img2)}" width="100%"/>
-				<img src="${escapeAttr(img3)}" width="100%"/>
+				<img src="${escapeAttr(img1)}" width="100%" loading="lazy" decoding="async">
+				<img src="${escapeAttr(img2)}" width="100%" loading="lazy" decoding="async">
+				<img src="${escapeAttr(img3)}" width="100%" loading="lazy" decoding="async">
 			</div>
 		</div>
 		<div class="box pad">
 			<div class="foot-img">
 				<p class="copyright">说明：本论坛所提供的内容、资料、图片和资讯，只应用在合法的资料探讨，暂不适用于其它，外围和使用。特此声明！</p>
 				<p class="copyright">论坛免责声明：以上所有广告内容均为赞助商提供，本站不对其经营行为负责。浏览或使用者须自行承担有关责任，本网站恕不负责。</p>
-				<p class="copyright">【台湾彩霸王官网】域名：${escapeHtml(footerDomain)}
-					<br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在台湾彩霸王論壇
+				<p class="copyright">【${escapeHtml(footerName)}】域名：${escapeHtml(footerDomain)}
+					<br>長期收集各類最新、最準確的每期文字資料大全，最快開獎，公式規律盡在${escapeHtml(footerName)}
 					<br>
 				</p>
 			</div>
-		</div>`
+		</div>
+	</div>`
 }
 
 function renderGenericModule(config: GenericModuleConfig, module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
@@ -1558,7 +1561,7 @@ function buildPageHtml(
     render3Tou(resolveModule(modules, "3tou"), defaultLotteryTypeId),
     renderDaxiao(resolveModule(modules, "daxiao"), defaultLotteryTypeId),
     ...GENERIC_MODULES.map((config) => renderGenericModule(config, resolveModule(modules, config.mechanismKey), defaultLotteryTypeId)),
-    renderAttributeFooter(siteData.site.domain),
+    renderUnifiedSiteFooter(siteData.site.name, siteData.site.domain),
     `</div>`,
     `<a href="#fhdb" class="return-top">
         <p align="center">

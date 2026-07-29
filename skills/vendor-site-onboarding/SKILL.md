@@ -84,6 +84,12 @@ var siteConfig = {
     exact backend capability, document the approved replacement in the mapping
     and render `暂无后端资料` until that replacement responds; ask the user when
     no safe replacement has been approved.
+    Completion is based on the supplied page, not on the initial request list:
+    enumerate every visible prediction heading/card in the entry HTML and
+    reconcile that inventory against the mapping. The count of mapped,
+    intentionally blocked, and explicitly static non-prediction sections must
+    equal the count of visible sections. Never stop after the first named or
+    easiest modules while other visible sections still contain supplier terms.
 11. For composite vendor blocks, map all approved backend modules into the
     existing block using only existing text nodes. A renderer may combine API
     rows, but it must label each replacement and must not claim vendor static
@@ -134,6 +140,114 @@ var siteConfig = {
     have a dedicated formatter and named renderer. It must write only the
     pre-existing child text slots for term, labels, values and result; never
     collapse the section into a generic summary sentence.
+    In addition to representative slot assertions, scan every inventoried
+    prediction section after render. Fail when any mapped section retains a
+    supplier issue sentinel, `????` placeholder, old regional prefix, or result
+    text from the supplied snapshot. Click all lottery tabs and repeat the
+    inventory scan; a passing test for a subset of headings is not sufficient
+    evidence that homepage onboarding is complete.
+
+### Prediction HTML layout failure prevention
+
+The main cause of incorrect prediction presentation is treating a vendor
+heading or a nearby table as the module's structure. A heading identifies a
+section; it does **not** prove its card count, column count, row grouping, or
+which child nodes are data slots. Do not infer a renderer from the module name
+or from a visually similar section.
+
+### Prediction result normalization
+
+Prediction history rows commonly retain all seven draw values in CSV fields
+such as `res_code`, `res_sx`, and `res_color`. A prediction module's result
+cell displays the **special ball only**, which is the last aligned value from
+each field. Never concatenate the CSV fields into the result cell. For example,
+`20,37,24,28,19,48,34` plus `猪,马,羊,兔,鼠,羊,鸡` must render as
+`开:34鸡对/错`, not as a seven-number result.
+
+Apply this at both boundaries:
+
+- The canonical prediction contract must normalize `code`, `zodiac`, and
+  `color` to their last aligned token before a site adapter receives them.
+- A vendor adapter that owns a result formatter must defensively select the
+  last token again, because compatibility endpoints or cached payloads may
+  bypass the canonical normalizer.
+
+Result regression fixtures must mirror production payload shape. At least one
+opened row must provide seven-value CSV `res_code/res_sx/res_color` fields and
+assert a single result such as `开:34鸡错`. A fixture containing only
+`code: "34", zodiac: "鸡"` is insufficient: it cannot detect full-draw leakage.
+Before completion, probe the running same-origin prediction endpoint and assert
+that no opened canonical row has a comma in `result.code` or `result.zodiac`,
+then inspect the rendered browser DOM using that real response.
+
+Before implementing a renderer, inspect the supplied reference HTML and record
+the following for that exact module in its DOM slot contract:
+
+| Inspect | Record and preserve |
+| --- | --- |
+| Repetition unit | One issue's exact wrapper and its number of rows; e.g. a four-row 24码 group or a two-row header/detail card. |
+| Card topology | Single-column cards, paired columns, fixed grid, or one composite cell. Do not reuse a sibling module's topology. |
+| Dynamic slots | Separate selectors for issue, title, prediction tokens, draw text, `对/错`, and hit markers. |
+| Static slots | Decorative divider rows, legends, labels, punctuation, font/color nodes, and `br` line breaks that must not receive API data. |
+| History capacity | Count complete issue groups in this section, not `<tr>` elements or cards in another section. |
+| Empty and hit state | Exact existing nodes to clear for missing data and the existing background/highlight node used for a hit. |
+
+Apply these rules without exception:
+
+- **Never use a generic whole-row or whole-card text writer.** Calling
+  `textContent`/`replaceExistingText` on a container that owns nested
+  `font`, `span`, `br`, or multiple data fields destroys supplier formatting,
+  merges lines, and removes yellow hit markers. Update the smallest existing
+  leaf node for each field instead.
+- **Use one dedicated named renderer per non-identical topology.** Similar
+  labels do not imply compatible DOM. For example, a single-column AAA history
+  card must never share the two-column A-grade renderer; a paired 8肖16码 card
+  must write header and two-line detail rows separately; and a multi-category
+  综合绝杀 cell needs four independently formatted blocks.
+- **Bind fixed groups explicitly.** A 24码 module is `title row + three number
+  rows`, not four interchangeable rows. Bind the first row only to the issue
+  title and the following rows only to their fixed cells. For paired cards,
+  bind header/detail pairs; for one-row histories, bind one card per issue.
+  Never fill an empty sibling column, a decorative row, or the next group's
+  header merely because it is adjacent in the DOM.
+- **Preserve supplier segmentation.** When the reference displays separate
+  fields such as `期号`, `＜嫩＞`, `生肖`, `数字`, `波色`, `大小`, and `尾数`, write
+  each field to its retained slot. Do not assemble a new prose sentence or
+  flatten it into an API summary. Preserve vendor punctuation, colors,
+  whitespace, and line breaks.
+- **Treat term headers as required data, not decoration.** If every issue
+  group has a title/header, render its normalized issue there. Never derive it
+  from a fragile text search after writing number cells, and never omit it
+  because the API prediction values exist.
+- **Keep the full requested history shape.** Request the maximum distinct
+  issue count required by any visible section, then render each module only to
+  its own number of complete groups. De-duplicate by issue before indexing;
+  do not repeat a record to fill a card, skip intermediate issues, or let a
+  three-row response silently produce a discontinuous eight-card history.
+- **Map composite mechanisms by field, not by a convenient replacement.** If
+  one vendor block has multiple categories, explicitly name the backend module
+  and field feeding every category. A missing category must show the approved
+  empty state in that category only; it must not cause the entire block to be
+  replaced with an unrelated one-line module.
+- **Highlight only through existing markup.** When a prediction hits, set the
+  supplied yellow-background node or its existing style/class on the matching
+  leaf token. Do not replace it with yellow text, an added wrapper, or a
+  container-level style. Clear obsolete hit state before rendering the next
+  row.
+- **Use semantic anchors before positional traversal.** Start from a unique
+  vendor heading, stable class, or approved section ID, then query its
+  contained slots. Do not select `following-sibling`/`nth-child` across
+  unrelated modules unless the DOM contract records that exact stable
+  relationship and a browser test covers it.
+
+For every complex or repeated module, the browser contract must assert all of
+the following after rendering: exact issue-group count; exact row/cell count;
+issue header presence and order; retained labels and `br` line breaks; values
+in their specific child slots; hit background markup; no blank secondary
+column; no vendor static term/result/placeholder; and no raw API separators.
+The test must inspect the module's own container, not merely search for the
+expected text anywhere on the page.
+
 17. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
 
 18. Add a browser contract test that clicks all three draw tabs and, for each

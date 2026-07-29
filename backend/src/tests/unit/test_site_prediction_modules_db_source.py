@@ -137,6 +137,23 @@ def test_empty_site_modules_can_be_initialized_from_blueprint(tmp_path):
     assert count > 0
 
 
+def test_twbst528_generated_row_uses_its_fixed_web_id():
+    from domains.prediction.generation_service import build_generated_prediction_row_data
+
+    row = build_generated_prediction_row_data(
+        mode_id=50,
+        lottery_type="3",
+        year="2026",
+        term="201",
+        web_value="10",
+        generated_content="台湾百事通独立资料",
+    )
+
+    assert row["web"] == "10"
+    assert row["web_id"] == 10
+    assert row["modes_id"] == 50
+
+
 def test_dynamic_title_module_rows_are_resolved_from_database_configs(tmp_path):
     db_path = str(tmp_path / "site_modules_dynamic.sqlite3")
     _setup_db(db_path)

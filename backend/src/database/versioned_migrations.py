@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -327,6 +327,85 @@ def _relax_prediction_control_prefix_uniqueness(conn: Any) -> None:
         )
 
 
+def _install_twbst528_site_profile(conn: Any) -> None:
+    """Register the isolated Taiwan Baitong site and its homepage modules."""
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    now = utc_now()
+    if conn.table_exists("site_blueprint_profiles"):
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (blueprint_name) DO UPDATE SET
+                required_mode_ids_json = excluded.required_mode_ids_json,
+                known_unavailable_mode_ids_json = excluded.known_unavailable_mode_ids_json,
+                blocked_items_json = excluded.blocked_items_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "twbst528",
+                json.dumps(list(required_mode_ids_for_site_key("twbst528")), ensure_ascii=False),
+                "[]",
+                "[]",
+                now,
+                now,
+            ),
+        )
+
+    if conn.table_exists("managed_sites"):
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                web_id = excluded.web_id,
+                name = excluded.name,
+                domain = excluded.domain,
+                lottery_type_id = excluded.lottery_type_id,
+                enabled = excluded.enabled,
+                blueprint_name = excluded.blueprint_name,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                10,
+                10,
+                "台湾百事通",
+                "www.twbst528.com",
+                3,
+                1,
+                "twbst528",
+                "",
+                "Seeded migration site for twbst528 vendor integration.",
+                now,
+                now,
+            ),
+        )
+
+    # This creates only site-10 authorization rows. It never copies generated
+    # history from any other web ID.
+    if conn.table_exists("site_prediction_modules"):
+        from domains.prediction.generation_service import sync_site_prediction_modules
+
+        sync_site_prediction_modules(conn, site_id=10)
+
+
+def _sync_twbst528_static_article_authorization(conn: Any) -> None:
+    """Authorize the reviewed homepage-linked static article renderers."""
+    _install_twbst528_site_profile(conn)
+
+
+def _sync_twbst528_homepage_module_authorization(conn: Any) -> None:
+    """Authorize the additional reviewed homepage renderers for site 10."""
+    _install_twbst528_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -337,6 +416,9 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(7, "install_twssz_five_no_hit_module", _install_twssz_five_no_hit_module),
     Migration(8, "sync_twssz_four_zodiac_module", _sync_twssz_four_zodiac_module),
     Migration(9, "relax_prediction_control_prefix_uniqueness", _relax_prediction_control_prefix_uniqueness),
+    Migration(10, "install_twbst528_vendor_site", _install_twbst528_site_profile),
+    Migration(11, "sync_twbst528_static_article_authorization", _sync_twbst528_static_article_authorization),
+    Migration(12, "sync_twbst528_homepage_module_authorization", _sync_twbst528_homepage_module_authorization),
 )
 
 

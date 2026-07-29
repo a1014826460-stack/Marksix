@@ -49,4 +49,11 @@ export const SITE_UI_BASELINES: Readonly<Record<string, SiteUiBaseline>> = Objec
     navigationSentinel: "#nav2",
     footerSentinel: ".cgi-body",
   },
+  twbst528: {
+    routePath: "/twbst528",
+    vendorEntry: "/vendor/twbst528/index.html",
+    drawSentinel: ".KJ-TabBox",
+    navigationSentinel: ".KJ-TabBox",
+    footerSentinel: "#legacy-attribute-anchor",
+  },
 })

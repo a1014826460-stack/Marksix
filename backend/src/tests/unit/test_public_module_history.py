@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
+from db import connect
 from public import api
 
 
@@ -53,3 +54,42 @@ def test_public_history_reads_fallback_when_preferred_window_has_duplicate_issue
 
     assert [row["term"] for row in result["history"]] == [str(term) for term in range(175, 167, -1)]
     assert any(call["schema_name"] is None for call in calls)
+
+
+def test_public_site_ten_history_filters_to_its_own_web_id(tmp_path):
+    """Site ten may not expose prediction rows generated for another site."""
+    from tables import ensure_admin_tables
+    from domains.prediction.generation_service import sync_site_prediction_modules
+
+    db_path = str(tmp_path / "twbst528_public_history.sqlite3")
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            ) VALUES (10, 10, '台湾百事通', 'www.twbst528.com', 3, 1, 'twbst528', '', '', 'now', 'now')
+            """
+        )
+        sync_site_prediction_modules(conn, site_id=10)
+        conn.execute(
+            """
+            INSERT INTO mode_payload_50 (year, term, web, type, content)
+            VALUES
+                ('2026', '201', 9, 3, 'other-site-row'),
+                ('2026', '201', 10, 3, 'twbst528-row')
+            """
+        )
+
+    result = api.get_public_site_page_data(
+        db_path,
+        site_id=10,
+        lottery_type_id=3,
+        history_limit=1,
+    )
+    module = next(item for item in result["modules"] if item["mechanism_key"] == "yijuzhenyan")
+
+    assert len(module["history"]) == 1
+    assert module["history"][0]["prediction_text"] == "twbst528-row"
+    assert int(module["history"][0]["raw"]["web"]) == 10

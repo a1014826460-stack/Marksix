@@ -7,6 +7,7 @@ import twcaibawangManifest from "@/sites/twcaibawang/site.manifest"
 import twjinniuManifest from "@/sites/twjinniu/site.manifest"
 import twcf888Manifest from "@/sites/twcf888/site.manifest"
 import twsszManifest from "@/sites/twssz/site.manifest"
+import twbst528Manifest from "@/sites/twbst528/site.manifest"
 
 export type FrontendSiteConfig = {
   siteKey: string
@@ -141,6 +142,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
       "/vendor/twcf888.com/static/css/style.css",
     ],
   },
+  toFrontendSiteConfig(twbst528Manifest),
   toFrontendSiteConfig(twsszManifest),
 ]
 

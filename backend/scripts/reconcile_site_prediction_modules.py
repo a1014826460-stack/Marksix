@@ -34,7 +34,7 @@ def _parse_site_ids(value: str) -> list[int]:
         if parsed <= 0:
             raise ValueError("site IDs must be positive integers")
         site_ids.append(parsed)
-    return sorted(set(site_ids)) or [4, 5, 6, 7, 8]
+    return sorted(set(site_ids)) or [4, 5, 6, 7, 8, 9, 10]
 
 
 def _project_root() -> Path:
@@ -86,7 +86,7 @@ def main() -> None:
         description="Audit or reconcile dedicated site prediction-module authorization."
     )
     parser.add_argument("--db-path", required=True, help="PostgreSQL DSN or explicit SQLite test path")
-    parser.add_argument("--site-ids", default="4,5,6,7,8", help="Comma-separated managed_sites IDs")
+    parser.add_argument("--site-ids", default="4,5,6,7,8,9,10", help="Comma-separated managed_sites IDs")
     parser.add_argument("--apply", action="store_true", help="Enable blueprint rows and disable surplus active rows")
     args = parser.parse_args()
     site_ids = _parse_site_ids(args.site_ids)

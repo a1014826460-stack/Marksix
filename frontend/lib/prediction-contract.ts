@@ -108,6 +108,14 @@ function normalizeCode(value: unknown) {
   return /^\d{1,2}$/.test(text) ? text.padStart(2, "0") : text
 }
 
+function lastLegacyResultToken(value: unknown) {
+  const values = cleanText(value)
+    .split(/[,，、|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return values.at(-1) || ""
+}
+
 export function splitPredictionTokens(value: unknown): string[] {
   const text = cleanText(value)
   if (!text) return []
@@ -203,9 +211,9 @@ function resultFromLegacyFields(input: {
     cleanText(result.result_text) ||
     cleanText(raw.result_text) ||
     cleanText(raw.res_text)
-  const code = normalizeCode(result.res_code || raw.res_code || raw.code)
-  const zodiac = cleanText(result.res_sx || raw.res_sx || raw.zodiac || raw.sx)
-  const color = cleanText(result.res_color || raw.res_color || raw.color)
+  const code = normalizeCode(lastLegacyResultToken(result.res_code || raw.res_code || raw.code))
+  const zodiac = lastLegacyResultToken(result.res_sx || raw.res_sx || raw.zodiac || raw.sx)
+  const color = lastLegacyResultToken(result.res_color || raw.res_color || raw.color)
   const isOpened = Boolean(input.isOpened ?? result.is_opened ?? raw.is_opened)
   const isCorrectValue = input.isCorrect ?? raw.is_correct
   const isCorrect = typeof isCorrectValue === "boolean" ? isCorrectValue : null

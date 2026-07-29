@@ -116,7 +116,7 @@ DATABASE_URL=postgresql://user:password@host:5432/liuhecai
 
 ### 4.4 站点预测模块授权
 
-`public.site_prediction_modules` 的 `status=1` 行是站点预测模块的运行时授权源。站点 4-8 的可同步目标来自内部 `domains.prediction.site_page_dependencies` 页面依赖清单；它只包含当前可访问页面的精确模块来源，不将注释脚本、孤立资源或未调用的历史元数据视为授权。站点私有前端 API 以路径站点身份为准，查询参数中的 `site_id`、`web`、`web_id` 不可跨站覆盖。
+`public.site_prediction_modules` 的 `status=1` 行是站点预测模块的运行时授权源。站点 4-10 的可同步目标来自内部 `domains.prediction.site_page_dependencies` 页面依赖清单；它只包含当前可访问页面的精确模块来源，不将注释脚本、孤立资源或未调用的历史元数据视为授权。站点私有前端 API 以路径站点身份为准，查询参数中的 `site_id`、`web`、`web_id` 不可跨站覆盖。`twbst528` 固定使用 `managed_sites.id=10` 和 `web_id=10`，只读取/生成 web 10 的资料。
 
 页面依赖清单的生成保障仅用于内部审计，不会改变 HTTP payload：`controlled_future` 表示模块有已验证的未来期命中规则；`history_only` 表示只可安全展示历史而不可宣称受控正确率；`blocked` 表示无精确源映射。未来期开奖真值不会出现在此清单、审计输出或 API 响应中。
 

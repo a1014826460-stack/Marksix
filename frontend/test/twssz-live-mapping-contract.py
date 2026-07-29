@@ -91,6 +91,9 @@ def main() -> None:
                 fulfill_prediction,
             )
             page.goto("http://127.0.0.1:3000/twssz", wait_until="domcontentloaded")
+            assert page.title() == "台湾神算子，算无遗漏", page.title()
+            icon_href = page.locator("head link[rel='icon']").first.get_attribute("href")
+            assert icon_href == "/vendor/twssz/static/file/favicon.ico", icon_href
             deadline = time.monotonic() + 10
             frame = None
             while time.monotonic() < deadline:
@@ -191,8 +194,15 @@ def main() -> None:
             ma24_headings = frame.locator("[data-site-slot='ma24-heading']")
             assert ma24_headings.count() == 8
             for index in range(8):
-                heading = ma24_headings.nth(index).inner_text()
+                heading_row = ma24_headings.nth(index)
+                heading = heading_row.inner_text()
                 assert f"{207 - index}期 精选24码;准确率绝对100%;大胆下注!" in heading, heading
+                # Each supplied issue card has a heading, an untouched image
+                # row, then two fixed 12-cell number rows.  The heading must
+                # remain attached to its own number grid.
+                first_number, last_number = (1, 24) if index % 2 == 0 else (25, 48)
+                assert heading_row.locator("xpath=following-sibling::tr[2]").locator("td").first.inner_text() == f"{first_number:02d}"
+                assert heading_row.locator("xpath=following-sibling::tr[3]").locator("td").last.inner_text() == f"{last_number:02d}"
             assert "待加载期" not in ma24_headings.first.inner_text()
 
             # 精准四肖标题后的 15 码中特是独立的复杂卡片。所有既有槽位必须
@@ -240,6 +250,16 @@ def main() -> None:
                 assert card.locator("tr").count() == 5
                 assert card.locator("tr").nth(0).locator("td").count() == 1
                 assert f"{207 - index}期 AAA级大公开" in card.inner_text()
+                for row_index, (label, count) in enumerate((("⑨", 9), ("⑧", 8), ("⑦", 7), ("⑥", 6)), start=1):
+                    detail = card.locator("tr").nth(row_index)
+                    outer = detail.locator("td > span > strong > font[color='#fa035a']")
+                    assert outer.count() == 1
+                    assert f"{207 - index}期{label}肖中特:" in outer.inner_text()
+                    # Individual zodiac slots must retain the vendor's font /
+                    # highlight nodes instead of being collapsed into a line.
+                    values = outer.locator(":scope > font, :scope > span")
+                    assert values.count() == count
+                    assert "".join(values.all_inner_texts()) == "猴龙羊马猪狗鼠牛虎"[:count]
 
             jia_ye = frame.get_by_text("家野二肖", exact=True).locator("xpath=ancestor::table[1]/following-sibling::div[1]")
             jia_ye_text = jia_ye.inner_text()
@@ -247,6 +267,36 @@ def main() -> None:
             assert "206期 【野兽+猴龙】 开 港第999期，开奖02错" in jia_ye_text, jia_ye_text
             assert "家禽：牛、马、羊、鸡、狗、猪" in jia_ye_text
             assert "野兽：鼠、虎、兔、龙、蛇、猴" in jia_ye_text
+
+            # The paired cards retain their supplied header/detail formatting:
+            # issue before the blue module label, the vendor "开" literal and
+            # two visual detail lines rather than a generic text-row summary.
+            for section_key, title in (
+                ("title_48", "╔8肖16码╗"),
+                ("wuzhong5ma", "『内幕⑤不中』"),
+                ("pt3xiao", "╔三肖六码╗"),
+                ("shuangbo", "『双波10码』"),
+            ):
+                section = frame.locator(f"[data-prediction-section='{section_key}']")
+                header = section.locator("tr").nth(0)
+                detail = section.locator("tr").nth(1)
+                assert "207期" in header.inner_text() and title in header.inner_text(), header.inner_text()
+                assert "开" in header.inner_text() and "待开奖" in header.inner_text(), header.inner_text()
+                assert header.locator("td > p > b > font").count() == 1
+                assert header.locator("td > p > b > font[color='#0000FF']").count() == 1
+                assert header.locator("td > p > b > font[color='#FF0000']").count() == 1
+                assert detail.locator("br").count() == 1, detail.inner_text()
+
+            composite = frame.get_by_text("综合绝杀", exact=True).locator("xpath=ancestor::table[1]/following-sibling::table[1]")
+            composite_text = composite.inner_text()
+            for heading, line in (
+                ("（绝杀二肖）", "207期稳杀(2)肖【"),
+                ("（绝杀二尾）", "207期稳杀(2)尾【"),
+                ("（绝杀一头）", "207期稳杀(1)头【"),
+                ("（绝杀一行）", "207期稳杀(1)头【"),
+            ):
+                assert heading in composite_text and line in composite_text, composite_text[:2000]
+            assert composite_text.count("待开奖") == 4, composite_text[:2000]
 
             dan_shuang = frame.locator("#con_jihuadanshuang50000ww_1")
             dan_shuang_text = dan_shuang.inner_text()
@@ -315,11 +365,6 @@ def main() -> None:
                 assert "港" in container.inner_text(), (title, container.inner_text()[:500])
                 for forbidden in ("46鸡对", "13马对", "?????"):
                     assert forbidden not in container.inner_text(), (title, forbidden, container.inner_text()[:500])
-
-            composite = frame.get_by_text("综合绝杀", exact=True).locator("xpath=ancestor::table[1]/following-sibling::table[1]")
-            composite_text = composite.inner_text()
-            for label in ("(1)尾", "(1)肖", "(2)肖", "(1)半波"):
-                assert label in composite_text, (label, composite_text[:1000])
 
         finally:
             browser.close()

@@ -51,6 +51,14 @@ SITES = (
         "nav": "#nav2",
         "footer": ".cgi-body",
     },
+    {
+        "key": "twbst528",
+        "path": "/twbst528",
+        "frame": "/vendor/twbst528/index.html",
+        "draw": ".KJ-TabBox",
+        "nav": ".KJ-TabBox",
+        "footer": ".footer",
+    },
 )
 
 
@@ -105,6 +113,7 @@ def main() -> None:
                             "twjinniu": "TwjinniuSiteData",
                             "twcf888": "Twcf888SiteData",
                             "twssz": "TwsszSiteData",
+                            "twbst528": "Twbst528SiteData",
                         }[site["key"]],
                     ), f"{site['key']} must expose its existing-DOM data adapter"
                 if site["key"] == "twssz":
