@@ -56,6 +56,25 @@ def format_zodiac_one_code(labels: tuple[str, ...], conn: Any) -> list[str]:
     return result
 
 
+def format_zodiac_word_codes(labels: tuple[str, ...], _: Any) -> list[str]:
+    """Format the vendor's fixed five-zodiac word idioms without exposing codes."""
+    words = {
+        "鼠": "鼠疫",
+        "牛": "犏牛",
+        "虎": "虎威",
+        "兔": "兔毫",
+        "龙": "龙鳞",
+        "蛇": "蛇精",
+        "马": "马帮",
+        "羊": "羊脂",
+        "猴": "猴戏",
+        "鸡": "鸡冠",
+        "狗": "狗牙",
+        "猪": "猪鬃",
+    }
+    return [f"{label}|{words.get(label, label)}" for label in labels]
+
+
 def format_zodiac_two_codes(labels: tuple[str, ...], conn: Any) -> list[str]:
     result: list[str] = []
     for label in labels:

@@ -142,6 +142,18 @@ export function splitPredictionTokens(value: unknown): string[] {
 
 function collectGroupsFromValue(value: unknown, prefix = ""): CanonicalPredictionGroup[] {
   if (Array.isArray(value)) {
+    const objectItems = value.filter((item) => item && typeof item === "object")
+    if (objectItems.length === value.length && objectItems.length > 0) {
+      return objectItems.flatMap((item, index) => {
+        const itemRecord = asRecord(item)
+        const label = cleanText(itemRecord.label) || `${GROUP_LABELS[prefix] || prefix || "分组"}${index + 1}`
+        const tokens = uniqueStrings([
+          ...(Array.isArray(itemRecord.codes) ? itemRecord.codes : []),
+          ...(Array.isArray(itemRecord.items) ? itemRecord.items : []),
+        ])
+        return tokens.length ? [{ key: `${prefix || "items"}.${index}`, label, tokens }] : []
+      })
+    }
     const tokens = uniqueStrings(value)
     return tokens.length
       ? [
@@ -364,6 +376,11 @@ function canonicalRowFromVendorHistory(row: Record<string, unknown>): CanonicalP
         xiao_pair: row.xiao_pair,
         picks: row.picks,
         wave_groups: row.wave_groups,
+        xiao: row.xiao,
+        code: row.code,
+        hei: row.hei,
+        bai: row.bai,
+        formula: row.formula,
       },
     },
     result,

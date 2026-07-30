@@ -22,6 +22,8 @@ const DEFAULT_VENDOR_MODULES = [
   "shujinguang",
   "daxiao_2tou",
   "tiandi_2xiao",
+  "dujia_gongshi",
+  "tw_pmt_image",
 ]
 
 export type SiteTrafficEventType =

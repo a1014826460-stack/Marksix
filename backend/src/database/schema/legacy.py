@@ -572,3 +572,27 @@ def ensure_twcaibawang_prediction_tables(conn: Any, pk_sql: str) -> None:
         modes_id=484,
         title="六肖十八码",
     )
+
+
+def ensure_twbst528_prediction_tables(conn: Any, pk_sql: str) -> None:
+    """Bootstrap exact payload shapes required by Taiwan Baitong's vendor DOM."""
+    for modes_id, title in (
+        (486, "代号生肖"),
+        (487, "六尾出特"),
+        (488, "头数单双"),
+        (490, "杀两半波"),
+        (491, "公式四尾"),
+    ):
+        ensure_basic_prediction_payload_table(
+            conn,
+            pk_sql,
+            modes_id=modes_id,
+            title=title,
+        )
+
+    ensure_xiao_code_prediction_payload_table(
+        conn,
+        pk_sql,
+        modes_id=489,
+        title="六肖六码",
+    )

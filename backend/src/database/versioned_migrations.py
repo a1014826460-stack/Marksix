@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 14
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -68,6 +68,29 @@ def _reconcile_created_prediction_tables(conn: Any) -> None:
         if table_name == "mode_payload_tables":
             continue
         ensure_created_prediction_table(conn, table_name, commit=False)
+
+
+def _ensure_payload_source_table(
+    conn: Any,
+    *,
+    modes_id: int,
+    title: str,
+) -> None:
+    """Create a missing legacy public source table before importing its mirror."""
+    table_exists = getattr(conn, "table_exists", None)
+    if not callable(table_exists):
+        return
+    if table_exists(f"mode_payload_{int(modes_id)}"):
+        return
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_basic_prediction_payload_table
+
+    ensure_basic_prediction_payload_table(
+        conn,
+        auto_increment_primary_key("id", conn.engine),
+        modes_id=int(modes_id),
+        title=title,
+    )
 
 
 def _sync_site_blueprint_profiles_to_page_manifest(conn: Any) -> None:
@@ -247,6 +270,7 @@ def _import_twssz_static_prediction_history(conn: Any) -> None:
     )
 
     for value_index, (table_name, mode_id) in enumerate(_TWSSZ_STATIC_HISTORY_MODULES):
+        _ensure_payload_source_table(conn, modes_id=mode_id, title=f"twssz imported mode {mode_id}")
         ensure_created_prediction_table(conn, table_name, commit=False)
         for term, values in _TWSSZ_STATIC_PREDICTION_HISTORY:
             upsert_created_prediction_row(
@@ -406,6 +430,20 @@ def _sync_twbst528_homepage_module_authorization(conn: Any) -> None:
     _install_twbst528_site_profile(conn)
 
 
+def _install_twbst528_exact_prediction_modes(conn: Any) -> None:
+    """Install exact vendor-mode tables before authorizing the expanded profile."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_twbst528_prediction_tables
+
+    ensure_twbst528_prediction_tables(conn, auto_increment_primary_key("id", conn.engine))
+    _install_twbst528_site_profile(conn)
+
+
+def _sync_twbst528_taiwan_pmt_image(conn: Any) -> None:
+    """Authorize the site-10 image module added after the initial profile migration."""
+    _install_twbst528_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -419,6 +457,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(10, "install_twbst528_vendor_site", _install_twbst528_site_profile),
     Migration(11, "sync_twbst528_static_article_authorization", _sync_twbst528_static_article_authorization),
     Migration(12, "sync_twbst528_homepage_module_authorization", _sync_twbst528_homepage_module_authorization),
+    Migration(13, "install_twbst528_exact_prediction_modes", _install_twbst528_exact_prediction_modes),
+    Migration(14, "sync_twbst528_taiwan_pmt_image", _sync_twbst528_taiwan_pmt_image),
 )
 
 

@@ -55,9 +55,17 @@ def test_twbst528_page_manifest_authorizes_homepage_and_reviewed_article_modules
         "siji3",
         "siduanzhongte",
         "wuzhong5ma",
+        "daimingxiao",
+        "liuweichute",
+        "toudanshuang",
+        "liuxiaoliuma",
+        "shaliangbanbo",
+        "gongshi_siw",
+        "tw_pmt_image",
     }
     assert required_mode_ids_for_site_key("twbst528") == (
         50, 38, 44, 43, 58, 54, 57, 51, 56, 5, 47, 470, 472, 28, 20,
         42, 12, 26, 49, 15, 74, 46, 484, 8, 481, 60, 45, 48, 69,
-        197, 473, 108, 219, 482, 61, 479, 485, 198, 483, 14, 279, 66, 53, 132,
+        197, 473, 108, 219, 482, 61, 479, 485, 486, 487, 488, 489, 490, 491, 478,
+        198, 483, 14, 279, 66, 53, 132,
     )

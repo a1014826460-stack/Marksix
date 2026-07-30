@@ -141,6 +141,14 @@ If you refer to browser usage, prefer the Next.js admin entry and its `/admin/ap
 
 Bootstrap defaults primarily live in `backend/src/runtime_config.py`, with runtime overrides coming from the database-backed `system_config` table and environment variables where appropriate.
 
+### Local PostgreSQL
+
+- The local development database is `liuhecai` on `127.0.0.1:5432`.
+- Configure its connection through the user-scoped `DATABASE_URL` environment
+  variable. Do not commit or write the password into repository documents.
+- Run structural changes only with `python -m database.versioned_migrations
+  --db-path $env:DATABASE_URL` from `backend/src`.
+
 ## API Notes
 
 - Python native API paths are `/api/*`

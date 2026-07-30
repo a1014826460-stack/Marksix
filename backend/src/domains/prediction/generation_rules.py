@@ -54,6 +54,12 @@ def _special_half_wave(truth: DrawTruth, _conn: Any) -> str:
     return f"{wave}{parity}" if wave and parity else ""
 
 
+def _special_head_parity(truth: DrawTruth, _conn: Any) -> str:
+    number = _normalized_code(truth)
+    head = "0头" if number < 10 else f"{number // 10}头"
+    return head + ("双" if number % 2 == 0 else "单")
+
+
 def _combined_parity(truth: DrawTruth, _conn: Any) -> str:
     number = _normalized_code(truth)
     return "合单" if ((number // 10) + (number % 10)) % 2 else "合双"
@@ -159,6 +165,12 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     481: _rule("number_exclusion", _special_number, prefix_width=2),
     483: _rule("head", _special_head),
     485: _rule("number_exclusion", _special_number, prefix_width=2),
+    486: _rule("zodiac", _special_zodiac),
+    487: _rule("tail", _special_tail),
+    488: _rule("head_parity", _special_head_parity),
+    489: _rule("zodiac", _special_zodiac),
+    490: _rule("half_wave_exclusion", _special_half_wave),
+    491: _rule("tail", _special_tail),
 }
 
 

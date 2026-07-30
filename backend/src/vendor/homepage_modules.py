@@ -19,6 +19,8 @@ SUPPORTED_MODULE_KEYS = (
     "shujinguang",
     "daxiao_2tou",
     "tiandi_2xiao",
+    "dujia_gongshi",
+    "tw_pmt_image",
 )
 
 _MODULE_SOURCE_MODE_IDS: dict[str, tuple[int, ...]] = {
@@ -28,6 +30,8 @@ _MODULE_SOURCE_MODE_IDS: dict[str, tuple[int, ...]] = {
     "shujinguang": (44,),
     "daxiao_2tou": (57, 108),
     "tiandi_2xiao": (5, 251),
+    "dujia_gongshi": (28, 57, 491),
+    "tw_pmt_image": (478,),
 }
 
 _MODULE_PRESENTATION: dict[str, tuple[str, str]] = {
@@ -37,6 +41,8 @@ _MODULE_PRESENTATION: dict[str, tuple[str, str]] = {
     "shujinguang": ("输尽光", "single-line"),
     "daxiao_2tou": ("大小+2头", "single-line"),
     "tiandi_2xiao": ("天地两肖", "single-line"),
+    "dujia_gongshi": ("独家公式", "three-part-composite"),
+    "tw_pmt_image": ("台湾跑马图", "image-card"),
 }
 
 
@@ -56,8 +62,17 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def get_vendor_module_source_mode_ids() -> dict[str, tuple[int, ...]]:
-    """Return a copy of the fixed source IDs used by vendor composite blocks."""
-    return dict(_MODULE_SOURCE_MODE_IDS)
+    """Return the legacy twcaibawang composite sources used by its audit."""
+    return {
+        key: value
+        for key, value in _MODULE_SOURCE_MODE_IDS.items()
+        if key != "dujia_gongshi"
+    }
+
+
+def get_twbst528_vendor_module_source_mode_ids() -> dict[str, tuple[int, ...]]:
+    """Return the exact composite sources owned by the twbst528 vendor page."""
+    return {"dujia_gongshi": _MODULE_SOURCE_MODE_IDS["dujia_gongshi"]}
 
 
 def _parse_json_array(value: Any) -> list[Any]:
@@ -174,6 +189,15 @@ def _hit_text(row: dict[str, Any]) -> str:
 
 def _normalize_issue(row: dict[str, Any]) -> str:
     return f"{row.get('year') or ''}{row.get('term') or ''}".strip()
+
+
+def _normalize_prediction_image_url(value: Any) -> str:
+    """Convert generator filesystem paths into the public uploads namespace."""
+    image_url = str(value or "").strip().replace("\\", "/")
+    marker = "/data/Images/"
+    if marker in image_url:
+        return "/uploads/" + image_url.split(marker, 1)[1]
+    return image_url
 
 
 def _load_mode_rows(
@@ -538,6 +562,104 @@ def _build_tiandi_2xiao(ctx: VendorModuleContext, db_path: str | Any) -> dict[st
     }
 
 
+def _labels_for_row(row: dict[str, Any], *, tail: bool = False) -> list[str]:
+    labels = _split_labels(row.get("content"))
+    if tail:
+        return [label.replace("尾", "") for label in labels]
+    return labels
+
+
+def _build_dujia_gongshi(ctx: VendorModuleContext, db_path: str | Any) -> dict[str, Any]:
+    parity_rows = _load_mode_rows(db_path, modes_id=28, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    size_rows = _load_mode_rows(db_path, modes_id=57, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    tail_rows = _load_mode_rows(db_path, modes_id=491, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    by_parity = _rows_by_issue(parity_rows)
+    by_size = _rows_by_issue(size_rows)
+    by_tail = _rows_by_issue(tail_rows)
+    history: list[dict[str, Any]] = []
+
+    for issue in _history_window(parity_rows, size_rows, tail_rows, limit=ctx.history_limit):
+        parity_row = by_parity.get(issue)
+        size_row = by_size.get(issue)
+        tail_row = by_tail.get(issue)
+        source = parity_row or size_row or tail_row
+        if not source:
+            continue
+        result = _pick_result(source)
+
+        def entry(row: dict[str, Any] | None, labels: list[str]) -> dict[str, Any] | None:
+            if not row:
+                return None
+            is_correct: bool | None = None
+            if result["is_opened"] and labels:
+                if row is parity_row:
+                    is_correct = ("双" if int(result["res_code"]) % 2 == 0 else "单") in labels
+                elif row is size_row:
+                    is_correct = ("大" if int(result["res_code"]) >= 25 else "小") in labels
+                else:
+                    is_correct = str(int(result["res_code"]) % 10) in labels
+            return {"labels": labels, "is_correct": is_correct}
+
+        history.append(
+            {
+                "issue": issue,
+                "year": str(source.get("year") or ""),
+                "term": str(source.get("term") or ""),
+                "formula": {
+                    "parity": entry(parity_row, _labels_for_row(parity_row or {})),
+                    "size": entry(size_row, _labels_for_row(size_row or {})),
+                    "tails": entry(tail_row, _labels_for_row(tail_row or {}, tail=True)),
+                },
+                "result": result,
+                "is_opened": result["is_opened"],
+                "is_correct": None,
+                "raw": {"source_mode_ids": [28, 57, 491]},
+            }
+        )
+    return {
+        "module_key": "dujia_gongshi",
+        "title": "独家公式",
+        "display_style": "three-part-composite",
+        "history": history,
+    }
+
+
+def _build_tw_pmt_image(ctx: VendorModuleContext, db_path: str | Any) -> dict[str, Any]:
+    """Expose only the newest site-owned Taiwan 跑马图 image to the vendor DOM."""
+    rows = _load_mode_rows(
+        db_path,
+        modes_id=478,
+        web_id=ctx.web_id,
+        lottery_type=ctx.lottery_type,
+        limit=ctx.history_limit,
+    )
+    history: list[dict[str, Any]] = []
+    for row in rows:
+        image_url = _normalize_prediction_image_url(row.get("image_url"))
+        if not image_url:
+            continue
+        result = _pick_result(row)
+        history.append(
+            {
+                "issue": _normalize_issue(row),
+                "year": str(row.get("year") or ""),
+                "term": str(row.get("term") or ""),
+                "image_url": image_url,
+                "result": result,
+                "is_opened": result["is_opened"],
+                "is_correct": None,
+                "raw": {"source_mode_ids": [478]},
+            }
+        )
+        break
+    return {
+        "module_key": "tw_pmt_image",
+        "title": "台湾跑马图",
+        "display_style": "image-card",
+        "history": history,
+    }
+
+
 def build_vendor_homepage_modules(
     db_path: str | Any,
     *,
@@ -562,6 +684,8 @@ def build_vendor_homepage_modules(
         "shujinguang": _build_shujinguang,
         "daxiao_2tou": _build_daxiao_2tou,
         "tiandi_2xiao": _build_tiandi_2xiao,
+        "dujia_gongshi": _build_dujia_gongshi,
+        "tw_pmt_image": _build_tw_pmt_image,
     }
     with connect(db_path) as conn:
         enabled_mode_ids = get_enabled_mode_ids_for_web_id(conn, ctx.web_id)

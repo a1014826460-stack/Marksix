@@ -149,6 +149,40 @@ def test_created_table_reconciliation_uses_metadata_and_discovered_public_payloa
     assert reconciled == [("mode_payload_47", False), ("mode_payload_53", False)]
 
 
+def test_twssz_import_creates_a_missing_public_source_before_created_mirror(monkeypatch):
+    from database import versioned_migrations
+
+    ensured: list[tuple[int, str]] = []
+    created: list[str] = []
+
+    class _Connection:
+        engine = "postgres"
+
+        def table_exists(self, table_name):
+            return False
+
+    monkeypatch.setattr(
+        "database.schema.legacy.ensure_basic_prediction_payload_table",
+        lambda _conn, _pk, *, modes_id, title: ensured.append((modes_id, title)),
+    )
+    monkeypatch.setattr(
+        "utils.created_prediction_store.ensure_created_prediction_table",
+        lambda _conn, table_name, *, commit: created.append(table_name),
+    )
+    monkeypatch.setattr(
+        "utils.created_prediction_store.upsert_created_prediction_row",
+        lambda *_args, **_kwargs: None,
+    )
+
+    versioned_migrations._import_twssz_static_prediction_history(_Connection())
+
+    assert [mode_id for mode_id, _title in ensured] == [44, 78, 481, 69, 51, 43, 66]
+    assert created == [
+        "mode_payload_44", "mode_payload_78", "mode_payload_481", "mode_payload_69",
+        "mode_payload_51", "mode_payload_43", "mode_payload_66",
+    ]
+
+
 def test_postgres_ensure_admin_tables_only_validates_runtime_schema(monkeypatch):
     import database.bootstrap as bootstrap
 
@@ -424,6 +458,53 @@ def test_migration_ten_registers_twbst528_profile_site_identity_and_modules(tmp_
     assert [(int(row["mode_id"]), int(row["status"])) for row in modules] == [
         (mode_id, 1) for mode_id in expected_mode_ids
     ]
+
+
+def test_migration_fourteen_resyncs_twbst528_for_the_taiwan_pmt_image(tmp_path):
+    from db import connect
+    from database.versioned_migrations import _sync_twbst528_taiwan_pmt_image
+
+    db_path = str(tmp_path / "twbst528-pmt-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE site_blueprint_profiles (
+                blueprint_name TEXT PRIMARY KEY,
+                required_mode_ids_json TEXT NOT NULL,
+                known_unavailable_mode_ids_json TEXT NOT NULL,
+                blocked_items_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY, web_id INTEGER NOT NULL, name TEXT NOT NULL,
+                domain TEXT, lottery_type_id INTEGER, enabled INTEGER NOT NULL,
+                blueprint_name TEXT, announcement TEXT, notes TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE site_prediction_modules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, site_id INTEGER NOT NULL,
+                mechanism_key TEXT NOT NULL, mode_id INTEGER NOT NULL, status INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                title TEXT, UNIQUE(site_id, mechanism_key)
+            )
+            """
+        )
+
+        _sync_twbst528_taiwan_pmt_image(conn)
+        image_module = conn.execute(
+            "SELECT mechanism_key, mode_id, status FROM site_prediction_modules WHERE site_id = 10 AND mode_id = 478"
+        ).fetchone()
+
+    assert dict(image_module) == {"mechanism_key": "tw_pmt_image", "mode_id": 478, "status": 1}
 
 
 def test_migration_five_imports_twssz_static_prediction_history_into_created_tables(monkeypatch):

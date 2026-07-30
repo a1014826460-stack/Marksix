@@ -146,6 +146,69 @@
     return values.length ? values.join(separator || "") : String(row && row.prediction && row.prediction.text || "");
   }
 
+  function rawValue(row, key) {
+    var raw = row && row.raw || {};
+    var extra = row && row.prediction && row.prediction.extra || {};
+    return raw[key] !== undefined ? raw[key] : extra[key];
+  }
+
+  function valueList(value) {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean);
+    if (typeof value === "string") {
+      try {
+        var parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+      } catch (_) {
+        // Legacy rows can contain comma-separated values instead of JSON.
+      }
+      return value.split(/[，,\s]+/).map(function (item) { return item.trim(); }).filter(Boolean);
+    }
+    return [];
+  }
+
+  function moduleWithRows(primary, fallback) {
+    return distinctRows(primary).length ? primary : fallback;
+  }
+
+  function labelTokens(row) {
+    return tokens(row).filter(function (value) {
+      return /[\u4e00-\u9fff]/.test(value) && !/^\d+$/.test(value);
+    });
+  }
+
+  // Payload rows frequently encode a visible label and its source numbers as
+  // `label|numbers`. Table cells display only the compact label sequence.
+  function displayLabels(row, separator) {
+    return tokens(row).map(function (value) {
+      return String(value).replace(/[\[\]"]/g, "").split("|", 1)[0].trim();
+    }).filter(Boolean).join(separator === undefined ? "" : separator);
+  }
+
+  function compactLabels(values, separator) {
+    return (Array.isArray(values) ? values : []).map(function (value) {
+      return String(value).replace(/[\[\]"]/g, "").split("|", 1)[0].trim();
+    }).filter(Boolean).join(separator === undefined ? "" : separator);
+  }
+
+  function unavailableThreeColumn(title) {
+    renderThreeColumnRows(sectionByTitle(title), null, function () { return ""; });
+  }
+
+  function unavailablePairedCardHistory(title) {
+    renderPairedCardHistory(title, null, function () { return ["暂无后端资料"]; });
+  }
+
+  function unavailableCompositeLines(title) {
+    var section = sectionByTitle(title);
+    if (!section) return;
+    Array.prototype.forEach.call(section.querySelectorAll("table tbody > tr td"), function (cell) {
+      lineGroups(cell).forEach(function (group) {
+        var text = group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join("");
+        if (/\d+(?:-\d+)?期/.test(text)) writeLineGroup(group, "暂无后端资料");
+      });
+    });
+  }
+
   function lineGroups(root) {
     var groups = [[]];
     function visit(node) {
@@ -266,13 +329,15 @@
 
   function renderPingteYiweiHistory(module) {
     renderThreeColumnRows(sectionByTitle("平特一尾"), module, function (row) {
-      return tokens(row).join("") + "尾";
+      var value = displayLabels(row, "").replace(/尾/g, "");
+      return value ? value + value + value + "尾" : "";
     });
   }
 
   function renderDaxiaoZhongteHistory(module) {
     renderThreeColumnRows(sectionByTitle("大小中特"), module, function (row) {
-      return tokens(row).join("").replace(/^大$/, "大数").replace(/^小$/, "小数");
+      var value = String(rawValue(row, "daxiao") || displayLabels(row, "") || labelTokens(row)[0] || "");
+      return value === "大" ? "大数" : value === "小" ? "小数" : value;
     });
   }
 
@@ -284,21 +349,40 @@
 
   function renderHuobaoSitourHistory(module) {
     renderThreeColumnRows(sectionByTitle("火爆④头"), module, function (row) {
-      return tokens(row).join("-") + "头";
+      return displayLabels(row, "-").replace(/头/g, "") + "头";
     });
   }
 
   function renderPingteYixiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("平特①肖"), module, function (row) {
       var value = tokens(row)[0] || "";
-      return value ? value + value + value : "";
+      return value;
     });
   }
 
   function renderTiandiErxiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("天地+②肖"), module, function (row) {
-      return tokens(row).join("+");
+      var tiandi = String(rawValue(row, "tiandi") || "");
+      var pair = rawValue(row, "xiao_pair");
+      if (tiandi && Array.isArray(pair)) return tiandi + "+" + pair.join("");
+      var labels = displayLabels(row, "");
+      var picks = valueList(rawValue(row, "xiao")).slice(0, 2).join("");
+      return labels && picks ? labels + "+" + picks : labels;
     });
+  }
+
+  function renderTaiwanPmtImage(module) {
+    var image = document.querySelector("img[data-prediction-image='tw_pmt_image']");
+    if (!image) return;
+    var row = distinctRows(module)[0];
+    var url = String(row && row.prediction && row.prediction.imageUrl || "").trim();
+    if (!url) {
+      image.setAttribute("src", "");
+      image.setAttribute("hidden", "hidden");
+      return;
+    }
+    image.setAttribute("src", url);
+    image.removeAttribute("hidden");
   }
 
   function renderSizhongteHistory(module) {
@@ -342,7 +426,7 @@
   }
 
   function renderDanshuangErxiaoHistory(module) {
-    renderThreeColumnRows(sectionByTitle("单双二肖"), module, function (row) { return tokens(row).join("+"); });
+    renderThreeColumnRows(sectionByTitle("单双二肖"), module, function (row) { return displayLabels(row, "+"); });
   }
 
   function renderJueshaYixiaoYiweiHistory(module) {
@@ -357,7 +441,9 @@
 
   function renderDaimingXiaoHistory(module) {
     renderRemainingThreeColumnHistory("代号生肖", module, function (row) {
-      return predictionText(row, "|");
+      return tokens(row).map(function (value) {
+        return String(value).indexOf("|") >= 0 ? String(value).split("|", 2)[1] : String(value);
+      }).join("、");
     });
   }
 
@@ -367,9 +453,15 @@
     });
   }
 
+  function renderToudanshuangHistory(module) {
+    renderRemainingThreeColumnHistory("头数单双", module, function (row) {
+      return tokens(row).join(".");
+    });
+  }
+
   function renderShuhaQiweiHistory(module) {
     renderRemainingThreeColumnHistory("梭哈⑦尾", module, function (row) {
-      return predictionText(row, "-") + "尾";
+      return displayLabels(row, "-").replace(/尾/g, "") + "尾";
     });
   }
 
@@ -381,7 +473,7 @@
 
   function renderWuxingLailiaoHistory(module) {
     renderRemainingThreeColumnHistory("五行来料", module, function (row) {
-      return predictionText(row, "-");
+      return displayLabels(row, "-") + "行";
     });
   }
 
@@ -393,13 +485,16 @@
 
   function renderHeibaiSanxiaoHistory(module) {
     renderRemainingThreeColumnHistory("黑白三肖", module, function (row) {
+      var hei = valueList(rawValue(row, "hei"));
+      var bai = valueList(rawValue(row, "bai"));
+      if (hei.length || bai.length) return (hei.length ? "黑肖：" + hei.join("") : "") + (bai.length ? " 白肖：" + bai.join("") : "");
       return predictionText(row, "");
     });
   }
 
   function renderWenzhongDanshuangHistory(module) {
     renderRemainingThreeColumnHistory("稳中单双", module, function (row) {
-      return predictionText(row, "+");
+      return displayLabels(row, "+");
     });
   }
 
@@ -413,13 +508,13 @@
 
   function renderDaxiaoYitouHistory(module) {
     renderRemainingThreeColumnHistory("大小+①头", module, function (row) {
-      return predictionText(row, "+");
+      return displayLabels(row, "+").replace(/^大$/, "大数").replace(/^小$/, "小数");
     });
   }
 
   function renderCategoryHistory(title, module, labelMap) {
     renderRemainingThreeColumnHistory(title, module, function (row) {
-      var value = predictionText(row, "");
+      var value = displayLabels(row, "");
       Object.keys(labelMap || {}).forEach(function (source) {
         value = value.replace(new RegExp(source, "g"), labelMap[source]);
       });
@@ -437,8 +532,14 @@
       var tailRow = tailRows[index];
       var lineRow = lineRows[index];
       writeCell(cells[0], tailRow ? termValue(tailRow) : "");
-      writeCell(cells[1], tailRow && lineRow
-        ? predictionText(tailRow, "") + "尾 + " + predictionText(lineRow, "") + "行"
+      var tails = tailRow ? tokens(tailRow).map(function (value) {
+        return String(value).replace(/尾.*/, "").replace(/\D/g, "");
+      }).filter(Boolean).slice(0, 7) : [];
+      var lines = lineRow ? tokens(lineRow).map(function (value) {
+        return String(value).replace(/\|.*$/, "").replace(/[0-9,，.\s]/g, "");
+      }).filter(Boolean).slice(0, 4) : [];
+      writeCell(cells[1], tails.length && lines.length
+        ? tails.join("") + "尾 + " + lines.join("") + "行"
         : "暂无后端资料");
       writeResultCell(cells[2], tailRow || lineRow);
     });
@@ -455,7 +556,7 @@
       var zodiacRow = zodiacRows[index];
       writeCell(cells[0], seasonRow ? termValue(seasonRow) : "");
       writeCell(cells[1], seasonRow && zodiacRow
-        ? predictionText(seasonRow, "") + "+" + predictionText(zodiacRow, "")
+        ? displayLabels(seasonRow, "")
         : "暂无后端资料");
       writeResultCell(cells[2], seasonRow || zodiacRow);
     });
@@ -517,7 +618,15 @@
 
   function renderLiuxiaoLiumaHistory(module) {
     renderPairedCardHistory("六肖六码", module, function (row) {
-      return splitCardLines(row, 2, "");
+      var xiao = valueList(rawValue(row, "xiao"));
+      var code = valueList(rawValue(row, "code"));
+      if (xiao.length === 6 && code.length === 6) {
+        var pairs = xiao.map(function (label, index) {
+          return label + String(code[index] || "").padStart(2, "0");
+        });
+        return [pairs.slice(0, 3).join(""), pairs.slice(3, 6).join("")];
+      }
+      return ["暂无后端资料"];
     });
   }
 
@@ -557,13 +666,25 @@
 
   function renderWuxiaoShimaHistory(module) {
     renderPairedCardHistory("⑤肖⑩码", module, function (row) {
-      return splitCardLines(row, 2, ".");
+      var groups = row && row.prediction && row.prediction.groups || [];
+      var xiao = groups.filter(function (group) { return group.key === "xiao_5"; })[0];
+      var code = groups.filter(function (group) { return group.key === "code_5"; })[0];
+      if (xiao && code) return [xiao.tokens.join(""), code.tokens.join(".")];
+      var values = tokens(row);
+      var pairs = values.map(function (value) {
+        var parts = String(value).replace(/[\[\]"]/g, "").split("|");
+        return { xiao: String(parts[0] || "").trim(), codes: valueList(parts[1]) };
+      }).filter(function (pair) { return pair.xiao; });
+      var xiaos = pairs.map(function (pair) { return pair.xiao; }).slice(0, 5);
+      var codes = pairs.reduce(function (all, pair) { return all.concat(pair.codes); }, []).slice(0, 10);
+      return [xiaos.join(""), codes.join(".")];
     });
   }
 
   function renderSixiaoBamaHistory(module) {
     renderPairedCardHistory("四肖八码", module, function (row) {
-      return splitCardLines(row, 2, ".");
+      var values = tokens(row);
+      return [values.slice(0, 4).join(""), values.slice(4, 12).join(".")];
     });
   }
 
@@ -589,7 +710,11 @@
       var cell = tr.querySelector("td");
       writeInlineCardHeader(cell, row);
       var directFonts = cell ? cell.querySelectorAll(":scope > font") : [];
-      var lines = row ? splitCardLines(row, 2, ".") : ["暂无后端资料", ""];
+      var xiao = row ? rawValue(row, "xiao") : null;
+      var code = row ? rawValue(row, "code") : null;
+      var lines = Array.isArray(xiao) && Array.isArray(code)
+        ? [xiao.map(String).join(""), code.map(String).join(".")]
+        : row ? splitCardLines(row, 2, ".") : ["暂无后端资料", ""];
       if (directFonts[2]) writeCell(directFonts[2], lines[0]);
       if (directFonts[3]) writeCell(directFonts[3], lines[1]);
     });
@@ -600,12 +725,16 @@
     var data = distinctRows(module);
     Array.prototype.forEach.call(section ? section.querySelectorAll("table.mtbl") : [], function (table, issueIndex) {
       var row = data[issueIndex];
-      var values = row ? tokens(row) : [];
+      var codes = valueList(rawValue(row, "code"));
+      var xiaos = valueList(rawValue(row, "xiao"));
       Array.prototype.forEach.call(table.querySelectorAll("tbody > tr"), function (tr, stageIndex) {
         var cells = tr.querySelectorAll(":scope > td");
         if (cells.length !== 3) return;
+        var source = stageIndex < 5 ? codes : xiaos;
+        var size = [1, 3, 5, 7, 10, 1, 2, 3, 5, 7, 9][stageIndex] || 1;
+        var bestValue = source.slice(0, size).join(stageIndex < 5 ? "." : "");
         writeCell(cells[0], row ? termValue(row) : "");
-        writeCell(cells[1], row ? values.slice(0, Math.max(1, stageIndex + 1)).join(stageIndex < 5 ? "." : "") : "暂无后端资料");
+        writeCell(cells[1], row && bestValue ? bestValue : "暂无后端资料");
         writeResultCell(cells[2], row);
       });
     });
@@ -666,21 +795,47 @@
   }
 
   function renderDujiaGongshiHistory(module) {
-    renderCompositeLines("独家公式", [module], function (row) {
-      return termValue(row).replace(/^第/, "") + " --------------------- T-- 【" + predictionText(row, "") + "】" +
-        (row.result.isCorrect === true ? "√" : row.result.isCorrect === false ? "x" : "?");
+    var section = sectionByTitle("独家公式");
+    if (!section) return;
+    var rows = distinctRows(module);
+    var blocks = Array.prototype.slice.call(section.querySelectorAll("td > p > b > font[face]")).filter(function (font) {
+      return String(font.textContent || "").indexOf("独家") >= 0 || String(font.textContent || "").indexOf("公式四尾") >= 0;
+    });
+    ["parity", "size", "tails"].forEach(function (kind, blockIndex) {
+      var block = blocks[blockIndex];
+      if (!block) return;
+      var groups = lineGroups(block).filter(function (group) {
+        return /\d+期/.test(group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join(""));
+      });
+      groups.forEach(function (group, rowIndex) {
+        var row = rows[rowIndex];
+        var formula = row && rawValue(row, "formula");
+        var entry = formula && formula[kind];
+        var labels = entry && Array.isArray(entry.labels) ? entry.labels : [];
+        var firstLabel = String(labels[0] || "").replace(/[\[\]"]/g, "");
+        var value = kind === "tails"
+          ? compactLabels(labels, "") + "尾"
+          : firstLabel.split("|", 1)[0].trim() + "数";
+        var rawCodes = valueList(rawValue(row, "res_code"));
+        var opened = Boolean(row && row.result && row.result.isOpened);
+        var prefix = opened
+          ? rawCodes.slice(0, 6).join("-") + " T" + resultToken(row.result.code, true)
+          : "--------------------- T--";
+        var marker = !opened ? "?" : row.result.isCorrect === true ? "√" : "x";
+        writeLineGroup(group, row ? termValue(row).replace(/^第/, "") + " " + prefix + " 【" + value + "】" + marker : "暂无后端资料");
+      });
     });
   }
 
   function renderSanqiJihuaHistory(modules) {
     renderCompositeLines("三期计划", [modules.shuangbo, modules.danshuangtema, modules.pt1xiao, modules["3zxt"] || modules.sanxiaozhongte], function (row) {
-      return termValue(row).replace(/^第/, "") + "【" + predictionText(row, "") + "】" + resultValue(row);
+      return termValue(row).replace(/^第/, "") + "【" + displayLabels(row, "") + "】" + resultValue(row);
     });
   }
 
   function renderZongheJueshaHistory(modules) {
     renderCompositeLines("综合绝杀", [modules.juesha2xiao, modules.juesha1wei, modules["3tou"], modules["3hang"]], function (row) {
-      return termValue(row).replace(/^第/, "") + "稳杀【" + predictionText(row, "") + "】" + resultValue(row);
+      return termValue(row).replace(/^第/, "") + "稳杀【" + displayLabels(row, "") + "】" + resultValue(row);
     });
   }
 
@@ -744,13 +899,15 @@
     renderLiangboTuweiHistory(modules.shuangbo);
     renderBaxiaoLaixiHistory(modules["7xiao7ma"]);
     renderJiayeZhongteHistory(modules.pt2xiao);
-    renderShaliangbanboHistory(modules.jueshabanbo);
+    renderShaliangbanboHistory(modules.shaliangbanbo);
     renderPingteYiweiHistory(modules.pt1wei);
     renderDaxiaoZhongteHistory(modules.daxiao);
     renderBaofuQixiaoHistory(modules["7xiao7ma"]);
-    renderHuobaoSitourHistory(modules["4xiao8ma"]);
+    renderHuobaoSitourHistory(modules.sitouzhongte);
     renderPingteYixiaoHistory(modules.pt1xiao);
-    renderTiandiErxiaoHistory(modules.title_5);
+    renderTiandiErxiaoHistory(moduleWithRows(modules.tiandi_2xiao, modules.title_5));
+
+    renderTaiwanPmtImage(modules.tw_pmt_image);
     renderSizhongteHistory(modules.title_47);
     renderSanxiaoLiumaHistory(modules.pt3xiao);
     renderJueshaYixiaoHistory(modules.juesha1xiao);
@@ -758,15 +915,15 @@
     renderDanshuangErxiaoHistory(modules.danshuangtema);
     renderJueshaYixiaoYiweiHistory(modules.juesha1wei);
     renderRemainingThreeColumnHistory("杀肖杀码", modules.juesha3xiao);
-    renderRemainingThreeColumnHistory("头数单双", modules["3tou"]);
+    renderToudanshuangHistory(modules.toudanshuang);
     renderRemainingThreeColumnHistory("琴棋书画", modules.qinqi);
     renderRemainingThreeColumnHistory("本期输尽光", modules.shujinguang);
     renderForumHistory(modules);
-    renderDaimingXiaoHistory(modules["9xzt"]);
-    renderDujiaGongshiHistory(modules.title_15);
-    renderLiuweiChuteHistory(modules.title_74);
-    renderLiuxiaoLiumaHistory(modules["6xzt"]);
-    renderYixiaoYimaHistory(modules.pt1xiao);
+    renderDaimingXiaoHistory(modules.daimingxiao);
+    renderDujiaGongshiHistory(modules.dujia_gongshi);
+    renderLiuweiChuteHistory(modules.liuweichute);
+    renderLiuxiaoLiumaHistory(modules.liuxiaoliuma);
+    renderYixiaoYimaHistory(moduleWithRows(modules.public_yixiao_yima, modules["9xiao12ma"]));
     renderMayouLailiaoHistory(modules);
     renderShuhaQiweiHistory(modules.title_74);
     renderLiuxiaoShibamaHistory(modules.liuxiao18ma);
@@ -775,22 +932,22 @@
     renderWuxingLailiaoHistory(modules["3hang"]);
     renderJueshaShimaHistory(modules.wensha10ma);
     renderLiuxiaoShiermaHistory(modules["9xiao12ma"]);
-    renderHeibaiSanxiaoHistory(modules.heibai3xiao || modules.title_45);
+    renderHeibaiSanxiaoHistory(moduleWithRows(modules.heibai3xiao, modules.title_45));
     renderCategoryHistory("阴阳⑧码中特", modules.title_48, {});
     renderShibamaHistory(modules.liuxiao18ma);
-    renderSanxiaoFangSanmaHistory(modules.pt3xiao, modules.wuzhong5ma);
-    renderBaxiaoShiliumaHistory(modules.title_48);
+    renderSanxiaoFangSanmaHistory(modules.pt3xiao, modules.pt3xiao);
+    renderBaxiaoShiliumaHistory(modules.liuxiao18ma);
     renderSanqiJihuaHistory(modules);
-    renderWuxiaoShimaHistory(modules["4xiao8ma"]);
+    renderWuxiaoShimaHistory(moduleWithRows(modules.wuxiao_wuma, modules["4xiao8ma"]));
     renderWenzhongDanshuangHistory(modules.danshuangtema);
     renderZongheJueshaHistory(modules);
     renderDaxiaoYitouHistory(modules.dxztt1);
     renderSixiaoBamaHistory(modules["4xiao8ma"]);
-    renderCategoryHistory("日夜特肖", modules.qianhou_texiao, { "前": "日", "后": "夜" });
-    renderCategoryHistory("左右中特", modules.qianhou_texiao, { "前": "左", "后": "右" });
+    renderCategoryHistory("日夜特肖", modules.qianhou_texiao, {});
+    renderCategoryHistory("左右中特", modules.title_5, {});
     renderCategoryHistory("前后中特", modules.qianhou_texiao, {});
     renderQiweiSixingHistory(modules.title_74, modules.sihangzhongte);
-    renderSijiJiuxiaoHistory(modules.siji3, modules["9xzt"]);
+    renderSijiJiuxiaoHistory(modules.siji3, modules.siji3);
     renderDoubleWaveHistory(modules.shuangbo_12ma);
   }
 
@@ -806,13 +963,21 @@
     var draw = client.loadDraw({ lotteryType: selectedType }).then(function (result) {
       return announce("draw", result);
     });
-    var predictions = historyByLottery[selectedType] || (historyRequests[selectedType] = client.loadPredictions({
-      lotteryType: selectedType,
-      historyLimit: HISTORY_LIMIT
-    }).then(function (result) {
-      historyByLottery[selectedType] = result;
-      return result;
-    }));
+    var predictions;
+    if (historyByLottery[selectedType]) {
+      predictions = Promise.resolve(historyByLottery[selectedType]);
+    } else if (historyRequests[selectedType]) {
+      predictions = historyRequests[selectedType];
+    } else {
+      predictions = client.loadPredictions({
+        lotteryType: selectedType,
+        historyLimit: HISTORY_LIMIT
+      }).then(function (result) {
+        historyByLottery[selectedType] = result;
+        return result;
+      });
+      historyRequests[selectedType] = predictions;
+    }
     predictions.then(function (result) {
       if (activeLottery.lotteryType === selectedType) renderPredictions(result);
       announce("predictions", result);

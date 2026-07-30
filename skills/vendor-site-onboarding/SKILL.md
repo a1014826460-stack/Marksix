@@ -155,6 +155,96 @@ section; it does **not** prove its card count, column count, row grouping, or
 which child nodes are data slots. Do not infer a renderer from the module name
 or from a visually similar section.
 
+### Prediction semantic mapping gate
+
+The vendor section title is a user-facing label, **not** proof that a backend
+module is semantically interchangeable. Before binding a backend key, record
+and verify all of: prediction dimension (zodiac, code, tail, wave, head,
+category), count, whether it is inclusion or exclusion, every composite
+sub-field, line count, and result/hit rule. For example, `8肖16码` requires
+eight zodiac labels plus sixteen codes; `8肖中特` with eight zodiac/code pairs
+is not a safe substitute. `杀两半波` is not interchangeable with a single
+`绝杀半波`; `日夜` and `左右` are not interchangeable with `前后`.
+
+- Prefer an exact semantic mapping where one exists. When it does not, an
+  approved mature backend replacement may use the vendor's retained visual
+  slots, provided its own labels, cardinality, separator/line topology and
+  deterministic hit rule are rendered consistently. Do not invent backend
+  fields or claim that a replacement is the supplier's original mechanism.
+- Preserve structured source fields through the canonical contract in
+  `prediction.extra`; do not flatten object arrays into strings such as
+  `[object Object]`, or collapse separate `xiao` and `code` lines.
+- Use `暂无后端资料` only when no approved mature backend replacement is
+  available. A convenient near-match is not enough by itself: define a named
+  formatter and a deterministic display/hit contract before using it.
+- The mapping inventory must cover **every visible prediction section**. It
+  must classify each section as exact live mapping, approved composite, or
+  explicit unavailable state; totals must equal the template inventory.
+- Browser contracts must exercise the selected lottery and a cache round trip,
+  assert the section-specific topology and formatted values, and prove that
+  neither supplier sentinels nor data from a different lottery remain.
+
+### Backend reuse and readable layout
+
+The supplied vendor HTML and JavaScript define the page's **visual topology**
+and help select useful prediction categories; they do not require a one-to-one
+copy of the supplier's prediction mechanisms. Prefer an existing, mature,
+actively generated backend module over adding a duplicate backend mechanism
+solely to match a vendor heading. Do not add a `（参考）` suffix merely because
+a vetted backend module is reused.
+
+- Before reuse, document the target's capacity and readable shape: three
+  columns use `期号 | concise prediction | 开:特别号生肖对/错`; cards use their
+  retained header plus fixed, balanced detail lines; composite sections retain
+  their original named sub-blocks and line breaks.
+- A field-dense backend payload must be reduced into meaningful groups before
+  it reaches a slot. For example, tail, number, zodiac and five-element sets
+  must occupy their own retained lines or fixed card cells. Never concatenate
+  raw lists into a single text run such as `1尾|...8尾|...土|...木|...`.
+- Use an explicit, named formatter for every reused module. It must remove
+  transport delimiters (`|`, JSON-like arrays and repeated CSV fragments),
+  cap values to the template's visible capacity, and preserve centered table
+  alignment, existing `br` boundaries and punctuation.
+- Reused data still needs an honest, deterministic hit rule. Render the
+  special-ball result only, and reuse the supplier's existing yellow marker
+  for a hit token; clear that marker for a miss, pending row or lottery switch.
+- A browser contract for every reused mapping must assert: no `暂无后端资料` when
+  its source response has rows; no supplier terms/placeholders; no raw `|` or
+  collapsed dense payload; retained line/card boundaries; centered table
+  topology; and yellow highlighting on a known hit fixture.
+
+### New-site prediction postmortem checklist
+
+Before declaring a new vendor homepage dynamic, perform this checklist for
+**every** visible prediction block (including blocks not named in the initial
+request):
+
+1. Enumerate the supplier blocks from the entry HTML and give each one a
+   stable semantic ID. The final inventory count must equal the number of
+   exact mappings plus explicit unavailable blocks.
+2. Inspect the supplier's real repetition unit and record a DOM slot contract:
+   issue slot, prediction sub-fields, result slot, hit leaves, fixed legends,
+   line breaks, and group capacity. Do this before choosing a backend key.
+3. Inspect a representative backend row and compare its **actual fields**,
+   not its title: source mode ID, raw columns, canonical tokens/groups/extra,
+   inclusion-or-exclusion rule, field count, and opened-result rule.
+4. Classify the result as `exact`, `approved replacement/composite`, or
+   `unavailable`. A near match needs an explicit formatter, group-capacity
+   rule and its own result/hit semantics; do not flatten one-half-wave, seven
+   tails, six-zodiac-six-code, or head/parity data into unrelated prose.
+5. For a genuinely unavailable block, remove all supplier dynamic sentinels in every
+   existing issue/detail slot and show `暂无后端资料`; log the missing backend
+   schema/mechanism separately. Do not hide the mismatch with unrelated data.
+6. Add browser fixtures with distinct Taiwan/Macau/Hong Kong values, click all
+   three tabs and return to the first cached tab. Assert section-local values,
+   issue order, result shape, retained lines/labels, no supplier placeholders,
+   and no data from the previous lottery.
+
+This checklist exists because the twbst528 integration initially treated
+similar labels as compatible data, omitted a full visible-section inventory,
+and did not preserve grouped object payloads. That caused wrong formats,
+static remnants and cross-lottery rendering failures.
+
 ### Prediction result normalization
 
 Prediction history rows commonly retain all seven draw values in CSV fields
@@ -247,6 +337,56 @@ in their specific child slots; hit background markup; no blank secondary
 column; no vendor static term/result/placeholder; and no raw API separators.
 The test must inspect the module's own container, not merely search for the
 expected text anywhere on the page.
+
+### Data readiness and image-module closure
+
+Do not call a prediction block complete merely because its renderer, table,
+authorization row, or API module object exists. The `twbst528` work exposed
+several separate failure modes that must be closed as one chain:
+
+1. **Detect usable rows, not a truthy module object.** A canonical module may
+   exist with `rows: []`. Use a distinct-issue row count (for example,
+   `distinctRows(module).length`) before preferring it; when it is empty, use
+   the approved populated fallback. Do not let an empty preferred object mask
+   data from the fallback.
+2. **Authorize, generate, then prove site isolation.** For every newly added
+   mode, add it to the reachable-page dependency manifest and the versioned
+   site-profile migration. Then generate rows for the target `web_id` and each
+   supported lottery type. Query the actual payload table by both `web_id` and
+   `type`; rows belonging to another site are never a substitute. A database
+   table or a site-module authorization with zero rows is not usable frontend
+   data.
+3. **Treat structured payload fields as transport data.** `raw`/`extra` values
+   can be CSV, JSON strings, arrays, or `label|codes` forms. Parse them before
+   rendering and preserve the supplier's visible grouping. Never write raw
+   delimiters, JSON, or an unbroken long list into a single table cell.
+4. **Normalize results and future rows deliberately.** An opened result cell
+   uses only the last (special-ball) aligned code/zodiac, such as
+   `开:36马错`; it never prints all seven balls. A future row must not expose
+   actual numbers, must show `开:待开奖`, and formula cards must retain their
+   pending form such as `--------------------- T--` and `?`.
+5. **Image modules require a complete public path.** Use a site-owned image
+   mode (for example `478` for 台湾跑马图), generate its `image_url` for the
+   target `web_id`, normalize generator paths such as
+   `/data/Images/...` to same-origin `/uploads/...`, return it in the
+   canonical prediction contract, and write it only to a pre-existing `<img>`
+   slot. Keep the image hidden when no current-site URL exists; do not create
+   nodes, use a remote image, or borrow another site's image.
+6. **Fixture data must match each renderer's real shape.** A generic
+   `台肖0/台码0` fixture can hide a formatter defect. Supply real-shaped rows
+   for every composite, fallback and image renderer, including an empty
+   preferred module, a populated fallback, a seven-value result CSV, a future
+   row and a known hit marker.
+7. **Exercise all three lottery tabs and cached return.** Verify the request
+   `lottery_type`, module data, title prefix, result/highlight state and image
+   source after every switch. A late response or cached payload must never
+   overwrite the currently selected lottery.
+
+For each onboarding change, record these four independent checks in the
+implementation plan and run them before completion: manifest/profile
+authorization, target-site data-row count, same-origin API payload, and
+browser DOM slot rendering. A pass at any one layer cannot replace the other
+three.
 
 17. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
 
