@@ -56,4 +56,11 @@ export const SITE_UI_BASELINES: Readonly<Record<string, SiteUiBaseline>> = Objec
     navigationSentinel: ".KJ-TabBox",
     footerSentinel: "#legacy-attribute-anchor",
   },
+  twjsz666: {
+    routePath: "/twjsz666",
+    vendorEntry: "/vendor/twjsz666/index.html",
+    drawSentinel: ".KJ-TabBox",
+    navigationSentinel: ".nav",
+    footerSentinel: ".foot-img",
+  },
 })

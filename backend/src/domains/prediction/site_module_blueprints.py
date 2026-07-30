@@ -616,6 +616,17 @@ def _site_matches_twbst528(site: dict[str, Any] | None) -> bool:
         return False
 
 
+def _site_matches_twjsz666(site: dict[str, Any] | None) -> bool:
+    if not site:
+        return False
+    if _normalize_domain(site.get("domain")) in {"www.twjsz666.com", "twjsz666.com"}:
+        return True
+    try:
+        return int(site.get("web_id") or 0) == 11
+    except (TypeError, ValueError):
+        return False
+
+
 def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ...]:
     profile = _load_blueprint_profile_from_db(site)
     if profile:
@@ -634,6 +645,8 @@ def get_required_mode_ids_for_site(site: dict[str, Any] | None) -> tuple[int, ..
         return required_mode_ids_for_site_key("twssz")
     if _site_matches_twbst528(site):
         return required_mode_ids_for_site_key("twbst528")
+    if _site_matches_twjsz666(site):
+        return required_mode_ids_for_site_key("twjsz666")
     return DEFAULT_REQUIRED_MODE_IDS
 
 
@@ -651,7 +664,7 @@ def get_known_unavailable_mode_ids_for_site(site: dict[str, Any] | None) -> tupl
         return TWJINNIU_KNOWN_UNAVAILABLE_MODE_IDS
     if _site_matches_twcf888(site):
         return TWCF888_KNOWN_UNAVAILABLE_MODE_IDS
-    if _site_matches_twssz(site) or _site_matches_twbst528(site):
+    if _site_matches_twssz(site) or _site_matches_twbst528(site) or _site_matches_twjsz666(site):
         return ()
     return DEFAULT_KNOWN_UNAVAILABLE_MODE_IDS
 
@@ -670,7 +683,7 @@ def get_blocked_items_for_site(site: dict[str, Any] | None) -> list[dict[str, An
         return [dict(item) for item in TWJINNIU_BLOCKED_ITEMS]
     if _site_matches_twcf888(site):
         return [dict(item) for item in TWCF888_BLOCKED_ITEMS]
-    if _site_matches_twssz(site) or _site_matches_twbst528(site):
+    if _site_matches_twssz(site) or _site_matches_twbst528(site) or _site_matches_twjsz666(site):
         return []
     return []
 
@@ -693,4 +706,6 @@ def get_blueprint_name_for_site(site: dict[str, Any] | None) -> str:
         return "twssz"
     if _site_matches_twbst528(site):
         return "twbst528"
+    if _site_matches_twjsz666(site):
+        return "twjsz666"
     return "default"

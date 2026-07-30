@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -444,6 +444,73 @@ def _sync_twbst528_taiwan_pmt_image(conn: Any) -> None:
     _install_twbst528_site_profile(conn)
 
 
+def _install_twjsz666_site_profile(conn: Any) -> None:
+    """Register Taiwan Golden Finger site 11 with reviewed shared modules."""
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    now = utc_now()
+    if conn.table_exists("site_blueprint_profiles"):
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (blueprint_name) DO UPDATE SET
+                required_mode_ids_json = excluded.required_mode_ids_json,
+                known_unavailable_mode_ids_json = excluded.known_unavailable_mode_ids_json,
+                blocked_items_json = excluded.blocked_items_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "twjsz666",
+                json.dumps(list(required_mode_ids_for_site_key("twjsz666")), ensure_ascii=False),
+                "[]",
+                "[]",
+                now,
+                now,
+            ),
+        )
+
+    if conn.table_exists("managed_sites"):
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                web_id = excluded.web_id,
+                name = excluded.name,
+                domain = excluded.domain,
+                lottery_type_id = excluded.lottery_type_id,
+                enabled = excluded.enabled,
+                blueprint_name = excluded.blueprint_name,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                11,
+                11,
+                "台湾金手指",
+                "www.twjsz666.com",
+                3,
+                1,
+                "twjsz666",
+                "",
+                "Seeded migration site for twjsz666 vendor integration.",
+                now,
+                now,
+            ),
+        )
+
+    if conn.table_exists("site_prediction_modules"):
+        from domains.prediction.generation_service import sync_site_prediction_modules
+
+        sync_site_prediction_modules(conn, site_id=11)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -459,6 +526,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(12, "sync_twbst528_homepage_module_authorization", _sync_twbst528_homepage_module_authorization),
     Migration(13, "install_twbst528_exact_prediction_modes", _install_twbst528_exact_prediction_modes),
     Migration(14, "sync_twbst528_taiwan_pmt_image", _sync_twbst528_taiwan_pmt_image),
+    Migration(15, "install_twjsz666_vendor_site", _install_twjsz666_site_profile),
 )
 
 

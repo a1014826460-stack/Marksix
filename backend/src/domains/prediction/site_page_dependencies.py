@@ -109,6 +109,24 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("3tou", 12, "/vendor/twbst528/154.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
         )
     ),
+    # Twjsz666 reuses only the reviewed mature modules rendered by its adapter.
+    *(
+        SitePageDependency(
+            site_key="twjsz666",
+            page_path="/twjsz666",
+            source_path="frontend/public/vendor/twjsz666/site-data-adapter.js",
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for mechanism_key, mode_id in (
+            ("yijuzhenyan", 50), ("shuangbo", 38), ("7xiao7ma", 44),
+            ("pt2xiao", 43), ("jueshabanbo", 58), ("pt1wei", 54),
+            ("daxiao", 57), ("4xiao8ma", 51), ("pt1xiao", 56),
+            ("title_5", 5), ("title_47", 47), ("pt3xiao", 470),
+            ("juesha1xiao", 472), ("danshuangtema", 28),
+            ("juesha1wei", 20),
+        )
+    ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is
     # available. These are reviewed backend equivalents for each mapped vendor
     # table, not a claim about the original vendor identifiers.

@@ -17,6 +17,7 @@ TWJINNIU_BLUEPRINT_NAME = "twjinniu"
 TWCF888_BLUEPRINT_NAME = "twcf888"
 TWSSZ_BLUEPRINT_NAME = "twssz"
 TWBST528_BLUEPRINT_NAME = "twbst528"
+TWJSZ666_BLUEPRINT_NAME = "twjsz666"
 
 DEFAULT_REQUIRED_MODE_IDS = (
     2, 3, 5, 8, 9, 10, 12, 15, 20, 22, 24, 26, 27, 28, 30, 31, 34, 38, 39,
@@ -137,6 +138,7 @@ TWJINNIU_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twjinniu")
 TWCF888_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twcf888")
 TWSSZ_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twssz")
 TWBST528_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twbst528")
+TWJSZ666_REQUIRED_MODE_IDS = required_mode_ids_for_site_key("twjsz666")
 
 
 def _seed_site_blueprint_profiles(conn: Any) -> None:
@@ -190,6 +192,12 @@ def _seed_site_blueprint_profiles(conn: Any) -> None:
         {
             "name": TWBST528_BLUEPRINT_NAME,
             "required_mode_ids": required_mode_ids_for_site_key("twbst528"),
+            "known_unavailable_mode_ids": (),
+            "blocked_items": (),
+        },
+        {
+            "name": TWJSZ666_BLUEPRINT_NAME,
+            "required_mode_ids": required_mode_ids_for_site_key("twjsz666"),
             "known_unavailable_mode_ids": (),
             "blocked_items": (),
         },

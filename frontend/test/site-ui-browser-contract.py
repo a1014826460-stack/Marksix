@@ -59,6 +59,14 @@ SITES = (
         "nav": ".KJ-TabBox",
         "footer": ".footer",
     },
+    {
+        "key": "twjsz666",
+        "path": "/twjsz666",
+        "frame": "/vendor/twjsz666/index.html",
+        "draw": "iframe[src='kai.html']",
+        "nav": ".nav",
+        "footer": ".foot-img",
+    },
 )
 
 
@@ -114,6 +122,7 @@ def main() -> None:
                             "twcf888": "Twcf888SiteData",
                             "twssz": "TwsszSiteData",
                             "twbst528": "Twbst528SiteData",
+                            "twjsz666": "Twjsz666SiteData",
                         }[site["key"]],
                     ), f"{site['key']} must expose its existing-DOM data adapter"
                 if site["key"] == "twssz":

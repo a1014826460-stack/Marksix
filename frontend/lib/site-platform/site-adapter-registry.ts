@@ -6,6 +6,7 @@ import twjinniu from "@/sites/twjinniu/site-adapter"
 import twcf888 from "@/sites/twcf888/site-adapter"
 import twssz from "@/sites/twssz/site-adapter"
 import twbst528 from "@/sites/twbst528/site-adapter"
+import twjsz666 from "@/sites/twjsz666/site-adapter"
 
 const SITE_ADAPTERS: Readonly<Record<string, ExistingDomAdapter>> = Object.freeze({
   shengshi8800,
@@ -15,6 +16,7 @@ const SITE_ADAPTERS: Readonly<Record<string, ExistingDomAdapter>> = Object.freez
   twcf888,
   twssz,
   twbst528,
+  twjsz666,
 })
 
 export function getSiteAdapter(siteKey: string): ExistingDomAdapter | null {

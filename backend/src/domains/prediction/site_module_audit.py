@@ -54,6 +54,7 @@ def _manifest_site_key(site: dict[str, Any] | None) -> str | None:
         8: "twcf888",
         9: "twssz",
         10: "twbst528",
+        11: "twjsz666",
     }.get(web_id)
 
 

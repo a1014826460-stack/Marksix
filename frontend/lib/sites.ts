@@ -8,6 +8,7 @@ import twjinniuManifest from "@/sites/twjinniu/site.manifest"
 import twcf888Manifest from "@/sites/twcf888/site.manifest"
 import twsszManifest from "@/sites/twssz/site.manifest"
 import twbst528Manifest from "@/sites/twbst528/site.manifest"
+import twjsz666Manifest from "@/sites/twjsz666/site.manifest"
 
 export type FrontendSiteConfig = {
   siteKey: string
@@ -143,6 +144,7 @@ const SITE_CONFIGS: FrontendSiteConfig[] = [
     ],
   },
   toFrontendSiteConfig(twbst528Manifest),
+  toFrontendSiteConfig(twjsz666Manifest),
   toFrontendSiteConfig(twsszManifest),
 ]
 
