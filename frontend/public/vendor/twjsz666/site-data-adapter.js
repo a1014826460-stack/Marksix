@@ -11,7 +11,7 @@
     { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderThreeHeadFourTailUnavailable", issueGroups: 9, supplierSentinels: ["三头"] },
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
     { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderFourCharacterFlatXiaoUnavailable", issueGroups: 9, supplierSentinels: ["四字解"] },
-    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["临高高手"] },
+    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderExpertPublicationsUnavailable", issueGroups: 9, supplierSentinels: ["临高高手", "060期"] },
     { id: "official-gallery", titlePattern: "正版图库", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["正版图库"] },
     { id: "double-wave", titlePattern: "双波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["shuangbo"], rendererName: "renderShuangBoHistory", issueGroups: 9, supplierSentinels: ["双波"] },
     { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderPoultryBeastUnavailable", issueGroups: 9, supplierSentinels: ["家禽"] },
@@ -127,7 +127,7 @@
   }
 
   function rowCells(row) {
-    return row ? row.querySelectorAll(":scope > td") : [];
+    return row ? row.querySelectorAll(":scope > td, :scope > th") : [];
   }
 
   function sectionRows(section) {
@@ -187,12 +187,8 @@
   function clearUnavailableSlots(section) {
     sectionRows(section).forEach(function (tr) {
       var cells = rowCells(tr);
-      if (cells.length === 1) writeLeaf(cells[0], "暂无后端资料");
-      else {
-        if (cells[0]) writeLeaf(cells[0], "");
-        if (cells[1]) writeLeaf(cells[1], "暂无后端资料");
-      }
-      if (cells[2]) writeLeaf(cells[2], "");
+      for (var index = 0; index < cells.length; index += 1) clearLeaves(cells[index]);
+      if (cells[0]) writeLeaf(cells[0], "暂无后端资料");
     });
   }
 
@@ -254,6 +250,7 @@
   }
 
   function renderStaticSection() {}
+  function renderExpertPublicationsUnavailable(section) { clearUnavailableSlots(section); }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
   function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
 
@@ -305,6 +302,7 @@
     if (!contract) throw new Error("Unknown visible twjsz666 section: " + title);
     var renderers = {
       renderStaticSection: renderStaticSection,
+      renderExpertPublicationsUnavailable: renderExpertPublicationsUnavailable,
       renderFourXiaoOddsUnavailable: renderFourXiaoOddsUnavailable,
       renderOneHeadOneCodeUnavailable: renderOneHeadOneCodeUnavailable,
       renderFortuneNineXiao: renderFortuneNineXiao,
@@ -330,6 +328,14 @@
     renderer(section, modules[contract.moduleKeys[0]]);
   }
 
+  function clearExpertPublicationLinks(section) {
+    Array.prototype.forEach.call(section.querySelectorAll("li"), function (item) {
+      var leaves = textNodes(item);
+      leaves.forEach(function (leaf) { leaf.nodeValue = ""; });
+      writeLeaf(item, "暂无后端资料");
+    });
+  }
+
   function renderPredictions(result, lotteryType) {
     var modules = moduleMap(result);
     var lottery = lotteryForType(lotteryType);
@@ -337,6 +343,7 @@
       if (!section.querySelector(".list-title")) return;
       updateTitle(section, lottery);
       renderSection(section, modules);
+      if (/精准台湾高手/.test(String((section.querySelector(".list-title") || {}).textContent || ""))) clearExpertPublicationLinks(section);
     });
     Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
       clearUnavailableSlots(card);

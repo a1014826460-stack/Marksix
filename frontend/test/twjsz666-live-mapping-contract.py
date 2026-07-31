@@ -59,6 +59,13 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 assert f"第{expected}01期" in section.inner_text(), title
+            for title in ("单双各四肖", "三头", "四字解", "精准台湾高手", "家禽VS野兽", "七尾中特", "精选22码", "稳杀⑦码"):
+                section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
+                assert section.count() == 1, title
+                text = section.inner_text()
+                assert "暂无后端资料" in text, title
+                for supplier_sentinel in ("060期", "059期", "28虎", "26龙", "19猪", "对", "错"):
+                    assert supplier_sentinel not in text, (title, supplier_sentinel, text)
         page.goto(f"{base_url}/vendor/twjsz666/155.html", wait_until="domcontentloaded")
         page.wait_for_timeout(250)
         article = page.locator('[data-prediction-article="true"]')
