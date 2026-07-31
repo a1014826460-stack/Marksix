@@ -37,6 +37,7 @@ export async function GET(request: Request) {
 
     return jsonWithCors(payload)
   } catch (error) {
+    console.error("site-links proxy error:", error)
     const message = error instanceof Error ? error.message : "Request failed"
     const isUnknownSiteKey = message.includes("Unknown siteKey")
     return jsonWithCors(

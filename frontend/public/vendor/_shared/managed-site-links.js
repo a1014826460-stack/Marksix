@@ -85,7 +85,9 @@
         .then(function (data) {
           self._renderLinks(data.links || []);
         })
-        .catch(function () {
+        .catch(function (err) {
+          console.error("managed-site-links fetch failed for site-key:", siteKey, err);
+          self._fetched = false;
           self._clearLinks();
         });
     };

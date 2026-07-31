@@ -617,4 +617,86 @@ function createElement(siteKey) {
   console.log("Test 10 passed: reconnect does not re-attach shadow or re-fetch")
 }
 
+// ---------------------------------------------------------------------------
+// Test 11 — Fetch failure retry: on fetch error, _fetched is reset to false,
+// so a reconnect triggers a new fetch attempt (TDD: fails before the fix)
+// ---------------------------------------------------------------------------
+{
+  // First connect: fetch will fail
+  resetFetchState(null, true)
+
+  const sandbox = buildSandbox()
+  const context = createContext(sandbox)
+
+  new Script(scriptSource).runInContext(context)
+
+  const createElFn = new Script(`
+    (function(siteKey) {
+      const el = new (customElements.get('managed-site-links'))();
+      if (siteKey !== undefined) el.setAttribute('site-key', siteKey);
+      return el;
+    })
+  `)
+
+  const el = createElFn.runInContext(context)("twjsz666")
+
+  // First connect — fetch fails
+  if (typeof el.connectedCallback === "function") el.connectedCallback()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  // Should have exactly one failed fetch attempt
+  if (fetchCalls.length !== 1) {
+    throw new Error(`first connect (failing) triggered ${fetchCalls.length} fetch calls, expected 1`)
+  }
+
+  // Links area must be empty after failure
+  if (sandbox._anchorTracker.length !== 0) {
+    throw new Error(`after first failure: expected 0 anchors, got ${sandbox._anchorTracker.length}`)
+  }
+  const linksContainer = el.shadowRoot.querySelector('[data-links]')
+  if (linksContainer.__children.length !== 0) {
+    throw new Error("after first failure: links container must have no children")
+  }
+
+  // Now switch to success mode for the retry (without resetting fetchCalls)
+  fetchShouldFail = false
+  fetchResponse = {
+    links: [{ site_key: "retry", name: "RetryLink", domain: "r.example.com", url: "https://r.example.com/" }],
+  }
+
+  // Simulate element removal and re-insertion
+  if (typeof el.disconnectedCallback === "function") el.disconnectedCallback()
+  if (typeof el.connectedCallback === "function") el.connectedCallback()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  // After reconnect, should have triggered a new fetch (2 total: 1 failed + 1 retry)
+  if (fetchCalls.length !== 2) {
+    throw new Error(
+      `after reconnect (previously failed): expected 2 fetch calls (1 failed + 1 retry), got ${fetchCalls.length}. ` +
+      `_fetched flag was likely NOT reset on failure.`
+    )
+  }
+
+  // The retry fetch URL must be correct
+  const retryUrl = fetchCalls[1].url
+  if (!retryUrl.startsWith("/api/site-links") || !retryUrl.includes("site_key=twjsz666")) {
+    throw new Error(`retry fetch URL incorrect: ${retryUrl}`)
+  }
+
+  // Shadow root must still exist (not re-attached)
+  if (el._attachShadowCalls !== 1) {
+    throw new Error(`expected 1 attachShadow call across failure+reconnect, got ${el._attachShadowCalls}`)
+  }
+
+  // After successful retry, the link must be rendered
+  if (sandbox._anchorTracker.length !== 1) {
+    throw new Error(`after retry: expected 1 rendered anchor, got ${sandbox._anchorTracker.length}`)
+  }
+  if (sandbox._anchorTracker[0].textContent !== "RetryLink") {
+    throw new Error(`after retry: expected text "RetryLink", got "${sandbox._anchorTracker[0].textContent}"`)
+  }
+
+  console.log("Test 11 passed: fetch failure resets _fetched, reconnect triggers retry fetch")
+}
+
 console.log("All managed-site-links contract tests passed")
