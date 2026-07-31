@@ -109,8 +109,8 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("3tou", 12, "/vendor/twbst528/154.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
         )
     ),
-    # Twjsz666 article pages render only canonical mechanisms with matching
-    # semantics; pages without one remain an explicit API-empty state.
+    # Twjsz666 article mappings follow each page's retained prediction fields
+    # and capacity. The visible heading is only a DOM anchor.
     *(
         SitePageDependency(
             site_key="twjsz666",
@@ -120,15 +120,20 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             mode_ids=(mode_id,),
         )
         for page_path, mechanism_key, mode_id in (
-            ("/vendor/twjsz666/154.html", "pt1wei", 54),
-            ("/vendor/twjsz666/155.html", "pt1xiao", 56),
-            ("/vendor/twjsz666/156.html", "daxiao", 57),
-            ("/vendor/twjsz666/157.html", "sitouzhongte", 483),
-            ("/vendor/twjsz666/158.html", "juesha1xiao", 472),
+            ("/vendor/twjsz666/154.html", "daxiao", 57),
+            ("/vendor/twjsz666/155.html", "selected_22_codes", 493),
+            ("/vendor/twjsz666/156.html", "title_14", 14),
+            ("/vendor/twjsz666/157.html", "three_head_four_tail", 492),
+            ("/vendor/twjsz666/158.html", "steady_kill_7_codes", 494),
+            ("/vendor/twjsz666/159.html", "shuangbo", 38),
             ("/vendor/twjsz666/160.html", "4xiao8ma", 51),
-            ("/vendor/twjsz666/164.html", "jueshabanbo", 58),
-            ("/vendor/twjsz666/166.html", "qinqi", 26),
-            ("/vendor/twjsz666/167.html", "sitouzhongte", 483),
+            ("/vendor/twjsz666/161.html", "juesha1wei", 20),
+            ("/vendor/twjsz666/162.html", "title_74", 74),
+            ("/vendor/twjsz666/163.html", "jueshabanbo", 58),
+            ("/vendor/twjsz666/164.html", "juesha2xiao", 473),
+            ("/vendor/twjsz666/165.html", "pt1xiao", 56),
+            ("/vendor/twjsz666/166.html", "pt3xiao", 470),
+            ("/vendor/twjsz666/167.html", "yijuzhenyan", 50),
         )
     ),
     # Twjsz666 reuses only the reviewed mature modules rendered by its adapter.
@@ -150,7 +155,17 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("title_14", 14), ("title_74", 74),
             ("sizixuanji", 52), ("selected_22_codes", 493), ("steady_kill_7_codes", 494),
             ("expert_publications", 495),
+            ("sitouzhongte", 483), ("ma24", 34),
+            ("6xzt", 46), ("pt2xiao", 43),
         )
+    ),
+    SitePageDependency(
+        site_key="twjsz666",
+        page_path="/twjsz666",
+        source_path="backend/src/vendor/homepage_modules.py",
+        endpoint="wuxiao_wuma",
+        mode_ids=(47, 69, 151),
+        kind="composite_source",
     ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is
     # available. These are reviewed backend equivalents for each mapped vendor

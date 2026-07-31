@@ -83,8 +83,11 @@ for (const name of contentPages) {
 const adapterPath = path.join(root, "subpage-data-adapter.js")
 if (!fs.existsSync(adapterPath)) fail("missing subpage-data-adapter.js")
 const adapter = fs.readFileSync(adapterPath, "utf8")
-for (const required of ["Twjsz666SiteConfig", "data-page-title", "siteName", "siteDomain", "DOMContentLoaded", "LotterySiteDataClient", "loadPredictions", "ARTICLE_MODULE_KEYS", "renderArticleRows"]) {
+for (const required of ["Twjsz666SiteConfig", "data-page-title", "siteName", "siteDomain", "DOMContentLoaded", "LotterySiteDataClient", "loadPredictions", "ARTICLE_MODULE_KEYS", "ARTICLE_TITLES", "renderArticleRows", 'client.clear("predictions")']) {
   if (!adapter.includes(required)) fail(`subpage adapter missing ${required}`)
+}
+for (const title of ["一句话中特码", "大小中特", "平特三肖", "平特一肖", "精选22码", "家禽VS野兽", "三头四尾", "稳杀七码", "双波中特", "四肖八码", "绝杀一尾", "七尾中特", "绝杀一波", "绝杀二肖"]) {
+  if (!adapter.includes(`"${title}"`)) fail(`subpage adapter missing article title ${title}`)
 }
 if (/createElement|appendChild|insertBefore|replaceChild|\.innerHTML\s*=/i.test(adapter)) {
   fail("subpage adapter must not create, move, or replace DOM nodes")
@@ -94,6 +97,9 @@ for (const name of contentPages) {
   const html = source(name)
   if (!html.includes('data-prediction-article="true"')) fail(`${name}: prediction article is not marked for API rendering`)
   if (!html.includes('data-prediction-module="')) fail(`${name}: prediction module is not declared`)
+  if ((html.match(/<p\s+data-prediction-row(?:=["'][^"']*["'])?\s*>/g) || []).length !== 9) {
+    fail(`${name}: prediction article must retain exactly nine backend row slots`)
+  }
   if (/20(?:24|25)\d{3}期/.test(html)) fail(`${name}: supplier prediction snapshot remains`)
 }
 

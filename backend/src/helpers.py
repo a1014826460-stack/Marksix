@@ -434,11 +434,17 @@ def parse_issue_int(value: Any) -> int | None:
         return None
 
 
-def sql_safe_int_expr(column_name: str) -> str:
-    """构造跨 SQLite / PostgreSQL 都可用的"空串转 0 再转整数"表达式。"""
+def sql_safe_int_expr(column_name: str, *, engine: str = "") -> str:
+    """构造不会因空值或非数字种子行失败的整数表达式。"""
     quoted = quote_identifier(column_name)
+    text_value = f"TRIM(CAST({quoted} AS TEXT))"
+    if engine == "postgres":
+        return (
+            f"CASE WHEN {text_value} ~ '^[0-9]+$' "
+            f"THEN CAST({text_value} AS INTEGER) ELSE 0 END"
+        )
     return (
-        f"CAST(COALESCE(NULLIF(TRIM(CAST({quoted} AS TEXT)), ''), '0') AS INTEGER)"
+        f"CAST(COALESCE(NULLIF({text_value}, ''), '0') AS INTEGER)"
     )
 
 
@@ -454,13 +460,13 @@ def normalize_csv_placeholder_text(value: Any) -> str:
     return "" if text.replace(",", "").strip() == "" else text
 
 
-def build_mode_payload_order_clause(columns: set[str]) -> str:
+def build_mode_payload_order_clause(columns: set[str], *, engine: str = "") -> str:
     """统一 mode_payload_* 历史记录排序，避免空字符串强转整数报错。"""
     order_parts: list[str] = []
     if "year" in columns:
-        order_parts.append(f"{sql_safe_int_expr('year')} DESC")
+        order_parts.append(f"{sql_safe_int_expr('year', engine=engine)} DESC")
     if "term" in columns:
-        order_parts.append(f"{sql_safe_int_expr('term')} DESC")
+        order_parts.append(f"{sql_safe_int_expr('term', engine=engine)} DESC")
     if "source_record_id" in columns:
         order_parts.append("CAST(source_record_id AS TEXT) DESC")
     elif "created_at" in columns:
@@ -473,6 +479,7 @@ def build_mode_payload_order_clause(columns: set[str]) -> str:
 def build_mode_payload_filters(
     columns: set[str],
     *,
+    engine: str = "",
     lottery_type_id: int | None = None,
     web_start: int | None = None,
     web_end: int | None = None,
@@ -484,16 +491,16 @@ def build_mode_payload_filters(
     params: list[Any] = []
 
     if lottery_type_id is not None and "type" in columns:
-        filters.append(f"{sql_safe_int_expr('type')} = ?")
+        filters.append(f"{sql_safe_int_expr('type', engine=engine)} = ?")
         params.append(int(lottery_type_id))
 
     web_column = "web_id" if "web_id" in columns else ("web" if "web" in columns else "")
     if web_column:
         if web_exact is not None:
-            filters.append(f"{sql_safe_int_expr(web_column)} = ?")
+            filters.append(f"{sql_safe_int_expr(web_column, engine=engine)} = ?")
             params.append(int(web_exact))
         elif web_start is not None and web_end is not None:
-            filters.append(f"{sql_safe_int_expr(web_column)} BETWEEN ? AND ?")
+            filters.append(f"{sql_safe_int_expr(web_column, engine=engine)} BETWEEN ? AND ?")
             params.extend((int(web_start), int(web_end)))
 
     return filters, params
@@ -818,6 +825,7 @@ def load_mode_payload_rows_from_source(
 
     filters, params = build_mode_payload_filters(
         columns,
+        engine=str(getattr(conn, "engine", "")),
         lottery_type_id=lottery_type_id,
         web_start=web_start,
         web_end=web_end,
@@ -825,7 +833,10 @@ def load_mode_payload_rows_from_source(
         require_result_consistency=require_result_consistency,
     )
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
-    order_clause = build_mode_payload_order_clause(columns)
+    order_clause = build_mode_payload_order_clause(
+        columns,
+        engine=str(getattr(conn, "engine", "")),
+    )
 
     rows = conn.execute(
         f"""

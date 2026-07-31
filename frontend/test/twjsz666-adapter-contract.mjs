@@ -16,6 +16,10 @@ for (const token of [
 for (const token of [
   "renderThreeHeadFourTailUnavailable",
   "renderOneHeadOneCodeUnavailable",
+  "renderOneHeadOneCode",
+  "renderBeforeBetCards",
+  "renderPublicCards",
+  '"wuxiao_wuma"',
   "renderShuangBoHistory",
   "renderPingTeXiaoHistory",
   "renderDaXiaoHistory",

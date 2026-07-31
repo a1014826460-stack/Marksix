@@ -236,14 +236,26 @@ def _history_window(*row_groups: list[dict[str, Any]], limit: int) -> list[str]:
 
 
 def _build_wuxiao_wuma(ctx: VendorModuleContext, db_path: str | Any) -> dict[str, Any]:
-    x4_rows = _load_mode_rows(db_path, modes_id=47, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
-    x3_rows = _load_mode_rows(db_path, modes_id=69, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
-    yx_rows = _load_mode_rows(db_path, modes_id=151, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    source_limit = 20
+    x4_rows = _load_mode_rows(db_path, modes_id=47, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=source_limit)
+    x3_rows = _load_mode_rows(db_path, modes_id=69, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=source_limit)
+    yx_rows = _load_mode_rows(db_path, modes_id=151, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=source_limit)
+    source_mode_ids = [47, 69, 151]
+    code_rows: list[dict[str, Any]] = []
+    if not yx_rows:
+        # Some sites do not expose the legacy label|codes source (mode 151).
+        # Use two explicitly typed canonical fields instead of returning an
+        # empty composite: zodiac capacity comes from 9xzt and code capacity
+        # comes from ma24, matched by normalized issue.
+        yx_rows = _load_mode_rows(db_path, modes_id=49, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=source_limit)
+        code_rows = _load_mode_rows(db_path, modes_id=34, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=source_limit)
+        source_mode_ids = [49, 34]
     by4 = _rows_by_issue(x4_rows)
     by3 = _rows_by_issue(x3_rows)
     byy = _rows_by_issue(yx_rows)
+    bycode = _rows_by_issue(code_rows)
     history: list[dict[str, Any]] = []
-    for issue in _history_window(yx_rows, x4_rows, x3_rows, limit=ctx.history_limit):
+    for issue in _history_window(yx_rows, x4_rows, x3_rows, limit=source_limit):
         rowy = byy.get(issue)
         if not rowy:
             continue
@@ -251,6 +263,8 @@ def _build_wuxiao_wuma(ctx: VendorModuleContext, db_path: str | Any) -> dict[str
         row3 = by3.get(issue)
         pairs = _parse_label_code_pairs(rowy.get("content"))
         x5 = [label for label, _ in pairs][:5]
+        if len(x5) < 5:
+            x5 = _split_labels(rowy.get("content"))[:5]
         x4 = _split_labels(row4.get("content"))[:4] if row4 else x5[:4]
         x3 = _split_labels(row3.get("content"))[:3] if row3 else x5[:3]
         code_map = {label: codes for label, codes in pairs}
@@ -259,6 +273,11 @@ def _build_wuxiao_wuma(ctx: VendorModuleContext, db_path: str | Any) -> dict[str
             for code in code_map.get(label, []):
                 if code not in ordered_codes:
                     ordered_codes.append(code)
+        if len(ordered_codes) < 5:
+            code_row = bycode.get(issue)
+            ordered_codes = _split_codes_from_text(code_row.get("content"))[:5] if code_row else ordered_codes
+        if len(x5) < 5 or len(ordered_codes) < 5:
+            continue
         groups = {
             "xiao_5": x5,
             "xiao_4": x4,
@@ -279,9 +298,11 @@ def _build_wuxiao_wuma(ctx: VendorModuleContext, db_path: str | Any) -> dict[str
                 "result": result,
                 "is_opened": result["is_opened"],
                 "is_correct": None,
-                "raw": {"source_mode_ids": [47, 69, 151]},
+                "raw": {"source_mode_ids": source_mode_ids},
             }
         )
+        if len(history) >= ctx.history_limit:
+            break
     return {
         "module_key": "wuxiao_wuma",
         "title": "五肖五码",

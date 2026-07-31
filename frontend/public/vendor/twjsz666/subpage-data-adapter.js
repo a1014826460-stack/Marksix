@@ -6,20 +6,36 @@
 
   var siteBasePath = "/vendor/" + siteConfig.siteKey + "/";
   var ARTICLE_MODULE_KEYS = Object.freeze({
-    "154.html": "pt1wei",
-    "155.html": "pt1xiao",
-    "156.html": "daxiao",
-    "157.html": "sitouzhongte",
-    "158.html": "juesha1xiao",
-    "159.html": "",
+    "154.html": "daxiao",
+    "155.html": "selected_22_codes",
+    "156.html": "title_14",
+    "157.html": "three_head_four_tail",
+    "158.html": "steady_kill_7_codes",
+    "159.html": "shuangbo",
     "160.html": "4xiao8ma",
-    "161.html": "",
-    "162.html": "",
-    "163.html": "",
-    "164.html": "jueshabanbo",
-    "165.html": "",
-    "166.html": "qinqi",
-    "167.html": "sitouzhongte"
+    "161.html": "juesha1wei",
+    "162.html": "title_74",
+    "163.html": "jueshabanbo",
+    "164.html": "juesha2xiao",
+    "165.html": "pt1xiao",
+    "166.html": "pt3xiao",
+    "167.html": "yijuzhenyan"
+  });
+  var ARTICLE_TITLES = Object.freeze({
+    "154.html": "大小中特",
+    "155.html": "精选22码",
+    "156.html": "家禽VS野兽",
+    "157.html": "三头四尾",
+    "158.html": "稳杀七码",
+    "159.html": "双波中特",
+    "160.html": "四肖八码",
+    "161.html": "绝杀一尾",
+    "162.html": "七尾中特",
+    "163.html": "绝杀一波",
+    "164.html": "绝杀二肖",
+    "165.html": "平特一肖",
+    "166.html": "平特三肖",
+    "167.html": "一句话中特码"
   });
 
   function setText(selector, value) {
@@ -53,6 +69,22 @@
     setText("[data-site-domain]", siteConfig.siteDomain);
     setText("[data-site-footer]", siteConfig.siteName + "（" + siteConfig.siteDomain + "）");
     normalizeLinks();
+  }
+
+  function currentFilename() {
+    return window.location.pathname.split("/").pop();
+  }
+
+  function applyArticleIdentity() {
+    var filename = currentFilename();
+    var moduleKey = ARTICLE_MODULE_KEYS[filename];
+    var title = ARTICLE_TITLES[filename];
+    var root = window.document.querySelector('[data-prediction-article="true"]');
+    if (!root || !moduleKey || !title) return;
+    root.setAttribute("data-prediction-module", moduleKey);
+    var heading = root.querySelector("h1 font");
+    if (heading) heading.textContent = "【" + title + "】资料已公开";
+    if (window.document.body) window.document.body.setAttribute("data-page-title", title);
   }
 
   function issueOf(row) {
@@ -111,7 +143,7 @@
   }
 
   function loadArticlePredictions() {
-    var filename = window.location.pathname.split("/").pop();
+    var filename = currentFilename();
     var moduleKey = ARTICLE_MODULE_KEYS[filename];
     var root = window.document.querySelector('[data-prediction-article="true"]');
     if (!root) return;
@@ -120,15 +152,27 @@
       return;
     }
     var client = window.LotterySiteDataClient.create({ siteKey: siteConfig.siteKey });
-    client.loadPredictions({ lotteryType: 3, historyLimit: 9 }).then(function (result) {
-      if (result && result.state !== "error") renderArticleRows(result, moduleKey);
-      else renderArticleRows(null, moduleKey);
-    });
+    function load(retried) {
+      client.loadPredictions({ lotteryType: 3, historyLimit: 9 }).then(function (result) {
+        if (!result || result.state === "error") {
+          renderArticleRows(null, moduleKey);
+          return;
+        }
+        if (!uniqueRows(moduleByKey(result, moduleKey)).length && !retried) {
+          client.clear("predictions");
+          load(true);
+          return;
+        }
+        renderArticleRows(result, moduleKey);
+      });
+    }
+    load(false);
   }
 
   if (window.document.readyState === "loading") {
-    window.addEventListener("DOMContentLoaded", function () { applySiteIdentity(); loadArticlePredictions(); });
+    window.addEventListener("DOMContentLoaded", function () { applyArticleIdentity(); applySiteIdentity(); loadArticlePredictions(); });
   } else {
+    applyArticleIdentity();
     applySiteIdentity();
     loadArticlePredictions();
   }

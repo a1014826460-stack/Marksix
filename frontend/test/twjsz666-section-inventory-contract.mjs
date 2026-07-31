@@ -23,22 +23,27 @@ const visibleTitles = visibleListTitles(html)
 const publicCards = [...html.matchAll(/<table\b[^>]*class=["'][^"']*\bqxtable\b[^"']*["'][^>]*>[\s\S]*?<\/table>/gi)]
   .filter((match) => match[0].includes("买码之前先上：这里期期大公开"))
 
-if (visibleTitles.length !== 24) throw new Error(`expected 24 visible list titles, found ${visibleTitles.length}`)
+if (visibleTitles.length !== 25) throw new Error(`expected 25 visible list titles, found ${visibleTitles.length}`)
 if (publicCards.length !== 9) throw new Error(`expected nine 买码之前先上 cards, found ${publicCards.length}`)
 if (!adapter.includes("SECTION_CONTRACTS")) throw new Error("adapter lacks explicit SECTION_CONTRACTS")
 if (adapter.includes("function renderUnavailableSection")) throw new Error("adapter still has generic renderUnavailableSection fallback")
 if (!adapter.includes("Object.freeze(contract)")) throw new Error("SECTION_CONTRACTS entries are not immutable")
-if (!adapter.includes('querySelectorAll("table.qxtable")')) throw new Error("public prediction cards are not cleared before API rendering")
+if (!adapter.includes('querySelectorAll("table.qxtable")')) throw new Error("public prediction cards are not bound to API rendering")
+if (!adapter.includes('moduleKeys: ["wuxiao_wuma"]')) throw new Error("买码之前先上 cards lack their 五肖五码 source")
+if ([...adapter.matchAll(/id: "public-before-bet-card-[1-9]"[^\n]+/g)].some((match) => /moduleKeys: \[\]/.test(match[0]))) {
+  throw new Error("买码之前先上 card has an empty composite source list")
+}
 
 const requiredFields = ["id", "titlePattern", "containerSelector", "classification", "moduleKeys", "rendererName", "issueGroups", "supplierSentinels"]
 for (const field of requiredFields) {
   if (!adapter.includes(`${field}:`)) throw new Error(`SECTION_CONTRACTS missing ${field}`)
 }
 
-const classifications = ["mapped", "composite", "unavailable", "static"]
+const classifications = ["mapped", "composite", "static"]
 for (const classification of classifications) {
   if (!adapter.includes(`classification: \"${classification}\"`)) throw new Error(`missing ${classification} classification`)
 }
+if (adapter.includes('classification: "unavailable"')) throw new Error("visible twjsz666 prediction section remains unavailable after source mapping")
 
 const contractIds = [...adapter.matchAll(/id:\s*["']([^"']+)["']/g)].map((match) => match[1])
 const expectedInventorySize = visibleTitles.length + publicCards.length

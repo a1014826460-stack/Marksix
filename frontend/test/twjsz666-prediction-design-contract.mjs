@@ -20,6 +20,9 @@ for (const moduleName of mappedModules) {
     throw new Error(`design document missing HTML baseline heading for ${moduleName}`)
   }
 }
+for (const heading of ["一头一码（www.twjsz666.com）24码中特", "买码之前先上", "小康早到来"]) {
+  if (!design.includes(`### ${heading}：原始 HTML 基线`)) throw new Error(`design document missing composite baseline heading for ${heading}`)
+}
 for (const snippet of ["<tr>", 'class="bizhong1-l"', 'class="bizhong1-r"', 'background-color: #FFFF00']) {
   if (!design.includes(snippet)) throw new Error(`design document missing required HTML baseline ${snippet}`)
 }
@@ -28,5 +31,23 @@ for (const requirement of ["模块设计文档", "接口约定", "DOM 槽位", "
   if (!skill.includes(requirement)) throw new Error(`SKILL.md missing reusable requirement ${requirement}`)
 }
 if (!skill.includes("每一个可用预测模块")) throw new Error("SKILL.md does not require baselines for every mapped module")
+for (const requirement of [
+  "标题仅作为 DOM 定位锚点",
+  "字段结构、数据类型、容量",
+  "composite",
+  "逐槽声明",
+  "标题与字段冲突时",
+]) {
+  if (!skill.includes(requirement)) throw new Error(`SKILL.md missing semantic mapping rule ${requirement}`)
+}
+for (const requirement of [
+  "授权记录或 module 对象存在不等于资料可用",
+  "seed_pool",
+  "不得只检查通用页脚容器",
+  "naturalWidth > 0",
+  "#legacy-attribute-anchor",
+]) {
+  if (!skill.includes(requirement)) throw new Error(`SKILL.md missing onboarding regression rule ${requirement}`)
+}
 
 console.log("twjsz666 prediction-module design contract passed")

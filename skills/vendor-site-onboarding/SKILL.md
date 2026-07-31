@@ -388,6 +388,31 @@ authorization, target-site data-row count, same-origin API payload, and
 browser DOM slot rendering. A pass at any one layer cannot replace the other
 three.
 
+### 建站防回归：语义、资料与页尾闭环
+
+以下门槛用于防止“有模块但无资料”和“有页脚但无统一图片”再次发生：
+
+1. **预测语义不得由标题决定。** 标题只能定位 DOM。分类为 `exact`、
+   `composite` 或 `unavailable` 前，必须核对现有叶节点、字段路径、数据类型、
+   容量、分组、包含/排除含义和命中规则。标题未知不能成为清空区块的理由，
+   标题相似也不能成为复用近似 module key 的理由。
+2. **授权记录或 module 对象存在不等于资料可用。** 必须验证目标 `web_id`
+   在台湾、澳门、香港三种彩票下都有 distinct issue rows，并继续验证同源 API
+   payload 和浏览器叶节点。任何一层为空都不能标记完成。
+3. **组合区块必须逐字段闭环。** 每个子槽分别声明 module key、字段路径、
+   formatter、容量和结果规则；不得因其中一个字段有值就把整个 composite
+   判定为可用，也不得以空 `moduleKeys` 长期占位。
+4. **数据库来源判别字段必须容忍异构值。** 当同一查询中的 `type` 可能包含
+   `seed_pool` 等非数字来源标识时，不得在过滤前对整列强制转整数。只在已确认
+   为数字 mode ID 的分支做受保护转换，单条异构记录不得导致整种彩票资料被跳过。
+5. **统一结尾图片必须验证精确模块，不得只检查通用页脚容器。** `.foot-img`
+   或任意 footer 文本存在不代表图片模块存在。入口页必须且只能有一个
+   `#legacy-attribute-anchor` 和 `#legacy-attribute-gallery`，manifest 的
+   `footerSelector` 必须指向该稳定锚点，并精确断言三张同源图片及固定顺序。
+6. **浏览器必须证明图片真实可见。** 静态合同检查 ID、`src`、顺序、
+   `loading="lazy"` 和 `decoding="async"`；浏览器滚动到模块后检查每张图片
+   `complete && naturalWidth > 0`。只检查 HTML 字符串、父容器或请求 200 均不算完成。
+
 17. Verify `pnpm site:test-ui-baseline`, `pnpm site:test-data-client`, `pnpm site:test-adapter-registry`, `pnpm site:test-ui-browser`, `tsc`, site validation and production build before deployment.
 
 18. Add a browser contract test that clicks all three draw tabs and, for each
@@ -411,6 +436,13 @@ three.
 ## 前端预测模块开发规范
 
 每个供应商站点在接入或补齐预测资料前，必须新增一份中文“前端预测模块设计文档”。文档必须以实际入口 HTML 和站点 adapter 的 section inventory 为准，逐项列出 TITLE、稳定 DOM 锚点、可用状态、moduleKey、业务语义、历史组数与命中规则；不能只按标题猜测模块含义。
+
+### 语义判定与组合模块
+
+- 标题仅作为 DOM 定位锚点，不能作为预测语义证据。语义必须同时核对字段结构、数据类型、容量、分组关系、包含/排除规则和特别号命中方式。
+- 标题与字段冲突时，以结构化字段和后端机制为准；修正文案或记录冲突，不得因为标题不熟悉而清空数据，也不得仅凭标题套用近似 moduleKey。
+- `composite` 只表示一个 DOM 区块包含多个可独立验证的数据字段。每个子槽必须逐槽声明 `moduleKey`、字段路径、容量、formatter、结果/命中规则和空态；禁止用空 `moduleKeys` 作为长期实现。
+- 例如“五肖 + 五码”应依据 `prediction.groups[xiao_5]` 与 `prediction.groups[code_5]` 绑定 `wuxiao_wuma`；“一头 + 24 码”应分别绑定头数和号码来源。标题相似不构成替代关系。
 
 ### 接口约定
 

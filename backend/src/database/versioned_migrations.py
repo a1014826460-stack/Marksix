@@ -520,6 +520,11 @@ def _install_twjsz666_exact_prediction_modes(conn: Any) -> None:
     _install_twjsz666_site_profile(conn)
 
 
+def _sync_twjsz666_composite_sources(conn: Any) -> None:
+    """Authorize the composite sources used by the repaired homepage cards."""
+    _install_twjsz666_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -537,6 +542,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(14, "sync_twbst528_taiwan_pmt_image", _sync_twbst528_taiwan_pmt_image),
     Migration(15, "install_twjsz666_vendor_site", _install_twjsz666_site_profile),
     Migration(16, "install_twjsz666_exact_prediction_modes", _install_twjsz666_exact_prediction_modes),
+    Migration(17, "sync_twjsz666_composite_sources", _sync_twjsz666_composite_sources),
 )
 
 

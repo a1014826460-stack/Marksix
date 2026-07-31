@@ -12,15 +12,16 @@
 - 预测统一入口：`GET /api/sites/twjsz666/prediction-modules`。
 - 统一开奖入口：`GET /api/sites/twjsz666/draw`；它属于开奖模块，不作为预测模块资料来源。
 - 历史请求上限为本页所需完整期组数且不超过 20；客户端按 `issue` 去重后才写入。
-- 下面标为“可用”的模块是当前 `SECTION_CONTRACTS` 中 `classification: mapped` 的 19 项。
-  `一头一码（24码中特）` 当前为 `unavailable`，不能拿近似模块伪造资料；文末保留其
-  目标 API 与前端 contract，供后端机制完成后接入。
+- 当前 `SECTION_CONTRACTS` 包含 19 个精确 mapped 区块，以及“一头一码”、
+  “买码之前先上”和“小康早到来”三个按字段拆分的 composite 区块；所有可见预测区块
+  都有明确后端来源，不再使用 `unavailable` 或空 `moduleKeys`。
 
 ## 2. 预测模块清单
 
 | TITLE | 页面展示位置（稳定锚点） | 后端 moduleKey | 核心业务逻辑 |
 | --- | --- | --- | --- |
 | 单双各四肖 | `#pttj`，`.duilianpt` 九个 `<tr>` | `danshuang4xiao` | 每期输出单肖四肖与双肖四肖；仅特别号生肖决定命中。 |
+| 一头一码（www.twjsz666.com）24码中特 | `#yxym .bizhong1` 九张双栏卡 | `sitouzhongte` + `ma24` | 左栏按四头累计集合，右栏按 24 个号码分成四组六码；两源按同一期号合并。 |
 | 发财⑨肖 | 标题“发财⑨肖”的 `.box.pad` | `9xzt` | 输出最多九个生肖 token 的历史预测及特别号结果。 |
 | 三头四尾 | 标题含“三头”的 `.box.pad` | `three_head_four_tail` | 从结构化 `heads`、`tails` 分别取三头与四尾，保留原表格分栏。 |
 | 平特一肖 | 标题“平特一肖”的 `.box.pad` | `pt1xiao` | 每期一个生肖预测；特别号生肖相同即命中。 |
@@ -39,15 +40,19 @@
 | 绝杀①尾 | 标题“绝杀①尾”的 `.box.pad` | `juesha1wei` | 输出一个排除尾数；特别号尾数不等于该值才为正确。 |
 | 稳杀⑦码 | 标题“稳杀⑦码”的 `.box.pad` | `steady_kill_7_codes` | 输出最多七个排除号码；特别号不在集合中才为正确。 |
 | 一句话中特网码 | 标题“一句话中特网码”的 `.box.pad` | `yijuzhenyan` | 使用 `sentence` 或 `prediction.text` 的可读文本，移除传输分隔符。 |
+| 买码之前先上：这里期期大公开 | “精准台湾高手”区块后的九张 `.qxtable` | `wuxiao_wuma` | 读取 `prediction.groups.xiao_5` 与 `code_5`，保留五肖、五码和原有结果行。 |
+| 早跟台湾金手指，小康早到来 | `#yxym` 下九张 `.qxtable.yxym` | `selected_22_codes` + `9xzt` + `danshuang4xiao` + `6xzt` + `4xiao8ma` + `pt2xiao` | 每张卡逐行绑定精选、九肖、八肖、六肖、四肖、二肖六个字段源。 |
 
-### 2.1 已识别但当前不可用的模块
+### 2.1 静态栏目与字段判定
 
-| TITLE | 位置 | 当前状态 | 后端补齐条件 |
+| TITLE | 位置 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
-| 一头一码（www.twjsz666.com）24码中特 | `#yxym .bizhong1` 九张双栏卡 | `unavailable` | 必须提供“1/2/3/4 头”及四组各六码的同一期结构化数据；`9xzt` 等生肖模块不得替代。 |
+| 一头一码（www.twjsz666.com）24码中特 | `#yxym .bizhong1` 九张双栏卡 | `composite` | `sitouzhongte` 提供四头集合，`ma24` 提供 24 码；不能用 9 肖等近似资料替代。 |
+| 买码之前先上 | 九张 `qxtable` | `composite` | `wuxiao_wuma` 的 `xiao_5/code_5` 是同一行的两个字段，不按标题猜测。 |
+| 小康早到来 | 九张 `qxtable.yxym` | `composite` | 六个子行分别声明 moduleKey；任何一个子源空时只清理对应行。 |
 
-“正版图库”“属性知识”“最快开奖”是静态栏目，不属于预测 API；“小康早到来”与
-“买码之前先上”是组合卡，在每个子字段具备明确 moduleKey 前不得标注为可用预测。
+“正版图库”“属性知识”“最快开奖”是静态栏目，不属于预测 API。标题只用于定位，
+字段类型、容量、分组和命中规则才决定可用状态。
 
 ## 3. 后端 API 设计
 
@@ -124,31 +129,33 @@
 | 绝杀①尾 | `juesha1wei` | `extra.tail`（1 个） | 生成排除尾数；特别号末位不等于该值为正确。 |
 | 稳杀⑦码 | `steady_kill_7_codes` | `tokens`（最多 7 个号码） | 生成排除号码；特别号不在集合中为正确。 |
 | 一句话中特网码 | `yijuzhenyan` | `extra.sentence` 或 `prediction.text` | 后端生成一句可读资料；不得给前端原始分隔符或 JSON。 |
+| 五肖五码（买码之前先上） | `wuxiao_wuma` | `prediction.groups[xiao_5].tokens`（5）、`prediction.groups[code_5].tokens`（5） | 后端以 mode 47/69/151 按同一期合并五肖与五码；特别号分别按生肖/号码判定。 |
+| 一头一码左栏 | `sitouzhongte` | `prediction.tokens` 或 `extra.heads`（4 个累计头） | mode 483 生成 0/1/2/3 头集合，左栏第 n 行显示前 n 个头。 |
+| 一头一码右栏 | `ma24` | `prediction.tokens` 或 `extra.code`（24 个两位号码） | mode 34 生成 24 码，按四组六码写入右栏。 |
+| 小康早跟精选 | `selected_22_codes` | `tokens`（最多 10 个卡头号码） | 取精选 22 码的前十个号码写入 `.jx`。 |
+| 小康九肖/八肖/六肖/四肖/二肖 | `9xzt` / `danshuang4xiao` / `6xzt` / `4xiao8ma` / `pt2xiao` | 各自 `tokens` 或分组 token，容量 9/8/6/4/2 | 每个子行只消费自己的 moduleKey 和容量，不把标题当作数据类型。 |
 
-### 3.3 一头一码（24码中特）拟补齐接口
+### 3.3 一头一码与公开卡的实际 composite payload
 
-当该机制完成后，仍使用统一 URL，但返回一个新增模块：
+统一 URL 同时返回现有 `sitouzhongte`、`ma24` 和 `wuxiao_wuma` 模块；不新增
+`one_head_one_code_24` 近似键：
 
 ```json
 {
-  "moduleKey": "one_head_one_code_24",
-  "title": "一头一码24码中特",
+  "moduleKey": "sitouzhongte",
+  "title": "四头中特",
   "rows": [{
     "issue": "2026180",
     "prediction": {
-      "extra": {
-        "heads": ["3", "3,4", "3,4,2", "3,4,2,1"],
-        "code_groups": [["39", "11", "09", "40", "18", "45"], ["27", "24", "21", "33", "12", "09"], ["03", "34", "26", "32", "48", "47"], ["15", "14", "44", "42", "16", "30"]],
-        "recommended_head": "3"
-      }
+        "tokens": ["0头|01,02,03", "1头|10,11,12", "2头|20,21,22", "3头|30,31,32"]
     },
     "result": { "isOpened": false, "code": "", "zodiac": "", "isCorrect": null }
   }]
 }
 ```
 
-服务端必须对每期同时生成四组“头”与四组六码，不得以 9 肖、22 码或任意近似模块
-拼装。命中号码或头只能使用原模板已有的黄色 `<span>` 叶节点。
+`ma24` 同期返回 24 个两位号码；适配器按四组六码写入右栏。命中号码或头只能使用
+原模板已有的黄色 `<span>` 叶节点。
 
 ## 4. 前端展示数据格式
 
@@ -208,15 +215,90 @@
 </div>
 ```
 
-| 既有展示字段 | `one_head_one_code_24` 字段 | 填充规则 |
+| 既有展示字段 | 后端字段 | 填充规则 |
 | --- | --- | --- |
-| 左栏四个 `<li>` | `rows[].issue`、`extra.heads[0..3]` | 分别写“一头”至“四头”，每项保留各自 `<font>` 叶节点与逗号。 |
-| 右栏四个 `<li>` | `extra.code_groups[0..3]` | 每组必须恰好六个两位号码，按既有 `①` 至 `④` 和 `.` 分隔写入。 |
-| `.bizhong1-foot` | `extra.recommended_head` | 显示当期推荐一头。 |
+| 左栏四个 `<li>` | `sitouzhongte.rows[].prediction.tokens` | 解析 `0头|...` 至 `3头|...`，按累计集合写“一头”至“四头”，保留 `<font>` 叶节点与逗号。 |
+| 右栏四个 `<li>` | `ma24.rows[].prediction.tokens[0..23]` | 每组恰好六个两位号码，按既有 `①` 至 `④` 和 `.` 分隔写入。 |
+| `.bizhong1-foot` | `sitouzhongte` 第一头 token | 显示当期推荐一头。 |
 | 既有黄色 span | `result.code`、`result.isCorrect` | 已开奖时仅对命中特别号号码或对应头的现有叶节点高亮。 |
 
-当前没有上述完整后端 payload，故前端必须清空该卡所有静态期号、号码、对错和黄色残留，
-显示“资料同步中/暂无后端资料”的命名空态；后端补齐前不得填入其他模块资料。
+当任一来源缺行时，只清理对应左栏或右栏的既有动态叶节点；不得用另一模块补齐，
+也不得显示“资料同步中”。当前两源均由站点 profile 授权并按同一期去重。
+
+### 买码之前先上：原始 HTML 基线
+
+```html
+<table border="1" width="100%" cellpadding="0" cellspacing="0" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" bgcolor="#FFFFFF" class="qxtable" id="table3">
+                <tr>
+                    <td style="text-align: left" bgcolor="#F4F4F4" width="45%">
+                        <font color="#000080">㈤肖</font>
+                        <font color="#FF0000">
+                            <span class="xz2">[<font>牛</font><font>狗</font><font>鼠</font><font>兔</font><font>龙</font>]</span></font>
+                    </td>
+                    <td style="text-align: left" bgcolor="#F4F4F4">
+                        <font color="#000080">⑤码</font>
+                        <font color="#FF0000">
+                            <span class="xz2">(<font>18</font>,<font>15</font>,<font>39</font>,<font>06</font>,<font>41</font>)</span></font>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:center; background: #feffab;" width="100%" colspan="2">
+                        <font color="#0000FF">2025060期：内幕大公开-</font>
+                        <font color="#FF0000">
+                            <span class="xz3">&lt;
+                                <span style="background-color: #FFFF00">五码中</span>&gt;</span></font>
+                        <font color="#0000FF">-信心十足！</font></td>
+                </tr>
+                <tr>
+                    <td style="text-align:center; background: #00CC00;" width="100%" colspan="2">买码之前先上：这里期期大公开</td>
+                </tr>                </table>
+```
+
+映射：首格 `.xz2` 的五个既有叶节点对应 `wuxiao_wuma.groups[xiao_5]`，次格五个叶节点
+对应 `groups[code_5]`；结果行期号来自同一 `row.issue`，特别号命中只复用现有黄色节点。
+
+### 小康早到来：原始 HTML 基线
+
+```html
+<table border="1" width="100%" cellpadding="0" cellspacing="0" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" bgcolor="#FFFFFF" class="qxtable yxym">
+    <tbody>
+    <tr>
+        <td colspan="3" style="background: #f7f7f7; color: #FF0000;"><span class="jx">精选：<font>30</font>.<font>47</font>.<font>09</font>.<font>40</font>.<font>18</font>.<font>45</font>.<font>16</font>.<font>48</font>.<font>12</font>.<font>42</font></span></td>
+    </tr>
+    <tr>
+        <td height="26">2025060期:⑨肖</td>
+        <td style="color: #FF0000;" height="26"><font>兔</font><font>狗</font><font>鸡</font><font>羊</font><font>马</font><font>鼠</font><font>龙</font><font>虎</font><font>猴</font></td>
+        <td height="26"></td>
+    </tr>
+    <tr>
+        <td>2025060期:⑧码</td>
+        <td style="color: #FF0000;"><font>兔</font><font>狗</font><font>鸡</font><font>羊</font><font>马</font><font>鼠</font><font>龙</font><font>虎</font></td>
+        <td height="28"></td>
+    </tr>
+    <tr>
+        <td height="28">2025060期:⑥肖</td>
+        <td style="color: #FF0000;"><font>兔</font><font>鸡</font><font>羊</font><font>马</font><font>狗</font><font>龙</font></td>
+        <td height="28"></td>
+    </tr>
+    <tr>
+        <td>2025060期:④肖</td>
+        <td style="color: #FF0000;"><font>兔</font><font>狗</font><font>鸡</font><font>羊</font></td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>2025060期:②肖</td>
+        <td style="color: #FF0000;"><font>兔</font><font>狗</font></td>
+        <td></td>
+    </tr>
+    <tr>
+        <td colspan="3">记住:台湾金手指 大家都说好</td></tr>
+    </tbody>
+</table>
+```
+
+映射：`.jx` 对应 `selected_22_codes` 前十码；以下五行依次对应 `9xzt`、
+`danshuang4xiao`、`6xzt`、`4xiao8ma`、`pt2xiao`。原第二行虽写“⑧码”，实际叶节点
+数据类型是八个生肖，因此 renderer 按结构化生肖字段处理并将运行时标签校正为“⑧肖”。
 
 ### 发财⑨肖：原始 HTML 基线
 

@@ -2,15 +2,65 @@ import json
 
 from db import connect
 from database.versioned_migrations import _install_twjsz666_site_profile
-from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+from domains.prediction.site_page_dependencies import (
+    dependencies_for_site,
+    required_mode_ids_for_site_key,
+)
 
 
-EXPECTED_MODE_IDS = (54, 56, 57, 483, 472, 51, 58, 26, 50, 38, 470, 20, 473, 49, 31, 492, 491, 14, 74, 52, 493, 494, 495)
+EXPECTED_MODE_IDS = (
+    57, 493, 14, 492, 494, 38, 51, 20, 74, 58, 473, 56, 470, 50,
+    54, 49, 31, 491, 52, 495, 483, 34, 46, 43, 47, 69, 151,
+)
+
+EXPECTED_ARTICLE_MODULES = {
+    "/vendor/twjsz666/154.html": "daxiao",
+    "/vendor/twjsz666/155.html": "selected_22_codes",
+    "/vendor/twjsz666/156.html": "title_14",
+    "/vendor/twjsz666/157.html": "three_head_four_tail",
+    "/vendor/twjsz666/158.html": "steady_kill_7_codes",
+    "/vendor/twjsz666/159.html": "shuangbo",
+    "/vendor/twjsz666/160.html": "4xiao8ma",
+    "/vendor/twjsz666/161.html": "juesha1wei",
+    "/vendor/twjsz666/162.html": "title_74",
+    "/vendor/twjsz666/163.html": "jueshabanbo",
+    "/vendor/twjsz666/164.html": "juesha2xiao",
+    "/vendor/twjsz666/165.html": "pt1xiao",
+    "/vendor/twjsz666/166.html": "pt3xiao",
+    "/vendor/twjsz666/167.html": "yijuzhenyan",
+}
 
 
 def test_twjsz666_dependencies_are_reviewed_and_nonempty():
     mode_ids = required_mode_ids_for_site_key("twjsz666")
     assert mode_ids == EXPECTED_MODE_IDS
+
+
+def test_twjsz666_article_and_composite_sources_are_explicit():
+    dependencies = dependencies_for_site("twjsz666")
+    article_modules = {
+        dependency.page_path: dependency.endpoint
+        for dependency in dependencies
+        if dependency.page_path.startswith("/vendor/twjsz666/")
+    }
+    homepage_modules = {
+        dependency.endpoint
+        for dependency in dependencies
+        if dependency.page_path == "/twjsz666"
+    }
+
+    assert article_modules == EXPECTED_ARTICLE_MODULES
+    assert {
+        "sitouzhongte",
+        "ma24",
+        "selected_22_codes",
+        "9xzt",
+        "danshuang4xiao",
+        "6xzt",
+        "4xiao8ma",
+        "pt2xiao",
+        "wuxiao_wuma",
+    } <= homepage_modules
 
 
 def test_twjsz666_profile_registers_site_11_and_modules(tmp_path):

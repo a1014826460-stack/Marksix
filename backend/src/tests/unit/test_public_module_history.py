@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from db import connect
+from helpers import sql_safe_int_expr
 from public import api
 
 
@@ -22,6 +23,14 @@ def _payload(term: int) -> dict[str, object]:
         "web_id": 9,
         "content": f"row-{term}",
     }
+
+
+def test_postgres_safe_int_expression_rejects_nonnumeric_seed_rows_before_cast():
+    expression = sql_safe_int_expr("type", engine="postgres")
+
+    assert "CASE WHEN" in expression
+    assert "~ '^[0-9]+$'" in expression
+    assert "THEN CAST" in expression
 
 
 def test_public_history_reads_fallback_when_preferred_window_has_duplicate_issues(monkeypatch):

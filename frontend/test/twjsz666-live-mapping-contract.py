@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import re
+import time
 
 from playwright.sync_api import sync_playwright
 
@@ -21,6 +22,7 @@ def prediction_payload(lottery_type: int) -> dict:
         "pt1wei", "juesha2xiao", "jueshabanbo", "juesha1wei", "yijuzhenyan",
         "danshuang4xiao", "three_head_four_tail", "gongshi_siw", "title_14", "title_74",
         "sizixuanji", "selected_22_codes", "steady_kill_7_codes", "expert_publications",
+        "sitouzhongte", "ma24", "6xzt", "pt2xiao", "wuxiao_wuma",
     )
     # Each module needs independent rows: specialized payload fields must not
     # overwrite the fixture data consumed by another module renderer.
@@ -29,14 +31,18 @@ def prediction_payload(lottery_type: int) -> dict:
         row["raw"] = {"content": json.dumps({"heads": ["0头", "1头", "2头"], "tails": ["0尾", "1尾", "2尾"]})}
     for row in modules["gongshi_siw"]["rows"]:
         row["prediction"]["tokens"] = ["0尾", "1尾", "2尾", "3尾"]
+    expert_titles = [
+        "一句话中特码", "大小中特", "平特三肖", "平特一肖", "精选22码", "家禽VS野兽", "三头四尾",
+        "稳杀七码", "双波中特", "四肖八码", "绝杀一尾", "七尾中特", "绝杀一波", "绝杀二肖",
+    ]
     for row in modules["expert_publications"]["rows"]:
-        row["raw"] = {"content": json.dumps({"publications": [f"后端资料{index}" for index in range(1, 15)]})}
+        row["raw"] = {"content": json.dumps({"publications": expert_titles})}
     for row in modules["danshuang4xiao"]["rows"]:
         row["raw"] = {"single_xiao": ["鼠", "牛", "虎", "兔"], "double_xiao": ["龙", "蛇", "马", "羊"]}
     for row in modules["title_14"]["rows"]:
         row["raw"] = {"jia": "鸡,牛,羊", "ye": "龙,鼠,蛇"}
     for row in modules["4xiao8ma"]["rows"]:
-        row["raw"] = {"xiao": ["鼠", "牛", "虎", "兔"], "code": ["01", "02", "03", "04", "05", "06", "07", "08"]}
+        row["prediction"]["tokens"] = ["鼠|01,02", "牛|03,04", "虎|05,06", "兔|07,08"]
     for row in modules["selected_22_codes"]["rows"]:
         row["prediction"]["tokens"] = [f"{value:02d}" for value in range(1, 23)]
     for row in modules["steady_kill_7_codes"]["rows"]:
@@ -49,6 +55,19 @@ def prediction_payload(lottery_type: int) -> dict:
         row["raw"] = {"daxiao": "大"}
     for row in modules["jueshabanbo"]["rows"]:
         row["prediction"]["tokens"] = ["红单"]
+    for row in modules["sitouzhongte"]["rows"]:
+        row["prediction"]["tokens"] = ["0头|01,02,03", "1头|10,11,12", "2头|20,21,22", "3头|30,31,32"]
+    for row in modules["ma24"]["rows"]:
+        row["prediction"]["tokens"] = [f"{value:02d}" for value in range(1, 25)]
+    for row in modules["6xzt"]["rows"]:
+        row["prediction"]["tokens"] = ["鼠", "牛", "虎", "兔", "龙", "蛇"]
+    for row in modules["pt2xiao"]["rows"]:
+        row["prediction"]["tokens"] = ["鼠", "牛"]
+    for row in modules["wuxiao_wuma"]["rows"]:
+        row["prediction"]["groups"] = [
+            {"key": "xiao_5", "label": "五肖", "tokens": ["鼠", "牛", "虎", "兔", "龙"]},
+            {"key": "code_5", "label": "五码", "tokens": ["01", "02", "03", "04", "05"]},
+        ]
     for row in modules["title_74"]["rows"]:
         row["prediction"]["tokens"] = ["1尾", "2尾", "3尾", "4尾", "5尾", "6尾", "7尾"]
     for row in modules["yijuzhenyan"]["rows"]:
@@ -84,9 +103,41 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         page.wait_for_timeout(500)
         vendor = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/index.html"))
         draw = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/kai.html"))
+        footer = vendor.locator("#legacy-attribute-anchor")
+        assert footer.count() == 1
+        footer_images = footer.locator("#legacy-attribute-gallery img")
+        assert footer_images.count() == 3
+        assert footer_images.evaluate_all("images => images.map(image => image.getAttribute('src'))") == [
+            "/uploads/image/20250322/1742580086567063.png",
+            "/uploads/image/20250322/1742580119746508.jpg",
+            "/uploads/image/20250322/1742580130762983.jpg",
+        ]
+        footer.scroll_into_view_if_needed()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not all(
+            footer_images.evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)")
+        ):
+            page.wait_for_timeout(50)
+        assert footer_images.evaluate_all(
+            "images => images.map(image => image.complete && image.naturalWidth > 0)"
+        ) == [True, True, True]
         one_head_cards = vendor.locator("#yxym .bizhong1")
         assert one_head_cards.count() == 9
         assert "060期" not in one_head_cards.first.inner_text()
+        assert "301期必中一头：0头" in one_head_cards.first.locator(".bizhong1-l li").nth(0).inner_text()
+        assert "301期必中四头：0头,1头,2头,3头" in one_head_cards.first.locator(".bizhong1-l li").nth(3).inner_text()
+        assert "01.02.03.04.05.06" in one_head_cards.first.locator(".bizhong1-r li").nth(0).inner_text()
+        public_card = vendor.locator("#jzlx + table.qxtable").first
+        assert "301期:⑨肖" in public_card.locator("tr").nth(1).locator("td").nth(0).inner_text()
+        assert public_card.locator("tr").nth(3).locator("td").nth(1).inner_text() == "鼠牛虎兔龙蛇"
+        before_bet_title = vendor.locator(".list-title", has_text="买码之前先上").first
+        before_bet_card = before_bet_title.locator(
+            "xpath=following-sibling::table[contains(concat(' ', normalize-space(@class), ' '), ' qxtable ')][1]"
+        )
+        assert "鼠牛虎兔龙" in before_bet_card.locator("tr").nth(0).locator("td").nth(0).inner_text()
+        assert "01,02,03,04,05" in before_bet_card.locator("tr").nth(0).locator("td").nth(1).inner_text()
+        assert "301期" in before_bet_card.locator("tr").nth(1).inner_text()
+        assert "2025060期" not in before_bet_card.inner_text()
         assert "资料同步中" not in vendor.locator("body").inner_text()
         four_xiao = vendor.locator("#pttj + table tr").first
         assert "301期:单肖" in four_xiao.locator("font").nth(0).inner_text()
@@ -161,6 +212,8 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         head_tail = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text="三头")).first.locator("tr").first
         assert head_tail.locator("th").nth(0).inner_text() == "301期"
         assert head_tail.locator(".zl").first.inner_text() == "三头【0头.1头.2头】四尾【0尾.1尾.2尾.3尾】"
+        assert head_tail.locator(".zl").first.evaluate("node => getComputedStyle(node).fontSize") == "22px"
+        assert head_tail.locator(".zl").first.evaluate("node => getComputedStyle(node).whiteSpace") == "nowrap"
         assert head_tail.locator("th").nth(2).inner_text() == "开:01鼠对"
         kill_wave = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text="绝杀①半波")).first.locator("tr").first
         assert kill_wave.locator("font").nth(0).inner_text() == "301期:绝杀①半波"
@@ -168,7 +221,16 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         assert "开:01鼠对" in kill_wave.locator("font").last.inner_text()
         expert = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text="精准台湾高手")).first
         assert expert.locator("li a").count() == 14
-        assert expert.locator("li").first.inner_text().startswith("301期 后端资料1")
+        assert expert.locator("li a").all_inner_texts() == [
+            "301期 一句话中特码", "301期 大小中特", "301期 平特三肖", "301期 平特一肖", "301期 精选22码",
+            "301期 家禽VS野兽", "301期 三头四尾", "301期 稳杀七码", "301期 双波中特", "301期 四肖八码",
+            "301期 绝杀一尾", "301期 七尾中特", "301期 绝杀一波", "301期 绝杀二肖",
+        ]
+        assert expert.locator("li a").first.get_attribute("href") == "167.html"
+        sentence_row = vendor.locator(".one-sentence-table tr").first
+        assert sentence_row.locator("td > font").nth(0).evaluate("node => getComputedStyle(node).display") == "block"
+        assert sentence_row.locator("td > .zl").evaluate("node => getComputedStyle(node).display") == "block"
+        assert sentence_row.locator("td > font").nth(1).evaluate("node => getComputedStyle(node).display") == "block"
         tabs = draw.locator(".KJ-TabBox li")
         assert tabs.count() == 3
         for index, expected in enumerate((3, 2, 1)):
@@ -206,6 +268,31 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         assert "301期" in article.inner_text()
         assert "2026301期" not in article.inner_text()
         assert "2025060期" not in article.inner_text()
+        page.evaluate("""
+          () => {
+            sessionStorage.clear();
+            const key = 'liuhecai:site-data:durable:v1:twjsz666:predictions:' + JSON.stringify({lotteryType: 3, historyLimit: 9, includeVendor: true});
+            localStorage.setItem(key, JSON.stringify({cachedAt: Date.now(), data: {ok: true, data: {canonical_modules: []}}}));
+          }
+        """)
+        page.goto(f"{base_url}/vendor/twjsz666/158.html", wait_until="domcontentloaded")
+        page.wait_for_timeout(500)
+        article = page.locator('[data-prediction-article="true"]')
+        assert "【稳杀七码】资料已公开" in article.inner_text()
+        assert "301期" in article.inner_text()
+        page_contracts = {
+            154: "大小中特", 155: "精选22码", 156: "家禽VS野兽", 157: "三头四尾",
+            158: "稳杀七码", 159: "双波中特", 160: "四肖八码", 161: "绝杀一尾",
+            162: "七尾中特", 163: "绝杀一波", 164: "绝杀二肖", 165: "平特一肖",
+            166: "平特三肖", 167: "一句话中特码",
+        }
+        for page_number, title in page_contracts.items():
+            page.goto(f"{base_url}/vendor/twjsz666/{page_number}.html", wait_until="domcontentloaded")
+            page.wait_for_timeout(100)
+            article = page.locator('[data-prediction-article="true"]')
+            assert f"【{title}】资料已公开" in article.inner_text(), page_number
+            assert article.locator("p[data-prediction-row]").count() == 9, page_number
+            assert all(text.strip() for text in article.locator("p[data-prediction-row]").all_inner_texts()), page_number
         page.goto(f"{base_url}/vendor/twjsz666/kai.html", wait_until="domcontentloaded")
         assert page.locator(".KJ-TabBox > div.cur .KJ-IFRAME").count() == 1
         assert {lottery_type for _, lottery_type in requests} >= {1, 2, 3}

@@ -6,7 +6,7 @@
 
   var SECTION_CONTRACTS = Object.freeze([
     { id: "four-xiao-odds", titlePattern: "单双各四肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["danshuang4xiao"], rendererName: "renderFourXiaoOdds", issueGroups: 9, supplierSentinels: ["单肖"] },
-    { id: "one-head-one-code", titlePattern: "单车变宝马", containerSelector: ".pad#yxym", classification: "unavailable", moduleKeys: [], rendererName: "renderOneHeadOneCodeUnavailable", issueGroups: 1, supplierSentinels: ["24码中特"] },
+    { id: "one-head-one-code", titlePattern: "单车变宝马", containerSelector: ".pad#yxym", classification: "composite", moduleKeys: ["sitouzhongte", "ma24"], rendererName: "renderOneHeadOneCode", issueGroups: 9, supplierSentinels: ["24码中特"] },
     { id: "fortune-nine-xiao", titlePattern: "发财⑨肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["9xzt"], rendererName: "renderFortuneNineXiao", issueGroups: 9, supplierSentinels: ["发财⑨肖"] },
     { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["three_head_four_tail"], rendererName: "renderThreeHeadFourTail", issueGroups: 9, supplierSentinels: ["三头"] },
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
@@ -19,7 +19,7 @@
     { id: "four-xiao-eight-code", titlePattern: "④肖⑧码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["4xiao8ma"], rendererName: "renderFourXiaoEightCode", issueGroups: 9, supplierSentinels: ["④肖⑧码"] },
     { id: "big-small-special", titlePattern: "大小中特", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["daxiao"], rendererName: "renderDaXiaoHistory", issueGroups: 9, supplierSentinels: ["大小中特"] },
     { id: "seven-tail-special", titlePattern: "七尾中特", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_74"], rendererName: "renderSevenTail", issueGroups: 9, supplierSentinels: ["七尾"] },
-    { id: "before-bet-selection", titlePattern: "小康早到来", containerSelector: ".box.pad", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 9, supplierSentinels: ["精选："] },
+    { id: "before-bet-selection", titlePattern: "小康早到来", containerSelector: ".box.pad", classification: "composite", moduleKeys: ["selected_22_codes", "9xzt", "danshuang4xiao", "6xzt", "4xiao8ma", "pt2xiao"], rendererName: "renderPublicCards", issueGroups: 9, supplierSentinels: ["精选："] },
     { id: "flat-one-tail", titlePattern: "平特一尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1wei"], rendererName: "renderFlatOneTail", issueGroups: 9, supplierSentinels: ["平特一尾"] },
     { id: "selected-twenty-two-code", titlePattern: "精选22码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["selected_22_codes"], rendererName: "renderSelectedTwentyTwo", issueGroups: 9, supplierSentinels: ["精选22码"] },
     { id: "kill-two-xiao", titlePattern: "绝杀二肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha2xiao"], rendererName: "renderKillTwoXiao", issueGroups: 9, supplierSentinels: ["绝杀二肖"] },
@@ -27,17 +27,18 @@
     { id: "kill-one-tail", titlePattern: "绝杀①尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha1wei"], rendererName: "renderKillOneTail", issueGroups: 9, supplierSentinels: ["绝杀①尾"] },
     { id: "kill-seven-code", titlePattern: "稳杀⑦码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["steady_kill_7_codes"], rendererName: "renderKillSevenCode", issueGroups: 9, supplierSentinels: ["稳杀⑦码"] },
     { id: "one-sentence-special", titlePattern: "一句话中特码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["yijuzhenyan"], rendererName: "renderOneSentenceSpecial", issueGroups: 9, supplierSentinels: ["一句话"] },
-    { id: "zodiac-knowledge", titlePattern: "属性知识", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["sx.html"] },
+    { id: "zodiac-knowledge", titlePattern: "台湾金手指属性知识", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["sx.html"] },
     { id: "fast-results-footer", titlePattern: "最快开奖", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["白小姐"] },
-    { id: "public-before-bet-card-1", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(1)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-2", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(2)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-3", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(3)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-4", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(4)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-5", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(5)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-6", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(6)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-7", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(7)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-8", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(8)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] },
-    { id: "public-before-bet-card-9", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(9)", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 1, supplierSentinels: ["㈤肖"] }
+    { id: "unified-attribute-footer", titlePattern: "属性知识", containerSelector: "#legacy-attribute-anchor", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: [] },
+    { id: "public-before-bet-card-1", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(1)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-2", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(2)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-3", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(3)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-4", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(4)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-5", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(5)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-6", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(6)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-7", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(7)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-8", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(8)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] },
+    { id: "public-before-bet-card-9", titlePattern: "买码之前先上", containerSelector: "table.qxtable:nth-of-type(9)", classification: "composite", moduleKeys: ["wuxiao_wuma"], rendererName: "renderBeforeBetCards", issueGroups: 1, supplierSentinels: ["㈤肖"] }
   ].map(function (contract) {
     contract.moduleKeys = Object.freeze(contract.moduleKeys);
     contract.supplierSentinels = Object.freeze(contract.supplierSentinels);
@@ -134,6 +135,13 @@
 
   function rowCells(row) {
     return row ? row.querySelectorAll(":scope > td, :scope > th") : [];
+  }
+
+  function groupValues(row, key) {
+    var groups = row && row.prediction && row.prediction.groups;
+    if (!Array.isArray(groups)) return [];
+    var group = groups.filter(function (item) { return item && item.key === key; })[0];
+    return group && Array.isArray(group.tokens) ? group.tokens.map(String).filter(Boolean) : [];
   }
 
   function sectionRows(section) {
@@ -269,8 +277,10 @@
     var publications = [];
     try { publications = JSON.parse(String(rawValue(row, "content") || "{}")) .publications || []; } catch (_) { publications = tokenValues(row); }
     Array.prototype.forEach.call(section.querySelectorAll("li"), function (item, index) {
-      clearLeaves(item);
-      writeLeaf(item, row ? displayIssue(row) + " " + (publications[index] || "后端资料") : "");
+      var link = item.querySelector("a");
+      if (!link) return;
+      clearLeaves(link);
+      writeLeaf(link, row ? displayIssue(row) + " " + (publications[index] || "后端资料") : "");
     });
   }
 
@@ -328,6 +338,15 @@
       if (!row) { clearLeaves(tr); if (fonts[0]) writeLeaf(fonts[0], ""); return; }
       var zodiac = listValue(rawValue(row, "xiao")).slice(0, 4);
       var codes = listValue(rawValue(row, "code")).slice(0, 8);
+      if (!zodiac.length || !codes.length) {
+        zodiac = [];
+        codes = [];
+        tokenValues(row).slice(0, 4).forEach(function (group) {
+          var parts = String(group).split("|");
+          if (parts[0]) zodiac.push(parts[0]);
+          if (parts[1]) codes = codes.concat(listValue(parts[1]));
+        });
+      }
       setText(fonts[0], normalizedIssue(row) + ": ");
       setText(fonts[2], " " + resultText(row));
       var leaves = textNodes(detail);
@@ -367,6 +386,86 @@
       });
       var firstSlot = card.querySelector(".bizhong1-l li");
       if (firstSlot) writeLeaf(firstSlot, "");
+    });
+  }
+
+  function renderOneHeadOneCode(section, module, modules) {
+    Array.prototype.forEach.call(window.document.querySelectorAll(".bizhong1"), function (card, index) {
+      var headRow = rowData(module, index), codeRow = rowData(modules && modules.ma24, index);
+      var heads = tokenValues(headRow).slice(0, 4).map(function (value) { return String(value).split("|", 1)[0]; });
+      var codes = tokenValues(codeRow).slice(0, 24);
+      Array.prototype.forEach.call(card.querySelectorAll(".bizhong1-l li"), function (slot, slotIndex) {
+        setText(slot, headRow ? displayIssue(headRow) + "必中" + ["一", "二", "三", "四"][slotIndex] + "头：" + heads.slice(0, slotIndex + 1).join(",") : "");
+      });
+      Array.prototype.forEach.call(card.querySelectorAll(".bizhong1-r li"), function (slot, slotIndex) {
+        setText(slot, codes.slice(slotIndex * 6, slotIndex * 6 + 6).join("."));
+      });
+      setText(card.querySelector(".bizhong1-foot"), heads.length ? "本期推荐一头：（" + heads[0] + "）" : "");
+    });
+  }
+
+  function writeExistingTokens(root, values, hitValue) {
+    if (!root) return;
+    var slots = root.querySelectorAll(":scope > font, :scope > span");
+    Array.prototype.forEach.call(slots, function (slot, index) {
+      var value = values[index] || "";
+      writeLeaf(slot, value);
+      if (slot.style) slot.style.removeProperty("background-color");
+      if (value && value === hitValue && slot.style) slot.style.backgroundColor = "#FFFF00";
+    });
+  }
+
+  function beforeBetCards() {
+    var titles = window.document.querySelectorAll(".list-title");
+    var title = Array.prototype.filter.call(titles, function (item) {
+      return String(item.textContent || "").indexOf("买码之前先上") !== -1;
+    })[0];
+    var cards = [];
+    var sibling = title && title.nextElementSibling;
+    while (sibling && !sibling.classList.contains("list-title")) {
+      if (sibling.matches("table.qxtable") && !sibling.classList.contains("yxym")) cards.push(sibling);
+      sibling = sibling.nextElementSibling;
+    }
+    return cards;
+  }
+
+  function renderBeforeBetCards(module) {
+    Array.prototype.forEach.call(beforeBetCards(), function (card, index) {
+      var row = rowData(module, index), rows = sectionRows(card);
+      var xiao = groupValues(row, "xiao_5").slice(0, 5);
+      var codes = groupValues(row, "code_5").slice(0, 5);
+      var result = row && row.result || {};
+      var hitXiao = result.isOpened ? resultToken(result.zodiac, false) : "";
+      var hitCode = result.isOpened ? resultToken(result.code, true) : "";
+      var firstCells = rowCells(rows[0]);
+      writeExistingTokens(firstCells[0] && firstCells[0].querySelector(".xz2"), xiao, hitXiao);
+      writeExistingTokens(firstCells[1] && firstCells[1].querySelector(".xz2"), codes, hitCode);
+      var statusFonts = rows[1] && rows[1].querySelectorAll("font");
+      if (statusFonts && statusFonts[0]) writeLeaf(statusFonts[0], row ? displayIssue(row) + "：内幕大公开-" : "");
+      var marker = rows[1] && rows[1].querySelector(".xz3 > span");
+      if (marker) writeLeaf(marker, !row || !result.isOpened ? "待开奖" : codes.indexOf(hitCode) !== -1 ? "五码中" : "五码错");
+      if (row) card.setAttribute("data-prediction-row", String(index));
+    });
+  }
+
+  function renderPublicCards(section, module, modules) {
+    var specs = [
+      ["⑨肖", modules["9xzt"], 9], ["⑧肖", modules["danshuang4xiao"], 8],
+      ["⑥肖", modules["6xzt"], 6], ["④肖", modules["4xiao8ma"], 4], ["②肖", modules["pt2xiao"], 2]
+    ];
+    Array.prototype.forEach.call(section.querySelectorAll("table.qxtable"), function (card, index) {
+      var selected = rowData(module, index);
+      setText(card.querySelector(".jx"), selected ? "精选：" + tokenValues(selected).slice(0, 10).join(".") : "");
+      var rows = sectionRows(card).slice(1, 6);
+      specs.forEach(function (spec, specIndex) {
+        var row = rowData(spec[1], index), cells = rowCells(rows[specIndex]);
+        var values = spec[0] === "④肖"
+          ? tokenValues(row).slice(0, 4).map(function (value) { return String(value).split("|", 1)[0]; })
+          : tokenValues(row).slice(0, spec[2]).map(function (value) { return String(value).split("|", 1)[0]; });
+        setText(cells[0], row ? displayIssue(row) + ":" + spec[0] : "");
+        setText(cells[1], values.join(""));
+        setText(cells[2], row ? resultText(row).replace(/^开:/, "") : "");
+      });
     });
   }
 
@@ -469,6 +568,9 @@
       renderFourXiaoOddsUnavailable: renderFourXiaoOddsUnavailable,
       renderFourXiaoOdds: renderFourXiaoOdds,
       renderOneHeadOneCodeUnavailable: renderOneHeadOneCodeUnavailable,
+      renderOneHeadOneCode: renderOneHeadOneCode,
+      renderBeforeBetCards: renderBeforeBetCards,
+      renderPublicCards: renderPublicCards,
       renderFortuneNineXiao: renderFortuneNineXiao,
       renderThreeHeadFourTailUnavailable: renderThreeHeadFourTailUnavailable,
       renderThreeHeadFourTail: renderThreeHeadFourTail,
@@ -506,12 +608,8 @@
       updateTitle(section, lottery);
       renderSection(section, modules);
     });
-    Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
-      clearUnavailableSlots(card);
-    });
-    Array.prototype.forEach.call(window.document.querySelectorAll(".pad#yxym"), function (section) {
-      renderOneHeadOneCodeUnavailable(section);
-    });
+    renderOneHeadOneCode(window.document, modules.sitouzhongte, modules);
+    renderBeforeBetCards(modules.wuxiao_wuma);
     clearSupplierIssueSnapshots();
   }
 
