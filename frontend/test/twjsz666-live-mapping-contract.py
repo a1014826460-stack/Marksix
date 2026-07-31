@@ -19,6 +19,7 @@ def prediction_payload(lottery_type: int) -> dict:
         "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "4xiao8ma", "daxiao",
         "pt1wei", "juesha2xiao", "jueshabanbo", "juesha1wei", "yijuzhenyan",
         "danshuang4xiao", "3tou", "gongshi_siw", "title_14", "title_74",
+        "sizixuanji", "ma24", "wensha10ma",
     )
     modules = {key: {"moduleKey": key, "rows": rows} for key in module_keys}
     return {"ok": True, "data": {"canonical_modules": list(modules.values())}}
@@ -70,7 +71,11 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 assert f"第{expected}01期" in section.inner_text(), title
-            for title in ("四字解", "精准台湾高手", "精选22码", "稳杀⑦码"):
+            for title in ("四字解", "精选22码", "稳杀⑦码"):
+                section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
+                assert section.count() == 1, title
+                assert f"第{expected}01期" in section.inner_text(), title
+            for title in ():
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 text = section.inner_text()

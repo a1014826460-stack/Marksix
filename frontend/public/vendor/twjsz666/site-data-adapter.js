@@ -8,10 +8,10 @@
     { id: "four-xiao-odds", titlePattern: "单双各四肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["danshuang4xiao"], rendererName: "renderFourXiaoOdds", issueGroups: 9, supplierSentinels: ["单肖"] },
     { id: "one-head-one-code", titlePattern: "单车变宝马", containerSelector: ".pad#yxym", classification: "unavailable", moduleKeys: [], rendererName: "renderOneHeadOneCodeUnavailable", issueGroups: 1, supplierSentinels: ["24码中特"] },
     { id: "fortune-nine-xiao", titlePattern: "发财⑨肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["9xzt"], rendererName: "renderFortuneNineXiao", issueGroups: 9, supplierSentinels: ["发财⑨肖"] },
-    { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "composite", moduleKeys: ["3tou", "gongshi_siw"], rendererName: "renderThreeHeadFourTail", issueGroups: 9, supplierSentinels: ["三头"] },
+    { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["three_head_four_tail"], rendererName: "renderThreeHeadFourTail", issueGroups: 9, supplierSentinels: ["三头"] },
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
-    { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderFourCharacterFlatXiaoUnavailable", issueGroups: 9, supplierSentinels: ["四字解"] },
-    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderExpertPublicationsUnavailable", issueGroups: 9, supplierSentinels: ["临高高手", "060期"] },
+    { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["sizixuanji"], rendererName: "renderFourCharacterFlatXiao", issueGroups: 9, supplierSentinels: ["四字解"] },
+    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderExpertPublications", issueGroups: 1, supplierSentinels: ["临高高手", "060期"] },
     { id: "official-gallery", titlePattern: "正版图库", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["正版图库"] },
     { id: "double-wave", titlePattern: "双波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["shuangbo"], rendererName: "renderShuangBoHistory", issueGroups: 9, supplierSentinels: ["双波"] },
     { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_14"], rendererName: "renderPoultryBeast", issueGroups: 9, supplierSentinels: ["家禽"] },
@@ -21,11 +21,11 @@
     { id: "seven-tail-special", titlePattern: "七尾中特", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_74"], rendererName: "renderSevenTail", issueGroups: 9, supplierSentinels: ["七尾"] },
     { id: "before-bet-selection", titlePattern: "小康早到来", containerSelector: ".box.pad", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 9, supplierSentinels: ["精选："] },
     { id: "flat-one-tail", titlePattern: "平特一尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1wei"], rendererName: "renderFlatOneTail", issueGroups: 9, supplierSentinels: ["平特一尾"] },
-    { id: "selected-twenty-two-code", titlePattern: "精选22码", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderSelectedTwentyTwoUnavailable", issueGroups: 9, supplierSentinels: ["精选22码"] },
+    { id: "selected-twenty-two-code", titlePattern: "精选22码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["selected_22_codes"], rendererName: "renderSelectedTwentyTwo", issueGroups: 9, supplierSentinels: ["精选22码"] },
     { id: "kill-two-xiao", titlePattern: "绝杀二肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha2xiao"], rendererName: "renderKillTwoXiao", issueGroups: 9, supplierSentinels: ["绝杀二肖"] },
     { id: "kill-one-wave", titlePattern: "绝杀①波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["jueshabanbo"], rendererName: "renderKillOneWave", issueGroups: 9, supplierSentinels: ["绝杀①波"] },
     { id: "kill-one-tail", titlePattern: "绝杀①尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha1wei"], rendererName: "renderKillOneTail", issueGroups: 9, supplierSentinels: ["绝杀①尾"] },
-    { id: "kill-seven-code", titlePattern: "稳杀⑦码", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderKillSevenCodeUnavailable", issueGroups: 9, supplierSentinels: ["稳杀⑦码"] },
+    { id: "kill-seven-code", titlePattern: "稳杀⑦码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["steady_kill_7_codes"], rendererName: "renderKillSevenCode", issueGroups: 9, supplierSentinels: ["稳杀⑦码"] },
     { id: "one-sentence-special", titlePattern: "一句话中特码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["yijuzhenyan"], rendererName: "renderOneSentenceSpecial", issueGroups: 9, supplierSentinels: ["一句话"] },
     { id: "zodiac-knowledge", titlePattern: "属性知识", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["sx.html"] },
     { id: "fast-results-footer", titlePattern: "最快开奖", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["白小姐"] },
@@ -250,7 +250,13 @@
   }
 
   function renderStaticSection() {}
-  function renderExpertPublicationsUnavailable(section) { clearUnavailableSlots(section); }
+  function renderExpertPublications(section, module) {
+    var row = distinctRows(module)[0];
+    Array.prototype.forEach.call(section.querySelectorAll("li"), function (item) {
+      clearLeaves(item);
+      writeLeaf(item, row ? "第" + issueOf(row) + "期 后端资料" : "后端资料加载中");
+    });
+  }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
   function renderFourXiaoOdds(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 32); }); }
   function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
@@ -258,7 +264,7 @@
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
   function renderThreeHeadFourTail(section, module, modules) {
     var heads = distinctRows(module);
-    var tails = distinctRows(modules.gongshi_siw);
+    var tails = heads;
     sectionRows(section).forEach(function (tr, index) {
       var cells = rowCells(tr);
       var head = heads[index];
@@ -275,6 +281,7 @@
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
+  function renderFourCharacterFlatXiao(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "").slice(0, 16); }); }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }
   function renderPoultryBeast(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 20); }); }
 
@@ -282,8 +289,10 @@
   function renderSevenTail(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 28); }); }
 
   function renderSelectedTwentyTwoUnavailable(section) { clearUnavailableSlots(section); }
+  function renderSelectedTwentyTwo(section, module) { renderTokenHistory(section, module, function (row) { return tokenValues(row).slice(0, 22).join("-"); }); }
 
   function renderKillSevenCodeUnavailable(section) { clearUnavailableSlots(section); }
+  function renderKillSevenCode(section, module) { renderTokenHistory(section, module, function (row) { return tokenValues(row).slice(0, 7).join("-"); }); }
 
 
   function moduleMap(result) {
@@ -323,7 +332,7 @@
     if (!contract) throw new Error("Unknown visible twjsz666 section: " + title);
     var renderers = {
       renderStaticSection: renderStaticSection,
-      renderExpertPublicationsUnavailable: renderExpertPublicationsUnavailable,
+      renderExpertPublications: renderExpertPublications,
       renderFourXiaoOddsUnavailable: renderFourXiaoOddsUnavailable,
       renderFourXiaoOdds: renderFourXiaoOdds,
       renderOneHeadOneCodeUnavailable: renderOneHeadOneCodeUnavailable,
@@ -332,6 +341,7 @@
       renderThreeHeadFourTail: renderThreeHeadFourTail,
       renderPingTeXiaoHistory: renderPingTeXiaoHistory,
       renderFourCharacterFlatXiaoUnavailable: renderFourCharacterFlatXiaoUnavailable,
+      renderFourCharacterFlatXiao: renderFourCharacterFlatXiao,
       renderShuangBoHistory: renderShuangBoHistory,
       renderPoultryBeastUnavailable: renderPoultryBeastUnavailable,
       renderPoultryBeast: renderPoultryBeast,
@@ -342,23 +352,17 @@
       renderSevenTail: renderSevenTail,
       renderFlatOneTail: renderFlatOneTail,
       renderSelectedTwentyTwoUnavailable: renderSelectedTwentyTwoUnavailable,
+      renderSelectedTwentyTwo: renderSelectedTwentyTwo,
       renderKillTwoXiao: renderKillTwoXiao,
       renderKillOneWave: renderKillOneWave,
       renderKillOneTail: renderKillOneTail,
       renderKillSevenCodeUnavailable: renderKillSevenCodeUnavailable,
+      renderKillSevenCode: renderKillSevenCode,
       renderOneSentenceSpecial: renderOneSentenceSpecial
     };
     var renderer = renderers[contract.rendererName];
     if (!renderer) throw new Error("Unknown twjsz666 renderer: " + contract.rendererName);
     renderer(section, modules[contract.moduleKeys[0]], modules);
-  }
-
-  function clearExpertPublicationLinks(section) {
-    Array.prototype.forEach.call(section.querySelectorAll("li"), function (item) {
-      var leaves = textNodes(item);
-      leaves.forEach(function (leaf) { leaf.nodeValue = ""; });
-      writeLeaf(item, "暂无后端资料");
-    });
   }
 
   function renderPredictions(result, lotteryType) {
@@ -368,7 +372,6 @@
       if (!section.querySelector(".list-title")) return;
       updateTitle(section, lottery);
       renderSection(section, modules);
-      if (/精准台湾高手/.test(String((section.querySelector(".list-title") || {}).textContent || ""))) clearExpertPublicationLinks(section);
     });
     Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
       clearUnavailableSlots(card);

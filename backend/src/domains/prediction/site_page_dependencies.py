@@ -148,6 +148,7 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("juesha2xiao", 473), ("9xzt", 49),
             ("danshuang4xiao", 31), ("3tou", 12), ("gongshi_siw", 491),
             ("title_14", 14), ("title_74", 74),
+            ("sizixuanji", 52), ("ma24", 34), ("wensha10ma", 481),
         )
     ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is

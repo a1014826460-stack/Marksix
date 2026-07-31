@@ -39,7 +39,6 @@
     <div><span data-draw-value>加载开奖资料中</span></div>
     <div><span data-draw-value>加载开奖资料中</span></div>
     <div><span data-draw-value>加载开奖资料中</span></div>
-    <div></div>
 </div>
 <script>
     var KJTB ={
@@ -63,7 +62,7 @@
                     item.removeAttribute("style");
                     item.removeAttribute("class");
                 }
-                var node = that.getEl(dom,ind,"DIV");
+                var node = dom.querySelectorAll(':scope > div')[ind];
                 node.className="cur";
                 that.cur(dom,el,node);
             });
@@ -107,15 +106,8 @@
             el.style.borderColor = data["color"];
             node.style.borderColor = data["color"];
 
-            var tid = node.getAttribute("_tid");
-            if(tid){
-                clearTimeout(parseInt(tid));
-                node.removeAttribute("_tid");
-                return;
-            }
-            node.innerHTML = `
-			<iframe class="KJ-IFRAME" src="${data["url"]}" width="100%" height="${data["height"]}" frameborder="0" scrolling="no"></iframe>
-		`;
+            // The panel itself is the site-owned draw slot; do not overlay it
+            // with a second history iframe that hides the selected result.
         },
         leave(item){
             var that = this;

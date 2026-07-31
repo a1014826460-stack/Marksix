@@ -26,6 +26,7 @@ export default defineVendorSiteManifest({
       "4xiao8ma", "pt1xiao", "pt3xiao", "juesha1wei", "juesha2xiao", "9xzt",
       "sitouzhongte", "juesha1xiao", "qinqi",
       "danshuang4xiao", "3tou", "gongshi_siw", "title_14", "title_74",
+      "sizixuanji", "ma24", "wensha10ma",
     ],
     runtime: {
       drawSelector: ".KJ-TabBox",
