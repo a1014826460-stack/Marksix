@@ -364,7 +364,7 @@
 
 </head>
 
-<body style="background:skyblue;" data-site-key="twjsz666" data-page-title="开奖记录">
+<body style="background:skyblue;" data-site-key="twjsz666" data-page-title="开奖记录" data-history-lottery-type="3">
 <div class="container">
     <div class="linkIndex">
         <div>
@@ -400,7 +400,8 @@
         var nowTime = new Date();
 
 
-        historyJsKj466.src = '/index/ajax/ttklsjl?v=' + nowTime.getTime();
+        var lotteryType = new URLSearchParams(window.location.search).get('lottery_type') || '3';
+        historyJsKj466.src = '/index/ajax/ttklsjl?lottery_type=' + encodeURIComponent(lotteryType) + '&v=' + nowTime.getTime();
 
         document.body.appendChild(historyJsKj466);
 

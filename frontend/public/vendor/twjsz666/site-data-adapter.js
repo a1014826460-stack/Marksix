@@ -5,20 +5,20 @@
   if (!siteConfig) return;
 
   var SECTION_CONTRACTS = Object.freeze([
-    { id: "four-xiao-odds", titlePattern: "单双各四肖", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderFourXiaoOddsUnavailable", issueGroups: 9, supplierSentinels: ["单肖"] },
+    { id: "four-xiao-odds", titlePattern: "单双各四肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["danshuang4xiao"], rendererName: "renderFourXiaoOdds", issueGroups: 9, supplierSentinels: ["单肖"] },
     { id: "one-head-one-code", titlePattern: "单车变宝马", containerSelector: ".pad#yxym", classification: "unavailable", moduleKeys: [], rendererName: "renderOneHeadOneCodeUnavailable", issueGroups: 1, supplierSentinels: ["24码中特"] },
     { id: "fortune-nine-xiao", titlePattern: "发财⑨肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["9xzt"], rendererName: "renderFortuneNineXiao", issueGroups: 9, supplierSentinels: ["发财⑨肖"] },
-    { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderThreeHeadFourTailUnavailable", issueGroups: 9, supplierSentinels: ["三头"] },
+    { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "composite", moduleKeys: ["3tou", "gongshi_siw"], rendererName: "renderThreeHeadFourTail", issueGroups: 9, supplierSentinels: ["三头"] },
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
     { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderFourCharacterFlatXiaoUnavailable", issueGroups: 9, supplierSentinels: ["四字解"] },
     { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderExpertPublicationsUnavailable", issueGroups: 9, supplierSentinels: ["临高高手", "060期"] },
     { id: "official-gallery", titlePattern: "正版图库", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["正版图库"] },
     { id: "double-wave", titlePattern: "双波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["shuangbo"], rendererName: "renderShuangBoHistory", issueGroups: 9, supplierSentinels: ["双波"] },
-    { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderPoultryBeastUnavailable", issueGroups: 9, supplierSentinels: ["家禽"] },
+    { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_14"], rendererName: "renderPoultryBeast", issueGroups: 9, supplierSentinels: ["家禽"] },
     { id: "flat-three-xiao", titlePattern: "平特③肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt3xiao"], rendererName: "renderFlatThreeXiao", issueGroups: 9, supplierSentinels: ["平特③肖"] },
     { id: "four-xiao-eight-code", titlePattern: "④肖⑧码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["4xiao8ma"], rendererName: "renderFourXiaoEightCode", issueGroups: 9, supplierSentinels: ["④肖⑧码"] },
     { id: "big-small-special", titlePattern: "大小中特", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["daxiao"], rendererName: "renderDaXiaoHistory", issueGroups: 9, supplierSentinels: ["大小中特"] },
-    { id: "seven-tail-special", titlePattern: "七尾中特", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderSevenTailUnavailable", issueGroups: 9, supplierSentinels: ["七尾"] },
+    { id: "seven-tail-special", titlePattern: "七尾中特", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_74"], rendererName: "renderSevenTail", issueGroups: 9, supplierSentinels: ["七尾"] },
     { id: "before-bet-selection", titlePattern: "小康早到来", containerSelector: ".box.pad", classification: "composite", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 9, supplierSentinels: ["精选："] },
     { id: "flat-one-tail", titlePattern: "平特一尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1wei"], rendererName: "renderFlatOneTail", issueGroups: 9, supplierSentinels: ["平特一尾"] },
     { id: "selected-twenty-two-code", titlePattern: "精选22码", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderSelectedTwentyTwoUnavailable", issueGroups: 9, supplierSentinels: ["精选22码"] },
@@ -252,13 +252,34 @@
   function renderStaticSection() {}
   function renderExpertPublicationsUnavailable(section) { clearUnavailableSlots(section); }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
+  function renderFourXiaoOdds(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 32); }); }
   function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
 
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
+  function renderThreeHeadFourTail(section, module, modules) {
+    var heads = distinctRows(module);
+    var tails = distinctRows(modules.gongshi_siw);
+    sectionRows(section).forEach(function (tr, index) {
+      var cells = rowCells(tr);
+      var head = heads[index];
+      var tail = tails[index];
+      if (!head || !tail) {
+        for (var cellIndex = 0; cellIndex < cells.length; cellIndex += 1) clearLeaves(cells[cellIndex]);
+        if (cells[0]) writeLeaf(cells[0], "暂无后端资料");
+        return;
+      }
+      var issue = "第" + issueOf(head).replace(/^(第|期)/g, "") + "期";
+      var value = "三头【" + formatLabels(head, "、") + "】四尾【" + formatLabels(tail, "、") + "】";
+      if (cells.length === 1) writeLeaf(cells[0], issue + " " + value + " " + resultText(head));
+      else { writeLeaf(cells[0], issue); writeLeaf(cells[1], value); if (cells[2]) writeLeaf(cells[2], resultText(head)); }
+    });
+  }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }
+  function renderPoultryBeast(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 20); }); }
 
   function renderSevenTailUnavailable(section) { clearUnavailableSlots(section); }
+  function renderSevenTail(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 28); }); }
 
   function renderSelectedTwentyTwoUnavailable(section) { clearUnavailableSlots(section); }
 
@@ -304,17 +325,21 @@
       renderStaticSection: renderStaticSection,
       renderExpertPublicationsUnavailable: renderExpertPublicationsUnavailable,
       renderFourXiaoOddsUnavailable: renderFourXiaoOddsUnavailable,
+      renderFourXiaoOdds: renderFourXiaoOdds,
       renderOneHeadOneCodeUnavailable: renderOneHeadOneCodeUnavailable,
       renderFortuneNineXiao: renderFortuneNineXiao,
       renderThreeHeadFourTailUnavailable: renderThreeHeadFourTailUnavailable,
+      renderThreeHeadFourTail: renderThreeHeadFourTail,
       renderPingTeXiaoHistory: renderPingTeXiaoHistory,
       renderFourCharacterFlatXiaoUnavailable: renderFourCharacterFlatXiaoUnavailable,
       renderShuangBoHistory: renderShuangBoHistory,
       renderPoultryBeastUnavailable: renderPoultryBeastUnavailable,
+      renderPoultryBeast: renderPoultryBeast,
       renderFlatThreeXiao: renderFlatThreeXiao,
       renderFourXiaoEightCode: renderFourXiaoEightCode,
       renderDaXiaoHistory: renderDaXiaoHistory,
       renderSevenTailUnavailable: renderSevenTailUnavailable,
+      renderSevenTail: renderSevenTail,
       renderFlatOneTail: renderFlatOneTail,
       renderSelectedTwentyTwoUnavailable: renderSelectedTwentyTwoUnavailable,
       renderKillTwoXiao: renderKillTwoXiao,
@@ -325,7 +350,7 @@
     };
     var renderer = renderers[contract.rendererName];
     if (!renderer) throw new Error("Unknown twjsz666 renderer: " + contract.rendererName);
-    renderer(section, modules[contract.moduleKeys[0]]);
+    renderer(section, modules[contract.moduleKeys[0]], modules);
   }
 
   function clearExpertPublicationLinks(section) {
@@ -359,19 +384,49 @@
     return result;
   }
 
-  if (window.parent !== window && /\/kai\.html$/.test(window.location.pathname)) {
+  if (/\/kai\.html$/.test(window.location.pathname)) {
+    function renderDrawPanel(type, result) {
+      var data = result && result.data || {};
+      while (data && !data.current_issue && data.data) data = data.data;
+      var panelIndex = siteConfig.lotteries.map(function (item) { return item.lotteryType; }).indexOf(Number(type));
+      var panel = window.document.querySelectorAll(".KJ-TabBox > div")[panelIndex];
+      if (!panel) return;
+      var balls = Array.isArray(data.balls) ? data.balls : [];
+      var special = balls.filter(function (ball) { return ball && ball.is_special; })[0] || balls[balls.length - 1] || {};
+      var issue = String(data.current_issue || data.issue || "").trim();
+      var values = balls.map(function (ball) { return String(ball.value || "").padStart(2, "0"); }).filter(Boolean);
+      var content = panel.querySelector("[data-draw-value]");
+      if (!content) return;
+      content.textContent = issue
+        ? "第" + issue + "期 开奖：" + values.join(" ") + (special.zodiac ? " 特别号" + String(special.value || "").padStart(2, "0") + special.zodiac : "")
+        : "暂无开奖资料";
+    }
+
     function bindDrawTabs() {
       Array.prototype.forEach.call(window.document.querySelectorAll(".KJ-TabBox li"), function (item) {
         item.addEventListener("click", function () {
           var type = Number(item.getAttribute("data-lottery-type"));
+          if (isSupportedLotteryType(type) && window.LotterySiteDataClient) {
+            window.LotterySiteDataClient.create({ siteKey: siteConfig.siteKey }).loadDraw({ lotteryType: type }).then(function (result) {
+              renderDrawPanel(type, result);
+            });
+          }
           if (type && window.parent && typeof window.parent.postMessage === "function") {
             window.parent.postMessage({ type: "lottery-change", siteKey: siteConfig.siteKey, lotteryType: type }, window.location.origin);
           }
         });
       });
     }
-    if (window.document.readyState === "loading") window.addEventListener("DOMContentLoaded", bindDrawTabs);
-    else bindDrawTabs();
+    function initializeDrawTabs() {
+      bindDrawTabs();
+      if (window.LotterySiteDataClient) {
+        window.LotterySiteDataClient.create({ siteKey: siteConfig.siteKey }).loadDraw({ lotteryType: 3 }).then(function (result) {
+          renderDrawPanel(3, result);
+        });
+      }
+    }
+    if (window.document.readyState === "loading") window.addEventListener("DOMContentLoaded", initializeDrawTabs);
+    else initializeDrawTabs();
     return;
   }
 

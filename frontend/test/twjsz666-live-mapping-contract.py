@@ -18,6 +18,7 @@ def prediction_payload(lottery_type: int) -> dict:
     module_keys = (
         "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "4xiao8ma", "daxiao",
         "pt1wei", "juesha2xiao", "jueshabanbo", "juesha1wei", "yijuzhenyan",
+        "danshuang4xiao", "3tou", "gongshi_siw", "title_14", "title_74",
     )
     modules = {key: {"moduleKey": key, "rows": rows} for key in module_keys}
     return {"ok": True, "data": {"canonical_modules": list(modules.values())}}
@@ -35,7 +36,13 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
             lottery_type = int(match.group(1)) if match else 3
             requests.append((request.url, lottery_type))
             if "/draw" in request.url:
-                route.fulfill(json={"ok": True, "data": {"issue": f"{lottery_type}99"}})
+                route.fulfill(json={"ok": True, "data": {
+                    "current_issue": f"{lottery_type}99",
+                    "balls": [
+                        {"value": "01", "zodiac": "鼠", "is_special": False},
+                        {"value": "49", "zodiac": "猪", "is_special": True},
+                    ],
+                }})
             else:
                 route.fulfill(json=prediction_payload(lottery_type))
 
@@ -59,7 +66,11 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 assert f"第{expected}01期" in section.inner_text(), title
-            for title in ("单双各四肖", "三头", "四字解", "精准台湾高手", "家禽VS野兽", "七尾中特", "精选22码", "稳杀⑦码"):
+            for title in ("单双各四肖", "三头", "家禽VS野兽", "七尾中特"):
+                section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
+                assert section.count() == 1, title
+                assert f"第{expected}01期" in section.inner_text(), title
+            for title in ("四字解", "精准台湾高手", "精选22码", "稳杀⑦码"):
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 text = section.inner_text()
@@ -71,5 +82,10 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         article = page.locator('[data-prediction-article="true"]')
         assert "第301期" in article.inner_text()
         assert "2025060期" not in article.inner_text()
+        page.goto(f"{base_url}/vendor/twjsz666/kai.html", wait_until="domcontentloaded")
+        page.wait_for_timeout(250)
+        draw_value = page.locator("[data-draw-value]").first.inner_text()
+        assert "第399期 开奖：01 49" in draw_value
+        assert "特别号49猪" in draw_value
         assert {lottery_type for _, lottery_type in requests} >= {1, 2, 3}
         browser.close()

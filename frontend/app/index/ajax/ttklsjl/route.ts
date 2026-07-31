@@ -20,14 +20,18 @@ export async function GET(request: Request) {
   const match =
     matchSiteRequest(request, "twcaibawang") ||
     matchSiteRequest(request, "twjinniu") ||
-    matchSiteRequest(request, "twcf888")
+    matchSiteRequest(request, "twcf888") ||
+    matchSiteRequest(request, "twjsz666")
   if (!match) {
     return new NextResponse("Not found", { status: 404 })
   }
 
   const { searchParams } = new URL(request.url)
   const requestedYear = Number(searchParams.get("year")) || new Date().getFullYear()
-  const lotteryType = match.site.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
+  const requestedLotteryType = Number(searchParams.get("lottery_type"))
+  const lotteryType = requestedLotteryType === 1 || requestedLotteryType === 2 || requestedLotteryType === 3
+    ? requestedLotteryType
+    : match.site.defaultLotteryTypeId || DEFAULT_LOTTERY_TYPE
 
   try {
     const history = await backendFetchJson<DrawHistoryResponse>("/public/draw-history", {
