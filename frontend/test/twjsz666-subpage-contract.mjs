@@ -29,6 +29,9 @@ for (const name of pageNames) {
   if (!title.startsWith("台湾金手指")) fail(`${name}: title is not branded: ${title}`)
   if (!/<meta\s+name="keywords"\s+content="台湾金手指,www\.twjsz666\.com/i.test(html)) fail(`${name}: keywords are not site-owned`)
   if (!/<meta\s+name="description"\s+content="台湾金手指[^\"]*www\.twjsz666\.com"/i.test(html)) fail(`${name}: description is not site-owned`)
+  if (!/<link\s+rel="icon"\s+type="image\/x-icon"\s+href="\/vendor\/twjsz666\/static\/picture\/favicon\.ico"/i.test(html)) {
+    fail(`${name}: site favicon is not configured`)
+  }
   if (configPosition < 0 || adapterPosition < configPosition) fail(`${name}: site config/subpage adapter order is invalid`)
   if (/data-cf-beacon|crossorigin="anonymous"|integrity="sha512-/i.test(html)) fail(`${name}: supplier tracking attributes remain`)
   if (/v4513226cdae34746b4dedf0b4dfa099e1781791509496\.js/i.test(html)) fail(`${name}: supplier tracking script remains`)
@@ -39,7 +42,7 @@ for (const name of pageNames) {
     if (!url || url.includes("${") || url.startsWith("#")) continue
     if (/^(?:https?:)?\/\//i.test(url) || /^(?:javascript|data):/i.test(url)) fail(`${name}: unsafe URL ${url}`)
     if (url.startsWith("/")) {
-      const allowed = ["/favicon.ico", "/twjsz666", "/vendor/twjsz666/", "/vendor/_shared/", "/uploads/"]
+      const allowed = ["/favicon.ico", "/twjsz666", "/vendor/twjsz666/", "/vendor/shengshi8800/kj/local.html", "/vendor/_shared/", "/uploads/"]
       if (!allowed.some((prefix) => url === prefix || url.startsWith(prefix))) fail(`${name}: route escapes the site boundary: ${url}`)
       continue
     }
@@ -56,7 +59,9 @@ const kai = source("kai.html")
 for (const lotteryType of ["3", "2", "1"]) {
   if (!kai.includes(`data-lottery-type="${lotteryType}"`)) fail(`kai: missing lottery type ${lotteryType}`)
 }
-if ((kai.match(/\/vendor\/twjsz666\/wylhc\.html/g) || []).length !== 3) fail("kai: draw tabs must use site-owned record URLs")
+if ((kai.match(/\/vendor\/shengshi8800\/kj\/local\.html\?lottery_type=/g) || []).length < 3) {
+  fail("kai: draw tabs must use the unified same-origin draw module")
+}
 
 const sx = source("sx.html")
 for (const image of ["long", "tu", "hu", "niu", "shu", "zhu", "gou", "ji", "hou", "yang", "ma", "she"]) {

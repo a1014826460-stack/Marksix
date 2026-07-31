@@ -17,6 +17,7 @@ export default defineVendorSiteManifest({
     forumTitle: "台湾金手指",
     metadataTitle: "台湾金手指",
     metadataDescription: "台湾金手指预测资料",
+    faviconPath: "/vendor/twjsz666/static/picture/favicon.ico",
   },
   bridge: {
     api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" },

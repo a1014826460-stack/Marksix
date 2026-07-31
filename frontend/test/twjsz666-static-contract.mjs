@@ -14,6 +14,16 @@ visit(root)
 
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8")
 if (!index.includes('data-site-key="twjsz666"')) throw new Error("missing twjsz666 marker")
+const faviconPath = "/vendor/twjsz666/static/picture/favicon.ico"
+if (!fs.existsSync(path.join(root, "static", "picture", "favicon.ico"))) {
+  throw new Error("missing site favicon asset")
+}
+for (const file of fs.readdirSync(root).filter((entry) => entry.endsWith(".html"))) {
+  const source = fs.readFileSync(path.join(root, file), "utf8")
+  if (!new RegExp(`<link\\s+rel=["']icon["']\\s+type=["']image/x-icon["']\\s+href=["']${faviconPath}["']`, "i").test(source)) {
+    throw new Error(`missing twjsz666 favicon link in ${file}`)
+  }
+}
 for (const script of [
   'src="site-config.js"',
   'src="/vendor/_shared/lottery-site-data-client.js"',
