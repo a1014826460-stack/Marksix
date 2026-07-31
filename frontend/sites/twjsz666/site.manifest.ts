@@ -22,9 +22,8 @@ export default defineVendorSiteManifest({
     api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" },
     autoLoad: { draw: true, prediction: true },
     predictionModuleKeys: [
-      "yijuzhenyan", "shuangbo", "7xiao7ma", "pt2xiao", "jueshabanbo",
-      "pt1wei", "daxiao", "4xiao8ma", "pt1xiao", "title_5", "title_47",
-      "pt3xiao", "juesha1xiao", "danshuangtema", "sixiao_sima", "juesha1wei",
+      "yijuzhenyan", "shuangbo", "jueshabanbo", "pt1wei", "daxiao",
+      "4xiao8ma", "pt1xiao", "pt3xiao", "juesha1wei", "juesha2xiao", "9xzt",
     ],
     runtime: {
       drawSelector: ".KJ-TabBox",

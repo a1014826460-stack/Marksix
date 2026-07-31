@@ -14,18 +14,21 @@ for (const token of [
 ]) if (!config.includes(token)) throw new Error(`missing site config token ${token}`)
 
 for (const token of [
-  "renderSanTouSiWeiHistory",
-  "renderYixiaoYimaHistory",
+  "renderThreeHeadFourTailUnavailable",
+  "renderOneHeadOneCodeUnavailable",
   "renderShuangBoHistory",
   "renderPingTeXiaoHistory",
   "renderDaXiaoHistory",
-  "renderUnavailableSection",
+  "SECTION_CONTRACTS",
+  "Unknown visible twjsz666 section",
   "loadDraw({ lotteryType: selected })",
-  "loadPredictions({ lotteryType: selected, historyLimit: HISTORY_LIMIT })",
+  "loadPredictions({ lotteryType: selected, historyLimit: historyLimitForPage() })",
   "event.source !== drawFrame.contentWindow",
   "event.origin !== window.location.origin",
   "暂无后端资料",
 ]) if (!adapter.includes(token)) throw new Error(`missing adapter contract token ${token}`)
+
+if (adapter.includes("function renderUnavailableSection")) throw new Error("generic unavailable section fallback remains")
 
 for (const prohibited of ["document.createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "rowDisplay"]) {
   if (adapter.includes(prohibited)) throw new Error(`forbidden DOM operation ${prohibited}`)
