@@ -193,7 +193,7 @@
     });
   }
 
-  function ensureDataAttrs(cell, fonts, group) {
+  function ensureDataAttrs(fonts, group, writeResult) {
     // Assign data-prediction-* attributes so CSS can enforce display:block
     // and contracts can locate the three independent leaf nodes.
     if (fonts[0] && !fonts[0].hasAttribute("data-prediction-issue")) {
@@ -202,12 +202,15 @@
     if (group && !group.hasAttribute("data-prediction-content")) {
       group.setAttribute("data-prediction-content", "");
     }
-    if (fonts.length > 1 && fonts[fonts.length - 1] && !fonts[fonts.length - 1].hasAttribute("data-prediction-result")) {
+    // Only mark the result leaf when the module actually writes a result;
+    // a writeResult:false module must not carry an empty semantic slot.
+    if (writeResult && fonts.length > 1 && fonts[fonts.length - 1] && !fonts[fonts.length - 1].hasAttribute("data-prediction-result")) {
       fonts[fonts.length - 1].setAttribute("data-prediction-result", "");
     }
   }
 
   function renderInlineSlots(section, module, options) {
+    var warnedLegacyFallback = false;
     Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
       var row = rowData(module, index), cell = rowCells(tr)[0];
       var fonts = cell ? cell.querySelectorAll(":scope > font") : [];
@@ -224,18 +227,25 @@
           setText(contentSlot, options.wrap ? options.wrap(value) : value);
           if (options.writeResult !== false && resultSlot) setText(resultSlot, resultText(row));
         } else {
-          // Legacy fallback: no data-prediction-* slots and no .zl group.
-          // This branch should not be reached after the entry HTML is
-          // restructured with data-prediction-issue/content/result leaves.
-          // Write the issue prefix to the first font and stop; do not
-          // concatenate three fields into one text node.
+          // Legacy fallback: intentionally render ONLY the issue prefix.
+          // Content and result are deliberately dropped — never concatenated
+          // into one text node — so a module whose entry HTML lacks the
+          // three data-prediction-* leaf nodes is visibly incomplete and
+          // must be restructured to restore full rendering. Update the
+          // entry HTML with data-prediction-issue/content/result leaves.
+          if (!warnedLegacyFallback) {
+            warnedLegacyFallback = true;
+            if (typeof console !== "undefined" && typeof console.warn === "function") {
+              console.warn("prediction module without data-prediction-* leaves: content/result hidden, restructure the entry HTML");
+            }
+          }
           if (fonts[0]) {
             setText(fonts[0], options.prefix(row));
             fonts[0].setAttribute("data-prediction-issue", "");
           }
         }
       } else {
-        ensureDataAttrs(cell, fonts, group);
+        ensureDataAttrs(fonts, group, options.writeResult);
         setText(fonts[0], options.prefix(row));
         setText(group, options.wrap ? options.wrap(value) : value);
         if (options.writeResult) setText(fonts[fonts.length - 1], resultText(row));
