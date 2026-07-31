@@ -62,6 +62,32 @@ def main() -> None:
             marker = article.locator(":scope > p").nth(4).locator("span[style*='background-color']")
             assert marker.count() == 1
             assert "rgb(255, 255, 0)" in (marker.get_attribute("style") or "")
+
+            # The visible draw-history page must replace every supplier issue
+            # and ball with the same-origin draw-history payload.
+            page.route("**/api/draw-history?**", lambda route: route.fulfill(json={
+                "items": [{
+                    "issue": "510", "date": "2026-07-31", "balls": [
+                        {"value": "01", "zodiac": "鼠", "color": "red"},
+                        {"value": "12", "zodiac": "牛", "color": "blue"},
+                        {"value": "23", "zodiac": "虎", "color": "green"},
+                        {"value": "34", "zodiac": "兔", "color": "red"},
+                        {"value": "45", "zodiac": "龙", "color": "blue"},
+                        {"value": "46", "zodiac": "蛇", "color": "green"},
+                    ],
+                    "specialBall": {"value": "49", "zodiac": "猪", "color": "red"},
+                }]
+            }))
+            base_url = os.environ.get("SITE_TEST_BASE_URL", "http://127.0.0.1:3000")
+            page.goto(base_url + "/vendor/twbst528/history.html", wait_until="domcontentloaded")
+            history = page.locator("#lishi")
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and "第510期开奖结果" not in history.inner_text():
+                page.wait_for_timeout(100)
+            assert "第510期开奖结果" in history.inner_text()
+            assert "第323期开奖结果" not in history.inner_text()
+            assert "49" in history.locator(".open-item").first.inner_text()
+            assert history.locator(".open-item").nth(1).inner_text().strip() == ""
         finally:
             browser.close()
 

@@ -1,4 +1,4 @@
-﻿html,
+html,
 body,
 div,
 span,
@@ -249,7 +249,7 @@ table {
     max-width: 750px;
     margin: 0 auto;
     font-size: 14px;
-    background: url(https://amxxc.cp567.cc/index_files/bg.png);
+    background: url(#
     min-height: 0vh;
 }
 
@@ -312,7 +312,7 @@ button,
 }
 
 .nav-bar {
-    background: url(https://amxxc.cp567.cc/index_files/navbg.jpg) center no-repeat;
+    background: url(# center no-repeat;
     background-size: cover;
     align-content: flex-start;
     justify-content: flex-start;
@@ -344,18 +344,18 @@ button,
 }
 
 .x-line {
-    background: url(https://amxxc.cp567.cc/index_files/wl-topbg.jpg) center no-repeat;
+    background: url(# center no-repeat;
     height: 0.26rem;
     background-size: cover;
 }
 
 .wl-bg {
-    background: url(https://amxxc.cp567.cc/index_files/wlbg1.jpg);
+    background: url(#
     background-size: 0.2rem 0.2rem;
 }
 
 .wl-bg2 {
-    background: url(https://amxxc.cp567.cc/index_files/wlbg2.jpg);
+    background: url(#
     background-size: 0.2rem 0.2rem;
 }
 
@@ -425,7 +425,7 @@ button,
 .foot-nav .inner .btn-down::after {
     display: block;
     content: '';
-    background: url(https://amxxc.cp567.cc/index_files/foot-downapp.gif) no-repeat center var(--w50);
+    background: url(# no-repeat center var(--w50);
     background-size: contain;
     height: 100%;
     width: 100%;
@@ -627,7 +627,7 @@ b {
 }
 
 .wu-bg {
-    background: url(https://amxxc.cp567.cc/index_files/wu-bg.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     -webkit-background-size: 100% auto;
     background-size: 100% auto;
     padding-top: 2.16rem;
@@ -770,22 +770,22 @@ b {
 }
 
 .u-list-look .look-menu span.look-menu1 i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-zan.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
 .u-list-look .look-menu span.look-menu2 i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-cai.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
 .u-list-look .look-menu span.look-menu3 i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-pl.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
 .u-list-look .look-menu span.look-menu4 i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-view.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
@@ -798,12 +798,12 @@ b {
 }
 
 .u-list-look .look-menu span.look-menu1 a.hover i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-zan-2.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
 .u-list-look .look-menu span.look-menu2 a.hover i {
-    background: url(https://amxxc.cp567.cc/index_files/cgi-cai-2.png) 0 0 no-repeat;
+    background: url(# 0 0 no-repeat;
     background-size: 0.96rem auto;
 }
 
@@ -830,7 +830,7 @@ b {
 
 .header-bar .ww {
     height: 1.4rem;
-    background: url(https://amxxc.cp567.cc/index_files/headbarbg.png) no-repeat;
+    background: url(# no-repeat;
     background-size: 100% 100%;
     line-height: 1.4rem;
     position: relative;
@@ -843,7 +843,7 @@ b {
     height: 100%;
     left: 0;
     top: 0;
-    background: url(https://amxxc.cp567.cc/index_files/back.png) center no-repeat;
+    background: url(# center no-repeat;
     -webkit-background-size: auto 0.7rem;
     background-size: auto 0.7rem;
 }
@@ -869,7 +869,7 @@ b {
 .header-bar .btn-sx span {
     display: block;
     padding-left: 0.76rem;
-    background: url(https://amxxc.cp567.cc/index_files/sx.png) 0 center no-repeat;
+    background: url(# 0 center no-repeat;
     -webkit-background-size: auto 0.56rem;
     background-size: auto 0.56rem;
 }
@@ -988,7 +988,7 @@ body {
     float: right;
     padding-left: 0.72rem;
     line-height: 1.16rem;
-    background: url(https://amxxc.cp567.cc/index_files/so.png) 0 center no-repeat;
+    background: url(# 0 center no-repeat;
     -webkit-background-size: auto 0.6rem;
     background-size: auto 0.6rem;
 }
@@ -1051,7 +1051,7 @@ body {
 .qishur-down {
     width: 100%;
     height: 39px;
-    background: url(https://amxxc.cp567.cc/index_files/down.png) right center no-repeat;
+    background: url(# right center no-repeat;
     background-size: 18px auto;
     position: relative;
 }
@@ -1760,7 +1760,7 @@ textarea {
     content: '\6700\65B0\6D88\606F';
     z-index: 1;
     padding: 0 var(--w48) 0 var(--w16);
-    background: url(https://amxxc.cp567.cc/index_files/icon-notice.png) no-repeat var(--w48) center #371B05;
+    background: url(# no-repeat var(--w48) center #371B05;
     background-size: var(--w32);
     font-size: var(--w32);
 }
@@ -1801,7 +1801,7 @@ textarea {
 .a-d-i .a-d-t.icon-pointer::after {
     display: inline-block;
     content: '';
-    background: url(https://amxxc.cp567.cc/libs/xs/img/gif.gif) no-repeat center right;
+    background: url(# no-repeat center right;
     background-size: contain;
     margin-left: var(--w60);
     margin-top: -2px;
@@ -1837,7 +1837,7 @@ textarea {
     -moz-appearance: none;
     -webkit-appearance: none;
     appearance: none;
-    background: url(https://amxxc.cp567.cc/libs/xs/img/arrow.png) no-repeat center right;
+    background: url(# no-repeat center right;
     background-size: .8rem;
 }
 
@@ -1848,7 +1848,7 @@ textarea {
 .search-box .mid.on .btn-clear {
     position: absolute;
     right: 0;
-    background: url(https://amxxc.cp567.cc/libs/xs/img/inputclear.png) no-repeat center center;
+    background: url(# no-repeat center center;
     background-size: .6rem;
     width: 1.2rem;
     height: 100%;
@@ -1954,7 +1954,7 @@ textarea {
     right: 0;
     display: inline-block;
     content: '';
-    background: url(https://amxxc.cp567.cc/libs/xs/img/hot.gif) no-repeat center center;
+    background: url(# no-repeat center center;
     background-size: contain;
     width: .9rem;
     height: .6rem;
@@ -1967,7 +1967,7 @@ textarea {
 .pics-items li.on a:after {
     display: inline-block;
     content: '';
-    background: url(https://amxxc.cp567.cc/libs/xs/img/z1.gif) no-repeat center center;
+    background: url(# no-repeat center center;
     background-size: contain;
     width: .65rem;
     height: .65rem;
@@ -1978,7 +1978,7 @@ textarea {
 
 .pics-items .loading {
     display: block;
-    background: url(https://amxxc.cp567.cc/libs/xs/img/loading-2.gif) no-repeat center center;
+    background: url(# no-repeat center center;
     background-size: contain;
     width: 1rem;
     height: 1rem;
@@ -2135,7 +2135,7 @@ textarea {
 .header-bar .btn-custom-select-year span {
     display: block;
     padding-left: .76rem;
-    background: url(https://amxxc.cp567.cc/index_files/icon-datetime.png) 0 center no-repeat;
+    background: url(# 0 center no-repeat;
     -webkit-background-size: auto .6rem;
     background-size: auto .6rem;
 }
@@ -2405,7 +2405,7 @@ textarea {
 .open-list.load::before {
     display: block;
     content: '';
-    background: url(https://amxxc.cp567.cc/libs/xs/img/loading-2.gif) no-repeat center center;
+    background: url(# no-repeat center center;
     background-size: .8rem;
     width: .8rem;
     height: .8rem;
@@ -2441,13 +2441,13 @@ textarea {
     left: var(--w20);
     bottom: var(--w23);
     width: var(--w6-18);
-    background: url(https://amxxc.cp567.cc/index_files/txt-amzl.png) no-repeat 25% center;
+    background: url(# no-repeat 25% center;
     background-size: 20%;
     image-rendering: -webkit-optimize-contrast;
 }
 
 .jz-box[data-type="hk"] .side {
-    background-image: url(https://amxxc.cp567.cc/index_files/txt-xgzl.png);
+    background-image: url(#
 }
 
 .jz-box .side h3 {
@@ -2521,7 +2521,7 @@ textarea {
 
 .jz2-box .side {
     position: relative;
-    background: url(https://amxxc.cp567.cc/index_files/bg-jz2-t-top.jpg?v=3) no-repeat;
+    background: url(# no-repeat;
     background-size: 100%;
     height: var(--w4-6);
 }
@@ -2539,7 +2539,7 @@ textarea {
 }
 
 .jz2-box .inner {
-    background: url(https://amxxc.cp567.cc/index_files/bg-jz2-t-mid.jpg?v=3) repeat-y;
+    background: url(# repeat-y;
     background-size: 100%;
 }
 
@@ -2555,17 +2555,17 @@ textarea {
 }  
   }
 .jz2-box .foot {
-    background: url(https://amxxc.cp567.cc/index_files/bg-jz2-t-bottom.jpg?v=3) no-repeat;
+    background: url(# no-repeat;
     background-size: 100%;
     height: var(--w7-4);
 }
 
 .jz2-box.bottom .side {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-jz2-b-top.jpg?v=3);
+    background-image: url(#
 }
 
 .jz2-box.bottom .inner {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-jz2-b-mid.jpg?v=3);
+    background-image: url(#
 }
 
 .jz2-box.bottom .inner .content {
@@ -2574,7 +2574,7 @@ textarea {
 }
 
 .jz2-box.bottom .foot {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-jz2-b-bottom.jpg?v=3);
+    background-image: url(#
 }
 
 .jz2-box.bottom .side::before {
@@ -2587,7 +2587,7 @@ textarea {
 
 .jzdh-box {
     position: relative;
-    background: url(https://amxxc.cp567.cc/index_files/bg-jzdh.jpg) no-repeat top;
+    background: url(# no-repeat top;
     background-size: 100%;
     height: var(--w2-04);
 }
@@ -2607,7 +2607,7 @@ textarea {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: url(https://amxxc.cp567.cc/index_files/txt-jzdh-column.png) no-repeat;
+    background: url(# no-repeat;
     background-size: contain;
     width: var(--w22);
     height: var(--w5);
@@ -2620,7 +2620,7 @@ textarea {
 }
 
 .tz-box {
-    background: url(https://amxxc.cp567.cc/index_files/bg-tz-top.png) no-repeat top;
+    background: url(# no-repeat top;
     background-size: 100%;
 }
 
@@ -2643,7 +2643,7 @@ textarea {
 }
 
 .tz-box .inner {
-    background: url(https://amxxc.cp567.cc/index_files/bg-tz-mid.png) repeat-y;
+    background: url(# repeat-y;
     background-size: contain;
     padding: 0 6.5%;
     font-size: var(--w32);
@@ -2651,7 +2651,7 @@ textarea {
 }
 
 .tz-box .foot {
-    background: url(https://amxxc.cp567.cc/index_files/bg-tz-bottom.png) no-repeat top;
+    background: url(# no-repeat top;
     background-size: 100%;
     height: var(--w9-7);
 }
@@ -2838,7 +2838,7 @@ textarea {
 }
 
 .kj-box {
-    background: url(https://amxxc.cp567.cc/index_files/bg-kj.jpg) no-repeat;
+    background: url(# no-repeat;
     background-size: cover;
     height: var(--w2-34);
 	font-weight: bold;
@@ -2946,13 +2946,13 @@ textarea {
 
 .lxlm-box,
 .sxsm-box {
-    background: url(https://amxxc.cp567.cc/index_files/bg-lxlm.jpg) no-repeat #261100;
+    background: url(# no-repeat #261100;
     background-size: cover;
     padding-bottom: var(--w60);
 }
 
 .sxsm-box {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-sxsm.jpg);
+    background-image: url(#
 }
 
 .lxlm-box .head,
@@ -2987,7 +2987,7 @@ textarea {
 .lxlm-box .inner .item,
 .sxsm-box .inner .item {
     position: relative;
-    background: url(https://amxxc.cp567.cc/index_files/bg-lxlm-item.png) no-repeat;
+    background: url(# no-repeat;
     width: var(--w3-44);
     height: var(--w5-44);
     background-size: contain;
@@ -3019,7 +3019,7 @@ textarea {
     height: var(--w16-8);
     display: block;
     content: '';
-    background: url(https://amxxc.cp567.cc/index_files/bg-lxlm-border.png) no-repeat;
+    background: url(# no-repeat;
     background-size: cover;
     z-index: 1;
 }
@@ -3037,7 +3037,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa {
 
 body:not(.appinner) .lxlm-box .inner .item.oa::after,
 body:not(.appinner) .sxsm-box .inner .item.oa::after {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-lxlm-border-onlyapp.png);
+    background-image: url(#
 }
 
 body:not(.appinner) .lxlm-box .inner .item.oa i,
@@ -3046,7 +3046,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .xjjx-box {
-    background: url(https://amxxc.cp567.cc/index_files/bg-xjjx.jpg) no-repeat #2f1700;
+    background: url(# no-repeat #2f1700;
     background-size: 100%;
     background-position-y: var(--w20);
     padding-top: var(--w20);
@@ -3100,19 +3100,19 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .xjjx-box .inner .right .frame-head {
-    background: url(https://amxxc.cp567.cc/index_files/bg-xjjx-frame-top.png) no-repeat;
+    background: url(# no-repeat;
     background-size: 100%;
     height: var(--w36);
 }
 
 .xjjx-box .inner .right .frame-inner {
-    background: url(https://amxxc.cp567.cc/index_files/bg-xjjx-frame-mid.png) repeat-y;
+    background: url(# repeat-y;
     background-size: 100%;
     padding: 0 var(--w100);
 }
 
 .xjjx-box .inner .right .frame-foot {
-    background: url(https://amxxc.cp567.cc/index_files/bg-xjjx-frame-bottom.png) no-repeat;
+    background: url(# no-repeat;
     background-size: 100%;
     height: var(--w36);
 }
@@ -3193,7 +3193,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .x-title h3 {
-    background: url(https://amxxc.cp567.cc/index_files/titlebg.png) center no-repeat;
+    background: url(# center no-repeat;
     background-size: auto var(--w140);
     height: var(--w26);
     line-height: var(--w26);
@@ -3236,7 +3236,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 .x-border-box::after {
     display: block;
     content: '';
-    background: url(https://amxxc.cp567.cc/index_files/bg-border-top-bottom.png) no-repeat center;
+    background: url(# no-repeat center;
     background-size: 96%;
     height: var(--w46);
     image-rendering: -webkit-optimize-contrast;
@@ -3249,7 +3249,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .x-border-inner {
-    background: url(https://amxxc.cp567.cc/index_files/bg-border-mid.png) repeat-y center;
+    background: url(# repeat-y center;
     background-size: 96%;
     padding: 0 var(--w24);
 }
@@ -3466,7 +3466,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 
 .jptj-box {
     position: relative;
-    background: url(https://amxxc.cp567.cc/index_files/bg-jptj.jpg) no-repeat;
+    background: url(# no-repeat;
     height: var(--w1-37);
     -webkit-background-size: cover;
     background-size: cover;
@@ -3553,7 +3553,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: url(https://amxxc.cp567.cc/index_files/tab2.png) center no-repeat;
+    background: url(# center no-repeat;
     width: var(--w3-5);
     height: var(--w11);
     background-size: contain;
@@ -3565,19 +3565,19 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .sbx-box .btns a.on {
-    background-image: url(https://amxxc.cp567.cc/index_files/tab1.png);
+    background-image: url(#
 }
 
 .sbx-box .head,
 .sbx-box .foot {
-    background: url(https://amxxc.cp567.cc/index_files/bg-book-top.jpg) no-repeat top;
+    background: url(# no-repeat top;
     background-size: 90%;
     height: var(--w9);
     image-rendering: -webkit-optimize-contrast;
 }
 
 .sbx-box .inner {
-    background: url(https://amxxc.cp567.cc/index_files/bg-book-mid.jpg) repeat-y center;
+    background: url(# repeat-y center;
     background-size: 90%;
     padding: 0 14%;
     font-size: var(--w32);
@@ -3621,10 +3621,10 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 
 .exsm-box {
-    background-image: url(https://amxxc.cp567.cc/index_files/bg-exsm.jpg);
+    background-image: url(#
 }
 	.lxlm-box, .sxsm-box, .exsm-box {
-    background: url(https://amxxc.cp567.cc/index_files/bg-lxlm.jpg) no-repeat #261100;
+    background: url(# no-repeat #261100;
     background-size: cover;
     padding-bottom: var(--w60);
 }
@@ -3653,7 +3653,7 @@ body:not(.appinner) .sxsm-box .inner .item.oa i {
 }
 .lxlm-box .inner .item, .sxsm-box .inner .item, .exsm-box .inner .item {
     position: relative;
-    background: url(https://amxxc.cp567.cc/index_files/bg-lxlm-item.png) no-repeat;
+    background: url(# no-repeat;
     width: var(--w3-44);
     height: var(--w5-44);
     background-size: contain;

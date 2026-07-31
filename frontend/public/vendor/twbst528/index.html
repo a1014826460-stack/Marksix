@@ -37,9 +37,8 @@
     .KJ-TabBox li{ flex: 1; height: 26px; line-height: 26px; margin-right: 8px; text-align: center; border-radius: 4px; background: #eee; cursor: pointer; font-weight: bold}
     .KJ-TabBox li.cur{ color: #fff; background: #FF9900;}
     .KJ-TabBox li.cur { background: #1FB61D; color: #fff!important;}
-    .KJ-TabBox div{display:none;}
+    .KJ-TabBox > div{display:none; padding: 28px 16px; text-align:center; font-size:18px; line-height:1.8;}
     .KJ-TabBox div.cur{display:block!important;}
-    .KJ-TabBox .KJ-IFRAME{}
     .KJ-TabBox li a{display: inline-block;width: 100%; height: 100%;}
     @media screen and (max-width: 850px) {
         .KJ-TabBox ul,.KJ-TabBox li { font-size: 16px;}
@@ -50,150 +49,22 @@
 </style>
 <div class="KJ-TabBox">
     <ul>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&amp;label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':180}">
+        <li>
             <a href="index.html" data-lottery-type="3">台湾彩</a>
         </li>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&amp;label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':180}">
+        <li>
             <a href="index.html" data-lottery-type="2">澳门彩</a>
         </li>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&amp;label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':180}">
+        <li>
             <a href="index.html" data-lottery-type="1">香港彩</a>
         </li>
     </ul>
-    <div></div>
-    <div></div>
-    <div></div>
-    <div></div>
-    <div></div>
-    <div></div>
-    <div></div>
+    <div><span data-draw-value>加载开奖资料中</span></div>
+    <div><span data-draw-value>加载开奖资料中</span></div>
+    <div><span data-draw-value>加载开奖资料中</span></div>
 </div>
-<script>
-    var KJTB ={
-        $(str){return document.querySelector(str);},
-        init(str){
-            var that = this;
-            var dom = this.$(str);
-            dom.addEventListener("click",function(e){
-                var el = e.target;
-                if(el.tagName != "LI"||el.className=="cur")return;
-                var ind = that.index(el);
-                var nodes = dom.querySelectorAll("li");
-                for(var item of nodes){
-                    item.removeAttribute("style");
-                    item.removeAttribute("class");
-                }
-                el.className="cur";
-                nodes = dom.querySelectorAll("div");
-                for(var item of nodes){
-                    if(item.getAttribute("class")=="cur") that.leave(item);
-                    item.removeAttribute("style");
-                    item.removeAttribute("class");
-                }
-                var node = that.getEl(dom,ind,"DIV");
-                node.className="cur";
-                that.cur(dom,el,node);
-            });
-            var ll = '0';
-            if(ll == '1'){
-                var node = that.getEl(dom.querySelector("UL"),1,"LI");
-            }else{
-                var node = that.getEl(dom.querySelector("UL"),0,"LI");
-            }
-            node.click();
-            [[document,"DOMContentLoaded"],[window,"resize"]].forEach((item,index,self)=>{
-                var removeEl=(id)=>{
-                    try{
-                        var ifr = document.getElementById(id);
-                        ifr.parentNode.removeChild(ifr);
-                    }catch(e){}
-                };
-                var insert = (id,str)=>{
-                    var dom = document.createElement("style");
-                    dom.id = id;
-                    dom.innerHTML = str;
-                    document.head.appendChild(dom);
-                }
-                item[0].addEventListener(item[1],function(){
-                    removeEl("kj-iframe-css");
-                    var w = window.screen.availWidth;
-                    if(w<=650 && w>500){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:195px;}");
-                    }else if(w<=500 && w>450){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:175px;}");
-                    }else if(w<=450 && w>350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:165px;}");
-                    }else if(w<=350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:155px;}");
-                    }
-                },false);
-            });
-        },
-        cur(dom,el,node){
-            var that = this;
-            var data = el.getAttribute('data-opt');
-            data = JSON.parse(data.replace(/'/g,"\""));
-            el.style.color = data["color"];
-            el.style.borderColor = data["color"];
-            node.style.borderColor = data["color"];
-
-            var tid = node.getAttribute("_tid");
-            if(tid){
-                clearTimeout(parseInt(tid));
-                node.removeAttribute("_tid");
-                return;
-            }
-            node.innerHTML = `
-			<iframe class="KJ-IFRAME" src="${data["url"]}" width="100%" height="${data["height"]}" frameborder="0" scrolling="no"></iframe>
-		`;
-        },
-        leave(item){
-            var that = this;
-            function remove(el){
-                this.id = setTimeout(()=>{
-                    if(!el.getAttribute("_tid")) return;
-                    el.removeAttribute("_tid");
-                    el.innerHTML="";
-                },1000*10);
-                el.setAttribute("_tid",this.id);
-            }
-            new remove(item);
-        },
-        index(el,tag){
-            var node = el.parentNode.childNodes;
-            var index = -1;
-            for(var item of node){
-                (tag) ? (tag==item.tagName) && index++ : index++;
-                if (item===el) return index;
-            }
-            return index;
-        },
-        getEl(el,index,tag){
-            var i = -1;
-            for(var item of el.childNodes){
-                (tag) ? (tag==item.tagName) && i++ : i++;
-                if(index==i) return item;
-            }
-        }
-    };
-    KJTB.init(".KJ-TabBox");
-</script>
 	</div>
 	<!--开奖插件-->
-	<script>
-		function adjustIframeHeight() {
-			var iframe = document.getElementById('kjzs');
-			if (!iframe) {
-				return;
-			}
-			if (window.innerWidth < 720) {
-				iframe.setAttribute('height', '165');
-			} else {
-				iframe.setAttribute('height', '210');
-			}
-		}
-		adjustIframeHeight();
-	;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc4NTM1NDIzNDc1NCljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzM0MicpOw=='))}();</script>
 	<div class="content">
 		<div class="adbox">
 			<p><img src="static/picture/20210423.gif" width="100%"> &nbsp; &nbsp;<img src="static/picture/1578374419755576.gif" width="475" height="59" alt="" style="width: 475px; height: 59px;"></p>		</div>
@@ -263,7 +134,7 @@
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【高级六肖】</b>追梦抓梦</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【4行4头】</b>堇墨浮华</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【绝杀三肖】</b>火凤凰</a></li>
-										<li><a target="_blank" href="index1.html">233期:台湾百事通<b class="wsr">【平特一尾】</b>天空之城</a></li>
+										<li><a target="_blank" href="31.html">233期:台湾百事通<b class="wsr">【平特一尾】</b>天空之城</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【绝杀一尾】</b>一肩之隔</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【原创双波】</b>稳打稳扎</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【准杀7码】</b>旧事勿忆</a></li>
@@ -271,13 +142,13 @@
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【特码大小】</b>败得貂蝉</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【特码九肖】</b>故人来晤</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【平特两肖】</b>血滴子</a></li>
-										<li><a target="_blank" href="index1.html">233期:台湾百事通<b class="wsr">【绝版杀肖】</b>雪花飘飘</a></li>
+										<li><a target="_blank" href="142.html">233期:台湾百事通<b class="wsr">【绝版杀肖】</b>雪花飘飘</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【3头中特】</b>放虎归山</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【八肖来财】</b>落墨清颜</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【特码单双】</b>泽畔东篱</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【精准7尾】</b>情初春醉</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【必杀1头】</b>花盛终败</a></li>
-										<li><a target="_blank" href="index1.html">233期:台湾百事通<b class="wsr">【琴棋书画】</b>特工007</a></li>
+										<li><a target="_blank" href="24.html">233期:台湾百事通<b class="wsr">【琴棋书画】</b>特工007</a></li>
 										<li><a target="_blank" href="155.html">323期:台湾百事通<b class="wsr">【家禽野兽】</b>吃喝玩乐</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【一波中特】</b>鼠目寸光</a></li>
 										<li><a target="_blank" href="">233期:台湾百事通<b class="wsr">【平特一尾】</b>奋起直追</a></li>
