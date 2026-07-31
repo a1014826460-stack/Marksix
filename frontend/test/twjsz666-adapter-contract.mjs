@@ -14,15 +14,15 @@ for (const token of [
 ]) if (!config.includes(token)) throw new Error(`missing site config token ${token}`)
 
 for (const token of [
-  "renderSanTouSiWeiHistory",
-  "renderYixiaoYimaHistory",
+  "renderThreeHeadFourTailUnavailable",
+  "renderOneHeadOneCodeUnavailable",
   "renderShuangBoHistory",
   "renderPingTeXiaoHistory",
   "renderDaXiaoHistory",
   "SECTION_CONTRACTS",
   "Unknown visible twjsz666 section",
   "loadDraw({ lotteryType: selected })",
-  "loadPredictions({ lotteryType: selected, historyLimit: HISTORY_LIMIT })",
+  "loadPredictions({ lotteryType: selected, historyLimit: historyLimitForPage() })",
   "event.source !== drawFrame.contentWindow",
   "event.origin !== window.location.origin",
   "暂无后端资料",

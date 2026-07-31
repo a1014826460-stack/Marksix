@@ -160,22 +160,6 @@
     });
   }
 
-  function renderSanTouSiWeiHistory(section, module) {
-    renderThreeColumnSection(section, module, function (row) {
-      var head = listValue(rawValue(row, "head")).slice(0, 3);
-      var tail = listValue(rawValue(row, "tail")).slice(0, 4);
-      return "三头【" + (head.length ? head.join(".") : formatLabels(row, ".")) + "】四尾【" + (tail.length ? tail.join(".") : "暂无后端资料") + "】";
-    });
-  }
-
-  function renderYixiaoYimaHistory(section, module) {
-    renderThreeColumnSection(section, module, function (row) {
-      var xiao = listValue(rawValue(row, "xiao")).slice(0, 1);
-      var code = listValue(rawValue(row, "code")).slice(0, 24);
-      return "一肖【" + (xiao.join("") || "暂无后端资料") + "】一码【" + (code.join(".") || "暂无后端资料") + "】";
-    });
-  }
-
   function renderShuangBoHistory(section, module) {
     renderThreeColumnSection(section, module, function (row) {
       return formatLabels(row, "+").slice(0, 30);
@@ -204,23 +188,77 @@
     });
   }
 
+  function renderTokenHistory(section, module, formatter) {
+    renderThreeColumnSection(section, module, formatter || function (row) {
+      return formatLabels(row, " ");
+    });
+  }
+
+  function renderFortuneNineXiao(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return formatLabels(row, "、").slice(0, 36);
+    });
+  }
+
+  function renderFlatThreeXiao(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return formatLabels(row, "、").slice(0, 24);
+    });
+  }
+
+  function renderFourXiaoEightCode(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      var zodiac = listValue(rawValue(row, "xiao")).slice(0, 4);
+      var codes = listValue(rawValue(row, "code")).slice(0, 8);
+      var values = zodiac.concat(codes);
+      return values.length ? values.join("、") : formatLabels(row, "、").slice(0, 40);
+    });
+  }
+
+  function renderFlatOneTail(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 8).join("、");
+    });
+  }
+
+  function renderKillTwoXiao(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return listValue(rawValue(row, "xiao")).slice(0, 2).join("、") || formatLabels(row, "、").slice(0, 12);
+    });
+  }
+
+  function renderKillOneWave(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return String(rawValue(row, "wave") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join("");
+    });
+  }
+
+  function renderKillOneTail(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join("");
+    });
+  }
+
+  function renderOneSentenceSpecial(section, module) {
+    renderTokenHistory(section, module, function (row) {
+      return String(rawValue(row, "sentence") || row && row.prediction && row.prediction.text || formatLabels(row, " ")).replace(/[|]/g, " ").trim().slice(0, 80);
+    });
+  }
+
   function renderStaticSection() {}
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
   function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
-  function renderFortuneNineXiao(section) { clearUnavailableSlots(section); }
+
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }
-  function renderFlatThreeXiao(section) { clearUnavailableSlots(section); }
-  function renderFourXiaoEightCode(section) { clearUnavailableSlots(section); }
+
   function renderSevenTailUnavailable(section) { clearUnavailableSlots(section); }
-  function renderFlatOneTail(section) { clearUnavailableSlots(section); }
+
   function renderSelectedTwentyTwoUnavailable(section) { clearUnavailableSlots(section); }
-  function renderKillTwoXiao(section) { clearUnavailableSlots(section); }
-  function renderKillOneWave(section) { clearUnavailableSlots(section); }
-  function renderKillOneTail(section) { clearUnavailableSlots(section); }
+
   function renderKillSevenCodeUnavailable(section) { clearUnavailableSlots(section); }
-  function renderOneSentenceSpecial(section) { clearUnavailableSlots(section); }
+
 
   function moduleMap(result) {
     var envelope = result && result.data;
@@ -233,6 +271,10 @@
 
   function lotteryForType(type) {
     return siteConfig.lotteries.filter(function (item) { return item.lotteryType === Number(type); })[0] || siteConfig.lotteries[0];
+  }
+
+  function isSupportedLotteryType(type) {
+    return siteConfig.lotteries.some(function (item) { return item.lotteryType === Number(type); });
   }
 
   function updateTitle(section, lottery) {
@@ -321,17 +363,27 @@
   var activeLottery = siteConfig.lotteries[0];
   var historyByLottery = {};
   var historyRequests = {};
-  var HISTORY_LIMIT = 9;
+  function historyLimitForPage() {
+    var maximum = 0;
+    Array.prototype.forEach.call(window.document.querySelectorAll(".box.pad"), function (section) {
+      var rows = sectionRows(section).length;
+      if (rows > maximum) maximum = rows;
+    });
+    return Math.min(Math.max(maximum, 1), 20);
+  }
 
   function selectLottery(type) {
+    if (!isSupportedLotteryType(type)) return Promise.resolve([]);
     activeLottery = lotteryForType(type);
     var selected = activeLottery.lotteryType;
     var drawPromise = client.loadDraw({ lotteryType: selected }).then(function (result) { return announce("draw", result); });
     var predictionPromise = historyByLottery[selected]
       ? Promise.resolve(historyByLottery[selected])
-      : historyRequests[selected] || client.loadPredictions({ lotteryType: selected, historyLimit: HISTORY_LIMIT }).then(function (result) {
-        historyByLottery[selected] = result;
+      : historyRequests[selected] || client.loadPredictions({ lotteryType: selected, historyLimit: historyLimitForPage() }).then(function (result) {
+        if (result && result.state !== "error") historyByLottery[selected] = result;
         return result;
+      }).finally(function () {
+        delete historyRequests[selected];
       });
     historyRequests[selected] = predictionPromise;
     predictionPromise.then(function (result) {

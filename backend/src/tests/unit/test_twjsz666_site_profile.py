@@ -5,11 +5,12 @@ from database.versioned_migrations import _install_twjsz666_site_profile
 from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
+EXPECTED_MODE_IDS = (50, 38, 58, 54, 57, 51, 56, 470, 20, 473, 49)
+
+
 def test_twjsz666_dependencies_are_reviewed_and_nonempty():
     mode_ids = required_mode_ids_for_site_key("twjsz666")
-    assert mode_ids
-    assert 38 in mode_ids
-    assert 57 in mode_ids
+    assert mode_ids == EXPECTED_MODE_IDS
 
 
 def test_twjsz666_profile_registers_site_11_and_modules(tmp_path):
