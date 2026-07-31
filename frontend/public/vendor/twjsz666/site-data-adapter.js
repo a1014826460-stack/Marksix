@@ -12,7 +12,7 @@
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
     { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderFourCharacterFlatXiaoUnavailable", issueGroups: 9, supplierSentinels: ["四字解"] },
     { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["临高高手"] },
-    { id: "public-before-bet-title", titlePattern: "买码之前先上", containerSelector: "body > .list-title", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["期期大公开"] },
+    { id: "official-gallery", titlePattern: "正版图库", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["正版图库"] },
     { id: "double-wave", titlePattern: "双波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["shuangbo"], rendererName: "renderShuangBoHistory", issueGroups: 9, supplierSentinels: ["双波"] },
     { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "unavailable", moduleKeys: [], rendererName: "renderPoultryBeastUnavailable", issueGroups: 9, supplierSentinels: ["家禽"] },
     { id: "flat-three-xiao", titlePattern: "平特③肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt3xiao"], rendererName: "renderFlatThreeXiao", issueGroups: 9, supplierSentinels: ["平特③肖"] },
@@ -132,7 +132,7 @@
 
   function sectionRows(section) {
     return Array.prototype.filter.call(section.querySelectorAll("table tr"), function (row) {
-      return rowCells(row).length >= 2;
+      return rowCells(row).length >= 1;
     });
   }
 
@@ -149,13 +149,18 @@
       var row = data[index];
       if (!row) {
         writeLeaf(cells[0], "");
-        writeLeaf(cells[1], "暂无后端资料");
+        if (cells.length === 1) writeLeaf(cells[0], "暂无后端资料");
+        else writeLeaf(cells[1], "暂无后端资料");
         if (cells[2]) writeLeaf(cells[2], "");
         return;
       }
-      writeLeaf(cells[0], "第" + issueOf(row).replace(/^(第|期)/g, "") + "期");
-      writeLeaf(cells[1], formatter(row));
-      if (cells[2]) writeLeaf(cells[2], resultText(row));
+      var issue = "第" + issueOf(row).replace(/^(第|期)/g, "") + "期";
+      if (cells.length === 1) writeLeaf(cells[0], issue + " " + formatter(row) + " " + resultText(row));
+      else {
+        writeLeaf(cells[0], issue);
+        writeLeaf(cells[1], formatter(row));
+        if (cells[2]) writeLeaf(cells[2], resultText(row));
+      }
       tr.setAttribute("data-prediction-row", String(index));
     });
   }
@@ -182,8 +187,11 @@
   function clearUnavailableSlots(section) {
     sectionRows(section).forEach(function (tr) {
       var cells = rowCells(tr);
-      if (cells[0]) writeLeaf(cells[0], "");
-      if (cells[1]) writeLeaf(cells[1], "暂无后端资料");
+      if (cells.length === 1) writeLeaf(cells[0], "暂无后端资料");
+      else {
+        if (cells[0]) writeLeaf(cells[0], "");
+        if (cells[1]) writeLeaf(cells[1], "暂无后端资料");
+      }
       if (cells[2]) writeLeaf(cells[2], "");
     });
   }

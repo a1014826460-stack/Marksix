@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 from playwright.sync_api import sync_playwright
@@ -39,7 +40,8 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
                 route.fulfill(json=prediction_payload(lottery_type))
 
         page.route("**/api/sites/twjsz666/**", fulfill)
-        page.goto("http://127.0.0.1:3000/twjsz666", wait_until="domcontentloaded")
+        base_url = os.environ.get("TWJSZ666_BASE_URL", "http://127.0.0.1:3000")
+        page.goto(f"{base_url}/twjsz666", wait_until="domcontentloaded")
         page.wait_for_timeout(500)
         vendor = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/index.html"))
         draw = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/kai.html"))
