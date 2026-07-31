@@ -145,8 +145,18 @@ def main() -> None:
                 route.fulfill(json=prediction_payload(lottery_type))
 
             page.route("**/api/sites/twbst528/prediction-modules?**", fulfill_prediction)
-            page.route("**/api/sites/twbst528/draw?**", lambda route: route.fulfill(json={"ok": True, "data": {"issue": "510"}}))
-            page.goto("http://127.0.0.1:3000/twbst528", wait_until="domcontentloaded")
+            draw_requests = []
+            def fulfill_draw(route):
+                lottery_type = next(item.split("=", 1)[1] for item in route.request.url.split("?", 1)[1].split("&") if item.startswith("lottery_type="))
+                draw_requests.append(lottery_type)
+                route.fulfill(json={"ok": True, "data": {"issue": "510", "balls": [
+                    {"value": "01", "zodiac": "鼠"}, {"value": "12", "zodiac": "马"},
+                    {"value": "23", "zodiac": "羊"}, {"value": "34", "zodiac": "猴"},
+                    {"value": "45", "zodiac": "鸡"}, {"value": "46", "zodiac": "狗"},
+                    {"value": "49", "zodiac": "猪", "is_special": True},
+                ]}})
+            page.route("**/api/sites/twbst528/draw?**", fulfill_draw)
+            page.goto(os.environ.get("SITE_TEST_BASE_URL", "http://127.0.0.1:3000") + "/twbst528", wait_until="domcontentloaded")
 
             deadline = time.monotonic() + 10
             frame = None
@@ -157,20 +167,25 @@ def main() -> None:
                 page.wait_for_timeout(100)
             assert frame is not None, "twbst528 vendor frame did not load"
 
-            # The supplier tab panels must embed the shared, same-origin draw
-            # component rather than leave their original blank iframe URL.
+            # Draw panels render the same-origin endpoint directly into the
+            # supplied tab DOM; no supplier iframe may survive.
             deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and not frame.locator(".KJ-IFRAME").count():
+            while time.monotonic() < deadline and "第510期 开奖：01 12 23 34 45 46 49 特别号49猪" not in frame.locator(".KJ-TabBox").inner_text():
                 page.wait_for_timeout(100)
-            draw_frame = frame.locator(".KJ-IFRAME").first
-            draw_src = draw_frame.get_attribute("src") or ""
-            assert "/vendor/shengshi8800/kj/local.html?lottery_type=" in draw_src
-            assert "about:blank" not in draw_src
+            assert frame.locator(".KJ-IFRAME").count() == 0
+            assert "第510期 开奖：01 12 23 34 45 46 49 特别号49猪" in frame.locator(".KJ-TabBox").inner_text()
+            assert "3" in draw_requests
 
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline and "3:6" not in prediction_requests:
                 page.wait_for_timeout(100)
             assert "3:6" in prediction_requests, prediction_requests
+
+            # The active homepage must not expose any supplier issue/result
+            # snapshot after its same-origin data render completes.
+            homepage_text = frame.locator("body").inner_text()
+            for sentinel in ("第233期", "第323期", "????", "[object Object]"):
+                assert sentinel not in homepage_text, sentinel
 
             first_table = frame.locator("#zhenyan_ping_xiao")
             assert first_table.locator("tr").count() == 6
@@ -294,6 +309,7 @@ def main() -> None:
                 while time.monotonic() < deadline and f"{lottery_type}:6" not in prediction_requests:
                     page.wait_for_timeout(100)
                 assert f"{lottery_type}:6" in prediction_requests, prediction_requests
+                assert lottery_type in draw_requests, draw_requests
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline and f"{marker}文本0" not in first_table.locator("tr").first.inner_text():
                     page.wait_for_timeout(100)
