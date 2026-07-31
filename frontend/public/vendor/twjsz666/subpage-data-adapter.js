@@ -100,7 +100,7 @@
       var row = rows[index];
       paragraphs[index].textContent = row
         ? "第" + issueOf(row) + "期 【" + predictionText(row) + "】 " + openedText(row)
-        : "暂无后端资料";
+        : "资料同步中";
     }
   }
 

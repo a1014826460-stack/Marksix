@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -511,6 +511,15 @@ def _install_twjsz666_site_profile(conn: Any) -> None:
         sync_site_prediction_modules(conn, site_id=11)
 
 
+def _install_twjsz666_exact_prediction_modes(conn: Any) -> None:
+    """Create and authorize the four exact mechanisms added for site 11."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_twjsz666_prediction_tables
+
+    ensure_twjsz666_prediction_tables(conn, auto_increment_primary_key("id", conn.engine))
+    _install_twjsz666_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -527,6 +536,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(13, "install_twbst528_exact_prediction_modes", _install_twbst528_exact_prediction_modes),
     Migration(14, "sync_twbst528_taiwan_pmt_image", _sync_twbst528_taiwan_pmt_image),
     Migration(15, "install_twjsz666_vendor_site", _install_twjsz666_site_profile),
+    Migration(16, "install_twjsz666_exact_prediction_modes", _install_twjsz666_exact_prediction_modes),
 )
 
 

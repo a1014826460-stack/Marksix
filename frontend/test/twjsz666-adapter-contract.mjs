@@ -25,7 +25,7 @@ for (const token of [
   "loadPredictions({ lotteryType: selected, historyLimit: historyLimitForPage() })",
   "event.source !== drawFrame.contentWindow",
   "event.origin !== window.location.origin",
-  "暂无后端资料",
+  "资料同步中",
 ]) if (!adapter.includes(token)) throw new Error(`missing adapter contract token ${token}`)
 
 if (adapter.includes("function renderUnavailableSection")) throw new Error("generic unavailable section fallback remains")

@@ -596,3 +596,19 @@ def ensure_twbst528_prediction_tables(conn: Any, pk_sql: str) -> None:
         modes_id=489,
         title="六肖六码",
     )
+
+
+def ensure_twjsz666_prediction_tables(conn: Any, pk_sql: str) -> None:
+    """Bootstrap exact payload tables for Taiwan Golden Finger-only mechanisms."""
+    for modes_id, title in (
+        (492, "三头四尾"),
+        (493, "精选22码"),
+        (494, "稳杀7码"),
+        (495, "精准台湾高手资料"),
+    ):
+        ensure_basic_prediction_payload_table(
+            conn,
+            pk_sql,
+            modes_id=modes_id,
+            title=title,
+        )

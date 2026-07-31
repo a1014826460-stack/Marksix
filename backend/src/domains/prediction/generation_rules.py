@@ -171,6 +171,9 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     489: _rule("zodiac", _special_zodiac),
     490: _rule("half_wave_exclusion", _special_half_wave),
     491: _rule("tail", _special_tail),
+    492: _rule("head_tail", lambda truth, _conn: f"头:{_special_head(truth, _conn)}|尾:{_special_tail(truth, _conn)}"),
+    493: _rule("number", _special_number, prefix_width=3),
+    494: _rule("number_exclusion", _special_number, prefix_width=2),
 }
 
 

@@ -11,7 +11,7 @@
     { id: "three-head-four-tail", titlePattern: "三头", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["three_head_four_tail"], rendererName: "renderThreeHeadFourTail", issueGroups: 9, supplierSentinels: ["三头"] },
     { id: "flat-one-xiao", titlePattern: "平特一肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderPingTeXiaoHistory", issueGroups: 9, supplierSentinels: ["平特一肖"] },
     { id: "four-character-flat-xiao", titlePattern: "四字解平特肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["sizixuanji"], rendererName: "renderFourCharacterFlatXiao", issueGroups: 9, supplierSentinels: ["四字解"] },
-    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1xiao"], rendererName: "renderExpertPublications", issueGroups: 1, supplierSentinels: ["临高高手", "060期"] },
+    { id: "expert-publications", titlePattern: "精准台湾高手", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["expert_publications"], rendererName: "renderExpertPublications", issueGroups: 1, supplierSentinels: ["临高高手", "060期"] },
     { id: "official-gallery", titlePattern: "正版图库", containerSelector: ".box.pad", classification: "static", moduleKeys: [], rendererName: "renderStaticSection", issueGroups: 0, supplierSentinels: ["正版图库"] },
     { id: "double-wave", titlePattern: "双波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["shuangbo"], rendererName: "renderShuangBoHistory", issueGroups: 9, supplierSentinels: ["双波"] },
     { id: "poultry-versus-beast", titlePattern: "家禽VS野兽", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["title_14"], rendererName: "renderPoultryBeast", issueGroups: 9, supplierSentinels: ["家禽"] },
@@ -149,8 +149,8 @@
       var row = data[index];
       if (!row) {
         writeLeaf(cells[0], "");
-        if (cells.length === 1) writeLeaf(cells[0], "暂无后端资料");
-        else writeLeaf(cells[1], "暂无后端资料");
+        if (cells.length === 1) writeLeaf(cells[0], "资料同步中");
+        else writeLeaf(cells[1], "资料同步中");
         if (cells[2]) writeLeaf(cells[2], "");
         return;
       }
@@ -188,7 +188,7 @@
     sectionRows(section).forEach(function (tr) {
       var cells = rowCells(tr);
       for (var index = 0; index < cells.length; index += 1) clearLeaves(cells[index]);
-      if (cells[0]) writeLeaf(cells[0], "暂无后端资料");
+      if (cells[0]) writeLeaf(cells[0], "资料同步中");
     });
   }
 
@@ -252,9 +252,11 @@
   function renderStaticSection() {}
   function renderExpertPublications(section, module) {
     var row = distinctRows(module)[0];
-    Array.prototype.forEach.call(section.querySelectorAll("li"), function (item) {
+    var publications = [];
+    try { publications = JSON.parse(String(rawValue(row, "content") || "{}")) .publications || []; } catch (_) { publications = tokenValues(row); }
+    Array.prototype.forEach.call(section.querySelectorAll("li"), function (item, index) {
       clearLeaves(item);
-      writeLeaf(item, row ? "第" + issueOf(row) + "期 后端资料" : "后端资料加载中");
+      writeLeaf(item, row ? "第" + issueOf(row) + "期 " + (publications[index] || "后端资料") : "资料加载中");
     });
   }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
@@ -262,22 +264,23 @@
   function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
 
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
-  function renderThreeHeadFourTail(section, module, modules) {
-    var heads = distinctRows(module);
-    var tails = heads;
+  function renderThreeHeadFourTail(section, module) {
+    var rows = distinctRows(module);
     sectionRows(section).forEach(function (tr, index) {
       var cells = rowCells(tr);
-      var head = heads[index];
-      var tail = tails[index];
-      if (!head || !tail) {
+      var row = rows[index];
+      if (!row) {
         for (var cellIndex = 0; cellIndex < cells.length; cellIndex += 1) clearLeaves(cells[cellIndex]);
-        if (cells[0]) writeLeaf(cells[0], "暂无后端资料");
         return;
       }
-      var issue = "第" + issueOf(head).replace(/^(第|期)/g, "") + "期";
-      var value = "三头【" + formatLabels(head, "、") + "】四尾【" + formatLabels(tail, "、") + "】";
-      if (cells.length === 1) writeLeaf(cells[0], issue + " " + value + " " + resultText(head));
-      else { writeLeaf(cells[0], issue); writeLeaf(cells[1], value); if (cells[2]) writeLeaf(cells[2], resultText(head)); }
+      var payload = {};
+      try { payload = JSON.parse(String(rawValue(row, "content") || "{}")); } catch (_) { payload = {}; }
+      var heads = listValue(payload.heads).slice(0, 3);
+      var tails = listValue(payload.tails).slice(0, 4);
+      var issue = "第" + issueOf(row).replace(/^(第|期)/g, "") + "期";
+      var value = "三头【" + heads.join("、") + "】四尾【" + tails.join("、") + "】";
+      if (cells.length === 1) writeLeaf(cells[0], issue + " " + value + " " + resultText(row));
+      else { writeLeaf(cells[0], issue); writeLeaf(cells[1], value); if (cells[2]) writeLeaf(cells[2], resultText(row)); }
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
@@ -375,6 +378,17 @@
     });
     Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
       clearUnavailableSlots(card);
+    });
+    clearSupplierIssueSnapshots();
+  }
+
+  function clearSupplierIssueSnapshots() {
+    Array.prototype.forEach.call(window.document.querySelectorAll(".box.pad"), function (section) {
+      var title = String((section.querySelector(".list-title") || {}).textContent || "");
+      if (!title) return;
+      textNodes(section).forEach(function (node) {
+        if (/\b(?:0(?:5[2-9]|60)|136|323)期\b/.test(String(node.nodeValue || ""))) node.nodeValue = "";
+      });
     });
   }
 

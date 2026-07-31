@@ -5,7 +5,7 @@ from database.versioned_migrations import _install_twjsz666_site_profile
 from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
-EXPECTED_MODE_IDS = (54, 56, 57, 483, 472, 51, 58, 26, 50, 38, 470, 20, 473, 49, 31, 12, 491, 14, 74, 52, 34, 481)
+EXPECTED_MODE_IDS = (54, 56, 57, 483, 472, 51, 58, 26, 50, 38, 470, 20, 473, 49, 31, 492, 491, 14, 74, 52, 493, 494, 495)
 
 
 def test_twjsz666_dependencies_are_reviewed_and_nonempty():

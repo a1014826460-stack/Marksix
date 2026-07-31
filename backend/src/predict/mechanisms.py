@@ -910,6 +910,45 @@ format_zodiac_groups = structured_mapping.format_zodiac_groups
 format_qinqi_content = structured_mapping.format_qinqi_content
 format_window_content = image.format_window_content
 
+
+def three_head_four_tail_content_loader(row: Any) -> str:
+    """Read the combined head/tail payload without flattening its dimensions."""
+    return default_content_from_row(row)
+
+
+def parse_three_head_four_tail_content(content: str) -> tuple[str, ...]:
+    try:
+        payload = json.loads(str(content or ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, dict):
+        return ()
+    heads = payload.get("heads") if isinstance(payload.get("heads"), list) else []
+    tails = payload.get("tails") if isinstance(payload.get("tails"), list) else []
+    return tuple(
+        [f"头:{str(value).strip()}" for value in heads if str(value).strip()]
+        + [f"尾:{str(value).strip()}" for value in tails if str(value).strip()]
+    )
+
+
+def format_three_head_four_tail(labels: tuple[str, ...], _conn: Any) -> str:
+    heads = [label.removeprefix("头:") for label in labels if label.startswith("头:")][:3]
+    tails = [label.removeprefix("尾:") for label in labels if label.startswith("尾:")][:4]
+    return json.dumps({"heads": heads, "tails": tails}, ensure_ascii=False, separators=(",", ":"))
+
+
+def three_head_four_tail_outcome(row: Any, conn: Any) -> str:
+    return f"头:{special_head_from_row(row, conn)}|尾:{special_tail_from_row(row, conn)}"
+
+
+def three_head_four_tail_hit(outcome: str, labels: tuple[str, ...]) -> bool:
+    required = tuple(part for part in str(outcome or "").split("|") if part)
+    return bool(required) and all(part in labels for part in required)
+
+
+def format_expert_publications(labels: tuple[str, ...], _conn: Any) -> str:
+    return json.dumps({"publications": list(labels)}, ensure_ascii=False, separators=(",", ":"))
+
 PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
     "3tou": PredictionConfig(
         key="3tou",
@@ -1089,6 +1128,73 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "24码从 01-49 中选择 24 个号码。",
             "特码号码落入预测的 24 个号码则命中。",
+        ),
+    ),
+    "three_head_four_tail": PredictionConfig(
+        key="three_head_four_tail",
+        title="三头四尾",
+        default_table="mode_payload_492",
+        default_modes_id=492,
+        labels=(
+            "头:0头", "头:1头", "头:2头", "头:3头", "头:4头",
+            "尾:0尾", "尾:1尾", "尾:2尾", "尾:3尾", "尾:4尾",
+            "尾:5尾", "尾:6尾", "尾:7尾", "尾:8尾", "尾:9尾",
+        ),
+        label_count=7,
+        outcome_loader=three_head_four_tail_outcome,
+        content_loader=three_head_four_tail_content_loader,
+        content_parser=parse_three_head_four_tail_content,
+        content_formatter=format_three_head_four_tail,
+        hit_checker=three_head_four_tail_hit,
+        explanation=(
+            "三头四尾分别选择3个头数和4个尾数。",
+            "特码头数与尾数同时落入各自候选集合才记为命中。",
+        ),
+        selection_groups=(
+            ("头:0头", "头:1头", "头:2头", "头:3头", "头:4头"),
+            ("尾:0尾", "尾:1尾", "尾:2尾", "尾:3尾", "尾:4尾", "尾:5尾", "尾:6尾", "尾:7尾", "尾:8尾", "尾:9尾"),
+        ),
+        selection_widths=(3, 4),
+    ),
+    "expert_publications": PredictionConfig(
+        key="expert_publications",
+        title="精准台湾高手资料",
+        default_table="mode_payload_495",
+        default_modes_id=495,
+        labels=(
+            "平特一肖", "大小中特", "双波中特", "平特三肖", "四肖八码", "七尾中特", "精选22码",
+            "绝杀二肖", "绝杀一波", "绝杀一尾", "稳杀七码", "一句话中特码", "三头四尾", "家禽VS野兽",
+        ),
+        label_count=14,
+        outcome_loader=lambda _row, _conn: "",
+        content_loader=default_content_from_row,
+        content_parser=lambda content: tuple(
+            str(item).strip()
+            for item in (json.loads(str(content or "{}")) or {}).get("publications", [])
+            if str(item).strip()
+        ) if str(content or "").lstrip().startswith("{") else (),
+        content_formatter=format_expert_publications,
+        hit_checker=contains_hit,
+        explanation=(
+            "精准台湾高手资料由本站已授权的14项后端预测机制组成。",
+            "该索引只发布当前后端资料名称和期号，不沿用供应商专家快照。",
+        ),
+    ),
+    "selected_22_codes": PredictionConfig(
+        key="selected_22_codes",
+        title="精选22码",
+        default_table="mode_payload_493",
+        default_modes_id=493,
+        labels=tuple(f"{number:02d}" for number in range(1, 50)),
+        label_count=22,
+        outcome_loader=special_number_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_number_content,
+        content_formatter=lambda labels, _conn: ",".join(labels),
+        hit_checker=contains_hit,
+        explanation=(
+            "精选22码从01-49中选择22个号码。",
+            "特码号码落入候选号码集合即记为命中。",
         ),
     ),
     "wuzhong5ma": PredictionConfig(
@@ -1315,6 +1421,23 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "稳杀10码按号码类玩法处理，从 01-49 中选出 10 个号码。",
             "特码号码落入预测号码集合外时按命中计算。",
+        ),
+    ),
+    "steady_kill_7_codes": PredictionConfig(
+        key="steady_kill_7_codes",
+        title="稳杀7码",
+        default_table="mode_payload_494",
+        default_modes_id=494,
+        labels=tuple(f"{number:02d}" for number in range(1, 50)),
+        label_count=7,
+        outcome_loader=special_number_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_number_content,
+        content_formatter=lambda labels, _conn: ",".join(labels),
+        hit_checker=excludes_hit,
+        explanation=(
+            "稳杀7码从01-49中选择7个号码作为排除号码。",
+            "特码不在7个排除号码内时按命中计算。",
         ),
     ),
     "sihangzhongte": PredictionConfig(

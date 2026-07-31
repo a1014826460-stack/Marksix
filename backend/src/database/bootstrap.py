@@ -26,6 +26,7 @@ from database.schema.legacy import (
     ensure_legacy_asset_tables,
     ensure_liubuzhong_table,
     ensure_site_specific_prediction_tables,
+    ensure_twjsz666_prediction_tables,
     ensure_twcaibawang_prediction_tables,
     ensure_twbst528_prediction_tables,
 )
@@ -174,6 +175,7 @@ def _apply_legacy_schema_bootstrap(conn: Any) -> None:
     ensure_legacy_asset_tables(conn, pk_sql)
     ensure_liubuzhong_table(conn, pk_sql)
     ensure_site_specific_prediction_tables(conn, pk_sql)
+    ensure_twjsz666_prediction_tables(conn, pk_sql)
     ensure_twcaibawang_prediction_tables(conn, pk_sql)
     ensure_twbst528_prediction_tables(conn, pk_sql)
     ensure_audit_tables(conn, pk_sql)

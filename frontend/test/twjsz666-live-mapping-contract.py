@@ -18,10 +18,14 @@ def prediction_payload(lottery_type: int) -> dict:
     module_keys = (
         "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "4xiao8ma", "daxiao",
         "pt1wei", "juesha2xiao", "jueshabanbo", "juesha1wei", "yijuzhenyan",
-        "danshuang4xiao", "3tou", "gongshi_siw", "title_14", "title_74",
-        "sizixuanji", "ma24", "wensha10ma",
+        "danshuang4xiao", "three_head_four_tail", "gongshi_siw", "title_14", "title_74",
+        "sizixuanji", "selected_22_codes", "steady_kill_7_codes", "expert_publications",
     )
     modules = {key: {"moduleKey": key, "rows": rows} for key in module_keys}
+    for row in modules["three_head_four_tail"]["rows"]:
+        row["raw"] = {"content": json.dumps({"heads": ["0头", "1头", "2头"], "tails": ["0尾", "1尾", "2尾", "3尾"]})}
+    for row in modules["expert_publications"]["rows"]:
+        row["raw"] = {"content": json.dumps({"publications": [f"后端资料{index}" for index in range(1, 15)]})}
     return {"ok": True, "data": {"canonical_modules": list(modules.values())}}
 
 
@@ -63,6 +67,8 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
             assert "台湾金手指" not in heading or expected == 3
             body_text = vendor.locator("body").inner_text()
             assert "????" not in body_text
+            assert "暂无后端资料" not in body_text
+            assert not re.search(r"\b(?:0(?:5[2-9]|60)|136|323)期\b", body_text)
             for title in ("发财⑨肖", "平特一肖", "双波中特", "平特③肖", "④肖⑧码", "大小中特", "平特一尾", "绝杀二肖", "绝杀①波", "绝杀①尾", "一句话中特码"):
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
