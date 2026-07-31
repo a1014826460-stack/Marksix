@@ -169,6 +169,7 @@ function buildSandbox() {
   }
 
   MockHTMLElement.prototype.attachShadow = function () {
+    this._attachShadowCalls = (this._attachShadowCalls || 0) + 1
     this._shadowRoot = createMockShadowRoot()
     return this._shadowRoot
   }
@@ -559,6 +560,61 @@ function createElement(siteKey) {
   }
 
   console.log("Test 9 passed: no hardcoded fallback links in template")
+}
+
+// ---------------------------------------------------------------------------
+// Test 10 — Reconnect safety: second connectedCallback does not re-attach
+// shadow root and does not trigger a second fetch
+// ---------------------------------------------------------------------------
+{
+  const linksPayload = {
+    links: [{ site_key: "reconnect", name: "Reconnect", domain: "r.example.com", url: "https://r.example.com/" }],
+  }
+  resetFetchState(linksPayload, false)
+
+  const sandbox = buildSandbox()
+  const context = createContext(sandbox)
+
+  new Script(scriptSource).runInContext(context)
+
+  const createElFn = new Script(`
+    (function(siteKey) {
+      const el = new (customElements.get('managed-site-links'))();
+      if (siteKey !== undefined) el.setAttribute('site-key', siteKey);
+      return el;
+    })
+  `)
+
+  const el = createElFn.runInContext(context)("twjsz666")
+
+  // First connect
+  if (typeof el.connectedCallback === "function") el.connectedCallback()
+
+  // Simulate element being removed from and re-inserted into the DOM
+  if (typeof el.disconnectedCallback === "function") el.disconnectedCallback()
+  if (typeof el.connectedCallback === "function") el.connectedCallback()
+
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  // attachShadow must be called exactly once (second connect must reuse existing shadow root)
+  if (el._attachShadowCalls !== 1) {
+    throw new Error(`expected 1 attachShadow call across reconnects, got ${el._attachShadowCalls}`)
+  }
+
+  // Exactly one fetch across reconnects (no duplicate fetch)
+  if (fetchCalls.length !== 1) {
+    throw new Error(`reconnect triggered ${fetchCalls.length} fetch calls, expected 1`)
+  }
+
+  // Shadow root must still be present and hold the rendered link
+  if (!el.shadowRoot) {
+    throw new Error("reconnect: shadow root must persist across reconnects")
+  }
+  if (sandbox._anchorTracker.length !== 1) {
+    throw new Error(`reconnect: expected 1 rendered anchor, got ${sandbox._anchorTracker.length}`)
+  }
+
+  console.log("Test 10 passed: reconnect does not re-attach shadow or re-fetch")
 }
 
 console.log("All managed-site-links contract tests passed")

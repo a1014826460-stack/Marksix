@@ -61,13 +61,17 @@
     });
 
     ManagedSiteLinks.prototype.connectedCallback = function () {
-      var shadow = this.attachShadow({ mode: "open" });
-      shadow.innerHTML = templateHTML;
+      if (!this.shadowRoot) {
+        var shadow = this.attachShadow({ mode: "open" });
+        shadow.innerHTML = templateHTML;
+      }
       this._fetchLinks();
     };
 
     ManagedSiteLinks.prototype._fetchLinks = function () {
       var self = this;
+      if (self._fetched) return;
+
       var siteKey = self.getAttribute("site-key");
       if (!siteKey) return;
 
