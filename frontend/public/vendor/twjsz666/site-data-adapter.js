@@ -23,7 +23,7 @@
     { id: "flat-one-tail", titlePattern: "平特一尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["pt1wei"], rendererName: "renderFlatOneTail", issueGroups: 9, supplierSentinels: ["平特一尾"] },
     { id: "selected-twenty-two-code", titlePattern: "精选22码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["selected_22_codes"], rendererName: "renderSelectedTwentyTwo", issueGroups: 9, supplierSentinels: ["精选22码"] },
     { id: "kill-two-xiao", titlePattern: "绝杀二肖", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha2xiao"], rendererName: "renderKillTwoXiao", issueGroups: 9, supplierSentinels: ["绝杀二肖"] },
-    { id: "kill-one-wave", titlePattern: "绝杀①波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["jueshabanbo"], rendererName: "renderKillOneWave", issueGroups: 9, supplierSentinels: ["绝杀①波"] },
+    { id: "kill-one-wave", titlePattern: "绝杀①半波", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["jueshabanbo"], rendererName: "renderKillOneWave", issueGroups: 9, supplierSentinels: ["绝杀①半波"] },
     { id: "kill-one-tail", titlePattern: "绝杀①尾", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["juesha1wei"], rendererName: "renderKillOneTail", issueGroups: 9, supplierSentinels: ["绝杀①尾"] },
     { id: "kill-seven-code", titlePattern: "稳杀⑦码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["steady_kill_7_codes"], rendererName: "renderKillSevenCode", issueGroups: 9, supplierSentinels: ["稳杀⑦码"] },
     { id: "one-sentence-special", titlePattern: "一句话中特码", containerSelector: ".box.pad", classification: "mapped", moduleKeys: ["yijuzhenyan"], rendererName: "renderOneSentenceSpecial", issueGroups: 9, supplierSentinels: ["一句话"] },
@@ -72,6 +72,12 @@
 
   function issueOf(row) {
     return String(row && (row.issue || row.term || ((row.year || "") + "-" + (row.term || ""))) || "").trim();
+  }
+
+  function displayIssue(row) {
+    var value = issueOf(row).replace(/^第/, "").replace(/期$/, "");
+    var digits = value.replace(/\D/g, "");
+    return (digits.length > 3 ? digits.slice(-3) : digits || value) + "期";
   }
 
   function distinctRows(module) {
@@ -142,45 +148,32 @@
     }).filter(Boolean).join(separator || "");
   }
 
-  function renderThreeColumnSection(section, module, formatter) {
-    var data = distinctRows(module);
-    sectionRows(section).forEach(function (tr, index) {
-      var cells = rowCells(tr);
-      var row = data[index];
-      if (!row) {
-        writeLeaf(cells[0], "");
-        if (cells.length === 1) writeLeaf(cells[0], "资料同步中");
-        else writeLeaf(cells[1], "资料同步中");
-        if (cells[2]) writeLeaf(cells[2], "");
-        return;
-      }
-      var issue = "第" + issueOf(row).replace(/^(第|期)/g, "") + "期";
-      if (cells.length === 1) writeLeaf(cells[0], issue + " " + formatter(row) + " " + resultText(row));
-      else {
-        writeLeaf(cells[0], issue);
-        writeLeaf(cells[1], formatter(row));
-        if (cells[2]) writeLeaf(cells[2], resultText(row));
-      }
-      tr.setAttribute("data-prediction-row", String(index));
-    });
-  }
-
   function renderShuangBoHistory(section, module) {
-    renderThreeColumnSection(section, module, function (row) {
-      return formatLabels(row, "+").slice(0, 30);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ":双波"; },
+      formatter: function (row) { return listValue(rawValue(row, "wave")).slice(0, 2).join("+") || formatLabels(row, "+").slice(0, 30); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: true
     });
   }
 
   function renderPingTeXiaoHistory(section, module) {
-    renderThreeColumnSection(section, module, function (row) {
-      return formatLabels(row, "").slice(0, 12);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ":平特一肖"; },
+      formatter: function (row) { return listValue(rawValue(row, "xiao")).slice(0, 1).join("") || formatLabels(row, "").slice(0, 12); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: true
     });
   }
 
   function renderDaXiaoHistory(section, module) {
-    renderThreeColumnSection(section, module, function (row) {
-      var value = String(rawValue(row, "daxiao") || formatLabels(row, "") || "");
-      return value === "大" ? "大数" : value === "小" ? "小数" : value;
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ": "; },
+      formatter: function (row) {
+        var value = String(rawValue(row, "daxiao") || formatLabels(row, "") || "");
+        return value === "大" ? "大数" : value === "小" ? "小数" : value;
+      },
+      writeResult: true
     });
   }
 
@@ -188,64 +181,85 @@
     sectionRows(section).forEach(function (tr) {
       var cells = rowCells(tr);
       for (var index = 0; index < cells.length; index += 1) clearLeaves(cells[index]);
-      if (cells[0]) writeLeaf(cells[0], "资料同步中");
+      if (cells[0]) writeLeaf(cells[0], "");
     });
   }
 
-  function renderTokenHistory(section, module, formatter) {
-    renderThreeColumnSection(section, module, formatter || function (row) {
-      return formatLabels(row, " ");
+  function renderInlineSlots(section, module, options) {
+    Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
+      var row = rowData(module, index), cell = rowCells(tr)[0];
+      var fonts = cell ? cell.querySelectorAll(":scope > font") : [];
+      var group = tr.querySelector(".zl");
+      if (!row) { clearLeaves(tr); if (fonts[0]) writeLeaf(fonts[0], ""); return; }
+      var value = options.formatter(row);
+      if (!group) {
+        setText(fonts[0], options.prefix(row) + value + " " + resultText(row));
+      } else {
+        setText(fonts[0], options.prefix(row));
+        setText(group, options.wrap ? options.wrap(value) : value);
+        if (options.writeResult) setText(fonts[fonts.length - 1], resultText(row));
+      }
+      tr.setAttribute("data-prediction-row", String(index));
     });
   }
 
   function renderFortuneNineXiao(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return formatLabels(row, "、").slice(0, 36);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ": "; },
+      formatter: function (row) { return formatLabels(row, "").slice(0, 36); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: true
     });
   }
 
   function renderFlatThreeXiao(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return formatLabels(row, "、").slice(0, 24);
-    });
-  }
-
-  function renderFourXiaoEightCode(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      var zodiac = listValue(rawValue(row, "xiao")).slice(0, 4);
-      var codes = listValue(rawValue(row, "code")).slice(0, 8);
-      var values = zodiac.concat(codes);
-      return values.length ? values.join("、") : formatLabels(row, "、").slice(0, 40);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ": 平特③肖"; },
+      formatter: function (row) { return formatLabels(row, "").slice(0, 24); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: false
     });
   }
 
   function renderFlatOneTail(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 8).join("、");
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + " 平特一尾："; },
+      formatter: function (row) { return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 8).join("、"); }
     });
   }
 
   function renderKillTwoXiao(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return listValue(rawValue(row, "xiao")).slice(0, 2).join("、") || formatLabels(row, "、").slice(0, 12);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ": 绝杀二肖"; },
+      formatter: function (row) { return listValue(rawValue(row, "xiao")).slice(0, 2).join(".") || formatLabels(row, ".").slice(0, 12); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: true
     });
   }
 
   function renderKillOneWave(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return String(rawValue(row, "wave") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join("");
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ":绝杀①半波"; },
+      formatter: function (row) { return String(rawValue(row, "wave") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join(""); },
+      wrap: function (value) { return "【" + value + "】"; },
+      writeResult: true
     });
   }
 
   function renderKillOneTail(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join("");
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ":绝杀"; },
+      formatter: function (row) { return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join(""); },
+      writeResult: true
     });
   }
 
   function renderOneSentenceSpecial(section, module) {
-    renderTokenHistory(section, module, function (row) {
-      return String(rawValue(row, "sentence") || row && row.prediction && row.prediction.text || formatLabels(row, " ")).replace(/[|]/g, " ").trim().slice(0, 80);
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + " 一句话"; },
+      formatter: function (row) { return String(rawValue(row, "sentence") || row && row.prediction && row.prediction.text || formatLabels(row, " ")).replace(/[|]/g, " ").trim().slice(0, 80); },
+      wrap: function (value) { return "「" + value + "」"; },
+      writeResult: true
     });
   }
 
@@ -256,23 +270,108 @@
     try { publications = JSON.parse(String(rawValue(row, "content") || "{}")) .publications || []; } catch (_) { publications = tokenValues(row); }
     Array.prototype.forEach.call(section.querySelectorAll("li"), function (item, index) {
       clearLeaves(item);
-      writeLeaf(item, row ? "第" + issueOf(row) + "期 " + (publications[index] || "后端资料") : "资料加载中");
+      writeLeaf(item, row ? displayIssue(row) + " " + (publications[index] || "后端资料") : "");
+    });
+  }
+
+  function normalizedIssue(row) {
+    return displayIssue(row);
+  }
+
+  function setText(root, value) {
+    if (!root) return;
+    clearLeaves(root);
+    writeLeaf(root, value);
+  }
+
+  function rowData(module, index) {
+    return distinctRows(module)[index] || null;
+  }
+
+  function renderFourXiaoOdds(section, module) {
+    Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
+      var row = rowData(module, index);
+      var fonts = tr.querySelectorAll("font");
+      var groups = tr.querySelectorAll(".zl");
+      if (!row) { clearLeaves(tr); if (fonts[0]) writeLeaf(fonts[0], ""); return; }
+      var single = listValue(rawValue(row, "single_xiao")).slice(0, 4);
+      var doubled = listValue(rawValue(row, "double_xiao")).slice(0, 4);
+      if (!single.length || !doubled.length) {
+        var values = tokenValues(row);
+        single = values.slice(0, 4); doubled = values.slice(4, 8);
+      }
+      setText(fonts[0], normalizedIssue(row) + ":单肖");
+      setText(groups[0], "【" + single.join("") + "】");
+      setText(fonts[1], "双肖");
+      setText(groups[1], "【" + doubled.join("") + "】");
+      tr.setAttribute("data-prediction-row", String(index));
+    });
+  }
+
+  function renderPoultryBeast(section, module) {
+    Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
+      var row = rowData(module, index), cells = rowCells(tr), groups = tr.querySelectorAll(".zl");
+      if (!row) { clearLeaves(tr); if (cells[0]) writeLeaf(cells[0], ""); return; }
+      setText(cells[0], normalizedIssue(row));
+      var poultry = listValue(rawValue(row, "jia"));
+      var beast = listValue(rawValue(row, "ye"));
+      setText(groups[0], poultry.join(""));
+      setText(groups[1], beast.join(""));
+      setText(cells[2], resultText(row));
+      tr.setAttribute("data-prediction-row", String(index));
+    });
+  }
+
+  function renderFourXiaoEightCode(section, module) {
+    Array.prototype.forEach.call(sectionRows(section).slice(1), function (tr, index) {
+      var row = rowData(module, index), fonts = tr.querySelectorAll("font"), detail = tr.querySelector(".zl");
+      if (!row) { clearLeaves(tr); if (fonts[0]) writeLeaf(fonts[0], ""); return; }
+      var zodiac = listValue(rawValue(row, "xiao")).slice(0, 4);
+      var codes = listValue(rawValue(row, "code")).slice(0, 8);
+      setText(fonts[0], normalizedIssue(row) + ": ");
+      setText(fonts[2], " " + resultText(row));
+      var leaves = textNodes(detail);
+      if (leaves.length) leaves[0].nodeValue = "合肖（" + zodiac.join("") + "）";
+      if (leaves.length > 1) leaves[1].nodeValue = codes.join(".");
+      clearLeaves(detail, leaves.slice(0, 2));
+      tr.setAttribute("data-prediction-row", String(index));
+    });
+  }
+
+  function renderNumberLines(section, module, count, separator) {
+    Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
+      var row = rowData(module, index), cells = rowCells(tr);
+      if (!row) { clearLeaves(tr); if (cells[0]) writeLeaf(cells[0], ""); return; }
+      if (cells.length >= 3) {
+        setText(cells[0], normalizedIssue(row));
+        var numberCell = cells[1], numbers = tokenValues(row).slice(0, count);
+        var slots = numberCell.querySelectorAll("font[color='#FF0000'] > font");
+        Array.prototype.forEach.call(slots, function (slot, slotIndex) {
+          setText(slot, numbers[slotIndex] || "");
+        });
+        setText(cells[2], resultText(row));
+      } else {
+        var fonts = tr.querySelectorAll("font"), detail = tr.querySelector("font[color='#0000ff']");
+        setText(fonts[0], normalizedIssue(row) + ": ");
+        setText(fonts[2], " " + resultText(row));
+        setText(detail, "【" + tokenValues(row).slice(0, count).join(separator) + "】");
+      }
+      tr.setAttribute("data-prediction-row", String(index));
     });
   }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
-  function renderFourXiaoOdds(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 32); }); }
   function renderOneHeadOneCodeUnavailable(section) {
     Array.prototype.forEach.call(section.querySelectorAll(".bizhong1"), function (card) {
       Array.prototype.forEach.call(card.querySelectorAll(".bizhong1-l li, .bizhong1-r li, .bizhong1-foot"), function (slot) {
         clearLeaves(slot);
       });
       var firstSlot = card.querySelector(".bizhong1-l li");
-      if (firstSlot) writeLeaf(firstSlot, "资料同步中");
+      if (firstSlot) writeLeaf(firstSlot, "");
     });
   }
 
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
-  function renderThreeHeadFourTail(section, module) {
+  function renderThreeHeadFourTail(section, module, modules) {
     var rows = distinctRows(module);
     sectionRows(section).forEach(function (tr, index) {
       var cells = rowCells(tr);
@@ -285,25 +384,48 @@
       try { payload = JSON.parse(String(rawValue(row, "content") || "{}")); } catch (_) { payload = {}; }
       var heads = listValue(payload.heads).slice(0, 3);
       var tails = listValue(payload.tails).slice(0, 4);
-      var issue = "第" + issueOf(row).replace(/^(第|期)/g, "") + "期";
-      var value = "三头【" + heads.join("、") + "】四尾【" + tails.join("、") + "】";
-      if (cells.length === 1) writeLeaf(cells[0], issue + " " + value + " " + resultText(row));
-      else { writeLeaf(cells[0], issue); writeLeaf(cells[1], value); if (cells[2]) writeLeaf(cells[2], resultText(row)); }
+      if (tails.length < 4) {
+        tails = tokenValues(rowData(modules && modules.gongshi_siw, index)).slice(0, 4);
+      }
+      var issue = displayIssue(row);
+      var value = "三头【" + heads.join(".") + "】四尾【" + tails.join(".") + "】";
+      if (cells.length === 1) setText(cells[0], issue + " " + value + " " + resultText(row));
+      else {
+        setText(cells[0], issue);
+        setText(tr.querySelector(".zl") || cells[1], value);
+        if (cells[2]) setText(cells[2], resultText(row));
+      }
+      tr.setAttribute("data-prediction-row", String(index));
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
-  function renderFourCharacterFlatXiao(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "").slice(0, 16); }); }
+  function renderFourCharacterFlatXiao(section, module) {
+    Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
+      var row = rowData(module, index), cells = rowCells(tr), group = tr.querySelector(".zl");
+      if (!row) { clearLeaves(tr); if (cells[0]) writeLeaf(cells[0], ""); return; }
+      setText(cells[0], normalizedIssue(row));
+      setText(group, "【" + formatLabels(row, "").slice(0, 16) + "】");
+      setText(cells[2], resultText(row));
+      tr.setAttribute("data-prediction-row", String(index));
+    });
+  }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }
-  function renderPoultryBeast(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 20); }); }
 
   function renderSevenTailUnavailable(section) { clearUnavailableSlots(section); }
-  function renderSevenTail(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 28); }); }
+  function renderSevenTail(section, module) {
+    renderInlineSlots(section, module, {
+      prefix: function (row) { return normalizedIssue(row) + ":七尾中特"; },
+      formatter: function (row) { return tokenValues(row).slice(0, 7).map(function (value) { return String(value).split("|", 1)[0].replace(/尾$/, ""); }).join("-"); },
+      wrap: function (value) { return "【" + value + "尾】"; },
+      writeResult: true
+    });
+  }
 
   function renderSelectedTwentyTwoUnavailable(section) { clearUnavailableSlots(section); }
-  function renderSelectedTwentyTwo(section, module) { renderTokenHistory(section, module, function (row) { return tokenValues(row).slice(0, 22).join("-"); }); }
+  function renderSelectedTwentyTwo(section, module) { renderNumberLines(section, module, 22, "-"); }
 
   function renderKillSevenCodeUnavailable(section) { clearUnavailableSlots(section); }
-  function renderKillSevenCode(section, module) { renderTokenHistory(section, module, function (row) { return tokenValues(row).slice(0, 7).join("-"); }); }
+  function renderKillSevenCode(section, module) { renderNumberLines(section, module, 7, "."); }
 
 
   function moduleMap(result) {

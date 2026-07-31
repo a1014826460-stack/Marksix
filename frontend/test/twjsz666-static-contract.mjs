@@ -32,6 +32,7 @@ for (const script of [
 
 for (const file of files) {
   const source = fs.readFileSync(file, "utf8")
+  if (source.includes("资料同步中")) throw new Error(`loading placeholder remains in ${file}`)
   if (/https?:\/\//i.test(source)) throw new Error(`external origin remains in ${file}`)
   if (/eval\s*\(|atob\s*\(/i.test(source)) throw new Error(`dynamic supplier script remains in ${file}`)
   for (const sentinel of ["Zz_hdx.cp567.cc", "xg16888.com", "xg8388.com", "014902.com", "黄大仙"]) {

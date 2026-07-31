@@ -35,7 +35,7 @@
 | 平特一尾 | 标题“平特一尾”的 `.box.pad` | `pt1wei` | 读取 `tail`，输出一个尾数，按特别号尾数判定。 |
 | 精选22码 | `#jx22ma` 对应标题“精选22码”的 `.box.pad` | `selected_22_codes` | 最多展示 22 个号码；结果仅比较特别号号码。 |
 | 绝杀二肖 | 标题“绝杀二肖”的 `.box.pad` | `juesha2xiao` | 输出两个排除生肖；特别号不在排除集合中才为正确。 |
-| 绝杀①波 | 标题“绝杀①波”的 `.box.pad` | `jueshabanbo` | 输出一个排除波色；特别号不在该波色中才为正确。 |
+| 绝杀①半波 | 原模板标题“绝杀①波”的 `.box.pad`，运行时校正为“绝杀①半波” | `jueshabanbo` | 输出一个排除半波（如红单、蓝双）；特别号不在该半波中才为正确。 |
 | 绝杀①尾 | 标题“绝杀①尾”的 `.box.pad` | `juesha1wei` | 输出一个排除尾数；特别号尾数不等于该值才为正确。 |
 | 稳杀⑦码 | 标题“稳杀⑦码”的 `.box.pad` | `steady_kill_7_codes` | 输出最多七个排除号码；特别号不在集合中才为正确。 |
 | 一句话中特网码 | 标题“一句话中特网码”的 `.box.pad` | `yijuzhenyan` | 使用 `sentence` 或 `prediction.text` 的可读文本，移除传输分隔符。 |
@@ -120,7 +120,7 @@
 | 平特一尾 | `pt1wei` | `extra.tail` | 生成一个尾数；特别号末位相同即命中。 |
 | 精选22码 | `selected_22_codes` | `tokens`（最多 22 个两位号码） | 生成 22 码集合；特别号号码属于集合即命中。 |
 | 绝杀二肖 | `juesha2xiao` | `extra.xiao`（2 个） | 生成排除生肖；特别号不在集合中为正确。 |
-| 绝杀①波 | `jueshabanbo` | `extra.wave`（1 个） | 生成排除波色；特别号波色不等于该值为正确。 |
+| 绝杀①半波 | `jueshabanbo` | `tokens`（1 个半波标签） | 生成排除半波；特别号的波色单双组合不等于该值为正确。 |
 | 绝杀①尾 | `juesha1wei` | `extra.tail`（1 个） | 生成排除尾数；特别号末位不等于该值为正确。 |
 | 稳杀⑦码 | `steady_kill_7_codes` | `tokens`（最多 7 个号码） | 生成排除号码；特别号不在集合中为正确。 |
 | 一句话中特网码 | `yijuzhenyan` | `extra.sentence` 或 `prediction.text` | 后端生成一句可读资料；不得给前端原始分隔符或 JSON。 |
@@ -419,7 +419,7 @@
 
 映射：`issue`、`juesha2xiao.extra.xiao[0..1]`、特别号结果依次填入；两肖保留 `.` 分隔和排除命中语义。
 
-### 绝杀①波：原始 HTML 基线
+### 绝杀①半波：原始 HTML 基线
 
 ```html
 <tr>
@@ -431,7 +431,7 @@
             </tr>
 ```
 
-映射：`issue`、`jueshabanbo.extra.wave`、特别号结果依次写入；此模块为排除规则，`isCorrect` 已由后端计算。
+映射：保留上述原始 HTML 作为结构基线，但运行时标题明确校正为“绝杀①半波”；`issue`、`jueshabanbo.tokens[0]`、特别号结果依次写入。此模块为半波排除规则，`isCorrect` 已由后端计算。
 
 ### 绝杀①尾：原始 HTML 基线
 

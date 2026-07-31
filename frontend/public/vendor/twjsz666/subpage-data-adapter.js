@@ -58,6 +58,12 @@
   function issueOf(row) {
     return String(row && (row.issue || row.term) || "").trim();
   }
+  function displayIssue(row) {
+    var value = issueOf(row).replace(/^第/, "").replace(/期$/, "");
+    var digits = value.replace(/\D/g, "");
+    return (digits.length > 3 ? digits.slice(-3) : digits || value) + "期";
+  }
+
 
   function uniqueRows(module) {
     var seen = {};
@@ -99,8 +105,8 @@
     for (var index = 0; index < paragraphs.length; index += 1) {
       var row = rows[index];
       paragraphs[index].textContent = row
-        ? "第" + issueOf(row) + "期 【" + predictionText(row) + "】 " + openedText(row)
-        : "资料同步中";
+        ? displayIssue(row) + " 【" + predictionText(row) + "】 " + openedText(row)
+        : "";
     }
   }
 
