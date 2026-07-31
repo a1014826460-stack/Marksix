@@ -15,7 +15,7 @@ from app_http.request_context import RequestContext
 from app_http.router import Router
 from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from core.errors import ValidationError
-from domains.sites.service import get_public_notice
+from domains.sites.service import get_public_notice, get_public_site_links
 from domains.traffic.service import record_traffic_event
 
 
@@ -26,6 +26,7 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/draw-history", draw_history)
     router.add("GET", "/api/public/current-period", current_period)
     router.add("GET", "/api/public/notice", notice)
+    router.add("GET", "/api/public/site-links", site_links)
     router.add("POST", "/api/public/traffic-events", traffic_events)
     # 旧前端兼容路径
     router.add("GET", "/api/index/notice", notice)
@@ -156,6 +157,16 @@ def _client_ip(ctx: RequestContext) -> str | None:
     if isinstance(client_address, tuple) and client_address:
         return str(client_address[0])
     return None
+
+
+def site_links(ctx: RequestContext) -> None:
+    """公开站点链接接口。
+
+    根据 current_site_key 排除当前站点，返回已启用且有域名的外部站点链接。
+    不需要管理员鉴权。
+    """
+    current_site_key = str(ctx.query_value("current_site_key", "") or "").strip()
+    ctx.send_json(get_public_site_links(ctx.db_path, current_site_key))
 
 
 def traffic_events(ctx: RequestContext) -> None:

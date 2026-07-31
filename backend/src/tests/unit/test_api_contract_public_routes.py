@@ -63,3 +63,36 @@ def test_public_notice_contract_ignores_invalid_web():
     notice.assert_called_once_with(ctx.db_path, None)
     assert ctx.handler.response_status == 200
     assert response_json(ctx) == {"code": 200, "data": {"content": ""}}
+
+
+def test_public_site_links_contract_passes_current_site_key():
+    ctx = make_ctx("/api/public/site-links?current_site_key=twjsz666")
+    payload = {
+        "links": [
+            {
+                "site_key": "shengshi8800",
+                "name": "盛世台湾六合彩",
+                "domain": "www.tw8800.com",
+                "url": "https://www.tw8800.com/",
+            }
+        ]
+    }
+
+    with patch("routes.public_routes.get_public_site_links", return_value=payload) as handler:
+        public_routes.site_links(ctx)
+
+    handler.assert_called_once_with(ctx.db_path, "twjsz666")
+    assert ctx.handler.response_status == 200
+    assert response_json(ctx) == payload
+
+
+def test_public_site_links_contract_missing_current_site_key_defaults_to_empty():
+    ctx = make_ctx("/api/public/site-links")
+    payload: dict = {"links": []}
+
+    with patch("routes.public_routes.get_public_site_links", return_value=payload) as handler:
+        public_routes.site_links(ctx)
+
+    handler.assert_called_once_with(ctx.db_path, "")
+    assert ctx.handler.response_status == 200
+    assert response_json(ctx) == payload

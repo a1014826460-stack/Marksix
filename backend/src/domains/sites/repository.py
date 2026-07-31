@@ -169,5 +169,22 @@ def find_enabled_site_announcement_by_web_id(conn: Any, web_id: int) -> str:
     return str(row["announcement"] or "") if row else ""
 
 
+def list_public_enabled_sites(conn: Any) -> list[dict[str, Any]]:
+    """Return enabled sites with non-empty domain for public consumption.
+
+    Only projects id, name, domain, blueprint_name — no internal columns.
+    """
+    rows = conn.execute(
+        """
+        SELECT id, name, domain, blueprint_name
+        FROM managed_sites
+        WHERE enabled = 1
+          AND TRIM(COALESCE(domain, '')) <> ''
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def backfill_site_web_ids(conn: Any) -> None:
     conn.execute("UPDATE managed_sites SET web_id = COALESCE(web_id, id)")

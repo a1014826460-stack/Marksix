@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from core.errors import NotFoundError, ValidationError
 from db import connect, utc_now
@@ -17,6 +19,7 @@ from .repository import (
     get_site_web_id,
     insert_site,
     list_all_sites,
+    list_public_enabled_sites,
     update_site,
 )
 
@@ -160,3 +163,110 @@ def get_public_notice(db_path: str | Path, web_id: int | None) -> dict[str, Any]
         "code": 600 if announcement else 200,
         "data": {"content": announcement},
     }
+
+
+# ── public site links ────────────────────────────────────────────────────
+
+_HOSTNAME_RE = re.compile(
+    r"^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+)
+
+
+def _parse_hostname(raw: str) -> str | None:
+    """Extract a legal hostname from a pure hostname or HTTP(S) URL.
+
+    Rejects credentials, query strings, fragments, non-HTTP(S) schemes,
+    and strings that do not look like a valid hostname.  Returns the
+    lower-cased hostname on success, or ``None`` when the input is invalid.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    parsed = urlparse(raw)
+    if parsed.scheme:
+        if parsed.scheme not in ("http", "https"):
+            return None
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            return None
+        hostname = parsed.hostname
+        if hostname is None:
+            return None
+    else:
+        # Pure hostname — must not contain URL-unsafe characters.
+        if "://" in raw:
+            return None
+        if "@" in raw or "?" in raw or "#" in raw:
+            return None
+        hostname = raw.rstrip("/")
+        if "/" in hostname:
+            return None
+
+    if not _HOSTNAME_RE.match(hostname):
+        return None
+    return hostname.lower()
+
+
+def get_public_site_links(
+    db_path: str | Path, current_site_key: str
+) -> dict[str, Any]:
+    """Return enabled, domain-populated site links excluding *current_site_key*.
+
+    The current site is excluded when its ``blueprint_name`` matches
+    *current_site_key* **or** when any candidate row resolves to the same
+    hostname as the current site.  Rows with invalid domains are silently
+    dropped.  Within the same hostname only the first row (by ``id ASC``) is
+    kept.  Every returned link is projected to ``{site_key, name, domain,
+    url}`` where ``url`` is normalised to ``https://{host}/``.
+    """
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        rows = list_public_enabled_sites(conn)
+
+    # Determine the current site's hostname for domain-based exclusion.
+    # The current site may not be in the enabled + domain-populated set
+    # (e.g. disabled or empty domain), so look it up independently.
+    current_hostname: str | None = None
+    for row in rows:
+        if row["blueprint_name"] == current_site_key:
+            current_hostname = _parse_hostname(str(row["domain"] or ""))
+            break
+
+    if current_hostname is None:
+        # Current site not in the public set — try a direct lookup.
+        with connect(db_path) as conn:
+            cur_row = conn.execute(
+                """
+                SELECT domain FROM managed_sites
+                WHERE blueprint_name = ?
+                LIMIT 1
+                """,
+                (current_site_key,),
+            ).fetchone()
+        if cur_row:
+            current_hostname = _parse_hostname(str(cur_row["domain"] or ""))
+
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+
+    for row in rows:
+        if row["blueprint_name"] == current_site_key:
+            continue
+        hostname = _parse_hostname(str(row["domain"] or ""))
+        if hostname is None:
+            continue
+        if current_hostname is not None and hostname == current_hostname:
+            continue
+        if hostname in seen:
+            continue
+        seen.add(hostname)
+        result.append(
+            {
+                "site_key": row["blueprint_name"],
+                "name": row["name"],
+                "domain": hostname,
+                "url": f"https://{hostname}/",
+            }
+        )
+
+    return {"links": result}
