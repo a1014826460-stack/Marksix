@@ -28,6 +28,7 @@ if (publicCards.length !== 9) throw new Error(`expected nine 买码之前先上 
 if (!adapter.includes("SECTION_CONTRACTS")) throw new Error("adapter lacks explicit SECTION_CONTRACTS")
 if (adapter.includes("function renderUnavailableSection")) throw new Error("adapter still has generic renderUnavailableSection fallback")
 if (!adapter.includes("Object.freeze(contract)")) throw new Error("SECTION_CONTRACTS entries are not immutable")
+if (!adapter.includes('querySelectorAll("table.qxtable")')) throw new Error("public prediction cards are not cleared before API rendering")
 
 const requiredFields = ["id", "titlePattern", "containerSelector", "classification", "moduleKeys", "rendererName", "issueGroups", "supplierSentinels"]
 for (const field of requiredFields) {

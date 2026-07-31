@@ -59,5 +59,10 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
                 section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
                 assert section.count() == 1, title
                 assert f"第{expected}01期" in section.inner_text(), title
+        page.goto(f"{base_url}/vendor/twjsz666/155.html", wait_until="domcontentloaded")
+        page.wait_for_timeout(250)
+        article = page.locator('[data-prediction-article="true"]')
+        assert "第301期" in article.inner_text()
+        assert "2025060期" not in article.inner_text()
         assert {lottery_type for _, lottery_type in requests} >= {1, 2, 3}
         browser.close()

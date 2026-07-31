@@ -24,6 +24,7 @@ export default defineVendorSiteManifest({
     predictionModuleKeys: [
       "yijuzhenyan", "shuangbo", "jueshabanbo", "pt1wei", "daxiao",
       "4xiao8ma", "pt1xiao", "pt3xiao", "juesha1wei", "juesha2xiao", "9xzt",
+      "sitouzhongte", "juesha1xiao", "qinqi",
     ],
     runtime: {
       drawSelector: ".KJ-TabBox",

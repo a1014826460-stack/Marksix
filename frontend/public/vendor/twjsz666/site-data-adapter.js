@@ -338,6 +338,9 @@
       updateTitle(section, lottery);
       renderSection(section, modules);
     });
+    Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
+      clearUnavailableSlots(card);
+    });
   }
 
   function announce(resource, result) {

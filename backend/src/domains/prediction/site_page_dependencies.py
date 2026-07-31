@@ -109,6 +109,28 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("3tou", 12, "/vendor/twbst528/154.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
         )
     ),
+    # Twjsz666 article pages render only canonical mechanisms with matching
+    # semantics; pages without one remain an explicit API-empty state.
+    *(
+        SitePageDependency(
+            site_key="twjsz666",
+            page_path=page_path,
+            source_path="frontend/public/vendor/twjsz666/subpage-data-adapter.js",
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for page_path, mechanism_key, mode_id in (
+            ("/vendor/twjsz666/154.html", "pt1wei", 54),
+            ("/vendor/twjsz666/155.html", "pt1xiao", 56),
+            ("/vendor/twjsz666/156.html", "daxiao", 57),
+            ("/vendor/twjsz666/157.html", "sitouzhongte", 483),
+            ("/vendor/twjsz666/158.html", "juesha1xiao", 472),
+            ("/vendor/twjsz666/160.html", "4xiao8ma", 51),
+            ("/vendor/twjsz666/164.html", "jueshabanbo", 58),
+            ("/vendor/twjsz666/166.html", "qinqi", 26),
+            ("/vendor/twjsz666/167.html", "sitouzhongte", 483),
+        )
+    ),
     # Twjsz666 reuses only the reviewed mature modules rendered by its adapter.
     *(
         SitePageDependency(

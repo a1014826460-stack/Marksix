@@ -78,11 +78,18 @@ for (const name of contentPages) {
 const adapterPath = path.join(root, "subpage-data-adapter.js")
 if (!fs.existsSync(adapterPath)) fail("missing subpage-data-adapter.js")
 const adapter = fs.readFileSync(adapterPath, "utf8")
-for (const required of ["Twjsz666SiteConfig", "data-page-title", "siteName", "siteDomain", "DOMContentLoaded"]) {
+for (const required of ["Twjsz666SiteConfig", "data-page-title", "siteName", "siteDomain", "DOMContentLoaded", "LotterySiteDataClient", "loadPredictions", "ARTICLE_MODULE_KEYS", "renderArticleRows"]) {
   if (!adapter.includes(required)) fail(`subpage adapter missing ${required}`)
 }
 if (/createElement|appendChild|insertBefore|replaceChild|\.innerHTML\s*=/i.test(adapter)) {
   fail("subpage adapter must not create, move, or replace DOM nodes")
+}
+
+for (const name of contentPages) {
+  const html = source(name)
+  if (!html.includes('data-prediction-article="true"')) fail(`${name}: prediction article is not marked for API rendering`)
+  if (!html.includes('data-prediction-module="')) fail(`${name}: prediction module is not declared`)
+  if (/20(?:24|25)\d{3}期/.test(html)) fail(`${name}: supplier prediction snapshot remains`)
 }
 
 console.log(`twjsz666 subpage contract passed (${pageNames.length} pages)`)
