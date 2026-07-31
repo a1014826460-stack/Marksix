@@ -408,6 +408,28 @@ three.
 - Do not replace supplied HTML/CSS/JS, navigation labels, footer images, layout, or script execution. A UI change needs explicit user approval in a separate task.
 - Treat `frontend/lib/site-platform/site-ui-baseline.ts` and each `site-adapter.ts` as the regression contract. Browser verification must prove original draw, navigation and footer sentinels remain present.
 
+## 前端预测模块开发规范
+
+每个供应商站点在接入或补齐预测资料前，必须新增一份中文“前端预测模块设计文档”。文档必须以实际入口 HTML 和站点 adapter 的 section inventory 为准，逐项列出 TITLE、稳定 DOM 锚点、可用状态、moduleKey、业务语义、历史组数与命中规则；不能只按标题猜测模块含义。
+
+### 接口约定
+
+- 预测资料默认复用同源 `GET /api/sites/{siteKey}/prediction-modules`，请求参数至少为 `lottery_type`、`history_limit` 和可选 `include_vendor`。每一份文档必须列出所有参数、外层响应、`canonical_modules[]`、`rows[]`、`prediction`、`extra` 与特别号 `result` 字段，并为每个模块写明所需 moduleKey、专有字段、数据来源和确定性命中规则。
+- 模块没有精确的成熟后端机制时，标为 `unavailable` 并定义命名空态；禁止以近似 moduleKey 伪造资料。需要新增机制时，先在设计文档定义结构化 payload、字段容量和计算规则，再实现数据库/生成器/API/站点授权。
+- 必须以目标站点 `web_id`、三种彩票类型的实际数据行、同源 API payload 和浏览器 DOM 四层分别验收；另一个站点的数据行不能作为替代证据。
+
+### DOM 槽位与展示基线
+
+- 每一个可用预测模块都必须在设计文档中保留至少一个直接复制自目标 `index.html` 的原始 HTML 展示片段；不得只为代表模块提供基线，也不得用伪造示例代替。片段必须记录期号槽、预测子字段、结果槽、命中黄色叶节点、固定标签、`br` 与行/卡片容量。运行时只写既有最小叶节点，不得使用 whole-row `textContent`、`innerHTML` 或新增/移动节点破坏布局。
+- 每个非同构模块使用命名 formatter 和 named renderer。解析 CSV、JSON、数组或 `标签|号码` 后再写入分组槽位；禁止展示原始分隔符、JSON、`[object Object]` 或不受控的长文本。
+- 所有供应商固定期号/静态期数预测快照（包括“第xxx期”“xxx期”）必须在 mapped、composite 或 unavailable 预测区块中被后端资料替换或明确清空。该规则不删除同源 API 渲染的实时期号，也不删除统一开奖模块的实时期号。
+
+### 刷新与测试
+
+- 按 `lottery_type` 隔离请求、缓存、in-flight promise 与渲染状态；去重 `issue`，限制最多 20 个 distinct issues。快速切换或迟到响应不得覆盖当前彩票。
+- 已开奖预测结果只显示特别号；未来期显示 `开:待开奖`。命中只能使用供应商已有黄色背景叶节点，切换、未命中和空态必须清除旧命中。
+- 提交前为每个映射模块增加浏览器契约：点击三种彩票并返回缓存页，断言本模块期号/槽位/拓扑/特别号结果/命中状态，且断言无固定期号哨兵、供应商占位符、原始分隔符或跨彩票资料。
+
 ## Unified Attribute Image Module
 
 When the product requirement explicitly replaces a vendor page's trailing static

@@ -57,6 +57,10 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
         page.wait_for_timeout(500)
         vendor = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/index.html"))
         draw = next(frame for frame in page.frames if frame.url.endswith("/vendor/twjsz666/kai.html"))
+        one_head_cards = vendor.locator("#yxym .bizhong1")
+        assert one_head_cards.count() == 9
+        assert "060期" not in one_head_cards.first.inner_text()
+        assert "资料同步中" in one_head_cards.first.inner_text()
         tabs = draw.locator(".KJ-TabBox li")
         assert tabs.count() == 3
         for index, expected in enumerate((3, 2, 1)):

@@ -261,7 +261,15 @@
   }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
   function renderFourXiaoOdds(section, module) { renderTokenHistory(section, module, function (row) { return formatLabels(row, "、").slice(0, 32); }); }
-  function renderOneHeadOneCodeUnavailable(section) { clearUnavailableSlots(section); }
+  function renderOneHeadOneCodeUnavailable(section) {
+    Array.prototype.forEach.call(section.querySelectorAll(".bizhong1"), function (card) {
+      Array.prototype.forEach.call(card.querySelectorAll(".bizhong1-l li, .bizhong1-r li, .bizhong1-foot"), function (slot) {
+        clearLeaves(slot);
+      });
+      var firstSlot = card.querySelector(".bizhong1-l li");
+      if (firstSlot) writeLeaf(firstSlot, "资料同步中");
+    });
+  }
 
   function renderThreeHeadFourTailUnavailable(section) { clearUnavailableSlots(section); }
   function renderThreeHeadFourTail(section, module) {
@@ -378,6 +386,9 @@
     });
     Array.prototype.forEach.call(window.document.querySelectorAll("table.qxtable"), function (card) {
       clearUnavailableSlots(card);
+    });
+    Array.prototype.forEach.call(window.document.querySelectorAll(".pad#yxym"), function (section) {
+      renderOneHeadOneCodeUnavailable(section);
     });
     clearSupplierIssueSnapshots();
   }
