@@ -1561,6 +1561,7 @@ function buildPageHtml(
     render3Tou(resolveModule(modules, "3tou"), defaultLotteryTypeId),
     renderDaxiao(resolveModule(modules, "daxiao"), defaultLotteryTypeId),
     ...GENERIC_MODULES.map((config) => renderGenericModule(config, resolveModule(modules, config.mechanismKey), defaultLotteryTypeId)),
+    `<managed-site-links site-key="twcaibawang"></managed-site-links>`,
     renderUnifiedSiteFooter(siteData.site.name, siteData.site.domain),
     `</div>`,
     `<a href="#fhdb" class="return-top">
@@ -1588,6 +1589,15 @@ export function TwcaibawangHomeClient({
     setCurrentSiteData(siteData)
     setCurrentHomepageModules(homepageModules)
   }, [defaultLotteryTypeId, homepageModules, siteData])
+
+  // Once-only loader for the shared managed-site-links custom element script
+  useEffect(() => {
+    const scriptSrc = "/vendor/_shared/managed-site-links.js"
+    if (document.querySelector(`script[src="${scriptSrc}"]`)) return
+    const script = document.createElement("script")
+    script.src = scriptSrc
+    document.head.appendChild(script)
+  }, [])
 
   const html = useMemo(
     () => buildPageHtml(currentSiteData, currentHomepageModules, activeLotteryTypeId),
