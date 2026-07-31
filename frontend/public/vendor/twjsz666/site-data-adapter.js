@@ -193,6 +193,20 @@
     });
   }
 
+  function ensureDataAttrs(cell, fonts, group) {
+    // Assign data-prediction-* attributes so CSS can enforce display:block
+    // and contracts can locate the three independent leaf nodes.
+    if (fonts[0] && !fonts[0].hasAttribute("data-prediction-issue")) {
+      fonts[0].setAttribute("data-prediction-issue", "");
+    }
+    if (group && !group.hasAttribute("data-prediction-content")) {
+      group.setAttribute("data-prediction-content", "");
+    }
+    if (fonts.length > 1 && fonts[fonts.length - 1] && !fonts[fonts.length - 1].hasAttribute("data-prediction-result")) {
+      fonts[fonts.length - 1].setAttribute("data-prediction-result", "");
+    }
+  }
+
   function renderInlineSlots(section, module, options) {
     Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
       var row = rowData(module, index), cell = rowCells(tr)[0];
@@ -201,8 +215,27 @@
       if (!row) { clearLeaves(tr); if (fonts[0]) writeLeaf(fonts[0], ""); return; }
       var value = options.formatter(row);
       if (!group) {
-        setText(fonts[0], options.prefix(row) + value + " " + resultText(row));
+        // Three-line standard: prefer data-prediction-* slots declared in HTML.
+        var issueSlot = cell && cell.querySelector("[data-prediction-issue]");
+        var contentSlot = cell && cell.querySelector("[data-prediction-content]");
+        var resultSlot = cell && cell.querySelector("[data-prediction-result]");
+        if (issueSlot && contentSlot) {
+          setText(issueSlot, options.prefix(row));
+          setText(contentSlot, options.wrap ? options.wrap(value) : value);
+          if (options.writeResult !== false && resultSlot) setText(resultSlot, resultText(row));
+        } else {
+          // Legacy fallback: no data-prediction-* slots and no .zl group.
+          // This branch should not be reached after the entry HTML is
+          // restructured with data-prediction-issue/content/result leaves.
+          // Write the issue prefix to the first font and stop; do not
+          // concatenate three fields into one text node.
+          if (fonts[0]) {
+            setText(fonts[0], options.prefix(row));
+            fonts[0].setAttribute("data-prediction-issue", "");
+          }
+        }
       } else {
+        ensureDataAttrs(cell, fonts, group);
         setText(fonts[0], options.prefix(row));
         setText(group, options.wrap ? options.wrap(value) : value);
         if (options.writeResult) setText(fonts[fonts.length - 1], resultText(row));

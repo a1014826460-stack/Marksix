@@ -72,6 +72,17 @@
         line-height: 1.55;
     }
 
+    /* Three-line prediction display standard
+       Issue, content and result must each occupy their own block-level
+       leaf node. Matches the data-prediction-* attributes assigned by the
+       site adapter at render time; also covers static HTML slots that
+       declare these attributes directly. */
+    [data-prediction-issue],
+    [data-prediction-content],
+    [data-prediction-result] {
+        display: block;
+    }
+
     html{
         scroll-padding-top: 210px;
     }
@@ -1827,39 +1838,57 @@
             <table border="1" width="100%" class="duilianpt" bgcolor="#ffffff" cellspacing="0" bordercolor="#FFFFFF" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" cellpadding="2">
                                 <tr>
                     <td>
-                        <font color="#000000">060期 平特一尾：5尾?</font></td>
+                        <font color="#000000" data-prediction-issue>060期 平特一尾：</font>
+                        <span data-prediction-content>5尾</span>
+                        <font color="#000000" data-prediction-result>?</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">059期 21-23-22-<span style="background-color: #FFFF00">44</span>-32-05 T28 4尾√</font></td>
+                        <font color="#000000" data-prediction-issue>059期 平特一尾：</font>
+                        <span data-prediction-content>21-23-22-<span style="background-color: #FFFF00">44</span>-32-05</span>
+                        <font color="#000000" data-prediction-result>T28 4尾√</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">058期 09-<span style="background-color: #FFFF00">43</span>-14-42-06-32 T26 3尾√</font></td>
+                        <font color="#000000" data-prediction-issue>058期 平特一尾：</font>
+                        <span data-prediction-content>09-<span style="background-color: #FFFF00">43</span>-14-42-06-32</span>
+                        <font color="#000000" data-prediction-result>T26 3尾√</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">057期 38-11-09-<span style="background-color: #FFFF00">45</span>-21-13 T19 5尾√</font></td>
+                        <font color="#000000" data-prediction-issue>057期 平特一尾：</font>
+                        <span data-prediction-content>38-11-09-<span style="background-color: #FFFF00">45</span>-21-13</span>
+                        <font color="#000000" data-prediction-result>T19 5尾√</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">056期 03-40-29-38-<span style="background-color: #FFFF00">44</span>-17 T32 4尾√</font></td>
+                        <font color="#000000" data-prediction-issue>056期 平特一尾：</font>
+                        <span data-prediction-content>03-40-29-38-<span style="background-color: #FFFF00">44</span>-17</span>
+                        <font color="#000000" data-prediction-result>T32 4尾√</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">055期 03-43-34-07-30-27 T42 9尾×</font></td>
+                        <font color="#000000" data-prediction-issue>055期 平特一尾：</font>
+                        <span data-prediction-content>03-43-34-07-30-27</span>
+                        <font color="#000000" data-prediction-result>T42 9尾×</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">054期 44-37-47-<span style="background-color: #FFFF00">36</span>-08-15 T30 6尾√</font></td>
+                        <font color="#000000" data-prediction-issue>054期 平特一尾：</font>
+                        <span data-prediction-content>44-37-47-<span style="background-color: #FFFF00">36</span>-08-15</span>
+                        <font color="#000000" data-prediction-result>T30 6尾√</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">053期 36-49-11-22-19-12 T09 5尾×</font></td>
+                        <font color="#000000" data-prediction-issue>053期 平特一尾：</font>
+                        <span data-prediction-content>36-49-11-22-19-12</span>
+                        <font color="#000000" data-prediction-result>T09 5尾×</font></td>
                 </tr>
                                 <tr>
                     <td>
-                        <font color="#000000">052期 03-30-15-49-29-21 T43 4尾×</font></td>
+                        <font color="#000000" data-prediction-issue>052期 平特一尾：</font>
+                        <span data-prediction-content>03-30-15-49-29-21</span>
+                        <font color="#000000" data-prediction-result>T43 4尾×</font></td>
                 </tr>
 
             </table>

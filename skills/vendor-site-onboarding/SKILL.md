@@ -433,6 +433,33 @@ three.
 - Do not replace supplied HTML/CSS/JS, navigation labels, footer images, layout, or script execution. A UI change needs explicit user approval in a separate task.
 - Treat `frontend/lib/site-platform/site-ui-baseline.ts` and each `site-adapter.ts` as the regression contract. Browser verification must prove original draw, navigation and footer sentinels remain present.
 
+## 三行预测展示
+
+当一个历史预测重复单元同时含有期号、预测正文和开奖结果且三字段同单元格或同一文本流时，必须使用三个独立的最小叶节点并采用块级展示：
+
+```html
+<font data-prediction-issue>180期 一句话</font>
+<span data-prediction-content>「预测正文」</span>
+<font data-prediction-result>开:04兔错</font>
+```
+
+- 禁止用整行 `textContent` 把期号、正文和结果拼成一个字符串；每个字段必须写入自己已有的或预先声明的叶节点。
+- 三个叶节点各自声明对应的 `data-prediction-issue` / `data-prediction-content` / `data-prediction-result` 属性，并通过 CSS `display: block` 确保期号和结果不与正文粘连。正文可自然换行。
+- 不要求把本来就是三列的表格改成单列；该规则只针对三个语义字段原本挤在同一文本流的单元格。
+- 站点 adapter 渲染前优先查找 `[data-prediction-issue]` / `[data-prediction-content]` / `[data-prediction-result]` 槽位写入；未找到时才退化到既有 font/span 结构。
+- 浏览器契约必须检查命中模块各叶节点的计算样式（`getComputedStyle` 即 computed style）返回 `display: block`（或等效块级值），并断言不存在整行 `textContent` 拼接的期号-正文-结果语句。
+
+## 公共站点链接
+
+外部站点链接禁止硬编码在站点 HTML 或 adapter 中；只能通过公共站点链接 API 和唯一共享组件获取。
+
+- 数据源为 `managed_sites` 表（`id/name/domain/blueprint_name/enabled`），公共响应只暴露 `name`、规范化 `domain`、`url` 和可公开的 `site_key`。
+- 共享实现为 `frontend/public/vendor/_shared/managed-site-links.js`，注册自定义元素 `<managed-site-links site-key="...">`。组件请求同源 `/api/site-links?site_key=...`，在 shadow DOM 内管理链接子树；不创建卡片、不嵌入营销说明、不暴露内部管理字段。
+- 组件必须排除当前站点（由 `site-key` 属性显式传入，不允许通过可见标题或当前 host 猜测），仅展示 `enabled = 1` 且域名非空的记录，输出 URL 统一为 `https://{host}/`。
+- 每个 `<a>` 必须设置 `target="_blank"` 和 `rel="noopener noreferrer"`。请求失败或无链接时保留标题、清空链接区，不回退到供应商硬编码外链。
+- 新增站点必须在入口 HTML 或页面组件中挂载唯一的 `<managed-site-links>` 实例并加载共享脚本一次；数据库变化不应要求修改站点 HTML。
+- 浏览器契约必须验证：组件实例唯一性、安全属性、当前站点不出现、数据库 fixture 增删后链接数量和顺序动态变化。
+
 ## 前端预测模块开发规范
 
 每个供应商站点在接入或补齐预测资料前，必须新增一份中文“前端预测模块设计文档”。文档必须以实际入口 HTML 和站点 adapter 的 section inventory 为准，逐项列出 TITLE、稳定 DOM 锚点、可用状态、moduleKey、业务语义、历史组数与命中规则；不能只按标题猜测模块含义。

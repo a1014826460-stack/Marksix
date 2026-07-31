@@ -50,4 +50,43 @@ for (const requirement of [
   if (!skill.includes(requirement)) throw new Error(`SKILL.md missing onboarding regression rule ${requirement}`)
 }
 
+// Three-line prediction display rules (Task 5)
+for (const requirement of [
+  "三行预测展示",
+  "data-prediction-issue",
+  "data-prediction-content",
+  "data-prediction-result",
+  "display: block",
+  // Must forbid whole-row textContent concatenation
+  "textContent",
+]) {
+  if (!skill.includes(requirement)) throw new Error(`SKILL.md missing three-line prediction display rule ${requirement}`)
+}
+// Public site links rules (Task 5)
+for (const requirement of [
+  "公共站点链接",
+  "managed-site-links",
+  "禁止硬编码",
+  "排除当前站点",
+  "target=\"_blank\"",
+  "noopener",
+  "数据库变化不应要求修改站点",
+]) {
+  if (!skill.includes(requirement)) throw new Error(`SKILL.md missing public site links rule ${requirement}`)
+}
+
+// Verify twjsz666 index.html has three-line CSS and data-prediction-* slots
+const twjsz666HTML = fs.readFileSync("frontend/public/vendor/twjsz666/index.html", "utf8")
+if (!/\[data-prediction-issue\]\s*,\s*\[data-prediction-content\]\s*,\s*\[data-prediction-result\]\s*\{[^}]*display\s*:\s*block/.test(twjsz666HTML)) {
+  throw new Error("twjsz666 index.html missing three-line data-prediction-* display:block CSS rule")
+}
+if (!twjsz666HTML.includes("data-prediction-issue")) {
+  throw new Error("twjsz666 index.html missing data-prediction-issue attribute in static HTML")
+}
+// The adapter must not combine prefix + value + result into one text node
+const twjsz666Adapter = fs.readFileSync("frontend/public/vendor/twjsz666/site-data-adapter.js", "utf8")
+if (/setText\(\s*fonts\[\s*0\s*\]\s*,\s*options\.prefix\(\s*\w+\s*\)\s*\+\s*\w+\s*\+\s*["'][^"']*["']\s*\+\s*resultText/.test(twjsz666Adapter)) {
+  throw new Error("twjsz666 adapter still combines prefix + value + result into one text node")
+}
+
 console.log("twjsz666 prediction-module design contract passed")
