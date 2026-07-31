@@ -125,6 +125,45 @@ def main() -> None:
                             "twjsz666": "Twjsz666SiteData",
                         }[site["key"]],
                     ), f"{site['key']} must expose its existing-DOM data adapter"
+                # Managed site links contract (all 8 manifest sites)
+                links_el = frame.locator("managed-site-links").first
+                links_el.wait_for(state="attached", timeout=5000)
+                title_el = links_el.locator('[data-title]')
+                title_el.wait_for(state="attached", timeout=3000)
+                title_text = title_el.text_content()
+                assert title_text == "友情链接", (
+                    f"{site['key']} managed-site-links must show title '友情链接', got '{title_text}'"
+                )
+                # Verify link attributes when links are rendered
+                link_anchors = links_el.locator("a")
+                link_count = link_anchors.count()
+                for i in range(link_count):
+                    anchor = link_anchors.nth(i)
+                    assert anchor.get_attribute("target") == "_blank", (
+                        f"{site['key']} link {i} must have target=_blank"
+                    )
+                    assert anchor.get_attribute("rel") == "noopener noreferrer", (
+                        f"{site['key']} link {i} must have rel=noopener noreferrer"
+                    )
+                    href = anchor.get_attribute("href") or ""
+                    assert href.startswith("https://"), (
+                        f"{site['key']} link {i} must use HTTPS, got '{href}'"
+                    )
+
+                # Three-line prediction display contract (twjsz666 only)
+                if site["key"] == "twjsz666":
+                    for data_attr, label in [
+                        ("data-prediction-issue", "issue"),
+                        ("data-prediction-content", "content"),
+                        ("data-prediction-result", "result"),
+                    ]:
+                        el = frame.locator(f"[{data_attr}]").first
+                        el.wait_for(state="attached", timeout=5000)
+                        display = el.evaluate("el => window.getComputedStyle(el).display")
+                        assert display == "block", (
+                            f"twjsz666 {label} node [{data_attr}] must be display:block, got '{display}'"
+                        )
+
                 if site["key"] == "twssz":
                     external_requests = []
                     page.on(
