@@ -14,13 +14,11 @@ def prediction_payload(lottery_type: int) -> dict:
                 "result": {"isOpened": index < 9, "code": f"{index:02d}", "zodiac": "鼠", "isCorrect": index == 1, "text": f"{index:02d}鼠"},
             }
         )
-    modules = {
-        "pt3xiao": {"moduleKey": "pt3xiao", "rows": rows},
-        "title_47": {"moduleKey": "title_47", "rows": rows},
-        "shuangbo": {"moduleKey": "shuangbo", "rows": rows},
-        "pt1xiao": {"moduleKey": "pt1xiao", "rows": rows},
-        "daxiao": {"moduleKey": "daxiao", "rows": rows},
-    }
+    module_keys = (
+        "9xzt", "pt1xiao", "shuangbo", "pt3xiao", "4xiao8ma", "daxiao",
+        "pt1wei", "juesha2xiao", "jueshabanbo", "juesha1wei", "yijuzhenyan",
+    )
+    modules = {key: {"moduleKey": key, "rows": rows} for key in module_keys}
     return {"ok": True, "data": {"canonical_modules": list(modules.values())}}
 
 
@@ -53,6 +51,11 @@ def test_twjsz666_all_lottery_tabs_are_isolated():
             assert any(lottery_type == expected for _, lottery_type in requests), (expected, requests)
             heading = vendor.locator(".list-title").first.inner_text()
             assert "台湾金手指" not in heading or expected == 3
-            assert "????" not in vendor.locator("body").inner_text()
+            body_text = vendor.locator("body").inner_text()
+            assert "????" not in body_text
+            for title in ("发财⑨肖", "平特一肖", "双波中特", "平特③肖", "④肖⑧码", "大小中特", "平特一尾", "绝杀二肖", "绝杀①波", "绝杀①尾", "一句话中特码"):
+                section = vendor.locator(".box.pad", has=vendor.locator(".list-title", has_text=title)).first
+                assert section.count() == 1, title
+                assert f"第{expected}01期" in section.inner_text(), title
         assert {lottery_type for _, lottery_type in requests} >= {1, 2, 3}
         browser.close()
