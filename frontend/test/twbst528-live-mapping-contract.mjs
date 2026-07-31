@@ -29,12 +29,14 @@ for (const token of [
   'renderYijuZhongpingHistory',
   'renderLiangboTuweiHistory',
   'renderBaxiaoLaixiHistory',
-  'renderDrawPanel',
-  'data-draw-value',
+  'activateDrawPanel',
 ]) {
   if (!adapter.includes(token)) throw new Error(`adapter missing ${token}`)
 }
 for (const token of [
+  '/vendor/shengshi8800/kj/local.html?lottery_type=3',
+  '/vendor/shengshi8800/kj/local.html?lottery_type=2',
+  '/vendor/shengshi8800/kj/local.html?lottery_type=1',
   'id="legacy-attribute-anchor"',
   'id="legacy-attribute-gallery"',
   '/uploads/image/20250322/1742580086567063.png',
@@ -43,9 +45,7 @@ for (const token of [
 ]) {
   if (!index.includes(token)) throw new Error(`homepage missing unified site component ${token}`)
 }
-if (index.includes('KJ-IFRAME') || index.includes('/vendor/shengshi8800/kj/local.html')) {
-  throw new Error('draw panels must not retain a supplier iframe')
-}
+if (index.includes("url':'about:blank'")) throw new Error("draw tabs must not retain blank supplier iframes")
 if (index.includes('id="jinfang"') || index.includes("function hidediv")) {
   throw new Error("supplier notification window must be removed")
 }

@@ -951,41 +951,16 @@
     renderDoubleWaveHistory(modules.shuangbo_12ma);
   }
 
-  function drawData(result) {
-    var data = result && result.data || {};
-    while (data && !data.issue && !data.current_issue && data.data) data = data.data;
-    return data || {};
-  }
-
-  function renderDrawPanel(type, result) {
-    var panelIndex = siteConfig.lotteries.map(function (lottery) { return lottery.lotteryType; }).indexOf(Number(type));
-    var panel = window.document.querySelectorAll(".KJ-TabBox > div")[panelIndex];
-    var content = panel && panel.querySelector("[data-draw-value]");
-    if (!content) return;
-    var data = drawData(result);
-    var balls = Array.isArray(data.balls) ? data.balls : [];
-    var issue = String(data.current_issue || data.issue || "").trim();
-    var values = balls.map(function (ball) { return String(ball && ball.value || "").padStart(2, "0"); }).filter(Boolean);
-    var special = balls.filter(function (ball) { return ball && ball.is_special; })[0] || balls[balls.length - 1] || {};
-    content.textContent = issue && values.length
-      ? "第" + issue + "期 开奖：" + values.join(" ") + (special.zodiac ? " 特别号" + String(special.value || "").padStart(2, "0") + special.zodiac : "")
-      : "暂无开奖资料";
-  }
-
-  function activateDrawPanel(type) {
-    var tabs = window.document.querySelectorAll(".KJ-TabBox li");
-    var panels = window.document.querySelectorAll(".KJ-TabBox > div");
-    var panelIndex = siteConfig.lotteries.map(function (lottery) { return lottery.lotteryType; }).indexOf(Number(type));
-    Array.prototype.forEach.call(tabs, function (tab, index) { tab.className = index === panelIndex ? "cur" : ""; });
-    Array.prototype.forEach.call(panels, function (panel, index) { panel.className = index === panelIndex ? "cur" : ""; });
+  function activateDrawPanel(item) {
+    // Re-dispatch to the supplier KJTB handler so it owns iframe creation and
+    // the supplied tab/panel DOM remains the only draw UI.
+    if (item && !item.classList.contains("cur")) item.click();
   }
 
   function selectLottery(type) {
     activeLottery = lotteryForType(type);
     var selectedType = activeLottery.lotteryType;
-    activateDrawPanel(selectedType);
     var draw = client.loadDraw({ lotteryType: selectedType }).then(function (result) {
-      if (activeLottery.lotteryType === selectedType) renderDrawPanel(selectedType, result);
       return announce("draw", result);
     });
     var predictions;
@@ -1016,6 +991,7 @@
         var anchor = event.target && event.target.closest && event.target.closest("a[data-lottery-type]");
         if (!anchor) return;
         event.preventDefault();
+        activateDrawPanel(item);
         selectLottery(Number(anchor.getAttribute("data-lottery-type")));
       });
     });
