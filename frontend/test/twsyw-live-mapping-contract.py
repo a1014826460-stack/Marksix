@@ -1,40 +1,33 @@
 import os
 import re
 import time
-
 from playwright.sync_api import sync_playwright
 
 
-def _prediction_payload(lottery_type: int):
+def prediction_payload(lottery_type: int):
     rows = []
-    for index in range(7):
+    for index in range(20):
         rows.append({
-            "issue": f"{lottery_type}{301 - index}",
-            "prediction": {
-                "tokens": ["鼠|01,13", "牛|02,14", "虎|03,15", "兔|04,16", "龙|05,17", "蛇|06,18", "红波", "蓝波"],
-                "groups": [
-                    {"key": "xiao_4", "label": "四肖", "tokens": ["鼠", "牛", "虎", "兔"]},
-                    {"key": "code_24", "label": "24码", "tokens": [f"{number:02d}" for number in range(1, 25)]},
-                ],
-            },
-            "raw": {"daxiao": "大", "wave": ["红波", "蓝波"], "tail": ["1尾", "2尾", "3尾", "4尾", "5尾"]},
+            "issue": f"{lottery_type}{320 - index}",
+            "prediction": {"tokens": ["鼠|01", "牛|02", "虎|03", "兔|04", "龙|05", "蛇|06", "马|07", "羊|08", "猴|09", "鸡|10", "狗|11", "猪|12", "红波", "蓝波"]},
             "result": {"isOpened": index > 0, "code": "01,02,03,04,05,06,07", "zodiac": "鼠,牛,虎,兔,龙,蛇,马", "isCorrect": index % 2 == 0},
         })
-    keys = [
-        "title_14", "selected_22_codes", "9xzt", "shuangbo", "juesha3xiao", "sixiao_sima", "daxiao", "title_66",
-        "title_5", "ma24", "danshuang4xiao", "siduanzhongte", "yibo", "tiandi", "3tou",
-        "title_279", "pt1xiao", "title_132", "qinqi",
-    ]
-    return {"ok": True, "data": {"canonical_modules": [{"key": key, "rows": rows} for key in keys]}}
+    modules = [{"key": key, "rows": rows} for key in (
+        "title_14", "juesha3xiao", "9xzt", "selected_22_codes", "shuangbo", "sixiao_sima",
+        "daxiao", "title_66", "ma24", "danshuang4xiao", "siduanzhongte", "title_143",
+        "title_5", "3tou", "title_279", "pt1xiao", "title_132", "qinqi",
+    )]
+    for module_key, image_name in (("pmtj_image", "pmtj"), ("brainteaser", "brainteaser")):
+        image_rows = [dict(row, prediction={**row["prediction"], "imageUrl": f"/uploads/test/{image_name}-{lottery_type}.jpg"}) for row in rows]
+        modules.append({"key": module_key, "rows": image_rows})
+    return {"ok": True, "data": {"canonical_modules": modules}}
 
 
-def test_twsyw_all_lottery_tabs_render_isolated_slots():
-    requests = []
+def test_twsyw_correct_template_renders_draw_and_predictions_for_all_lotteries():
+    requests, page_errors, console_errors = [], [], []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True, executable_path="C:/Program Files/Google/Chrome/Application/chrome.exe")
         page = browser.new_page()
-        page_errors = []
-        console_errors = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
 
@@ -42,67 +35,65 @@ def test_twsyw_all_lottery_tabs_render_isolated_slots():
             match = re.search(r"lottery_type=(\d+)", route.request.url)
             lottery_type = int(match.group(1)) if match else 3
             requests.append((route.request.url, lottery_type))
-            if "/draw" in route.request.url:
-                route.fulfill(json={"ok": True, "data": {"issue": f"{lottery_type}500"}})
-            else:
-                route.fulfill(json=_prediction_payload(lottery_type))
+            route.fulfill(json={"ok": True, "data": {"issue": f"{lottery_type}500"}} if "/draw" in route.request.url else prediction_payload(lottery_type))
 
         page.route("**/api/sites/twsyw/**", fulfill)
         base_url = os.environ.get("TWSYW_BASE_URL", "http://127.0.0.1:3000")
         page.goto(f"{base_url}/twsyw", wait_until="domcontentloaded")
         deadline = time.monotonic() + 5
-        frame = None
-        while time.monotonic() < deadline:
-            frame = next((item for item in page.frames if item.url.endswith("/vendor/twsyw/index.html")), None)
-            if frame:
-                break
+        frame = draw_frame = None
+        while time.monotonic() < deadline and (frame is None or draw_frame is None):
+            frame = frame or next((item for item in page.frames if item.url.endswith("/vendor/twsyw/index.html")), None)
+            draw_frame = draw_frame or next((item for item in page.frames if item.url.endswith("/vendor/twsyw/kai.html")), None)
             page.wait_for_timeout(50)
-        assert frame is not None
-        draw_frame = None
-        while time.monotonic() < deadline:
-            draw_frame = next((item for item in page.frames if item.url.endswith("/vendor/twsyw/kai.html")), None)
-            if draw_frame:
-                break
-            page.wait_for_timeout(50)
-        assert draw_frame is not None
+        assert frame is not None and draw_frame is not None
 
-        for lottery_type in (3, 2, 1):
+        for lottery_type, title in ((3, "台湾彩"), (2, "澳门彩"), (1, "香港彩"), (3, "台湾彩")):
             draw_frame.locator(f"[data-lottery-type='{lottery_type}']").click()
             page.wait_for_timeout(150)
             assert any(item[1] == lottery_type for item in requests)
             assert draw_frame.locator("[data-current-issue]").inner_text() == f"{lottery_type}500"
-            assert f"{lottery_type}301期" in frame.locator("#jx24m").inner_text()
-            assert "开:07马" in frame.locator("#jx24m").inner_text()
-            assert "????" not in frame.locator("#jx24m").inner_text()
-            for section_id in ("msks", "wsxx", "wl4x", "dxzt"):
+            for section_id in (
+                "top_xiao_code", "fslx", "m24", "daxiao", "jiaye", "qixiao", "jiaye4xiao", "gold6xiao",
+                "pt1wei", "winner12", "jiuxiao", "lianma", "nannv", "danshuang", "dssx", "hblvxiao",
+                "santou", "qiw", "kill4xiao", "kill3wei", "chengyu", "shuangbo", "kill1tou", "five_no_hit", "composite_kill",
+            ):
                 section = frame.locator(f"#{section_id}")
-                assert section.locator("[data-prediction-content]").first.inner_text(), f"{section_id} must render prediction content"
-                assert section.locator("[data-prediction-result]").first.inner_text() == "开:待开奖", f"{section_id} must render the prediction result"
-            for section_id in ("tdsx", "pt1xiao", "qqsh"):
-                content = frame.locator(f"#{section_id} [data-prediction-content]").first
-                assert content.evaluate("element => getComputedStyle(element).textAlign") == "center", f"{section_id} prediction text must be centered"
-            assert "2025181" not in frame.locator("#yxym").first.inner_text()
-            assert "|" not in frame.locator("#yxym").first.inner_text()
+                assert section.locator("[data-prediction-issue]").first.inner_text().startswith(f"{lottery_type}320期")
+                assert section.locator("[data-prediction-content]").first.inner_text() != "暂无后端资料"
+                assert section.locator("[data-prediction-result]").first.inner_text() == "开:待开奖"
+            assert frame.locator("#top_xiao_code [data-prediction-draw-issue]").first.inner_text() == f"{lottery_type}320期"
+            assert frame.locator("[data-site-domain]").first.inner_text() == "www.twsyw.com"
+            assert "家禽野兽资料" in frame.locator("#fslx [data-prediction-content]").first.inner_text()
+            assert "绝杀三肖" in frame.locator("#composite_kill [data-prediction-content]").first.inner_text()
+            assert "平特一肖资料" in frame.locator("#gold6xiao [data-prediction-content]").first.inner_text()
+            assert "四段资料" in frame.locator("#lianma [data-prediction-content]").first.inner_text()
+            assert "合数大小资料" in frame.locator("#danshuang [data-prediction-content]").first.inner_text()
+            assert "一波资料" in frame.locator("#hblvxiao [data-prediction-content]").first.inner_text()
+            assert frame.locator("img[data-prediction-image='pmtj_image']").get_attribute("src") == f"/uploads/test/pmtj-{lottery_type}.jpg"
+            assert frame.locator("img[data-prediction-image='brainteaser']").get_attribute("src") == f"/uploads/test/brainteaser-{lottery_type}.jpg"
+            for module_key in ("pmtj_image", "brainteaser"):
+                image = frame.locator(f"img[data-prediction-image='{module_key}']")
+                assert image.get_attribute("loading") == "lazy"
+                assert image.get_attribute("decoding") == "async"
+            assert frame.locator("[data-lottery-title]").first.inner_text() == title
 
-        draw_frame.locator("[data-lottery-type='3']").click()
-        page.wait_for_timeout(150)
-        assert draw_frame.locator("[data-current-issue]").inner_text() == "3500"
-        assert frame.locator("#msks .tit").inner_text().startswith("台湾 ")
-        draw_frame.locator("[data-lottery-type='2']").click()
-        page.wait_for_timeout(150)
-        assert frame.locator("#msks .tit").inner_text().startswith("澳门 ")
-
+        assert frame.locator("[data-prediction-section]").count() == 25
         footer = frame.locator("#legacy-attribute-anchor")
         assert footer.count() == 1
-        assert footer.locator("#legacy-attribute-gallery img").evaluate_all("items => items.map(item => item.getAttribute('src'))") == [
+        assert footer.locator("#legacy-attribute-gallery img").evaluate_all("images => images.map(image => image.getAttribute('src'))") == [
             "/uploads/image/20250322/1742580086567063.png",
             "/uploads/image/20250322/1742580119746508.jpg",
             "/uploads/image/20250322/1742580130762983.jpg",
         ]
+        footer.scroll_into_view_if_needed()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not all(footer.locator("#legacy-attribute-gallery img").evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)")):
+            page.wait_for_timeout(100)
+        assert footer.locator("#legacy-attribute-gallery img").evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)") == [True, True, True]
+        assert footer.evaluate("node => getComputedStyle(node).maxWidth") == "800px"
+        assert footer.bounding_box()["width"] <= 800
+        assert frame.locator("managed-site-links[site-key='twsyw']").count() == 1
         assert not page_errors
         assert not console_errors
         browser.close()
-
-
-
-

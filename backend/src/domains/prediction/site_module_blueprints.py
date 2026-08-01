@@ -630,8 +630,10 @@ def _site_matches_twjsz666(site: dict[str, Any] | None) -> bool:
 def _site_matches_twwanli(site: dict[str, Any] | None) -> bool:
     if not site:
         return False
+
     if _normalize_domain(site.get("domain")) in {"www.twwanli.com", "twwanli.com"}:
         return True
+
     try:
         return int(site.get("web_id") or 0) == 12
     except (TypeError, ValueError):

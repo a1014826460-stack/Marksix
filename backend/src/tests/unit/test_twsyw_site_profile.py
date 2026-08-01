@@ -6,7 +6,7 @@ from domains.prediction.site_module_blueprints import get_blueprint_name_for_sit
 from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
 
-EXPECTED_MODE_IDS = (14, 42, 49, 493, 38, 78, 57, 66, 34, 31, 479, 143, 5, 12, 279, 56, 132, 26)
+EXPECTED_MODE_IDS = (14, 42, 49, 493, 38, 78, 57, 66, 34, 31, 479, 143, 5, 12, 279, 56, 132, 26, 476, 475)
 
 
 def test_twsyw_dependencies_are_reviewed_and_complete():
