@@ -38,6 +38,11 @@ def test_twsyw_correct_template_renders_draw_and_predictions_for_all_lotteries()
             route.fulfill(json={"ok": True, "data": {"issue": f"{lottery_type}500"}} if "/draw" in route.request.url else prediction_payload(lottery_type))
 
         page.route("**/api/sites/twsyw/**", fulfill)
+        page.route("**/uploads/test/**", lambda route: route.fulfill(
+            status=200,
+            content_type="image/png",
+            body=b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0dIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82",
+        ))
         base_url = os.environ.get("TWSYW_BASE_URL", "http://127.0.0.1:3000")
         page.goto(f"{base_url}/twsyw", wait_until="domcontentloaded")
         deadline = time.monotonic() + 5
@@ -93,6 +98,9 @@ def test_twsyw_correct_template_renders_draw_and_predictions_for_all_lotteries()
         assert footer.locator("#legacy-attribute-gallery img").evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)") == [True, True, True]
         assert footer.evaluate("node => getComputedStyle(node).maxWidth") == "800px"
         assert footer.bounding_box()["width"] <= 800
+        links_wrapper = frame.locator("managed-site-links[site-key='twsyw']").locator("xpath=..")
+        assert links_wrapper.evaluate("node => getComputedStyle(node).maxWidth") == "800px"
+        assert links_wrapper.bounding_box()["width"] <= 800
         assert frame.locator("managed-site-links[site-key='twsyw']").count() == 1
         assert not page_errors
         assert not console_errors

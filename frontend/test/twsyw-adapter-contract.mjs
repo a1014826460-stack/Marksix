@@ -71,6 +71,9 @@ for (const [moduleKey, modeId, legacyImage] of [["pmtj_image", 476, "Winer911_10
 if (!html.includes('id="legacy-attribute-anchor" style="max-width:800px')) {
   throw new Error("attribute module must retain the vendor page maximum width")
 }
+if (!html.includes('<div class="white-box" style="max-width:800px;margin-left:auto;margin-right:auto;box-sizing:border-box;"><managed-site-links site-key="twsyw"></managed-site-links></div>')) {
+  throw new Error("managed site links must retain the vendor page maximum width")
+}
 for (const token of ['data-lottery-type="3"', 'data-lottery-type="2"', 'data-lottery-type="1"', 'data-current-issue', "postMessage", 'siteKey: "twsyw"']) {
   if (!draw.includes(token)) throw new Error(`draw tab contract is missing ${token}`)
 }

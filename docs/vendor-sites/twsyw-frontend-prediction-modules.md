@@ -67,6 +67,8 @@
 
 该站点页面内容容器 `.cgi-body` 的最大宽度为 800px；此前属性模块直接放在该容器外，却只设置图片 `width="100%"`，百分比因此按 iframe/视口计算，导致宽度超出站点版心。现仅对既有 `#legacy-attribute-anchor` 增加 `max-width:800px;margin-left:auto;margin-right:auto;box-sizing:border-box`，使其与供应商页面容器同宽，不新增 wrapper 或修改三张固定图片。静态合同检查该宽度约束，浏览器合同检查 computed max width 与实际宽度不超过 800px。
 
+公共站点链接的宿主 `.white-box` 同样位于 `.cgi-body` 外；已应用相同的 800px 宽度合同并在浏览器测试中检查其 computed `max-width` 和实际宽度。以后凡是新增或替换到 `.cgi-body` 之后的可见模块，必须显式继承该 800px 版心并增加浏览器宽度断言，不能只依赖子元素或图片的 `width="100%"`。
+
 ## 验收合同
 
 - 静态合同覆盖 25 个 section 的组数、所有三字段槽位、命名 renderer、禁止 DOM 构造 API、两张动态预测图的 mode/module 映射，以及固定图片模块的 ID、顺序、版心宽度与懒加载属性。
