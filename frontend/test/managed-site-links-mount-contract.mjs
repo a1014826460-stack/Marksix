@@ -15,6 +15,7 @@ const REGISTERED_SITES = [
   ["twbst528", "frontend/public/vendor/twbst528/index.html", "html"],
   ["twjsz666", "frontend/public/vendor/twjsz666/index.html", "html"],
   ["twwanli", "frontend/public/vendor/twwanli/index.html", "html"],
+  ["twsyw", "frontend/public/vendor/twsyw/index.html", "html"],
 ]
 
 const EXPECTED_SITE_COUNT = REGISTERED_SITES.length

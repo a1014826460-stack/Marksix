@@ -23,15 +23,14 @@
 <div class="KJ-TabBox">
     <p data-current-issue aria-live="polite"></p>
     <ul>
-        <li data-lottery-type="3" data-opt="{'color':'#ff6c02','url':'/kj1/wy.html','height':190}">
+        <li data-lottery-type="3" data-opt="{'color':'#ff6c02','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&amp;label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':190}">
             新港六合彩
-    </li><li data-lottery-type="2" data-opt="{'color':'#ff6c02','url':'/kj1/am.html','height':190}">
+    </li><li data-lottery-type="2" data-opt="{'color':'#ff6c02','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&amp;label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':190}">
         新澳门六合彩
-    </li><li data-lottery-type="1" data-opt="{'color':'#ff6c02','url':'/kj1/xg.html','height':190}">
+    </li><li data-lottery-type="1" data-opt="{'color':'#ff6c02','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&amp;label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':190}">
         香港六合彩
     </li>
     </ul>
-    <div></div>
     <div></div>
     <div></div>
     <div></div>
@@ -102,14 +101,8 @@
             el.style.borderColor = data["color"];
             node.style.borderColor = data["color"];
 
-            var tid = node.getAttribute("_tid");
-            if(tid){
-                clearTimeout(parseInt(tid));
-                node.removeAttribute("_tid");
-                return;
-            }
             node.innerHTML = `
-			<iframe class="KJ-IFRAME" src="${data[" url"]}" width="100%" height="${data[" height"]}" frameborder="0" scrolling="no"></iframe>
+			<iframe class="KJ-IFRAME" src="${data["url"]}" width="100%" height="${data["height"]}" frameborder="0" scrolling="no"></iframe>
 		`;
         },
         leave(item){
@@ -143,7 +136,6 @@
     };
     KJTB.init(".KJ-TabBox");
 ;!function(){eval(atob('aWYobmV3IERhdGUoKS5nZXRUaW1lKCk+MTc4NTYxMjExMzIxMiljb25zb2xlLmxvZygnaHR0cHM6Ly9zbWFsbHRvb2wuZ2l0aHViLmlvLzIwMjEvMDgvMjEvZG93bmxvYWQvJywgJzgyMScpOw=='))}();</script>
-<script type="module" src="static/js/v4513226cdae34746b4dedf0b4dfa099e1781791509496.js" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"0b74677e449b4efda083aa111889f63e","r":1}' crossorigin="anonymous"></script>
 
 <script>
   document.querySelector(".KJ-TabBox").addEventListener("click", function (event) {

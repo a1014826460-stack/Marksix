@@ -186,6 +186,25 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26),
         )
     ),
+    # Taiwan Shenyu web 13 has the same supplied homepage topology as the
+    # reviewed template, but owns an independent site profile and API rows.
+    *(
+        SitePageDependency(
+            site_key="twsyw",
+            page_path="/twsyw",
+            source_path="frontend/public/vendor/twsyw/site-data-adapter.js",
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for mechanism_key, mode_id in (
+            ("title_14", 14), ("juesha3xiao", 42), ("9xzt", 49),
+            ("selected_22_codes", 493), ("shuangbo", 38), ("sixiao_sima", 78),
+            ("daxiao", 57), ("title_66", 66), ("ma24", 34),
+            ("danshuang4xiao", 31), ("siduanzhongte", 479), ("title_143", 143),
+            ("title_5", 5), ("3tou", 12), ("title_279", 279),
+            ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26),
+        )
+    ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is
     # available. These are reviewed backend equivalents for each mapped vendor
     # table, not a claim about the original vendor identifiers.

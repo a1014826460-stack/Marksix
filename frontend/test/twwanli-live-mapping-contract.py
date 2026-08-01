@@ -21,7 +21,7 @@ def _prediction_payload(lottery_type: int):
             "result": {"isOpened": index > 0, "code": "01,02,03,04,05,06,07", "zodiac": "鼠,牛,虎,兔,龙,蛇,马", "isCorrect": index % 2 == 0},
         })
     keys = [
-        "selected_22_codes", "9xzt", "shuangbo", "juesha3xiao", "4xiao", "daxiao", "6xzt",
+        "title_14", "selected_22_codes", "9xzt", "shuangbo", "juesha3xiao", "sixiao_sima", "daxiao", "title_66",
         "title_5", "ma24", "danshuang4xiao", "siduanzhongte", "yibo", "tiandi", "3tou",
         "title_279", "pt1xiao", "title_132", "qinqi",
     ]
@@ -70,6 +70,13 @@ def test_twwanli_all_lottery_tabs_render_isolated_slots():
             assert f"{lottery_type}301期" in frame.locator("#jx24m").inner_text()
             assert "开:07马" in frame.locator("#jx24m").inner_text()
             assert "????" not in frame.locator("#jx24m").inner_text()
+            for section_id in ("msks", "wsxx", "wl4x", "dxzt"):
+                section = frame.locator(f"#{section_id}")
+                assert section.locator("[data-prediction-content]").first.inner_text(), f"{section_id} must render prediction content"
+                assert section.locator("[data-prediction-result]").first.inner_text() == "开:待开奖", f"{section_id} must render the prediction result"
+            for section_id in ("tdsx", "pt1xiao", "qqsh"):
+                content = frame.locator(f"#{section_id} [data-prediction-content]").first
+                assert content.evaluate("element => getComputedStyle(element).textAlign") == "center", f"{section_id} prediction text must be centered"
             assert "2025181" not in frame.locator("#yxym").first.inner_text()
             assert "|" not in frame.locator("#yxym").first.inner_text()
 

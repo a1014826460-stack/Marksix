@@ -16,6 +16,38 @@ for (const token of [
   if (!config.includes(token)) throw new Error(`missing site identity token: ${token}`)
 }
 
+const WRITE_ROW_SECTIONS = [
+  "msks", "wsxx", "wl4x", "dxzt", "jxzt", "jz5x", "5wzt", "jx24m", "sdzt",
+  "ybzt", "tdsx", "3tzt", "hsdx", "pt1xiao", "hsds", "qqsh", "dssx",
+]
+
+function predictionSection(sectionId) {
+  return html.match(new RegExp(`<div[^>]*id="${sectionId}"[^>]*data-prediction-section[^>]*>[\\s\\S]*?(?=<div[^>]*data-prediction-section|$)`))?.[0] || ""
+}
+
+for (const sectionId of WRITE_ROW_SECTIONS) {
+  const section = predictionSection(sectionId)
+  if (!section) throw new Error(`missing writeRow prediction section: ${sectionId}`)
+  const dynamicRows = [...section.matchAll(/<tr\b[\s\S]*?<\/tr>/g)].filter(([row]) => row.includes("data-prediction-"))
+  if (!dynamicRows.length) throw new Error(`${sectionId} writeRow section must enumerate dynamic rows`)
+  for (const [index, [row]] of dynamicRows.entries()) {
+    const slotCounts = {
+      issue: (row.match(/data-prediction-issue/g) || []).length,
+      content: (row.match(/data-prediction-content(?!-secondary)/g) || []).length,
+      result: (row.match(/data-prediction-result/g) || []).length,
+    }
+    if (slotCounts.issue !== 1 || slotCounts.content !== 1 || slotCounts.result !== 1) {
+      throw new Error(`${sectionId} row ${index + 1} writeRow slots must be exactly issue/content/result: ${JSON.stringify(slotCounts)}`)
+    }
+  }
+}
+
+for (const sectionId of WRITE_ROW_SECTIONS) {
+  if (!adapter.includes(`renderThreeColumnHistory("${sectionId}"`) && !adapter.includes(`renderUnavailableHistory("${sectionId}"`)) {
+    throw new Error(`${sectionId} is not explicitly associated with a writeRow renderer`)
+  }
+}
+
 for (const token of [
   "lottery-site-data-client.js",
   "site-config.js",

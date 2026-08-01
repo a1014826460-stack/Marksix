@@ -565,6 +565,46 @@ def _install_twwanli_site_profile(conn: Any) -> None:
         sync_site_prediction_modules(conn, site_id=12)
 
 
+def _install_twsyw_site_profile(conn: Any) -> None:
+    """Register Taiwan Shenyu web 13 with its own authorized module profile."""
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    now = utc_now()
+    if conn.table_exists("site_blueprint_profiles"):
+        conn.execute(
+            """
+            INSERT INTO site_blueprint_profiles (
+                blueprint_name, required_mode_ids_json,
+                known_unavailable_mode_ids_json, blocked_items_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (blueprint_name) DO UPDATE SET
+                required_mode_ids_json = excluded.required_mode_ids_json,
+                known_unavailable_mode_ids_json = excluded.known_unavailable_mode_ids_json,
+                blocked_items_json = excluded.blocked_items_json,
+                updated_at = excluded.updated_at
+            """,
+            ("twsyw", json.dumps(list(required_mode_ids_for_site_key("twsyw")), ensure_ascii=False), "[]", "[]", now, now),
+        )
+    if conn.table_exists("managed_sites"):
+        conn.execute(
+            """
+            INSERT INTO managed_sites (
+                id, web_id, name, domain, lottery_type_id, enabled,
+                blueprint_name, announcement, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                web_id = excluded.web_id, name = excluded.name, domain = excluded.domain,
+                lottery_type_id = excluded.lottery_type_id, enabled = excluded.enabled,
+                blueprint_name = excluded.blueprint_name, notes = excluded.notes, updated_at = excluded.updated_at
+            """,
+            (13, 13, "台湾神预网", "www.twsyw.com", 3, 1, "twsyw", "", "Seeded migration site for twsyw vendor integration.", now, now),
+        )
+    if conn.table_exists("site_prediction_modules"):
+        from domains.prediction.generation_service import sync_site_prediction_modules
+        sync_site_prediction_modules(conn, site_id=13)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -584,6 +624,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(16, "install_twjsz666_exact_prediction_modes", _install_twjsz666_exact_prediction_modes),
     Migration(17, "sync_twjsz666_composite_sources", _sync_twjsz666_composite_sources),
     Migration(18, "install_twwanli_vendor_site", _install_twwanli_site_profile),
+    Migration(19, "install_twsyw_vendor_site", _install_twsyw_site_profile),
 )
 
 

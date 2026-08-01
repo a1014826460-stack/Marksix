@@ -448,6 +448,9 @@ three.
 - 不要求把本来就是三列的表格改成单列；该规则只针对三个语义字段原本挤在同一文本流的单元格。
 - 站点 adapter 渲染前优先查找 `[data-prediction-issue]` / `[data-prediction-content]` / `[data-prediction-result]` 槽位写入；未找到时才退化到既有 font/span 结构。
 - 浏览器契约必须检查命中模块各叶节点的计算样式（`getComputedStyle` 即 computed style）返回 `display: block`（或等效块级值），并断言不存在整行 `textContent` 拼接的期号-正文-结果语句。
+- **静态槽位合同为接入门槛。** 接入前必须静态合同枚举每个 `[data-prediction-section]` 的 section ID、动态历史组数量，以及 `issue`、`content`、`content-secondary`（如有）和 `result` 槽位数量，并把每个 section 关联到实际 renderer。合同不能只抽检代表模块。
+- 任何直接或经封装调用 `writeRow(issue, content, result)` 的区块均为三字段 renderer：每一个动态历史组必须恰好有一个 `data-prediction-issue`、一个 `data-prediction-content` 和一个 `data-prediction-result`。缺少 `content` 或 `result` 槽位时静态合同必须直接失败；数量不匹配、未枚举 section 或未关联 renderer 也必须失败，禁止依赖运行时静默退化。
+- 文本对齐属于供应商展示合同。静态 inventory 必须记录动态叶节点原有的 computed `text-align`；用户明确要求居中时，只能在既有 section/叶节点选择器上设置 `text-align: center`，不得新增 wrapper 或移动节点，并在浏览器合同中用 `getComputedStyle(...).textAlign === "center"` 验证。
 
 ## 公共站点链接
 
