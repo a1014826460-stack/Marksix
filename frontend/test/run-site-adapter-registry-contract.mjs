@@ -9,7 +9,7 @@ function compile(path) {
 function data(source) { return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}` }
 
 const adapters = {}
-for (const siteKey of ["shengshi8800", "twsaimahui", "twcaibawang", "twjinniu", "twcf888", "twssz", "twbst528", "twjsz666"]) {
+for (const siteKey of ["shengshi8800", "twsaimahui", "twcaibawang", "twjinniu", "twcf888", "twssz", "twbst528", "twjsz666", "twwanli"]) {
   adapters[siteKey] = data(compile(`frontend/sites/${siteKey}/site-adapter.ts`))
 }
 const registry = data(
@@ -22,5 +22,6 @@ const registry = data(
     .replace('"@/sites/twssz/site-adapter"', JSON.stringify(adapters.twssz))
     .replace('"@/sites/twbst528/site-adapter"', JSON.stringify(adapters.twbst528))
     .replace('"@/sites/twjsz666/site-adapter"', JSON.stringify(adapters.twjsz666))
+    .replace('"@/sites/twwanli/site-adapter"', JSON.stringify(adapters.twwanli))
 )
 await import(data(compile("frontend/test/site-adapter-registry-contract.ts").replace('"@/lib/site-platform/site-adapter-registry"', JSON.stringify(registry))))

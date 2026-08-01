@@ -167,6 +167,25 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
         mode_ids=(47, 69, 151),
         kind="composite_source",
     ),
+    # Taiwan Wanli uses documented mature same-origin modules. The mapping is
+    # intentionally explicit because the vendor titles are only DOM anchors.
+    *(
+        SitePageDependency(
+            site_key="twwanli",
+            page_path="/twwanli",
+            source_path="frontend/public/vendor/twwanli/site-data-adapter.js",
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for mechanism_key, mode_id in (
+            ("title_14", 14), ("juesha3xiao", 42), ("9xzt", 49),
+            ("selected_22_codes", 493), ("shuangbo", 38), ("sixiao_sima", 78),
+            ("daxiao", 57), ("title_66", 66), ("ma24", 34),
+            ("danshuang4xiao", 31), ("siduanzhongte", 479), ("title_143", 143),
+            ("title_5", 5), ("3tou", 12), ("title_279", 279),
+            ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26),
+        )
+    ),
     # twssz is a supplied static page: no original JS endpoint or mode ID is
     # available. These are reviewed backend equivalents for each mapped vendor
     # table, not a claim about the original vendor identifiers.

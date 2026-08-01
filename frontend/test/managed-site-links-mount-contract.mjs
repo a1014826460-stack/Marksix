@@ -3,7 +3,7 @@ import fs from "node:fs"
 // ---------------------------------------------------------------------------
 // Manifest-driven site registry
 // Each entry: [siteKey, filePath, fileType]
-// All 8 sites must appear exactly once.
+// All manifest sites must appear exactly once.
 // ---------------------------------------------------------------------------
 const REGISTERED_SITES = [
   ["shengshi8800", "frontend/public/vendor/shengshi8800/index.html", "html"],
@@ -14,6 +14,7 @@ const REGISTERED_SITES = [
   ["twssz", "frontend/public/vendor/twssz/index.html", "html"],
   ["twbst528", "frontend/public/vendor/twbst528/index.html", "html"],
   ["twjsz666", "frontend/public/vendor/twjsz666/index.html", "html"],
+  ["twwanli", "frontend/public/vendor/twwanli/index.html", "html"],
 ]
 
 const EXPECTED_SITE_COUNT = REGISTERED_SITES.length

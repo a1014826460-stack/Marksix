@@ -1,6 +1,6 @@
 import { getSiteAdapter } from "@/lib/site-platform/site-adapter-registry"
 
-for (const siteKey of ["shengshi8800", "twsaimahui", "twcaibawang", "twjinniu", "twcf888", "twssz", "twbst528", "twjsz666"]) {
+for (const siteKey of ["shengshi8800", "twsaimahui", "twcaibawang", "twjinniu", "twcf888", "twssz", "twbst528", "twjsz666", "twwanli"]) {
   const adapter = getSiteAdapter(siteKey)
   if (!adapter || adapter.mode !== "existing-dom-only") {
     throw new Error(`missing safe adapter: ${siteKey}`)
