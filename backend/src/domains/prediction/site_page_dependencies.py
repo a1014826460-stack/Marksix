@@ -185,7 +185,7 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("daxiao", 57), ("title_66", 66), ("ma24", 34),
             ("danshuang4xiao", 31), ("siduanzhongte", 479), ("title_143", 143),
             ("title_5", 5), ("3tou", 12), ("title_279", 279),
-            ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26),
+            ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26), ("3hang", 53), ("6xzt", 46),
         )
     ),
     # Taiwan Shenyu web 13 has the same supplied homepage topology as the

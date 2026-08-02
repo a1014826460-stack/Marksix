@@ -151,7 +151,23 @@
   function renderFlatOneXiao(modules) { renderThreeColumnHistory("pt1xiao", modules.pt1xiao, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
   function renderSumOddEven(modules) { renderThreeColumnHistory("hsds", modules.title_132, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
   function renderMusicChess(modules) { renderThreeColumnHistory("qqsh", modules.qinqi, function (row) { return labels(row).slice(0, 2).join("") || "暂无后端资料"; }); }
-  function renderOddEvenFourXiao(modules) { renderThreeColumnHistory("dssx", modules.danshuang4xiao, function (row) { return labels(row).slice(0, 4).join("") || "暂无后端资料"; }); }
+  function renderLuckyOminousSixXiao(modules) { renderThreeColumnHistory("jxzt", modules["6xzt"], function (row) { return labels(row).slice(0, 6).join("") || "暂无后端资料"; }); }
+  function renderFiveElements(modules) { renderThreeColumnHistory("jz5x", modules["3hang"], function (row) { return labels(row).slice(0, 3).join("+") || "暂无后端资料"; }); }
+  function renderOddEvenFourXiao(modules) {
+    var sourceRows = distinctRows(modules.danshuang4xiao);
+    rows(section("dssx")).forEach(function (row, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(row, "", "暂无后端资料", "", "");
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        String(rawValue(source, "xiao_1") || labels(source).slice(0, 4).join("")),
+        resultText(source),
+        String(rawValue(source, "xiao_2") || labels(source).slice(4, 8).join("")),
+        source.result && source.result.isCorrect === true
+      );
+    });
+  }
 
   function renderPredictions(envelope) {
     var modules = modulesByKey(envelope);
@@ -160,8 +176,8 @@
     renderOneCodeOneXiaoTable(modules);
     renderFourXiao(modules);
     renderBigSmall(modules);
-    renderUnavailableHistory("jxzt");
-    renderUnavailableHistory("jz5x");
+    renderLuckyOminousSixXiao(modules);
+    renderFiveElements(modules);
     renderFiveTail(modules);
     renderSelectedTwentyFour(modules);
     renderOddEvenFourXiao(modules);
@@ -190,7 +206,7 @@
     client.loadDraw({ lotteryType: lotteryType }).then(function (envelope) {
       if (activeLotteryType === lotteryType && envelope.data) renderDrawPanel(envelope);
     });
-    client.loadPredictions({ lotteryType: lotteryType, historyLimit: 7 }).then(function (envelope) {
+    client.loadPredictions({ lotteryType: lotteryType, historyLimit: 8 }).then(function (envelope) {
       if (activeLotteryType !== lotteryType || !envelope.data) return;
       renderPredictions(envelope);
       window.dispatchEvent(new window.CustomEvent("site-data:ready", { detail: { siteKey: siteConfig.siteKey, resource: "predictions", state: envelope.state } }));

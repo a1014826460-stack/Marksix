@@ -637,6 +637,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(19, "install_twsyw_vendor_site", _install_twsyw_site_profile),
     Migration(20, "sync_twssz_sxztu_image_authorization", _sync_twssz_sxztu_image_authorization),
     Migration(21, "sync_twbst528_exact_image_modules", _sync_twbst528_exact_image_modules),
+    Migration(22, "sync_twwanli_five_element_authorization", _install_twwanli_site_profile),
+    Migration(23, "sync_twwanli_six_xiao_authorization", _install_twwanli_site_profile),
 )
 
 

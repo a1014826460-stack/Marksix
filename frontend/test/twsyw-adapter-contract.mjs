@@ -8,6 +8,10 @@ const adapter = fs.readFileSync(`${root}/site-data-adapter.js`, "utf8")
 const manifest = fs.readFileSync("frontend/sites/twsyw/site.manifest.ts", "utf8")
 const dependencies = fs.readFileSync("backend/src/domains/prediction/site_page_dependencies.py", "utf8")
 
+if (!html.includes('<iframe width="100%" height="270" border="0" frameborder="0" scrolling="no" src="kai.html" target="_blank">')) {
+  throw new Error("outer draw frame must fit the complete draw tab page")
+}
+
 for (const token of ['siteKey: "twsyw"', 'siteName: "台湾神预网"', 'siteDomain: "www.twsyw.com"', 'lotteryType: 3', 'lotteryType: 2', 'lotteryType: 1']) {
   if (!config.includes(token)) throw new Error(`missing site identity token: ${token}`)
 }
@@ -76,5 +80,8 @@ if (!html.includes('<div class="white-box" style="max-width:800px;margin-left:au
 }
 for (const token of ['data-lottery-type="3"', 'data-lottery-type="2"', 'data-lottery-type="1"', 'data-current-issue', "postMessage", 'siteKey: "twsyw"']) {
   if (!draw.includes(token)) throw new Error(`draw tab contract is missing ${token}`)
+}
+if (!draw.includes('height:190px!important') || draw.includes('height:155px')) {
+  throw new Error("draw frame must preserve the shared panel's full 190px height on mobile")
 }
 console.log("twsyw adapter contract passed")

@@ -5,6 +5,10 @@ const draw = fs.readFileSync("frontend/public/vendor/twwanli/kai.html", "utf8")
 const config = fs.readFileSync("frontend/public/vendor/twwanli/site-config.js", "utf8")
 const adapter = fs.readFileSync("frontend/public/vendor/twwanli/site-data-adapter.js", "utf8")
 
+if (!html.includes('<iframe width="100%" height="270" frameborder="0" scrolling="no" src="kai.html">')) {
+  throw new Error("outer draw frame must fit the complete draw tab page")
+}
+
 for (const token of [
   'siteKey: "twwanli"',
   'siteName: "台湾万利网"',
@@ -43,7 +47,7 @@ for (const sectionId of WRITE_ROW_SECTIONS) {
 }
 
 for (const sectionId of WRITE_ROW_SECTIONS) {
-  if (!adapter.includes(`renderThreeColumnHistory("${sectionId}"`) && !adapter.includes(`renderUnavailableHistory("${sectionId}"`)) {
+  if (!adapter.includes(`renderThreeColumnHistory("${sectionId}"`) && !adapter.includes(`renderOddEvenFourXiao(modules)`)) {
     throw new Error(`${sectionId} is not explicitly associated with a writeRow renderer`)
   }
 }
@@ -61,18 +65,36 @@ for (const token of [
 
 for (const token of [
   "loadDraw({ lotteryType: lotteryType })",
-  "loadPredictions({ lotteryType: lotteryType, historyLimit: 7 })",
+  "loadPredictions({ lotteryType: lotteryType, historyLimit: 8 })",
   "selectLottery",
   "renderOneCodeOneXiaoTable",
   "renderThreeColumnHistory",
   "renderUnavailableHistory",
-  "historyLimit: 7",
+  "historyLimit: 8",
+  "modules[\"3hang\"]",
+  "modules[\"6xzt\"]",
+  "renderFiveElements",
+  "renderLuckyOminousSixXiao",
+  "rawValue(source, \"xiao_1\")",
+  "rawValue(source, \"xiao_2\")",
 ]) {
   if (!adapter.includes(token)) throw new Error(`adapter is missing ${token}`)
 }
 
 for (const forbidden of ["document.createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "lottery-site-runtime.js"]) {
   if (adapter.includes(forbidden)) throw new Error(`existing-DOM adapter must not use ${forbidden}`)
+}
+
+if (!draw.includes("that.index(el, \"LI\")")) throw new Error("draw tab index must ignore whitespace text nodes")
+if (!draw.includes('height:190px!important') || draw.includes('height:155px')) {
+  throw new Error("draw frame must preserve the shared panel's full 190px height on mobile")
+}
+
+for (const sectionId of ["jz5x", "dssx", "sdzt", "qqsh"]) {
+  if (!html.includes(`id="${sectionId}"`)) throw new Error(`missing ${sectionId} contract anchor`)
+}
+if (!html.includes("#sdzt [data-prediction-issue]") || !html.includes("#sdzt [data-prediction-content]") || !html.includes("#sdzt [data-prediction-result]")) {
+  throw new Error("four-segment prediction leaves must retain centered alignment")
 }
 
 for (const token of ['data-lottery-type="3"', 'data-lottery-type="2"', 'data-lottery-type="1"', 'data-current-issue', "postMessage", 'siteKey: "twwanli"']) {

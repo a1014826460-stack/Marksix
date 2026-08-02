@@ -18,7 +18,7 @@
     .KJ-TabBox li.cur{color:limegreen;font-weight:bold;background-color:white;cursor:default;border-color:limegreen;border-left:solid 1px;border-right:solid 1px;}
     .KJ-TabBox div{border:1px solid gainsboro;margin-top:-1px;display:none;}
     .KJ-TabBox div.cur{display:block!important;border-color:limegreen;}
-    .KJ-TabBox .KJ-IFRAME{background:white;}
+    .KJ-TabBox .KJ-IFRAME{background:white;height:190px!important;}
 </style>
 <div class="KJ-TabBox">
     <p data-current-issue aria-live="polite"></p>
@@ -63,35 +63,6 @@
             });
             var node = that.getEl(dom.querySelector("UL"),0,"LI");
             node.click();
-            [[document,"DOMContentLoaded"],[window,"resize"]].forEach((item,index,self)=>{
-                var removeEl=(id)=>{
-                    try{
-                        var ifr = document.getElementById(id);
-                        ifr.parentNode.removeChild(ifr);
-                    }catch(e){}
-                };
-                var insert = (id,str)=>{
-                    var dom = document.createElement("style");
-                    dom.id = id;
-                    dom.innerHTML = str;
-                    document.head.appendChild(dom);
-                }
-                item[0].addEventListener(item[1],function(){
-                    removeEl("kj-iframe-css");
-                    var w = window.screen.availWidth;
-                    if(w<=650 && w>500){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:175px;}");
-                    }else if(w<=500 && w>450){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:165px;}");
-                    }else if(w<=450 && w>350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:155px;}");
-                    }else if(w<=350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:135px;}");
-                    }else{
-                        insert("kj-iframe-css",".KJ-IFRAME{height:165px;}");
-                    }
-                },false);
-            });
         },
         cur(dom,el,node){
             var that = this;

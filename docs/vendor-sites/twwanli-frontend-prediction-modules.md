@@ -5,7 +5,7 @@
 - 站点：台湾万利网；域名：`www.twwanli.com`；`siteKey/siteId/webId`：`twwanli/12/12`。
 - 入口模板：`frontend/public/vendor/twwanli/index.html`，来自 `Zz_xgg3.cp567.cc`；保留原卡片、表格、标签、颜色、CSS 与供应商脚本顺序。
 - 彩票仅为台湾彩（3）、澳门彩（2）、香港彩（1）。父页接收已验证 iframe 的 `lottery-change`，以同一 `lotteryType` 调用 `loadDraw` 与 `loadPredictions`。
-- API：`GET /api/sites/twwanli/draw?lottery_type={1|2|3}`；`GET /api/sites/twwanli/prediction-modules?lottery_type={1|2|3}&history_limit=7`。预测响应的 `canonical_modules[]` 使用 `key` 与 `rows[]`；行读取 `issue`、`prediction.tokens/groups/extra`、`raw` 及特别号 `result`。每个模块按规范化 issue 去重。
+- API：`GET /api/sites/twwanli/draw?lottery_type={1|2|3}`；`GET /api/sites/twwanli/prediction-modules?lottery_type={1|2|3}&history_limit=8`。预测响应的 `canonical_modules[]` 使用 `key` 与 `rows[]`；行读取 `issue`、`prediction.tokens/groups/extra`、`raw` 及特别号 `result`。每个模块按规范化 issue 去重。
 - 结果只显示特别号：已开 `开:01鼠对/错`，未开 `开:待开奖`。适配器不创建、删除、移动或样式化 DOM，只写入预声明的最小叶节点。
 
 ## DOM 槽位合同与清单
@@ -19,8 +19,8 @@
 | 一肖一码 `#yxym table.yxym` | composite `9xzt` + `selected_22_codes` + `shuangbo` | 6 个表组；一码、三码、五码、七码取号码前 N 项，肖行取 9 肖前 N 项，波色取双波；原三列逐槽更新。 |
 | 稳料四肖中 `#wl4x` | exact `sixiao_sima` | 6；四肖，特别肖包含为中。 |
 | 大小中特 `#dxzt` | exact `daxiao` | 6；大数/小数，特别号大小匹配为中。 |
-| 吉凶六肖 `#jxzt` | unavailable | 7；没有同义成熟机制，逐行空态。 |
-| 精准五行 `#jz5x` | unavailable | 7；没有同义成熟机制，逐行空态。 |
+| 吉凶六肖 `#jxzt` | approved mature fallback `6xzt` | 7；后端 `6xzt`（mode 46）提供六肖中特，以 `prediction.tokens` 前六项写入现有正文槽；保留供应商固定吉/凶生肖说明，不伪装为原始吉凶分类机制。 |
+| 精准五行 `#jz5x` | approved mature fallback `3hang` | 7；后端五行类 `3hang`（mode 53）提供金木水火土中的三行，使用 `prediction.tokens` 的标签字段，以特别号所属五行包含为中；该卡不把它伪装成五行全选。 |
 | 五尾中特 `#5wzt` | exact `title_66` | 7；五尾，特别号尾数包含为中。 |
 | 精选24码 `#jx24m` | exact `ma24` | 6；24 个号码分两行保留在原值槽，特别号包含为中。 |
 | 单双各四肖 `#dssx` | exact `danshuang4xiao` | 6；保留单双两组槽，特别肖属于对应组为中。 |
@@ -31,9 +31,9 @@
 | 合数大小 `#hsdx` | exact `title_279` | 7；合数大/小，特别号匹配为中。 |
 | 平特一肖（无 ID 标题表） | exact `pt1xiao` | 6；一肖，特别肖匹配为中。 |
 | 合数单双 `#hsds` | exact `title_132` | 7；合单/合双，特别号匹配为中。 |
-| 琴棋书画 `#qqsh` | exact `qinqi` | 7；首行分类固定标签不动；分类值和结果逐槽更新。 |
+| 琴棋书画 `#qqsh` | exact `qinqi` | 8；首行分类固定标签不动；分类值和结果逐槽更新。 |
 
-合计 18 个可见预测区块：16 个 exact/composite/replacement，2 个 unavailable；最大可见完整历史组为 7，所有 live APIs 请求 7 个 distinct issues，绝不重复 issue。
+合计 18 个可见预测区块：18 个 exact/composite/replacement；最大可见完整历史组为 8，所有 live APIs 请求 8 个 distinct issues，绝不重复 issue。
 
 ## 非预测与验证
 

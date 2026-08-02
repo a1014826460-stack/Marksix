@@ -52,10 +52,13 @@ def test_twsyw_correct_template_renders_draw_and_predictions_for_all_lotteries()
             draw_frame = draw_frame or next((item for item in page.frames if item.url.endswith("/vendor/twsyw/kai.html")), None)
             page.wait_for_timeout(50)
         assert frame is not None and draw_frame is not None
+        outer_draw = frame.locator("iframe[src='kai.html']").first
+        assert outer_draw.evaluate("element => element.getBoundingClientRect().height") >= draw_frame.locator("body").evaluate("element => element.scrollHeight")
 
         for lottery_type, title in ((3, "台湾彩"), (2, "澳门彩"), (1, "香港彩"), (3, "台湾彩")):
             draw_frame.locator(f"[data-lottery-type='{lottery_type}']").click()
             page.wait_for_timeout(150)
+            assert draw_frame.locator(".KJ-TabBox > div.cur .KJ-IFRAME").evaluate("element => element.getBoundingClientRect().height") >= 190
             assert any(item[1] == lottery_type for item in requests)
             assert draw_frame.locator("[data-current-issue]").inner_text() == f"{lottery_type}500"
             for section_id in (
