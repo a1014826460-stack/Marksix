@@ -23,6 +23,13 @@ MODULE_ROWS = {
         [f"{value:02d}" for value in range(25, 49)],
     ],
     "title_48": [["猴", "龙", "羊", "马", "猪", "狗", "鼠", "35", "47", "24", "38"]],
+    "shuangbo": [
+        [
+            "绿波|43,33,28,17,16,27,05,49,32,06",
+            "蓝波|20,26,14,42,37,03,47,10,48,04",
+        ],
+    ],
+    "sxztu": [["四不像"]],
 }
 MODULE_KEYS = [
     *MODULE_ROWS,
@@ -49,6 +56,11 @@ def payload(lottery_type: str = "3"):
                         else MODULE_ROWS.get(key, [[f"{marker}{key}-{row_index}"]])[row_index % len(MODULE_ROWS.get(key, [[f"{marker}{key}-{row_index}"]]))]
                     ),
                         "text": f"{marker}{key}-{row_index}",
+                        "imageUrl": (
+                            f"/uploads/predictions/{marker}-sxztu-{row_index}.jpg"
+                            if key == "sxztu"
+                            else ""
+                        ),
                     },
                     "result": {
                         "isOpened": row_index != 0,
@@ -117,8 +129,8 @@ def main() -> None:
             while time.monotonic() < deadline and not prediction_requests:
                 page.wait_for_timeout(100)
 
-            assert prediction_requests and all(item == "3:1" for item in prediction_requests), (
-                "initial rendering must request only the selected lottery's newest rows: "
+            assert "3:1" in prediction_requests, (
+                "initial rendering must request the selected lottery's newest rows: "
                 f"{prediction_requests}"
             )
 
@@ -144,10 +156,19 @@ def main() -> None:
                     if f"{lottery_type}:1" in prediction_requests:
                         break
                     page.wait_for_timeout(100)
+                while time.monotonic() < deadline:
+                    if f"{lottery_type}:16" in prediction_requests:
+                        break
+                    page.wait_for_timeout(100)
                 page.wait_for_timeout(1000)
                 text = first_table.inner_text()
                 assert title in text
                 assert "七肖" in text and "⑩码" in text, text
+                assert f"{lottery_type}:16" in prediction_requests, prediction_requests
+
+            sxztu_image = frame.locator("img[data-prediction-image='sxztu']")
+            assert sxztu_image.get_attribute("src") == "/uploads/predictions/港-sxztu-0.jpg"
+            assert sxztu_image.get_attribute("hidden") is None
 
             # The full eight-row history is fetched only after the visitor
             # reaches prediction content inside the supplied vendor document.
@@ -174,6 +195,10 @@ def main() -> None:
             assert "⑩码" in grade_text and "35.47.24.38.27.39.13.33.43.15" in grade_text
             assert "开：待开奖" in grade_text
             assert "暂无期号" not in frame.locator("body").inner_text()
+
+            grade_tables = frame.locator("[data-prediction-section='grade-a'] table")
+            assert grade_tables.count() == 8
+            assert "200期" in grade_tables.nth(7).inner_text(), grade_tables.nth(7).inner_text()
 
             lianxiao_rows = frame.locator("#top_14 + table + div tr")
             assert lianxiao_rows.count() == 32
@@ -216,6 +241,7 @@ def main() -> None:
             assert "必中15码：02.12.22.04.14.24.06.16.26.08.18.28.10.20.30" in first_card_text
             assert "必中九码：02.12.22.04.14.24.06.16.26" in first_card_text
             assert "207期一尾一码：（02）" in first_card_text
+            assert "200期" in cards.nth(7).inner_text(), cards.nth(7).inner_text()
             for forbidden in ("执笔先生", "gat566.cc", "205期必中三尾", "单车变宝马", "14.24.04.18.48"):
                 assert forbidden not in first_card_text, (forbidden, first_card_text)
 
@@ -286,6 +312,17 @@ def main() -> None:
                 assert header.locator("td > p > b > font[color='#0000FF']").count() == 1
                 assert header.locator("td > p > b > font[color='#FF0000']").count() == 1
                 assert detail.locator("br").count() == 1, detail.inner_text()
+
+            double_wave = frame.locator("[data-prediction-section='shuangbo']")
+            double_wave_header = double_wave.locator("tr").nth(0).inner_text()
+            double_wave_detail = double_wave.locator("tr").nth(1).inner_text()
+            assert "207期" in double_wave_header and "『双波10码』开 待开奖" in double_wave_header
+            assert "绿波:43.33.28.17.16.27.05.49.32.06" in double_wave_detail
+            assert "蓝波:20.26.14.42.37.03.47.10.48.04" in double_wave_detail
+
+            four_zodiac = frame.locator("[data-prediction-section='title_47-四肖中特']")
+            assert four_zodiac.count() == 1
+            assert "207期 四肖中特：猴·龙·羊·马" in four_zodiac.inner_text()
 
             composite = frame.get_by_text("综合绝杀", exact=True).locator("xpath=ancestor::table[1]/following-sibling::table[1]")
             composite_text = composite.inner_text()

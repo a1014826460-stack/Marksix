@@ -3,6 +3,7 @@ import fs from "node:fs"
 const index = fs.readFileSync("frontend/public/vendor/twbst528/index.html", "utf8")
 const config = fs.readFileSync("frontend/public/vendor/twbst528/site-config.js", "utf8")
 const adapter = fs.readFileSync("frontend/public/vendor/twbst528/site-data-adapter.js", "utf8")
+const dependencies = fs.readFileSync("backend/src/domains/prediction/site_page_dependencies.py", "utf8")
 
 for (const token of [
   '台湾百事通',
@@ -13,6 +14,13 @@ for (const token of [
   'data-site-key="twbst528"',
 ]) {
   if (!index.includes(token)) throw new Error(`homepage missing ${token}`)
+}
+for (const [moduleKey, modeId] of [["sxztu", 474], ["pmtj_image", 476]]) {
+  if (!index.includes(`data-prediction-image="${moduleKey}"`)) throw new Error(`${moduleKey} must use an existing image slot`)
+  if (!adapter.includes(`renderPredictionImage("${moduleKey}"`)) throw new Error(`${moduleKey} image renderer is missing`)
+  if (!adapter.includes(`modules.${moduleKey}`)) throw new Error(`${moduleKey} is not rendered from the site API`)
+  if (index.includes('src="static/picture/gengxin.jpg"')) throw new Error("replaced image banners must not retain gengxin.jpg")
+  if (!dependencies.includes(`("${moduleKey}", ${modeId}`)) throw new Error(`${moduleKey} exact image mode is not authorized`)
 }
 for (const token of ['siteKey: "twbst528"', 'siteName: "台湾百事通"', 'siteDomain: "www.twbst528.com"', 'lotteryType: 3', 'lotteryType: 2', 'lotteryType: 1']) {
   if (!config.includes(token)) throw new Error(`site configuration missing ${token}`)

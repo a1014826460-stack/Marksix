@@ -1,6 +1,7 @@
 import fs from "node:fs"
 
 const adapter = fs.readFileSync("frontend/public/vendor/twssz/site-data-adapter.js", "utf8")
+const dependencies = fs.readFileSync("backend/src/domains/prediction/site_page_dependencies.py", "utf8")
 
 for (const token of ["createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "<style"]) {
   if (adapter.includes(token)) throw new Error(`adapter must not mutate UI: ${token}`)
@@ -36,6 +37,20 @@ for (const required of [
   '{ key: "danshuangtema", title: "单双中特", renderer: renderDanShuangHistory }'
 ]) {
   if (!adapter.includes(required)) throw new Error(`twssz module must use its dedicated renderer: ${required}`)
+}
+for (const required of [
+  "renderSxztuImage",
+  'renderSxztuImage(modules.sxztu)',
+  "data-prediction-image='sxztu'",
+  "loadHistoricalPredictions(lottery)",
+  "fourZodiacHistoryTarget",
+  'waveSlots.length !== 2',
+  'label + ":" + values.slice(0, 10).join(".")',
+]) {
+  if (!adapter.includes(required)) throw new Error(`twssz missing regression contract: ${required}`)
+}
+if (adapter.includes('target: function () { return targetAfter("top_8", 2, 2); }')) {
+  throw new Error("精准四肖 must not rely on the ambiguous duplicate #top_8 sibling offset")
 }
 for (const prohibited of ["rowDisplay", "replaceRowText", "replaceLeafText", "renderStandardSection"]) {
   if (adapter.includes(prohibited)) throw new Error(`twssz must not use whole-row renderer: ${prohibited}`)
@@ -87,6 +102,12 @@ if (imageTags.length !== 194) throw new Error(`expected 194 vendor images includ
 if (imageTags.some((tag) => !/\bloading="lazy"/i.test(tag) || !/\bdecoding="async"/i.test(tag))) {
   throw new Error("every supplied vendor image must use native lazy loading without changing its source")
 }
+if (!html.includes('<managed-site-links site-key="twssz" style="display:block;width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;"></managed-site-links>')) {
+  throw new Error("twssz links must be constrained to the supplied 800px page shell")
+}
+if (!html.includes('data-prediction-image="sxztu"')) {
+  throw new Error("狗头传密 must expose its existing image as the sxztu prediction slot")
+}
 
 const drawHtml = fs.readFileSync("frontend/public/vendor/twssz/kai.html", "utf8")
 if (/data-cf-beacon|v4513226cdae34746b4dedf0b4dfa099e1781791509496\.js/i.test(drawHtml)) {
@@ -127,6 +148,9 @@ for (const token of [
   "compositeLines",
 ]) {
   if (!adapter.includes(token)) throw new Error(`twssz adapter missing complete mapping contract: ${token}`)
+}
+if (!dependencies.includes('("狗头传密四不像中特图", 474)')) {
+  throw new Error("twssz must authorize the exact sxztu image mode 474")
 }
 
 for (const token of [

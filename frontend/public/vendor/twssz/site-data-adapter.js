@@ -69,6 +69,22 @@
     return moduleByKey;
   }
 
+  function predictionImageUrl(row) {
+    var prediction = row && row.prediction || {};
+    return String(prediction.imageUrl || row && row.image_url || row && row.raw && row.raw.image_url || "").trim();
+  }
+
+  // 狗头传密 has one supplied image leaf. It is only shown when this site's
+  // exact sxztu image payload exists; no unrelated static image is retained.
+  function renderSxztuImage(module) {
+    var image = window.document.querySelector("img[data-prediction-image='sxztu']");
+    if (!image) return;
+    var url = predictionImageUrl(moduleRow(module, 0));
+    image.setAttribute("src", url);
+    if (url) image.removeAttribute("hidden");
+    else image.setAttribute("hidden", "hidden");
+  }
+
   var latestModulesByLottery = {};
   var historicalModulesByLottery = {};
   var historicalRequestsByLottery = {};
@@ -101,7 +117,7 @@
     { key: "3hang", title: "综合资料", target: function () { return targetAfter("top_2", 0, 2); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "pt3xiao", title: "三肖六码", renderer: renderThreeXiaoHistory },
     { key: "shuangbo", title: "双波10码", renderer: renderDoubleWaveHistory },
-    { key: "title_47", title: "四肖中特", target: function () { return targetAfter("top_8", 2, 2); }, rows: allRows, renderer: renderStructuredHistory },
+    { key: "title_47", title: "四肖中特", target: fourZodiacHistoryTarget, rows: allRows, renderer: renderStructuredHistory },
     { key: "danshuangtema", title: "单双中特", renderer: renderDanShuangHistory },
     { key: "title_143", title: "一波中特", target: function () { return window.document.querySelector("#con_jihuadanshuang50000ww_2"); }, rows: allParagraphs, renderer: renderStructuredHistory },
     { key: "3tou", title: "一头一码", renderer: renderOneHeadHistory }
@@ -581,6 +597,19 @@
     return scope ? scope.querySelectorAll("table") : [];
   }
 
+  // The vendor template repeats id="top_8" twice before the actual four-zodiac
+  // table. Identify the supplied title table first, then use its existing
+  // sibling content block rather than a fragile duplicate-ID occurrence.
+  function fourZodiacHistoryTarget() {
+    var titleTable = Array.prototype.filter.call(window.document.querySelectorAll("table"), function (table) {
+      return String(table.textContent || "").indexOf("『四肖中特』") !== -1;
+    })[0];
+    var target = titleTable && titleTable.nextElementSibling;
+    // The title's immediate sibling is an inline vendor style node.
+    while (target && !(target.matches && target.matches(".dz_content08ab2d"))) target = target.nextElementSibling;
+    return target || null;
+  }
+
   // 家野二肖 has eight one-row cards followed by a fixed livestock legend.
   // The term, category, zodiac pair and draw result each retain their supplied
   // slot instead of collapsing the card into a generic API summary.
@@ -1027,19 +1056,22 @@
     table.setAttribute("data-prediction-section", mapping.key);
     pairedHistoryRows(table, module, function (header, detail, row) {
       var tokens = predictionTokens(row);
+      if (!tokens.length && row && row.prediction && row.prediction.text) tokens = [row.prediction.text];
       var groups = [];
       tokens.forEach(function (token) {
         var raw = String(token == null ? "" : token);
-        var label = firstValue(raw);
-        var values = (raw.split("|").slice(1).join("|").match(/\d{1,2}/g) || []).map(function (value) {
+        var labelMatch = raw.match(/(?:红波|蓝波|绿波)/);
+        var label = labelMatch ? labelMatch[0] : firstValue(raw);
+        var values = ((labelMatch ? raw.slice(raw.indexOf(label) + label.length) : raw.split("|").slice(1).join("|")).match(/\d{1,2}/g) || []).map(function (value) {
           return value.length === 1 ? "0" + value : value;
         });
-        if (label && values.length) groups.push(label + ":" + values.slice(0, 10).join("."));
+        if (/^(?:红波|蓝波|绿波)$/.test(label) && values.length) groups.push(label + ":" + values.slice(0, 10).join("."));
       });
       writePairedHeader(header, row, "『双波10码』");
       var waveSlots = Array.prototype.filter.call(detail.querySelectorAll("td > p > font > font"), function (node) {
         return /^(?:blue|green|red)$/i.test(node.getAttribute("color") || "");
       });
+      if (waveSlots.length !== 2) return;
       waveSlots.forEach(function (slot, groupIndex) {
         var label = groups[groupIndex] ? groups[groupIndex].split(":", 1)[0] + ":" : "";
         setDirectText(slot, row ? label : "");
@@ -1170,6 +1202,7 @@
     });
     clearUnmappedStaticPredictionText();
     renderCompleteSections({});
+    renderSxztuImage();
   }
 
   function loadLatestPredictions(lottery) {
@@ -1180,6 +1213,7 @@
       if (modules && activeLottery.lotteryType === lottery.lotteryType) {
         renderGradeHistory(modules);
        renderFifteenCodeHistory({ key: "title_66" }, modules.title_66);
+        renderSxztuImage(modules.sxztu);
       }
       return result;
     });
@@ -1194,10 +1228,12 @@
       if (!modules || !Object.keys(modules).length) modules = latestModulesByLottery[lotteryType] || {};
       historicalModulesByLottery[lotteryType] = modules;
       if (activeLottery.lotteryType === lotteryType) renderCompleteSections(modules);
+      if (activeLottery.lotteryType === lotteryType) renderSxztuImage(modules.sxztu);
       return modules;
     }, function () {
       var modules = latestModulesByLottery[lotteryType] || {};
       if (activeLottery.lotteryType === lotteryType) renderCompleteSections(modules);
+      if (activeLottery.lotteryType === lotteryType) renderSxztuImage(modules.sxztu);
       return modules;
     });
     return historicalRequestsByLottery[lotteryType];
@@ -1238,9 +1274,12 @@
       var historicalModules = historicalModulesByLottery[lottery.lotteryType];
       if (historicalModules) {
         renderCompleteSections(historicalModules);
+        renderSxztuImage(historicalModules.sxztu);
       } else {
         clearStaticPredictionPayload();
-        if (historyActivated) loadHistoricalPredictions(lottery);
+        // A draw-tab selection must replace every visible historical module,
+        // not leave the previous lottery on screen until the next scroll.
+        loadHistoricalPredictions(lottery);
       }
     }
   };
@@ -1261,8 +1300,10 @@
     window.TwsszSiteData.preloadDraw();
     scheduleAfterFirstPaint(function () {
       window.TwsszSiteData.preloadPredictions();
+      // These sections expose eight fixed vendor history cards above the
+      // fold; load their matching rows without requiring a user scroll.
+      observeDeferredMappings();
     });
-    // Historical rows are intentionally deferred until a visitor navigates below the fold.
     window.addEventListener("scroll", observeDeferredMappings, { once: true, passive: true });
     window.addEventListener("message", receiveDrawLotteryChange);
   }

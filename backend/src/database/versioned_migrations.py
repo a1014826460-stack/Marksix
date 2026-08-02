@@ -444,6 +444,11 @@ def _sync_twbst528_taiwan_pmt_image(conn: Any) -> None:
     _install_twbst528_site_profile(conn)
 
 
+def _sync_twbst528_exact_image_modules(conn: Any) -> None:
+    """Refresh site 10 after adding its approved mode-474 and mode-476 images."""
+    _install_twbst528_site_profile(conn)
+
+
 def _install_twjsz666_site_profile(conn: Any) -> None:
     """Register Taiwan Golden Finger site 11 with reviewed shared modules."""
     from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
@@ -605,6 +610,11 @@ def _install_twsyw_site_profile(conn: Any) -> None:
         sync_site_prediction_modules(conn, site_id=13)
 
 
+def _sync_twssz_sxztu_image_authorization(conn: Any) -> None:
+    """Refresh twssz after adding its exact mode-474 image module."""
+    _install_twssz_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -625,6 +635,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(17, "sync_twjsz666_composite_sources", _sync_twjsz666_composite_sources),
     Migration(18, "install_twwanli_vendor_site", _install_twwanli_site_profile),
     Migration(19, "install_twsyw_vendor_site", _install_twsyw_site_profile),
+    Migration(20, "sync_twssz_sxztu_image_authorization", _sync_twssz_sxztu_image_authorization),
+    Migration(21, "sync_twbst528_exact_image_modules", _sync_twbst528_exact_image_modules),
 )
 
 

@@ -74,3 +74,5 @@ frontend/public/data/Images/mode_474/animals/
 # Junction to backend/data/ — not real files, ignore entirely
 frontend/public/data/
 backend/data/logs/
+backend/data/logs/app.log.1
+backend/data/logs/app.log.10

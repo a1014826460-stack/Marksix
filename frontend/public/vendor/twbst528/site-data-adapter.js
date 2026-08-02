@@ -371,11 +371,11 @@
     });
   }
 
-  function renderTaiwanPmtImage(module) {
-    var image = document.querySelector("img[data-prediction-image='tw_pmt_image']");
+  function renderPredictionImage(moduleKey, module) {
+    var image = document.querySelector("img[data-prediction-image='" + moduleKey + "']");
     if (!image) return;
     var row = distinctRows(module)[0];
-    var url = String(row && row.prediction && row.prediction.imageUrl || "").trim();
+    var url = String(row && row.prediction && row.prediction.imageUrl || row && row.image_url || row && row.raw && row.raw.image_url || "").trim();
     if (!url) {
       image.setAttribute("src", "");
       image.setAttribute("hidden", "hidden");
@@ -383,6 +383,10 @@
     }
     image.setAttribute("src", url);
     image.removeAttribute("hidden");
+  }
+
+  function renderTaiwanPmtImage(module) {
+    renderPredictionImage("tw_pmt_image", module);
   }
 
   function renderSizhongteHistory(module) {
@@ -908,6 +912,8 @@
     renderTiandiErxiaoHistory(moduleWithRows(modules.tiandi_2xiao, modules.title_5));
 
     renderTaiwanPmtImage(modules.tw_pmt_image);
+    renderPredictionImage("sxztu", modules.sxztu);
+    renderPredictionImage("pmtj_image", modules.pmtj_image);
     renderSizhongteHistory(modules.title_47);
     renderSanxiaoLiumaHistory(modules.pt3xiao);
     renderJueshaYixiaoHistory(modules.juesha1xiao);

@@ -98,6 +98,8 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("shaliangbanbo", 490, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("gongshi_siw", 491, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("tw_pmt_image", 478, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("sxztu", 474, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("pmtj_image", 476, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("title_198", 198, "/vendor/twbst528/141.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
             ("sitouzhongte", 483, "/vendor/twbst528/143.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
             ("title_14", 14, "/vendor/twbst528/144.html", "frontend/public/vendor/twbst528/static-article-data-adapter.js"),
@@ -258,6 +260,7 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("一波中特", 143),
             ("三肖六码（后端替代）", 69),
             ("双波10码", 38),
+            ("狗头传密四不像中特图", 474),
         )
     ),
     # Shengshi8800 is the reachable legacy shell for site 4. Only scripts

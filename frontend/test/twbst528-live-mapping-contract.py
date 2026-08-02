@@ -117,6 +117,13 @@ def prediction_payload(lottery_type: str):
                     {**row, "prediction": {"imageUrl": f"/uploads/predictions/{lottery_type}-{index}.png", "tokens": []}}
                     for index, row in enumerate(rows)
                 ]},
+                *[
+                    {"moduleKey": module_key, "rows": [
+                        {**row, "prediction": {"imageUrl": f"/uploads/predictions/{module_key}-{lottery_type}-{index}.png", "tokens": []}}
+                        for index, row in enumerate(rows)
+                    ]}
+                    for module_key in ("sxztu", "pmtj_image")
+                ],
             ]
         },
     }
@@ -189,6 +196,14 @@ def main() -> None:
             assert pmt_image.count() == 1
             assert pmt_image.get_attribute("src") == "/uploads/predictions/3-0.png"
             assert pmt_image.get_attribute("hidden") is None
+
+            for module_key in ("sxztu", "pmtj_image"):
+                image = frame.locator(f"img[data-prediction-image='{module_key}']")
+                assert image.count() == 1
+                assert image.get_attribute("src") == f"/uploads/predictions/{module_key}-3-0.png"
+                assert image.get_attribute("hidden") is None
+                assert image.get_attribute("loading") == "lazy"
+                assert image.get_attribute("decoding") == "async"
 
             # All reviewed three-column modules must replace supplier terms,
             # values and result placeholders from their own API module.
