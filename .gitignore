@@ -22,6 +22,7 @@ yarn-error.log*
 *.bak
 *.psd
 .worktrees/
+.codex-temp/
 
 # env files (allow .env.example template)
 .env
