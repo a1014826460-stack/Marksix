@@ -56,6 +56,7 @@ tmp_*.json
 *.dump
 *.sql
 *.zip
+liuhecai-*.tar
 
 # 爬虫采集数据
 backend/data/lottery_data/
