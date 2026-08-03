@@ -56,14 +56,21 @@ function resolveBackendOrigin() {
   return new URL(normalized)
 }
 
+function buildUploadUrl(origin: URL, relativePath: string) {
+  const basePath = origin.pathname.replace(/\/+$/, "")
+  const uploadPath = basePath.endsWith("/uploads")
+    ? basePath
+    : basePath.endsWith("/api")
+      ? `${basePath.slice(0, -4)}/uploads`
+      : `${basePath}/uploads`
+  return new URL(`${uploadPath}/${relativePath}`, origin.origin)
+}
+
 async function proxyLegacyImage(bucket: string, filename: string) {
   try {
     const origin = resolveBackendOrigin()
     const imagePath = `image/${encodeURIComponent(bucket)}/${encodeURIComponent(filename)}`
-    const backendUrl = new URL(
-      origin.pathname.endsWith("/uploads") ? imagePath : `/uploads/${imagePath}`,
-      origin,
-    )
+    const backendUrl = buildUploadUrl(origin, imagePath)
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (!response.ok) {
       return null

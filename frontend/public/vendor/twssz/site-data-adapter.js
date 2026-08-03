@@ -1065,6 +1065,10 @@
         var values = ((labelMatch ? raw.slice(raw.indexOf(label) + label.length) : raw.split("|").slice(1).join("|")).match(/\d{1,2}/g) || []).map(function (value) {
           return value.length === 1 ? "0" + value : value;
         });
+        // The shuangbo backend payload carries wave labels only ("红波,蓝波").
+        // Fill each selected wave with its canonical ten numbers so the
+        // vendor's 双波10码 card renders a complete two-wave row.
+        if (!values.length && WAVE_NUMBERS[label]) values = WAVE_NUMBERS[label].slice(0, 10);
         if (/^(?:红波|蓝波|绿波)$/.test(label) && values.length) groups.push(label + ":" + values.slice(0, 10).join("."));
       });
       writePairedHeader(header, row, "『双波10码』");
@@ -1074,7 +1078,22 @@
       if (waveSlots.length !== 2) return;
       waveSlots.forEach(function (slot, groupIndex) {
         var label = groups[groupIndex] ? groups[groupIndex].split(":", 1)[0] + ":" : "";
-        setDirectText(slot, row ? label : "");
+        var directText = Array.prototype.filter.call(slot.childNodes, function (child) {
+          return child.nodeType === 3;
+        });
+        if (directText.length) directText[0].nodeValue = row ? label : "";
+        // Vendor dots (or previously converted commas) between number slots
+        // become commas; any other stale text run is blanked so it can never
+        // concatenate with the label. The conversion runs once with an empty
+        // module during the initial clear pass, so it must stay idempotent.
+        directText.slice(1).forEach(function (text) {
+          text.nodeValue = /^\s*[.,]\s*$/.test(text.nodeValue || "") ? "," : "";
+        });
+        // Vendor highlight spans may carry a stale wave label; blank them so
+        // the label never concatenates with the freshly written one.
+        Array.prototype.forEach.call(slot.querySelectorAll("span"), function (span) {
+          if (!span.children.length) span.textContent = "";
+        });
         predictionLeaves(slot).forEach(function (numberSlot, numberIndex) {
           var values = groups[groupIndex] ? groups[groupIndex].split(":")[1].split(".") : [];
           numberSlot.textContent = row ? values[numberIndex] || "" : "";
@@ -1210,7 +1229,11 @@
     return preload("predictions", { lotteryType: lottery.lotteryType, historyLimit: 1, includeVendor: false }).then(function (result) {
       var modules = modulesFrom(result);
       if (modules) latestModulesByLottery[lottery.lotteryType] = modules;
-      if (modules && activeLottery.lotteryType === lottery.lotteryType) {
+      // Race guard: the latest (1-issue) response may arrive after the
+      // historical (16-issue) response. Re-rendering grade and fifteen-code
+      // sections with the 1-issue payload would wipe the already-rendered
+      // history back to a single issue, so skip when history is complete.
+      if (modules && activeLottery.lotteryType === lottery.lotteryType && !historicalModulesByLottery[lottery.lotteryType]) {
         renderGradeHistory(modules);
        renderFifteenCodeHistory({ key: "title_66" }, modules.title_66);
         renderSxztuImage(modules.sxztu);

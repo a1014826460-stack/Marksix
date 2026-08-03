@@ -62,14 +62,21 @@ function resolveBackendOrigin() {
   return new URL(normalized)
 }
 
+function buildUploadUrl(origin: URL, relativePath: string) {
+  const basePath = origin.pathname.replace(/\/+$/, "")
+  const uploadPath = basePath.endsWith("/uploads")
+    ? basePath
+    : basePath.endsWith("/api")
+      ? `${basePath.slice(0, -4)}/uploads`
+      : `${basePath}/uploads`
+  return new URL(`${uploadPath}/${relativePath}`, origin.origin)
+}
+
 async function proxyUpload(pathSegments: string[]) {
   try {
     const safePath = pathSegments.map((segment) => encodeURIComponent(segment)).join("/")
     const origin = resolveBackendOrigin()
-    const backendUrl = new URL(
-      origin.pathname.endsWith("/uploads") ? safePath : `/uploads/${safePath}`,
-      origin,
-    )
+    const backendUrl = buildUploadUrl(origin, safePath)
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (!response.ok) {
       return null
