@@ -98,12 +98,19 @@ if (/https?:\/\//i.test(html)) {
   throw new Error("twssz vendor HTML must not retain external origins")
 }
 const imageTags = html.match(/<img\b[^>]*>/gi) || []
-if (imageTags.length !== 194) throw new Error(`expected 194 vendor images including the shared attribute module, got ${imageTags.length}`)
+if (imageTags.length !== 192) throw new Error(`expected 192 vendor images after replacing the supplier link grid, got ${imageTags.length}`)
 if (imageTags.some((tag) => !/\bloading="lazy"/i.test(tag) || !/\bdecoding="async"/i.test(tag))) {
   throw new Error("every supplied vendor image must use native lazy loading without changing its source")
 }
-if (!html.includes('<managed-site-links site-key="twssz" style="display:block;width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;"></managed-site-links>')) {
+const managedLinks = html.match(/<managed-site-links\b[^>]*\bsite-key="twssz"[^>]*><\/managed-site-links>/gi) || []
+if (managedLinks.length !== 1) {
+  throw new Error(`twssz must expose exactly one shared links module, got ${managedLinks.length}`)
+}
+if (!managedLinks[0].includes('max-width:800px')) {
   throw new Error("twssz links must be constrained to the supplied 800px page shell")
+}
+if (/ad-form-02-zoom/.test(html) || /教你买啥就开啥/.test(html)) {
+  throw new Error("twssz supplier external-link grid must be replaced by the shared links module")
 }
 if (!html.includes('data-prediction-image="sxztu"')) {
   throw new Error("狗头传密 must expose its existing image as the sxztu prediction slot")
