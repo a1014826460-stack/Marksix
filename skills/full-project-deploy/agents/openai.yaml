@@ -1,0 +1,4 @@
+interface:
+  display_name: "Full Project Deploy"
+  short_description: "Safely release code and static assets"
+  default_prompt: "Deploy this repository completely to the backend and frontend servers while preserving runtime data, uploads, certificates, and local Nginx configuration."

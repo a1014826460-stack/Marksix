@@ -98,7 +98,7 @@ if (/https?:\/\//i.test(html)) {
   throw new Error("twssz vendor HTML must not retain external origins")
 }
 const imageTags = html.match(/<img\b[^>]*>/gi) || []
-if (imageTags.length !== 192) throw new Error(`expected 192 vendor images after replacing the supplier link grid, got ${imageTags.length}`)
+if (imageTags.length !== 187) throw new Error(`expected 187 vendor images after replacing the supplier external-link blocks, got ${imageTags.length}`)
 if (imageTags.some((tag) => !/\bloading="lazy"/i.test(tag) || !/\bdecoding="async"/i.test(tag))) {
   throw new Error("every supplied vendor image must use native lazy loading without changing its source")
 }
