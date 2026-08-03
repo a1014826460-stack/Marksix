@@ -39,9 +39,11 @@ user explicitly requests an emergency single-file patch.
    first, then use `git reset --hard <release-commit>`.
 2. Restore protected runtime paths from the backup before any service restart.
    In particular, restore certificates before `nginx -t`.
-3. Central backend server: run database migrations only when the release
-   includes schema changes; rebuild and restart the affected `python-api`,
-   `scheduler-worker`, and `frontend` services. Do not overwrite database data.
+3. Central backend server: run database migrations whenever site profiles,
+   required mode dependencies, prediction-module authorizations, or schema
+   changes differ from production; rebuild and restart the affected
+   `python-api`, `scheduler-worker`, and `frontend` services. Do not overwrite
+   database data.
 4. Frontend-only node: rebuild and restart only `frontend` using
    `docker compose -f docker-compose.frontend-node.yml`; never start backend,
    worker, migration, or database services there.
@@ -55,8 +57,9 @@ user explicitly requests an emergency single-file patch.
 - For every changed static image, compare local and remote SHA-256, then fetch
   the public URL and require HTTP 200 with the expected content type.
 - For changed vendor sites, verify entry HTML, console errors, draw endpoint,
-  and prediction endpoint. For `twssz`, compare returned `canonical_modules`
-  keys/counts against local expectations for all three `lottery_type` values.
+  and prediction endpoint. For every verified site and each `lottery_type`
+  `1`, `2`, and `3`, compare the complete local and production
+  `canonical_modules` key sets. A matching count alone is not sufficient.
 - Report backups, commit, rebuilt services, Nginx result, and any residual
   runtime-only differences.
 

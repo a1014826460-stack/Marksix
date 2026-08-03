@@ -507,6 +507,58 @@ def test_migration_fourteen_resyncs_twbst528_for_the_taiwan_pmt_image(tmp_path):
     assert dict(image_module) == {"mechanism_key": "tw_pmt_image", "mode_id": 478, "status": 1}
 
 
+def test_migration_twenty_four_inserts_twssz_title_five_authorization(tmp_path):
+    """An existing twssz module profile must gain title_5 without resetting its rows."""
+    from db import connect
+    from database.versioned_migrations import _sync_twssz_title_five_authorization
+
+    db_path = str(tmp_path / "twssz-title-five-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE site_blueprint_profiles (
+                blueprint_name TEXT PRIMARY KEY, required_mode_ids_json TEXT NOT NULL,
+                known_unavailable_mode_ids_json TEXT NOT NULL, blocked_items_json TEXT NOT NULL,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE managed_sites (
+                id INTEGER PRIMARY KEY, web_id INTEGER NOT NULL, name TEXT NOT NULL,
+                domain TEXT, lottery_type_id INTEGER, enabled INTEGER NOT NULL,
+                blueprint_name TEXT, announcement TEXT, notes TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE site_prediction_modules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, site_id INTEGER NOT NULL,
+                mechanism_key TEXT NOT NULL, mode_id INTEGER NOT NULL, status INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                title TEXT, UNIQUE(site_id, mechanism_key)
+            )
+            """
+        )
+
+        _sync_twssz_title_five_authorization(conn)
+        first = conn.execute(
+            "SELECT mechanism_key, mode_id, status FROM site_prediction_modules "
+            "WHERE site_id = 9 AND mechanism_key = 'title_5'"
+        ).fetchone()
+        _sync_twssz_title_five_authorization(conn)
+        all_rows = conn.execute(
+            "SELECT mechanism_key FROM site_prediction_modules "
+            "WHERE site_id = 9 AND mechanism_key = 'title_5'"
+        ).fetchall()
+
+    assert dict(first) == {"mechanism_key": "title_5", "mode_id": 5, "status": 1}
+    assert len(all_rows) == 1
+
+
 def test_migration_five_imports_twssz_static_prediction_history_into_created_tables(monkeypatch):
     """The vendor's supplied historical table must be available through the shared API."""
     from database import versioned_migrations
