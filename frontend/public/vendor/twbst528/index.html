@@ -45,18 +45,18 @@
         .KJ-TabBox ul,.KJ-TabBox li { font-size: 16px;}
     }
     @media screen and (max-width: 450px) {
-        .KJ-TabBox{ height: 180px!important;}
+        .KJ-TabBox{ height: 236px!important;}
     }
 </style>
 <div class="KJ-TabBox">
     <ul>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&amp;label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':180}">
+        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&amp;label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':200}">
             <a href="index.html" data-lottery-type="3">台湾彩</a>
         </li>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&amp;label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':180}">
+        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&amp;label=%E6%BE%B3%E9%97%A8%E5%BD%A9','height':200}">
             <a href="index.html" data-lottery-type="2">澳门彩</a>
         </li>
-        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&amp;label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':180}">
+        <li data-opt="{'color':'#000','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&amp;label=%E9%A6%99%E6%B8%AF%E5%BD%A9','height':200}">
             <a href="index.html" data-lottery-type="1">香港彩</a>
         </li>
     </ul>
@@ -117,14 +117,16 @@
                 item[0].addEventListener(item[1],function(){
                     removeEl("kj-iframe-css");
                     var w = window.screen.availWidth;
+                    // The mobile draw card is ~189px tall; keep every breakpoint
+                    // at the full 200px so the lower half is never clipped.
                     if(w<=650 && w>500){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:195px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=500 && w>450){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:175px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=450 && w>350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:165px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:155px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }
                 },false);
             });
@@ -187,7 +189,9 @@
 				return;
 			}
 			if (window.innerWidth < 720) {
-				iframe.setAttribute('height', '165');
+				// Mobile draw card is ~189px tall; keep the full 200px slot so
+				// the issue row and refresh button are never clipped.
+				iframe.setAttribute('height', '200');
 			} else {
 				iframe.setAttribute('height', '210');
 			}

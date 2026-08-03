@@ -21,11 +21,11 @@
 </style>
 <div class="KJ-TabBox">
     <ul>
-        <li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':180}">
+        <li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=3&label=%E5%8F%B0%E6%B9%BE%E5%BD%A9','height':200}">
             台湾彩
-    </li><li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%85%AD%E5%90%88%E5%BD%A9','height':180}">
+    </li><li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=2&label=%E6%BE%B3%E9%97%A8%E5%85%AD%E5%90%88%E5%BD%A9','height':200}">
         澳门彩
-    </li><li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%85%AD%E5%90%88%E5%BD%A9','height':180}">
+    </li><li data-opt="{'color':'crimson','url':'/vendor/shengshi8800/kj/local.html?lottery_type=1&label=%E9%A6%99%E6%B8%AF%E5%85%AD%E5%90%88%E5%BD%A9','height':200}">
         香港彩
     </li>
     </ul>
@@ -84,14 +84,17 @@
                 item[0].addEventListener(item[1],function(){
                     removeEl("kj-iframe-css");
                     var w = window.screen.availWidth;
+                    // The mobile draw card is taller than the old fixed slots;
+                    // keep every breakpoint at the full 200px so the lower half
+                    // (issue row / refresh) is never clipped inside the iframe.
                     if(w<=650 && w>500){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:195px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=500 && w>450){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:175px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=450 && w>350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:165px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }else if(w<=350){
-                        insert("kj-iframe-css",".KJ-IFRAME{height:155px;}");
+                        insert("kj-iframe-css",".KJ-IFRAME{height:200px;}");
                     }
                 },false);
             });

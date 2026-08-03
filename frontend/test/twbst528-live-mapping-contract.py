@@ -174,6 +174,30 @@ def main() -> None:
             assert "/vendor/shengshi8800/kj/local.html?lottery_type=" in draw_src
             assert "about:blank" not in draw_src
 
+            # The supplier's mobile media query must leave room for both the
+            # 36px tab strip and the complete 200px same-origin draw frame.
+            # Regressions here previously clipped the issue and refresh area.
+            page.set_viewport_size({"width": 390, "height": 844})
+            for lottery_type in ("3", "2", "1"):
+                frame.locator(f".KJ-TabBox a[data-lottery-type='{lottery_type}']").click()
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    iframe_height = frame.locator(".KJ-IFRAME").first.evaluate("node => node.getBoundingClientRect().height")
+                    if iframe_height >= 200:
+                        break
+                    page.wait_for_timeout(100)
+                geometry = frame.locator(".KJ-TabBox").first.evaluate("""box => {
+                    const iframe = box.querySelector('.KJ-IFRAME').getBoundingClientRect();
+                    const parent = box.getBoundingClientRect();
+                    return { parentHeight: parent.height, iframeTop: iframe.top, iframeBottom: iframe.bottom, parentTop: parent.top, parentBottom: parent.bottom };
+                }""")
+                assert geometry["parentHeight"] >= 236, geometry
+                assert geometry["iframeTop"] >= geometry["parentTop"], geometry
+                assert geometry["iframeBottom"] <= geometry["parentBottom"], geometry
+
+            page.set_viewport_size({"width": 1280, "height": 720})
+            frame.locator(".KJ-TabBox a[data-lottery-type='3']").click()
+
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline and "3:6" not in prediction_requests:
                 page.wait_for_timeout(100)
