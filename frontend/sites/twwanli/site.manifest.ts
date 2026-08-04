@@ -9,7 +9,7 @@ export default defineVendorSiteManifest({
   },
   bridge: {
     api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" }, autoLoad: { draw: true, prediction: true },
-    predictionModuleKeys: ["title_14", "juesha3xiao", "9xzt", "selected_22_codes", "shuangbo", "sixiao_sima", "daxiao", "title_66", "ma24", "danshuang4xiao", "siduanzhongte", "title_143", "title_5", "3tou", "title_279", "pt1xiao", "title_132", "qinqi", "3hang", "6xzt"],
+    predictionModuleKeys: ["title_14", "juesha3xiao", "9xzt", "selected_22_codes", "shuangbo", "sixiao_sima", "daxiao", "title_66", "ma24", "danshuang4xiao", "siduanzhongte", "title_143", "title_5", "3tou", "title_279", "pt1xiao", "pt1wei", "sitouzhongte", "title_132", "qinqi", "3hang", "6xzt"],
     runtime: { drawSelector: ".haoju iframe[src='kai.html']", predictionSelector: "[data-prediction-section]", footerSelector: "#legacy-attribute-anchor", navigationSelector: ".nav", legacyPredictionScripts: "enabled" },
   },
   brand: { siteName: "台湾万利网", logoUrl: "/vendor/twwanli/static/picture/18d310a363f7a6a0d82a09afd2953d21.jpg", faviconUrl: "/vendor/twwanli/static/picture/18d310a363f7a6a0d82a09afd2953d21.jpg", navigation: [], footer: { copyright: "台湾万利网" } },

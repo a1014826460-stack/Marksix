@@ -3,14 +3,30 @@ import json
 from db import connect
 from database.versioned_migrations import _install_twwanli_site_profile
 from domains.prediction.site_module_blueprints import get_blueprint_name_for_site
-from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+from domains.prediction.site_page_dependencies import dependencies_for_site, required_mode_ids_for_site_key
 
 
-EXPECTED_MODE_IDS = (14, 42, 49, 493, 38, 78, 57, 66, 34, 31, 479, 143, 5, 12, 279, 56, 132, 26, 53, 46)
+EXPECTED_MODE_IDS = (14, 42, 49, 493, 38, 78, 57, 66, 34, 31, 479, 143, 5, 12, 279, 56, 54, 483, 132, 26, 53, 46)
 
 
 def test_twwanli_dependencies_are_reviewed_and_complete():
     assert required_mode_ids_for_site_key("twwanli") == EXPECTED_MODE_IDS
+
+
+def test_twwanli_featured_post_pages_have_explicit_dependencies():
+    actual = {
+        item.page_path: item.endpoint
+        for item in dependencies_for_site("twwanli")
+        if item.page_path.startswith("/vendor/twwanli/")
+    }
+    assert actual == {
+        "/vendor/twwanli/21.html": "pt1wei",
+        "/vendor/twwanli/22.html": "pt1xiao",
+        "/vendor/twwanli/25.html": "pt1wei",
+        "/vendor/twwanli/26.html": "pt1xiao",
+        "/vendor/twwanli/27.html": "title_14",
+        "/vendor/twwanli/28.html": "sitouzhongte",
+    }
 
 
 def test_twwanli_profile_matching_does_not_shadow_twjsz666():

@@ -83,6 +83,7 @@
   function section(id) { return document.getElementById(id); }
   function slots(root) { return root ? root.querySelectorAll("[data-prediction-issue], [data-prediction-content], [data-prediction-content-secondary], [data-prediction-result]") : []; }
   function rows(root) { return root ? Array.prototype.filter.call(root.querySelectorAll("tr"), function (row) { return slots(row).length; }) : []; }
+  function featuredRows() { return Array.prototype.slice.call(document.querySelectorAll("#jhtz a[data-prediction-module]")); }
 
   function clearHit(root) {
     Array.prototype.forEach.call(root.querySelectorAll("[data-prediction-hit]"), function (node) {
@@ -137,7 +138,54 @@
     });
   }
 
-  function renderBuyWhatOpens(modules) { renderThreeColumnHistory("msks", modules.title_14, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
+  function predictionText(row) {
+    return String(row && row.prediction && row.prediction.text || rawValue(row, "content") || "").trim();
+  }
+
+  function resultParts(row) {
+    var result = row && row.result || {};
+    var last = function (value) {
+      var values = String(value || "").split(/[,，、|\s]+/).filter(Boolean);
+      return values.length ? values[values.length - 1] : "";
+    };
+    var code = last(result.code);
+    var zodiac = last(result.zodiac);
+    return { isOpened: result.isOpened === true, code: code || "00", zodiac: zodiac || "？" };
+  }
+
+  function domesticWildCategory(row) {
+    var raw = row && row.raw || {};
+    var category = String(raw.domestic_wild_category || "").trim();
+    return category === "家禽" || category === "野兽" ? category : "";
+  }
+
+  function predictedDomesticWildCategory(row) {
+    var zodiac = resultParts(row).zodiac;
+    return ["家禽", "野兽"].filter(function (label) {
+      return listValue(rawValue(row, label === "家禽" ? "jia" : "ye")).indexOf(zodiac) >= 0;
+    })[0] || "";
+  }
+
+  function renderBuyWhatOpens(modules) {
+    var sourceRows = distinctRows(modules.title_14);
+    rows(section("msks")).forEach(function (node, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(node, "", "暂无后端资料", "");
+      var parts = resultParts(source);
+      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野〈〈待开奖〉〉", "待开奖", "？00");
+      var category = domesticWildCategory(source);
+      var predictedCategory = predictedDomesticWildCategory(source);
+      var hit = Boolean(category && category === predictedCategory);
+      writeRow(
+        node,
+        issueOf(source) + "期:火爆家野〈〈" + (category || "暂无后端资料") + "〉〉",
+        hit ? "准" : "错",
+        parts.zodiac + parts.code + (hit ? "准" : "错"),
+        "",
+        hit
+      );
+    });
+  }
   function renderKillThreeXiao(modules) { renderThreeColumnHistory("wsxx", modules.juesha3xiao, function (row) { return "杀三肖『" + labels(row).slice(0, 3).join("") + "』"; }); }
   function renderFourXiao(modules) { renderThreeColumnHistory("wl4x", modules.sixiao_sima, function (row) { return labels(row).slice(0, 4).join("") || "暂无后端资料"; }); }
   function renderBigSmall(modules) { renderThreeColumnHistory("dxzt", modules.daxiao, function (row) { var value = String(rawValue(row, "daxiao") || labels(row)[0] || ""); return value === "大" ? "大数" : value === "小" ? "小数" : value || "暂无后端资料"; }); }
@@ -147,10 +195,27 @@
   function renderOneWave(modules) { renderThreeColumnHistory("ybzt", modules.title_143, function (row) { return listValue(rawValue(row, "wave")).slice(0, 1).join("") || labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
   function renderHeavenEarth(modules) { renderThreeColumnHistory("tdsx", modules.title_5, function (row) { return labels(row).slice(0, 3).join("+") || "暂无后端资料"; }); }
   function renderThreeHeads(modules) { renderThreeColumnHistory("3tzt", modules["3tou"], function (row) { return labels(row).slice(0, 3).join("-") || "暂无后端资料"; }); }
-  function renderSumBigSmall(modules) { renderThreeColumnHistory("hsdx", modules.title_279, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
+  function renderSumBigSmall(modules) { renderThreeColumnHistory("hsdx", modules.title_279, function (row) { return predictionText(row) || "暂无后端资料"; }); }
   function renderFlatOneXiao(modules) { renderThreeColumnHistory("pt1xiao", modules.pt1xiao, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
-  function renderSumOddEven(modules) { renderThreeColumnHistory("hsds", modules.title_132, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
-  function renderMusicChess(modules) { renderThreeColumnHistory("qqsh", modules.qinqi, function (row) { return labels(row).slice(0, 2).join("") || "暂无后端资料"; }); }
+  function renderSumOddEven(modules) { renderThreeColumnHistory("hsds", modules.title_132, function (row) { return predictionText(row).replace(/^合(单|双)$/, "合数$1") || "暂无后端资料"; }); }
+  function renderMusicChess(modules) {
+    var sourceRows = distinctRows(modules.qinqi);
+    rows(section("qqsh")).forEach(function (node, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(node, "", "暂无后端资料", "");
+      var parts = resultParts(source);
+      var title = listValue(rawValue(source, "title")).join("") || "暂无后端资料";
+      var reference = String(rawValue(source, "qinqi_reference") || "").trim();
+      writeRow(
+        node,
+        index === 0 && reference ? reference + "\n" + issueOf(source) + "期:" : issueOf(source) + "期:",
+        "琴棋书画→" + title,
+        "开:" + parts.zodiac + parts.code,
+        "",
+        source.result && source.result.isCorrect === true
+      );
+    });
+  }
   function renderLuckyOminousSixXiao(modules) { renderThreeColumnHistory("jxzt", modules["6xzt"], function (row) { return labels(row).slice(0, 6).join("") || "暂无后端资料"; }); }
   function renderFiveElements(modules) { renderThreeColumnHistory("jz5x", modules["3hang"], function (row) { return labels(row).slice(0, 3).join("+") || "暂无后端资料"; }); }
   function renderOddEvenFourXiao(modules) {
@@ -169,6 +234,40 @@
     });
   }
 
+  function formatFeaturedPost(moduleKey, source) {
+    if (!source) return "暂无后端资料";
+    if (moduleKey === "pt1wei") {
+      return listValue(rawValue(source, "tail")).slice(0, 1).join("") || labels(source).slice(0, 1).join("") || "暂无后端资料";
+    }
+    if (moduleKey === "pt1xiao") {
+      return labels(source).slice(0, 1).join("") || "暂无后端资料";
+    }
+    if (moduleKey === "sitouzhongte") {
+      return labels(source).slice(0, 4).join("-") || "暂无后端资料";
+    }
+    if (moduleKey === "title_14") {
+      var domestic = listValue(rawValue(source, "jia")).slice(0, 4).join("");
+      var wild = listValue(rawValue(source, "ye")).slice(0, 4).join("");
+      if (domestic || wild) return "家禽:" + (domestic || "暂无") + " 野兽:" + (wild || "暂无");
+      return labels(source).slice(0, 8).join("") || "暂无后端资料";
+    }
+    return "暂无后端资料";
+  }
+
+  function renderFeaturedPosts(modules) {
+    var sourceByKey = { pt1wei: modules.pt1wei, pt1xiao: modules.pt1xiao, title_14: modules.title_14, sitouzhongte: modules.sitouzhongte };
+    var seenByModule = {};
+    featuredRows().forEach(function (row) {
+      var moduleKey = String(row.getAttribute("data-prediction-module") || "");
+      var sourceRows = distinctRows(sourceByKey[moduleKey]);
+      var rowIndex = seenByModule[moduleKey] || 0;
+      seenByModule[moduleKey] = rowIndex + 1;
+      var source = sourceRows[rowIndex];
+      if (!source) return writeRow(row, "", "暂无后端资料", "");
+      writeRow(row, issueOf(source) + "期", formatFeaturedPost(moduleKey, source), resultText(source), "", source.result && source.result.isCorrect === true);
+    });
+  }
+
   function renderPredictions(envelope) {
     var modules = modulesByKey(envelope);
     renderBuyWhatOpens(modules);
@@ -181,6 +280,7 @@
     renderFiveTail(modules);
     renderSelectedTwentyFour(modules);
     renderOddEvenFourXiao(modules);
+    renderFeaturedPosts(modules);
     renderFourSegments(modules);
     renderOneWave(modules);
     renderHeavenEarth(modules);
@@ -199,18 +299,42 @@
     if (target) target.textContent = String(data.issue || data.current_issue || "");
   }
 
+  function syncFeaturedPostLinks(lotteryType) {
+    featuredRows().forEach(function (link) {
+      var href = String(link.getAttribute("href") || "").split("?")[0];
+      if (href) link.setAttribute("href", href + "?lottery_type=" + lotteryType);
+    });
+  }
+
+  function needsPredictionRefresh(envelope) {
+    var modules = modulesByKey(envelope);
+    return ["6xzt", "pt1wei", "sitouzhongte"].some(function (moduleKey) {
+      return distinctRows(modules[moduleKey]).length === 0;
+    });
+  }
+
+  function loadPredictions(lotteryType, retried) {
+    client.loadPredictions({ lotteryType: lotteryType, historyLimit: 8 }).then(function (envelope) {
+      if (activeLotteryType !== lotteryType || !envelope.data) return;
+      if (!retried && needsPredictionRefresh(envelope)) {
+        client.clear("predictions");
+        loadPredictions(lotteryType, true);
+        return;
+      }
+      renderPredictions(envelope);
+      window.dispatchEvent(new window.CustomEvent("site-data:ready", { detail: { siteKey: siteConfig.siteKey, resource: "predictions", state: envelope.state } }));
+    });
+  }
+
   function selectLottery(lotteryType) {
     lotteryType = Number(lotteryType);
     if (![1, 2, 3].includes(lotteryType)) return;
     activeLotteryType = lotteryType;
+    syncFeaturedPostLinks(lotteryType);
     client.loadDraw({ lotteryType: lotteryType }).then(function (envelope) {
       if (activeLotteryType === lotteryType && envelope.data) renderDrawPanel(envelope);
     });
-    client.loadPredictions({ lotteryType: lotteryType, historyLimit: 8 }).then(function (envelope) {
-      if (activeLotteryType !== lotteryType || !envelope.data) return;
-      renderPredictions(envelope);
-      window.dispatchEvent(new window.CustomEvent("site-data:ready", { detail: { siteKey: siteConfig.siteKey, resource: "predictions", state: envelope.state } }));
-    });
+    loadPredictions(lotteryType, false);
   }
 
   window.addEventListener("message", function (event) {

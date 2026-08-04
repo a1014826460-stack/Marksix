@@ -620,6 +620,11 @@ def _sync_twssz_title_five_authorization(conn: Any) -> None:
     _install_twssz_site_profile(conn)
 
 
+def _sync_twwanli_featured_posts_authorization(conn: Any) -> None:
+    """Authorize the reviewed featured-post mappings used by twwanli homepage."""
+    _install_twwanli_site_profile(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -645,6 +650,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(22, "sync_twwanli_five_element_authorization", _install_twwanli_site_profile),
     Migration(23, "sync_twwanli_six_xiao_authorization", _install_twwanli_site_profile),
     Migration(24, "sync_twssz_title_five_authorization", _sync_twssz_title_five_authorization),
+    Migration(25, "sync_twwanli_featured_posts_authorization", _sync_twwanli_featured_posts_authorization),
 )
 
 

@@ -65,6 +65,39 @@ def test_public_history_reads_fallback_when_preferred_window_has_duplicate_issue
     assert any(call["schema_name"] is None for call in calls)
 
 
+def test_public_history_marks_domestic_wild_result_from_fixed_data_mapping():
+    rows = [
+        {"res_code": "01,03", "res_sx": "马,龙"},
+        {"res_code": "01,02", "res_sx": "马,牛"},
+        {"res_code": "", "res_sx": ""},
+    ]
+
+    annotated = api.attach_domestic_wild_result_category(
+        rows,
+        {"牛": "家禽", "龙": "野兽"},
+    )
+
+    assert annotated[0]["domestic_wild_category"] == "野兽"
+    assert annotated[1]["domestic_wild_category"] == "家禽"
+    assert "domestic_wild_category" not in annotated[2]
+
+
+def test_public_history_attaches_qinqi_reference_from_fixed_data_mapping():
+    rows = [{"title": "画,琴,棋"}]
+
+    annotated = api.attach_qinqi_reference(
+        rows,
+        {
+            "琴": ("兔", "蛇", "鸡"),
+            "棋": ("鼠", "牛", "狗"),
+            "书": ("虎", "龙", "马"),
+            "画": ("羊", "猴", "猪"),
+        },
+    )
+
+    assert annotated[0]["qinqi_reference"] == "琴:兔蛇鸡　棋:鼠牛狗\n书:虎龙马　画:羊猴猪"
+
+
 def test_public_site_ten_history_filters_to_its_own_web_id(tmp_path):
     """Site ten may not expose prediction rows generated for another site."""
     from tables import ensure_admin_tables

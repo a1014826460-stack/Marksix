@@ -185,7 +185,25 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("daxiao", 57), ("title_66", 66), ("ma24", 34),
             ("danshuang4xiao", 31), ("siduanzhongte", 479), ("title_143", 143),
             ("title_5", 5), ("3tou", 12), ("title_279", 279),
-            ("pt1xiao", 56), ("title_132", 132), ("qinqi", 26), ("3hang", 53), ("6xzt", 46),
+            ("pt1xiao", 56), ("pt1wei", 54), ("sitouzhongte", 483),
+            ("title_132", 132), ("qinqi", 26), ("3hang", 53), ("6xzt", 46),
+        )
+    ),
+    *(
+        SitePageDependency(
+            site_key="twwanli",
+            page_path=page_path,
+            source_path="frontend/public/vendor/twwanli/featured-post-data-adapter.js",
+            endpoint=mechanism_key,
+            mode_ids=(mode_id,),
+        )
+        for page_path, mechanism_key, mode_id in (
+            ("/vendor/twwanli/21.html", "pt1wei", 54),
+            ("/vendor/twwanli/22.html", "pt1xiao", 56),
+            ("/vendor/twwanli/25.html", "pt1wei", 54),
+            ("/vendor/twwanli/26.html", "pt1xiao", 56),
+            ("/vendor/twwanli/27.html", "title_14", 14),
+            ("/vendor/twwanli/28.html", "sitouzhongte", 483),
         )
     ),
     # Taiwan Shenyu web 13 has the same supplied homepage topology as the

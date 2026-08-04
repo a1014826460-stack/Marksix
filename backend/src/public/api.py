@@ -38,6 +38,39 @@ def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def attach_domestic_wild_result_category(
+    rows: list[dict[str, Any]],
+    zodiac_category_map: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Attach the fixed-data domestic/wild category of each opened special zodiac."""
+    annotated_rows: list[dict[str, Any]] = []
+    for row in rows:
+        annotated = dict(row)
+        special = extract_special_result(annotated)
+        category = str(zodiac_category_map.get(special["zodiac"], "") or "").strip()
+        if category:
+            annotated["domestic_wild_category"] = category
+        annotated_rows.append(annotated)
+    return annotated_rows
+
+
+def attach_qinqi_reference(
+    rows: list[dict[str, Any]],
+    qinqi_value_map: dict[str, tuple[str, ...]],
+) -> list[dict[str, Any]]:
+    """Attach the fixed-data four-arts legend without changing supplier row fields."""
+    top = "　".join(
+        f"{label}:{''.join(qinqi_value_map.get(label, ()))}"
+        for label in ("琴", "棋")
+    )
+    bottom = "　".join(
+        f"{label}:{''.join(qinqi_value_map.get(label, ()))}"
+        for label in ("书", "画")
+    )
+    reference = "\n".join(part for part in (top, bottom) if part)
+    return [{**row, "qinqi_reference": reference} for row in rows]
+
+
 def _normalize_public_image_url(value: Any) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -277,6 +310,20 @@ def load_public_module_history(
             rows,
             default_lottery_type_id=lottery_type_id,
         )
+        if config.key == "title_14":
+            rows = attach_domestic_wild_result_category(
+                rows,
+                _build_zodiac_category_map(conn),
+            )
+        if config.key == "qinqi":
+            qinqi_map = {
+                str(row["name"] or "").strip(): tuple(split_csv(str(row["code"] or "")))
+                for row in conn.execute(
+                    "SELECT name, code FROM fixed_data WHERE sign = ?",
+                    ("四艺生肖",),
+                ).fetchall()
+            } if conn.table_exists("fixed_data") else {}
+            rows = attach_qinqi_reference(rows, qinqi_map)
 
         if not rows:
             return {
@@ -724,7 +771,10 @@ def _build_zodiac_category_map(conn: Any) -> dict[str, str]:
             "SELECT name, code FROM fixed_data WHERE sign = ?", (sign,),
         ).fetchall()
         for row in rows:
-            category = str(row["name"] or "").strip()
+            category = {"家肖": "家禽", "野肖": "野兽"}.get(
+                str(row["name"] or "").strip(),
+                str(row["name"] or "").strip(),
+            )
             for zodiac in split_csv(str(row["code"] or "")):
                 zodiac = zodiac.strip()
                 if zodiac:
