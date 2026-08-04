@@ -40,6 +40,10 @@ def _prediction_payload(lottery_type: int):
             for row in module_rows:
                 row["raw"]["jia"] = ["牛", "马", "羊", "鸡"]
                 row["raw"]["ye"] = ["鼠", "虎", "兔", "龙"]
+        elif key == "qinqi":
+            for row in module_rows:
+                row["raw"]["title"] = ["画", "琴", "棋"]
+                row["raw"]["qinqi_reference"] = "琴:兔蛇鸡　棋:鼠牛狗\n书:虎龙马　画:羊猴猪"
         modules.append({"key": key, "rows": module_rows})
     return {"ok": True, "data": {"canonical_modules": modules}}
 
@@ -105,7 +109,8 @@ def test_twwanli_all_lottery_tabs_render_isolated_slots():
             for section_id in ("msks", "wsxx", "wl4x", "dxzt"):
                 section = frame.locator(f"#{section_id}")
                 assert section.locator("[data-prediction-content]").first.inner_text(), f"{section_id} must render prediction content"
-                assert section.locator("[data-prediction-result]").first.inner_text() == "开:待开奖", f"{section_id} must render the prediction result"
+                expected_result = "？00" if section_id == "msks" else "开:待开奖"
+                assert section.locator("[data-prediction-result]").first.inner_text() == expected_result, f"{section_id} must render the prediction result"
             assert "暂无后端资料" not in frame.locator("#jz5x").inner_text()
             assert frame.locator("#jz5x [data-prediction-content]").first.inner_text()
             assert "暂无后端资料" not in frame.locator("#jxzt").inner_text()
