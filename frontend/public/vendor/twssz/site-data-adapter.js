@@ -109,6 +109,7 @@
     { key: "3tou", title: "三头中特", target: function () { return targetAfter("top_8", 1, 2); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "title_5", title: "精准天地+两肖", renderer: renderTiandiHistory },
     { key: "juesha2xiao", title: "综合绝杀", target: compositeTable, renderer: renderCompositeKillHistory },
+    { key: "juesha2xiao-steady", title: "只是有点帅【稳杀二肖】", renderer: renderSteadyJueshaTwoXiaoHistory },
     { key: "juesha1wei", title: "精选特料专区", renderer: renderTeLiaoHistory },
     { key: "pt1wei", title: "平特一尾", target: function () { return targetAfter("top_3", 0, 3); }, rows: allRows, renderer: renderStructuredHistory },
     { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, renderer: renderStructuredHistory },
@@ -920,6 +921,36 @@
             resultNode.setAttribute("data-prediction-row", blocks[blockIndex].key + "-" + rowIndex);
           }
         });
+      }
+    });
+  }
+
+  // The later "只是有点帅" card is a separate vendor block, despite sharing
+  // the exact juesha2xiao backend mechanism with 综合绝杀. Keep its eight
+  // supplied paragraphs and write issue/content/result into their declared
+  // leaf slots independently.
+  function renderSteadyJueshaTwoXiaoHistory(_mapping, _module, moduleByKey) {
+    var anchor = window.document.querySelector("p[data-prediction-section='juesha2xiao-steady']");
+    if (!anchor) return;
+    var rows = [anchor];
+    var node = anchor.nextElementSibling;
+    while (node && rows.length < 8) {
+      if (node.tagName === "P") rows.push(node);
+      node = node.nextElementSibling;
+    }
+    var module = moduleByKey && moduleByKey.juesha2xiao;
+    rows.forEach(function (paragraph, index) {
+      paragraph.setAttribute("data-prediction-row", String(index));
+      var row = moduleRow(module, index);
+      var issue = paragraph.querySelector("[data-prediction-issue]");
+      var content = paragraph.querySelector("[data-prediction-content]");
+      var result = paragraph.querySelector("[data-prediction-result]");
+      setExistingText(issue, row ? termValue(row) + " " : "");
+      setExistingText(content, row ? "绝杀二肖: 【" + zodiacValues(row).slice(0, 2).join("") + "】开:" : "");
+      setExistingText(result, row ? displayResult(row) : "");
+      if (result) {
+        if (row && row.result && row.result.isCorrect) result.setAttribute("color", "#FF0000");
+        else result.removeAttribute("color");
       }
     });
   }
