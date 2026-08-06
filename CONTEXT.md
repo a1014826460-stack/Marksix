@@ -16,9 +16,21 @@ _Avoid_: Slug, code, web id
 The concrete lottery stream shown by a site, currently Hong Kong, Macau, or Taiwan.
 _Avoid_: Game, type, category
 
+**Opened Draw**:
+A lottery issue whose authoritative result has been confirmed and may be shown to public clients.
+_Avoid_: Latest row, current result
+
+**Future Issue**:
+A lottery issue that has not opened yet. Editable or prepared values for it are not draw truth and must not be presented as a public result.
+_Avoid_: Future draw truth, provisional result
+
 **Prediction Module**:
 A named forecasting section that shows historical prediction rows and their draw results.
 _Avoid_: Widget, block, card
+
+**Prediction Asset**:
+A media asset generated or selected for a Prediction Module, such as an image referenced by a prediction row.
+_Avoid_: Upload, local file
 
 **Article**:
 A site content item that may be backed by live prediction data or by preserved vendor assets.
