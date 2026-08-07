@@ -6,10 +6,15 @@ import psycopg
 
 
 PROBE_CONNECT_TIMEOUT_SECONDS = 2
+PROBE_STATEMENT_TIMEOUT_MILLISECONDS = 2000
 
 
 def _probe_target(target: str) -> None:
-    connection = psycopg.connect(target, connect_timeout=PROBE_CONNECT_TIMEOUT_SECONDS)
+    connection = psycopg.connect(
+        target,
+        connect_timeout=PROBE_CONNECT_TIMEOUT_SECONDS,
+        options=f"-c statement_timeout={PROBE_STATEMENT_TIMEOUT_MILLISECONDS}",
+    )
     try:
         cursor = connection.cursor()
         cursor.execute("SELECT 1")

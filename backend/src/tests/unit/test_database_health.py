@@ -53,8 +53,14 @@ def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
         def close(self):
             captured["closed"] = True
 
-    def fake_connect(target, *, connect_timeout):
-        captured.update({"target": target, "connect_timeout": connect_timeout})
+    def fake_connect(target, *, connect_timeout, options):
+        captured.update(
+            {
+                "target": target,
+                "connect_timeout": connect_timeout,
+                "options": options,
+            }
+        )
         return Connection()
 
     monkeypatch.setattr("database.health.psycopg.connect", fake_connect)
@@ -66,5 +72,6 @@ def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
     assert captured == {
         "target": "postgresql://writer/secret",
         "connect_timeout": 2,
+        "options": "-c statement_timeout=2000",
         "closed": True,
     }
