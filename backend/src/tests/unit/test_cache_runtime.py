@@ -148,13 +148,13 @@ def test_redis_version_key_collision_does_not_switch_pointer():
 
 def test_redis_fake_pipeline_publishes_same_immutable_version_idempotently():
     client = _FakeRedisClient()
-    client.values["public:v1"] = b"payload"
     cache = _redis_store_with(client)
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
 
     cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
 
     assert client.values["public:pointer"] == b"public:v1"
-    assert len(client.pipelines) == 2
+    assert len(client.pipelines) == 3
 
 
 def test_redis_same_value_retry_never_extends_pointer_past_version_ttl():
