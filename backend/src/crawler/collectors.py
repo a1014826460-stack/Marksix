@@ -14,6 +14,7 @@ from crawler.HK_history_crawler import fetch_hongkong_history_data, transform_st
 from crawler.Macau_history_crawler import fetch_macau_history_data
 from db import connect as db_connect
 from helpers import sync_lottery_type_next_time_from_latest_draw
+from outbox.draw_publication import enqueue_draw_publication
 from runtime_config import get_config
 
 _collector_logger = logging.getLogger("crawler.collector")
@@ -86,6 +87,15 @@ def _upsert_draw(
     now: str,
     next_time: str = "",
 ) -> None:
+    previous = conn.execute(
+        """
+        SELECT lottery_type_id, year, term, numbers, draw_time, next_time,
+               status, is_opened, next_term
+        FROM lottery_draws
+        WHERE lottery_type_id = ? AND year = ? AND term = ?
+        """,
+        (lottery_type_id, year, term),
+    ).fetchone()
     if next_time:
         conn.execute(
             """
@@ -119,6 +129,17 @@ def _upsert_draw(
             (lottery_type_id, year, term, numbers, draw_time,
              is_opened, term + 1, now, now),
         )
+    current = conn.execute(
+        """
+        SELECT lottery_type_id, year, term, numbers, draw_time, next_time,
+               status, is_opened, next_term
+        FROM lottery_draws
+        WHERE lottery_type_id = ? AND year = ? AND term = ?
+        """,
+        (lottery_type_id, year, term),
+    ).fetchone()
+    if current:
+        enqueue_draw_publication(conn, previous=previous, current=current, now=now)
     sync_lottery_type_next_time_from_latest_draw(
         conn,
         lottery_type_id,

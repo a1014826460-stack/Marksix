@@ -50,6 +50,7 @@ from helpers import (
     get_effective_next_draw_payload,
     sync_lottery_type_next_time_from_latest_draw,
 )
+from outbox.draw_publication import enqueue_opened_draw_publication
 from runtime_config import get_config, get_config_from_conn
 from security.redaction import redact_text
 
@@ -673,7 +674,23 @@ class CrawlerScheduler:
                        AND is_opened = 0""",
                     (now_utc, int(lottery_type_id), year, term),
                 )
+                if cur.rowcount == 1:
+                    draw = conn.execute(
+                        "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
+                        "status, is_opened, next_term FROM lottery_draws "
+                        "WHERE lottery_type_id = ? AND year = ? AND term = ?",
+                        (int(lottery_type_id), year, term),
+                    ).fetchone()
+                    if draw:
+                        enqueue_opened_draw_publication(conn, draw, now=now_utc)
             else:
+                pending = conn.execute(
+                    "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
+                    "status, is_opened, next_term FROM lottery_draws "
+                    "WHERE lottery_type_id = ? AND is_opened = 0 "
+                    "AND draw_time IS NOT NULL AND draw_time != '' AND draw_time <= ?",
+                    (int(lottery_type_id), now_beijing),
+                ).fetchall()
                 cur = conn.execute(
                     """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
                        WHERE lottery_type_id = ? AND is_opened = 0
@@ -681,6 +698,8 @@ class CrawlerScheduler:
                        AND draw_time <= ?""",
                     (now_utc, int(lottery_type_id), now_beijing),
                 )
+                for draw in pending:
+                    enqueue_opened_draw_publication(conn, {**dict(draw), "is_opened": 1}, now=now_utc)
             return cur.rowcount
 
     def _do_precise_draw_fetch_and_open(self, lottery_type_id: int) -> dict[str, Any]:
@@ -1207,6 +1226,8 @@ class CrawlerScheduler:
                         f"WHERE id IN ({placeholders})",
                         [now_utc] + ids,
                     )
+                    for row in pending:
+                        enqueue_opened_draw_publication(conn, {**dict(row), "is_opened": 1}, now=now_utc)
                     _crawler_logger.info("AutoOpen: Set is_opened=1 for %d draw(s)", len(pending))
 
                     # 为刚打开的 type=3 记录更新 next_time
@@ -1493,7 +1514,8 @@ class CrawlerScheduler:
 
         with db_connect(self.db_path) as conn:
             pending_rows = conn.execute(
-                """SELECT id, year, term, draw_time
+                """SELECT id, lottery_type_id, year, term, numbers, draw_time,
+                          next_time, status, is_opened, next_term
                    FROM lottery_draws
                    WHERE lottery_type_id = 3 AND is_opened = 0
                    AND draw_time IS NOT NULL AND draw_time != ''""",
@@ -1514,6 +1536,8 @@ class CrawlerScheduler:
                     f"WHERE id IN ({placeholders})",
                     [now_utc] + ids,
                 )
+                for row in due_rows:
+                    enqueue_opened_draw_publication(conn, {**dict(row), "is_opened": 1}, now=now_utc)
             if opened_count > 0:
                 _crawler_logger.info("TaiwanOpen — opened %d Taiwan draw(s)", opened_count)
             else:

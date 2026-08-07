@@ -20,6 +20,7 @@ from helpers import (
     sync_lottery_type_next_time_from_latest_draw,
 )
 from runtime_config import get_config, get_config_from_conn, upsert_system_config
+from outbox.draw_publication import enqueue_draw_publication
 from tables import ensure_admin_tables
 
 
@@ -695,15 +696,21 @@ def save_draw(
             raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
 
     with connect(db_path) as conn:
+        previous = None
         if draw_id is not None:
             existing = conn.execute(
-                "SELECT is_opened FROM lottery_draws WHERE id = ?",
+                """
+                SELECT lottery_type_id, year, term, numbers, draw_time, next_time,
+                       status, is_opened, next_term
+                FROM lottery_draws WHERE id = ?
+                """,
                 (draw_id,),
             ).fetchone()
             if not existing:
                 raise KeyError(f"draw_id={draw_id} 不存在")
             if bool(existing["is_opened"]):
                 raise ValueError("已开奖记录禁止修改")
+            previous = existing
 
         duplicate = (
             conn.execute(
@@ -806,6 +813,7 @@ def save_draw(
                 raise KeyError(f"draw_id={draw_id} 不存在")
             _sync_lottery_type_next_time(conn, fields["lottery_type_id"], now)
 
+        enqueue_draw_publication(conn, previous=previous, current=row, now=now)
         return dict(row) | {"status": bool(row["status"]), "is_opened": bool(row["is_opened"])}
 
 
