@@ -178,6 +178,28 @@ def test_nonfinite_or_boolean_published_at_is_treated_as_a_cache_miss(published_
     assert snapshots.get_latest_draw(3) is None
 
 
+def test_huge_integer_published_at_does_not_raise_during_cache_read():
+    cache = MemoryCacheStore()
+    snapshots = PublicDrawSnapshots(cache)
+    keys = latest_draw_snapshot_keys(3, "2026-131")
+    cache.set(keys.pointer_key, keys.version_key.encode("utf-8"), ttl_seconds=60)
+    cache.set(
+        keys.version_key,
+        json.dumps(
+            {
+                "schema_version": 1,
+                "snapshot_type": "latest_draw",
+                "lottery_type_id": 3,
+                "published_at": 10**1000,
+                "payload": _latest_draw_payload(),
+            }
+        ).encode("utf-8"),
+        ttl_seconds=60,
+    )
+
+    assert snapshots.get_latest_draw(3) == _latest_draw_payload()
+
+
 def test_current_period_snapshot_has_its_own_typed_payload_and_pointer():
     cache = MemoryCacheStore()
     snapshots = PublicDrawSnapshots(cache)
