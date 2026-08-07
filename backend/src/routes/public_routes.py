@@ -89,8 +89,7 @@ def _parse_optional_history_web_id(value: object, field_name: str) -> int | None
 def latest_draw(ctx: RequestContext) -> None:
     site_id = ctx.query_value("site_id")
     if site_id not in (None, ""):
-        site_ctx = resolve_site_context(ctx.db_path, path_site_id=int(site_id), query=ctx.query)
-        lottery_type = int(site_ctx.lottery_type_id or 1)
+        lottery_type = _resolve_site_lottery_type(ctx, int(site_id))
     else:
         lottery_type = int(ctx.query_value("lottery_type", "1") or 1)
     snapshots = _public_draw_snapshots(ctx)
@@ -171,6 +170,40 @@ def _public_draw_snapshots(ctx: RequestContext) -> Any | None:
         "publish_current_period",
     )
     return snapshots if all(callable(getattr(snapshots, name, None)) for name in required) else None
+
+
+def _resolve_site_lottery_type(ctx: RequestContext, site_id: int) -> int:
+    """Resolve a site once from the primary, then retain only its public type."""
+    cache = ctx.state.get("cache_store")
+    cache_key = f"public:site-lottery:v1:id:{site_id}"
+    if cache is not None:
+        try:
+            cached = cache.get(cache_key)
+            lottery_type = _parse_cached_lottery_type(cached)
+        except CacheUnavailable:
+            lottery_type = None
+        if lottery_type is not None:
+            return lottery_type
+
+    site_ctx = resolve_site_context(ctx.write_db_path, path_site_id=site_id, query=ctx.query)
+    lottery_type = int(site_ctx.lottery_type_id or 1)
+    if cache is not None:
+        try:
+            cache.set(cache_key, str(lottery_type).encode("ascii"), ttl_seconds=60)
+        except CacheUnavailable:
+            pass
+    return lottery_type
+
+
+def _parse_cached_lottery_type(value: object) -> int | None:
+    if not isinstance(value, bytes):
+        return None
+    try:
+        decoded = value.decode("ascii")
+        lottery_type = int(decoded)
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return lottery_type if lottery_type > 0 else None
 
 
 def _backfill_latest_draw(

@@ -22,6 +22,7 @@ def test_run_server_logs_startup_risk_warnings_without_starting_scheduler():
     warnings.assert_called_once_with()
     create_cache_store.assert_called_once_with()
     assert http_server.return_value.public_draw_snapshots is not None
+    assert http_server.return_value.cache_store is create_cache_store.return_value
     http_server.return_value.server_close.assert_called_once_with()
 
 

@@ -193,3 +193,64 @@ def test_public_current_period_miss_uses_write_database_and_backfills_snapshot()
     current_period.assert_called_once_with(ctx.write_db_path, 3)
     assert snapshots.published == [("current", 3, payload, {"version": "2026012", "is_opened": True})]
     assert response_json(ctx) == payload
+
+class _RawCache:
+    def __init__(self, value=None, error=None):
+        self.value = value
+        self.error = error
+        self.writes = []
+
+    def get(self, key):
+        if self.error:
+            raise self.error
+        return self.value
+
+    def set(self, key, value, *, ttl_seconds):
+        if self.error:
+            raise self.error
+        self.writes.append((key, value, ttl_seconds))
+
+
+def _with_site_cache(ctx, cache):
+    ctx.state["cache_store"] = cache
+    return ctx
+
+
+def test_public_latest_draw_site_cache_hit_skips_site_context_resolution():
+    payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+    ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), _RawCache(b"3"))
+
+    with patch("routes.public_routes.resolve_site_context") as resolve_site, \
+         patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    resolve_site.assert_not_called()
+    latest_draw.assert_not_called()
+    assert response_json(ctx) == payload
+
+
+def test_public_latest_draw_site_cache_miss_resolves_from_write_target_and_backfills():
+    payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+    cache = _RawCache()
+    ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), cache)
+
+    with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site, \
+         patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
+    latest_draw.assert_not_called()
+    assert cache.writes == [("public:site-lottery:v1:id:12", b"3", 60)]
+    assert response_json(ctx) == payload
+
+
+def test_public_latest_draw_invalid_or_unavailable_site_cache_falls_back_to_write_target():
+    from cache.contracts import CacheUnavailable
+
+    for cache in (_RawCache(b"not-a-number"), _RawCache(error=CacheUnavailable("offline"))):
+        payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+        ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), cache)
+        with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site:
+            public_routes.latest_draw(ctx)
+        resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
+        assert response_json(ctx) == payload
