@@ -43,4 +43,3 @@ def test_collector_unopened_upsert_does_not_enqueue_until_it_is_opened(tmp_path)
     assert [dict(row) for row in rows] == [
         {"event_key": "draw-published:2:2026:135", "event_type": "draw.published"},
     ]
-
