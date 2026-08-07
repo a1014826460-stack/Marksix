@@ -82,6 +82,7 @@ class PublicDrawSnapshots:
         *,
         version: str,
         is_opened: bool,
+        published_at: float | None = None,
     ) -> bool:
         """Publish an Opened Draw's existing latest-draw response, or do nothing."""
         return self._publish(
@@ -91,6 +92,7 @@ class PublicDrawSnapshots:
             is_opened=is_opened,
             snapshot_type="latest_draw",
             keys=latest_draw_snapshot_keys,
+            published_at=published_at,
         )
 
     def publish_current_period(
@@ -100,6 +102,7 @@ class PublicDrawSnapshots:
         *,
         version: str,
         is_opened: bool,
+        published_at: float | None = None,
     ) -> bool:
         """Publish an Opened Draw's existing current-period response, or do nothing."""
         return self._publish(
@@ -109,6 +112,7 @@ class PublicDrawSnapshots:
             is_opened=is_opened,
             snapshot_type="current_period",
             keys=current_period_snapshot_keys,
+            published_at=published_at,
         )
 
     def get_latest_draw(self, lottery_type_id: int) -> dict[str, Any] | None:
@@ -126,6 +130,7 @@ class PublicDrawSnapshots:
         is_opened: bool,
         snapshot_type: str,
         keys: Callable[[int, str], SnapshotKeys],
+        published_at: float | None,
     ) -> bool:
         lottery_type = _validate_lottery_type(lottery_type_id)
         if not is_opened:
@@ -136,7 +141,8 @@ class PublicDrawSnapshots:
             "schema_version": 1,
             "snapshot_type": snapshot_type,
             "lottery_type_id": lottery_type,
-            "published_at": self._clock(),
+            # A retried Outbox event must reproduce its immutable bytes exactly.
+            "published_at": self._clock() if published_at is None else published_at,
             "payload": public_payload,
         }
         encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

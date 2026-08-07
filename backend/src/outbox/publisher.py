@@ -52,11 +52,12 @@ class DrawPublicationPublisher:
         for event in events:
             try:
                 self._publish_event(event)
+                completed = self._complete(event)
             except Exception as exc:
                 if self._retry(event, str(exc)):
                     result["retried"] += 1
             else:
-                if self._complete(event):
+                if completed:
                     result["published"] += 1
         return result
 
@@ -78,13 +79,34 @@ class DrawPublicationPublisher:
         # Existing public API builders apply their established output shaping.
         latest_draw = get_public_latest_draw(self._db_path, lottery_type_id)
         current_period = get_current_period(self._db_path, lottery_type_id)
-        version = f"{year}-{term}"
+        version = self._snapshot_version(event, year=year, term=term)
+        published_at = self._event_timestamp(event)
         self._snapshots.publish_latest_draw(
-            lottery_type_id, latest_draw, version=version, is_opened=True,
+            lottery_type_id, latest_draw, version=version, is_opened=True, published_at=published_at,
         )
         self._snapshots.publish_current_period(
-            lottery_type_id, current_period, version=version, is_opened=True,
+            lottery_type_id, current_period, version=version, is_opened=True, published_at=published_at,
         )
+
+    @staticmethod
+    def _snapshot_version(event: dict[str, Any], *, year: int, term: int) -> str:
+        """Turn the unique event key into an immutable cache version."""
+        event_key = str(event.get("event_key") or "")
+        if event_key.startswith("draw-published:"):
+            suffix = "published"
+        elif event_key.startswith("draw-refresh:"):
+            suffix = "refresh-" + event_key.rsplit(":", 1)[-1]
+        else:
+            raise ValueError("draw publication event key has no snapshot version")
+        return f"{year}-{term}-{suffix}"
+
+    @staticmethod
+    def _event_timestamp(event: dict[str, Any]) -> float:
+        created_at = str(event.get("created_at") or "")
+        try:
+            return datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
+        except ValueError as exc:
+            raise ValueError("draw publication event has invalid created_at") from exc
 
     def _complete(self, event: dict[str, Any]) -> bool:
         with connect(self._db_path) as conn:

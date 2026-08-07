@@ -159,7 +159,7 @@ def test_publisher_derives_draw_identity_from_event_key_not_untrusted_payload(tm
 
     assert _publisher(db_path, PublicDrawSnapshots(cache)).drain(limit=4) == {"published": 1, "retried": 0}
     assert cache.get("public:draw-snapshot:v1:lottery:3:latest-draw:pointer") == (
-        b"public:draw-snapshot:v1:lottery:3:latest-draw:version:2026-188"
+        b"public:draw-snapshot:v1:lottery:3:latest-draw:version:2026-188-published"
     )
 
 
@@ -212,3 +212,72 @@ def test_scheduler_worker_builds_publisher_from_injected_cache_store_without_red
     )
 
     assert publisher is not None
+
+
+def test_refresh_event_uses_its_own_immutable_snapshot_version(tmp_path):
+    from cache.memory import MemoryCacheStore
+    from cache.public_snapshots import PublicDrawSnapshots
+    from db import connect
+    from outbox.repository import enqueue_event
+
+    db_path = _setup(tmp_path)
+    with connect(db_path) as conn:
+        enqueue_event(
+            conn,
+            event_key="draw-refresh:3:2026:188:1",
+            event_type="draw.refresh",
+            payload={"lottery_type_id": 3, "year": 2026, "term": 188},
+            now="2026-08-07T14:32:00+00:00",
+        )
+    cache = MemoryCacheStore()
+    assert _publisher(db_path, PublicDrawSnapshots(cache)).drain(limit=4) == {"published": 1, "retried": 0}
+    assert cache.get("public:draw-snapshot:v1:lottery:3:latest-draw:pointer") == (
+        b"public:draw-snapshot:v1:lottery:3:latest-draw:version:2026-188-refresh-1"
+    )
+
+
+def test_retry_after_cache_publish_reuses_identical_event_snapshot_bytes(tmp_path, monkeypatch):
+    from cache.memory import MemoryCacheStore
+    from cache.public_snapshots import PublicDrawSnapshots
+    from db import connect
+    from outbox.publisher import DrawPublicationPublisher
+
+    db_path = _setup(tmp_path)
+    _enqueue_opened_event(db_path)
+    cache = MemoryCacheStore()
+    time = [datetime(2026, 8, 7, 14, 32, 5, tzinfo=timezone.utc)]
+    publisher = DrawPublicationPublisher(
+        db_path, snapshots=PublicDrawSnapshots(cache, clock=lambda: time[0].timestamp()),
+        owner="scheduler-a", now=lambda: time[0],
+    )
+    original_complete = publisher._complete
+    monkeypatch.setattr(publisher, "_complete", lambda event: (_ for _ in ()).throw(RuntimeError("database lost")))
+    assert publisher.drain(limit=4) == {"published": 0, "retried": 1}
+    key = "public:draw-snapshot:v1:lottery:3:latest-draw:version:2026-188-published"
+    first = cache.get(key)
+    assert first is not None
+
+    time[0] = datetime(2026, 8, 7, 14, 32, 11, tzinfo=timezone.utc)
+    monkeypatch.setattr(publisher, "_complete", original_complete)
+    assert publisher.drain(limit=4) == {"published": 1, "retried": 0}
+    assert cache.get(key) == first
+    with connect(db_path) as conn:
+        assert conn.execute("SELECT status, attempts FROM publication_outbox").fetchone()["status"] == "published"
+
+
+def test_scheduler_drains_publications_before_durable_tasks(tmp_path, monkeypatch):
+    from crawler.scheduler import CrawlerScheduler
+
+    scheduler = CrawlerScheduler(str(tmp_path / "scheduler.sqlite3"))
+    scheduler._running = True
+    order = []
+    monkeypatch.setattr(scheduler, "drain_publications_once", lambda: order.append("outbox"))
+    monkeypatch.setattr(scheduler, "_run_due_tasks", lambda: order.append("tasks"))
+    monkeypatch.setattr("crawler.scheduler._ensure_taiwan_future_autofill_task", lambda _path: None)
+    monkeypatch.setattr("crawler.scheduler._task_poll_interval_seconds", lambda _path: 999)
+    monkeypatch.setattr("crawler.scheduler.threading.Timer", lambda *args: type("Timer", (), {"daemon": False, "start": lambda self: None})())
+
+    scheduler._schedule_task_loop()
+    assert order == ["outbox", "tasks"]
+
+

@@ -1374,8 +1374,9 @@ class CrawlerScheduler:
             return
         try:
             _ensure_taiwan_future_autofill_task(self.db_path)
-            self._run_due_tasks()
+            # Keep the cache publication latency independent of long durable work.
             self.drain_publications_once()
+            self._run_due_tasks()
         except Exception as exc:
             _crawler_logger.error("Task loop iteration failed: %s", exc)
         self._task_timer = threading.Timer(_task_poll_interval_seconds(self.db_path), self._schedule_task_loop)
