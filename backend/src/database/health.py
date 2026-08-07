@@ -2,14 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from db import connect
+import psycopg
+
+
+PROBE_CONNECT_TIMEOUT_SECONDS = 2
 
 
 def _probe_target(target: str) -> None:
-    with connect(target) as conn:
-        row = conn.execute("SELECT 1 AS ok").fetchone()
-        if not row or int(row["ok"]) != 1:
+    connection = psycopg.connect(target, connect_timeout=PROBE_CONNECT_TIMEOUT_SECONDS)
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        row = cursor.fetchone()
+        if not row or int(row[0]) != 1:
             raise RuntimeError("database probe returned an invalid result")
+    finally:
+        connection.close()
 
 
 def _role_health(target: str) -> dict[str, Any]:

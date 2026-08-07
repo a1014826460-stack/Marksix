@@ -26,6 +26,9 @@ def test_nginx_exposes_exact_liveness_and_readiness_proxies():
         assert "proxy_pass http://python-api:8000/health/live;" in nginx
         assert "location = /health/ready" in nginx
         assert "proxy_pass http://python-api:8000/health/ready;" in nginx
+        readiness_block = nginx.split("location = /health/ready", 1)[1].split("\n    }", 1)[0]
+        assert "proxy_connect_timeout 1s;" in readiness_block
+        assert "proxy_read_timeout 3s;" in readiness_block
 
 
 def test_environment_template_documents_managed_database_endpoint_contract():

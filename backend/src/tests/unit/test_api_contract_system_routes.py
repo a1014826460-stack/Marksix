@@ -68,7 +68,7 @@ def test_liveness_does_not_call_dependency_health():
     assert response_json(ctx) == {"ok": True, "status": "alive"}
 
 
-def test_readiness_returns_503_when_a_required_dependency_is_down():
+def test_readiness_stays_available_when_read_replica_is_down():
     ctx = _make_system_ctx("/health/ready")
     ctx.state["dependency_health"] = lambda *_args: {
         "ok": False,
@@ -80,8 +80,23 @@ def test_readiness_returns_503_when_a_required_dependency_is_down():
 
     system_routes.readiness(ctx)
 
-    assert ctx.handler.response_status == 503
+    assert ctx.handler.response_status == 200
     assert response_json(ctx)["ok"] is False
+
+
+def test_readiness_returns_503_when_the_write_database_is_down():
+    ctx = _make_system_ctx("/health/ready")
+    ctx.state["dependency_health"] = lambda *_args: {
+        "ok": False,
+        "database": {
+            "write": {"ok": False, "error": "dependency unavailable"},
+            "read": {"ok": True},
+        },
+    }
+
+    system_routes.readiness(ctx)
+
+    assert ctx.handler.response_status == 503
 
 
 def test_dependency_health_returns_role_status_without_targets():

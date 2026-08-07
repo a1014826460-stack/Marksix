@@ -85,6 +85,8 @@ server {
     # Dependency-aware probe for load balancers; it returns 503 when unavailable.
     location = /health/ready {
         proxy_pass http://python-api:8000/health/ready;
+        proxy_connect_timeout 1s;
+        proxy_read_timeout 3s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

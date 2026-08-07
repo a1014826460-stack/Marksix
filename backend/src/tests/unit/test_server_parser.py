@@ -9,6 +9,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from app_http.server import build_parser
+from scheduler_worker import build_parser as build_scheduler_worker_parser
 
 
 def test_build_parser_allows_missing_database_url_when_cli_db_path_is_provided(monkeypatch):
@@ -34,5 +35,14 @@ def test_build_parser_uses_write_url_before_legacy_database_url(monkeypatch):
     monkeypatch.setenv("DATABASE_WRITE_URL", "postgresql://writer/db")
 
     args = build_parser().parse_args([])
+
+    assert args.db_path == "postgresql://writer/db"
+
+
+def test_scheduler_worker_uses_write_url_before_legacy_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://legacy/db")
+    monkeypatch.setenv("DATABASE_WRITE_URL", "postgresql://writer/db")
+
+    args = build_scheduler_worker_parser().parse_args([])
 
     assert args.db_path == "postgresql://writer/db"

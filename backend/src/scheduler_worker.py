@@ -33,7 +33,17 @@ from domains.scheduler.service import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Liuhecai durable scheduler worker.")
-    parser.add_argument("--db-path", "--db_path", dest="db_path", default=DEFAULT_POSTGRES_DSN or None)
+    parser.add_argument(
+        "--db-path",
+        "--db_path",
+        dest="db_path",
+        default=(
+            os.environ.get("DATABASE_WRITE_URL", "").strip()
+            or os.environ.get("DATABASE_URL", "").strip()
+            or DEFAULT_POSTGRES_DSN
+            or None
+        ),
+    )
     return parser
 
 

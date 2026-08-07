@@ -42,7 +42,8 @@ def _dependency_payload(ctx: RequestContext) -> dict:
 
 def readiness(ctx: RequestContext) -> None:
     payload = _dependency_payload(ctx)
-    ctx.send_json(payload, HTTPStatus.OK if payload["ok"] else HTTPStatus.SERVICE_UNAVAILABLE)
+    write_available = bool(payload.get("database", {}).get("write", {}).get("ok"))
+    ctx.send_json(payload, HTTPStatus.OK if write_available else HTTPStatus.SERVICE_UNAVAILABLE)
 
 
 def dependencies(ctx: RequestContext) -> None:

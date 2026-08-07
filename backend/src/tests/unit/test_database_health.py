@@ -34,3 +34,37 @@ def test_database_health_marks_a_failed_role_and_redacts_exception_text(monkeypa
         "error": "dependency unavailable",
     }
     assert "postgresql://" not in result["database"]["read"]["error"]
+
+
+def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
+    captured = {}
+
+    class Cursor:
+        def execute(self, query):
+            assert query == "SELECT 1"
+
+        def fetchone(self):
+            return (1,)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            captured["closed"] = True
+
+    def fake_connect(target, *, connect_timeout):
+        captured.update({"target": target, "connect_timeout": connect_timeout})
+        return Connection()
+
+    monkeypatch.setattr("database.health.psycopg.connect", fake_connect)
+
+    from database.health import _probe_target
+
+    _probe_target("postgresql://writer/secret")
+
+    assert captured == {
+        "target": "postgresql://writer/secret",
+        "connect_timeout": 2,
+        "closed": True,
+    }
