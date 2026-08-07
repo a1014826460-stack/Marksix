@@ -606,7 +606,7 @@ class CrawlerScheduler:
     台湾彩数据由管理后台手工录入，不再通过爬虫自动导入。
     """
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, *, publication_publisher: Any | None = None):
         self.db_path = db_path
         self._running = False
         self._auto_open_timer: threading.Timer | None = None
@@ -615,9 +615,16 @@ class CrawlerScheduler:
         self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
         self._precise_reschedule_active = False
         self._worker_id = f"crawler:{id(self)}"
+        # The standalone lease-holder wires this explicitly; legacy callers keep
+        # their existing no-cache behaviour without requiring a Redis client.
+        self._publication_publisher = publication_publisher
 
     def _auto_open_interval_seconds(self) -> int:
         return max(5, int(_cfg(self.db_path, "crawler.auto_open_interval_seconds", 60)))
+
+    def set_publication_publisher(self, publication_publisher: Any | None) -> None:
+        """Attach the lease-holder's bounded public publication consumer."""
+        self._publication_publisher = publication_publisher
 
     def _auto_crawl_interval_seconds(self) -> int:
         return max(30, int(_cfg(self.db_path, "crawler.auto_crawl_interval_seconds", 600)))
@@ -1368,6 +1375,7 @@ class CrawlerScheduler:
         try:
             _ensure_taiwan_future_autofill_task(self.db_path)
             self._run_due_tasks()
+            self.drain_publications_once()
         except Exception as exc:
             _crawler_logger.error("Task loop iteration failed: %s", exc)
         self._task_timer = threading.Timer(_task_poll_interval_seconds(self.db_path), self._schedule_task_loop)
@@ -1420,6 +1428,16 @@ class CrawlerScheduler:
     def run_due_tasks_once(self) -> None:
         """Run one durable-task polling cycle for the standalone worker."""
         self._run_due_tasks()
+
+    def drain_publications_once(self, *, limit: int = 20) -> dict[str, int]:
+        """Drain a bounded Outbox batch when this scheduler owns a publisher."""
+        if self._publication_publisher is None:
+            return {"published": 0, "retried": 0}
+        try:
+            return dict(self._publication_publisher.drain(limit=limit))
+        except Exception as exc:
+            _crawler_logger.warning("Publication Outbox drain failed: %s", exc)
+            return {"published": 0, "retried": 0}
 
     def _execute_task(self, task: dict[str, Any]) -> None:
         task_type = str(task.get("task_type") or "")

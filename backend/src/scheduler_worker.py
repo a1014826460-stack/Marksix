@@ -7,6 +7,7 @@ cannot be duplicated by API replicas or interrupted by an HTTP restart.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import signal
 import socket
@@ -14,6 +15,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 from crawler.crawler_service import CrawlerScheduler
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine
@@ -29,6 +31,37 @@ from domains.scheduler.service import (
     renew_scheduler_worker_lease,
     try_acquire_scheduler_worker_lease,
 )
+
+
+def create_publication_publisher(
+    db_path: str | Path,
+    *,
+    holder_id: str,
+    cache_store: Any | None = None,
+) -> Any | None:
+    """Build the Outbox publisher only for the worker that owns the lease.
+
+    An injected cache store keeps local development and unit tests independent
+    from Redis.  Production wiring can select Redis via the shared factory.
+    """
+    if cache_store is None:
+        try:
+            from cache.runtime import create_cache_store
+            cache_store = create_cache_store()
+        except Exception as exc:
+            # Public cache availability must never prevent authoritative draws.
+            logging.getLogger("scheduler_worker").warning(
+                "Outbox publisher disabled: cache unavailable (%s)", exc,
+            )
+            return None
+    from cache.public_snapshots import PublicDrawSnapshots
+    from outbox.publisher import DrawPublicationPublisher
+
+    return DrawPublicationPublisher(
+        db_path,
+        snapshots=PublicDrawSnapshots(cache_store),
+        owner=f"outbox:{holder_id}",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -90,7 +123,6 @@ def main() -> int:
     init_logging(str(db_path))
     log_startup_risk_warnings()
 
-    scheduler = CrawlerScheduler(db_path)
     stopping = False
     holder_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
     lease_seconds = _worker_lease_seconds(db_path)
@@ -112,6 +144,9 @@ def main() -> int:
         time.sleep(poll_seconds)
     if stopping:
         return 0
+    publisher = create_publication_publisher(db_path, holder_id=holder_id)
+    scheduler = CrawlerScheduler(db_path)
+    scheduler.set_publication_publisher(publisher)
     heartbeat_stop, lease_lost, heartbeat_thread = start_lease_heartbeat(
         db_path,
         holder_id=holder_id,
