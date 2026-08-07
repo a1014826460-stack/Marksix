@@ -67,6 +67,17 @@ def test_memory_version_key_cannot_be_reused_with_different_value():
     assert cache.get("public:pointer") == b"public:v1"
 
 
+def test_memory_same_value_retry_never_extends_pointer_past_version_ttl():
+    now = [0.0]
+    cache = MemoryCacheStore(clock=lambda: now[0])
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    now[0] = 30.0
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    assert cache._entries["public:pointer"].expires_at <= cache._entries["public:v1"].expires_at
+
+
 class _FakePipeline:
     def __init__(self, client: "_FakeRedisClient") -> None:
         self._client = client
@@ -92,6 +103,7 @@ class _FakePipeline:
                 results.append(False)
                 continue
             self._client.values[key] = value
+            self._client.expires_at[key] = self._client.now + int(kwargs["ex"])
             results.append(True)
         return results
 
@@ -99,6 +111,8 @@ class _FakePipeline:
 class _FakeRedisClient:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
+        self.expires_at: dict[str, float] = {}
+        self.now = 0.0
         self.execute_error: OSError | None = None
         self.pipelines: list[_FakePipeline] = []
 
@@ -141,6 +155,17 @@ def test_redis_fake_pipeline_publishes_same_immutable_version_idempotently():
 
     assert client.values["public:pointer"] == b"public:v1"
     assert len(client.pipelines) == 2
+
+
+def test_redis_same_value_retry_never_extends_pointer_past_version_ttl():
+    client = _FakeRedisClient()
+    cache = _redis_store_with(client)
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    client.now = 30.0
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    assert client.expires_at["public:pointer"] <= client.expires_at["public:v1"]
 
 
 def test_redis_pipeline_errors_are_mapped_to_cache_unavailable():

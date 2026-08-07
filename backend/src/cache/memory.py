@@ -79,7 +79,7 @@ class MemoryCacheStore:
                 if existing is None:
                     # The version is durable in the adapter before readers can see its pointer.
                     self._write(version_key, value, ttl_seconds)
-                self._write(pointer_key, version_key.encode("utf-8"), ttl_seconds)
+                    self._write(pointer_key, version_key.encode("utf-8"), ttl_seconds)
         except CacheUnavailable:
             raise
         except Exception as exc:

@@ -78,6 +78,7 @@ class RedisCacheStore:
                     raise CacheUnavailable(
                         "version key is immutable and already has a different value"
                     )
+                return
 
             # A Redis SET is atomic. It is deliberately a separate transaction:
             # a version-key collision can never update the public pointer.
