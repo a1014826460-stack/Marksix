@@ -15,7 +15,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from core.errors import AppError, UnauthorizedError, ForbiddenError
+from database.health import collect_database_health
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
+from database.runtime_targets import DatabaseTargets, resolve_database_targets
 from domains.lottery.service import get_lottery_draw_health
 from domains.scheduler.service import get_scheduler_worker_health
 from logger import init_logging
@@ -200,6 +202,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             ctx.state["detect_database_engine"] = detect_database_engine
             ctx.state["scheduler_worker_health"] = get_scheduler_worker_health
             ctx.state["lottery_draw_health"] = get_lottery_draw_health
+            ctx.state["dependency_health"] = collect_database_health
             if ctx.path.startswith("/api/admin/"):
                 require_authenticated(ctx)
             ROUTER.dispatch(ctx)
@@ -208,21 +211,29 @@ class ApiHandler(BaseHTTPRequestHandler):
             _dispatch_error_response(ctx, exc, logger)
 
 
-def run_server(host: str, port: int, db_path: str | Path) -> None:
-    if detect_database_engine(db_path) != "postgres":
+def run_server(host: str, port: int, db_path: str | Path | DatabaseTargets) -> None:
+    targets = (
+        db_path
+        if isinstance(db_path, DatabaseTargets)
+        else resolve_database_targets(explicit_write=str(db_path))
+    )
+    if detect_database_engine(targets.write) != "postgres":
         raise RuntimeError(
             "后端正式运行仅支持 PostgreSQL。"
             " 如需使用 SQLite，请只在明确的 legacy/test/migration 脚本中显式传入。"
         )
-    ensure_admin_tables(db_path)
-    ensure_prediction_configs_loaded(db_path)
-    init_logging(str(db_path))
+    ensure_admin_tables(targets.write)
+    ensure_prediction_configs_loaded(targets.write)
+    init_logging(targets.write)
     server = ThreadingHTTPServer((host, port), ApiHandler)
-    server.db_path = db_path  # type: ignore[attr-defined]
+    server.db_path = targets.write  # type: ignore[attr-defined]
+    server.write_db_path = targets.write  # type: ignore[attr-defined]
+    server.read_db_path = targets.read  # type: ignore[attr-defined]
     print(f"Backend API running at http://{host}:{port}")
     print(f"CMS admin page: http://{host}:{port}/admin")
-    print(f"Database engine: {detect_database_engine(db_path)} (formal runtime requires PostgreSQL)")
-    print(f"Database target: {redact_text(db_path)}")
+    print(f"Database engine: {detect_database_engine(targets.write)} (formal runtime requires PostgreSQL)")
+    print(f"Database write target: {redact_text(targets.write)}")
+    print(f"Database read target: {redact_text(targets.read)}")
     log_startup_risk_warnings()
     try:
         server.serve_forever()
@@ -238,7 +249,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--db-path",
         "--db_path",
         dest="db_path",
-        default=DEFAULT_POSTGRES_DSN or None,
+        default=(
+            os.environ.get("DATABASE_WRITE_URL", "").strip()
+            or os.environ.get("DATABASE_URL", "").strip()
+            or DEFAULT_POSTGRES_DSN
+            or None
+        ),
         help="PostgreSQL database target for formal runtime. Falls back to DATABASE_URL when omitted.",
     )
     return parser

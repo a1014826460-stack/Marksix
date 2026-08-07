@@ -168,8 +168,10 @@ git commit -m "feat(db): resolve write and read runtime targets"
 - Modify: `backend/src/app_http/request_context.py`
 - Modify: `backend/src/app_http/server.py`
 - Modify: `backend/src/main.py`
+- Modify: `backend/src/runtime_environment.py`
 - Modify: `backend/src/tests/unit/test_database_runtime_targets.py`
 - Modify: `backend/src/tests/unit/test_server_parser.py`
+- Modify: `backend/src/tests/unit/test_runtime_environment.py`
 
 - [ ] **Step 1: Write failing RequestContext and parser compatibility tests**
 
@@ -190,6 +192,8 @@ def test_build_parser_uses_write_url_before_legacy_database_url(monkeypatch):
     args = build_parser().parse_args([])
     assert args.db_path == "postgresql://writer/db"
 ```
+
+Add runtime isolation tests proving that the existing `compose` mode still only accepts `pgbouncer:6432`, while an explicit `managed` mode accepts a non-loopback managed endpoint and rejects localhost. `LIUHECAI_DATABASE_MODE` defaults to `compose` in production so existing deployments do not silently broaden database access.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
@@ -235,6 +239,18 @@ default=os.environ.get("DATABASE_WRITE_URL", "").strip() or DEFAULT_POSTGRES_DSN
 
 In `main.py`, resolve targets with `resolve_database_targets(explicit_write=args.db_path)`, validate both endpoints, and call `run_server(args.host, args.port, targets)`.
 
+Extend `validate_runtime_database_target` with a `database_mode` argument/environment value:
+
+```python
+mode = (database_mode or os.getenv("LIUHECAI_DATABASE_MODE", "compose")).strip().lower()
+if profile == PRODUCTION and mode == "managed":
+    if host in _DEVELOPMENT_HOSTS:
+        raise RuntimeEnvironmentError("managed production database cannot use a loopback host.")
+    return
+```
+
+Reject mode values outside `compose|managed`; preserve the exact current compose host/port check for `compose`.
+
 - [ ] **Step 4: Run focused tests and verify GREEN**
 
 Run the same focused command. Expected: all selected tests pass.
@@ -252,7 +268,7 @@ Expected: all tests pass without changing scheduler warnings or production Postg
 - [ ] **Step 6: Commit HTTP target plumbing**
 
 ```powershell
-git add backend/src/app_http/request_context.py backend/src/app_http/server.py backend/src/main.py backend/src/tests/unit/test_database_runtime_targets.py backend/src/tests/unit/test_server_parser.py
+git add backend/src/app_http/request_context.py backend/src/app_http/server.py backend/src/main.py backend/src/runtime_environment.py backend/src/tests/unit/test_database_runtime_targets.py backend/src/tests/unit/test_server_parser.py backend/src/tests/unit/test_runtime_environment.py docs/superpowers/plans/2026-08-07-high-availability-runtime-foundation.md
 git commit -m "feat(api): carry database read and write targets"
 ```
 

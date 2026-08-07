@@ -14,6 +14,16 @@
 
 运行时会优先读取数据库中的配置；如果某个配置项缺失，或数据库不可用，则回退到 `runtime_config.py` 中的默认值。数据库连接目标本身仍需通过 `DATABASE_URL` 或启动参数提供。
 
+## 高可用数据库端点
+
+本地开发继续只配置 `DATABASE_URL`，读写均回退到该端点。高可用应用节点可由部署平台 Secret 注入：
+
+- `DATABASE_WRITE_URL`：托管 PostgreSQL 的稳定写端点；优先于 `DATABASE_URL`。
+- `DATABASE_READ_URL`：托管 PostgreSQL 的稳定只读端点；未配置时回退到写端点。
+- `LIUHECAI_DATABASE_MODE=managed`：只允许生产运行时使用非 loopback 的托管端点；默认 `compose` 保持当前 `pgbouncer:6432` 保护。
+
+不要把任何真实 DSN 写入仓库、根 `.env`、日志或健康检查响应。当前阶段只建立端点和健康检查契约；公共读取尚未切换到只读端点。
+
 ## 站点预测模块授权
 
 - `site_prediction_modules` 中 `status=1` 的行是站点预测资料的唯一运行时授权来源。
