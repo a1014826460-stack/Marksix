@@ -17,6 +17,7 @@ from database.schema.lottery import ensure_lottery_tables
 from database.schema.sites import ensure_site_tables
 from database.schema.prediction import ensure_prediction_tables
 from database.schema.scheduler import ensure_scheduler_tables
+from database.schema.outbox import ensure_publication_outbox_table
 from database.schema.logs import ensure_log_tables
 from database.schema.config import ensure_config_history_tables
 from database.schema.audit import ensure_audit_tables
@@ -171,6 +172,7 @@ def _apply_legacy_schema_bootstrap(conn: Any) -> None:
     ensure_lottery_tables(conn, pk_sql)
     ensure_site_tables(conn, pk_sql)
     ensure_scheduler_tables(conn, pk_sql)
+    ensure_publication_outbox_table(conn, pk_sql)
     ensure_prediction_tables(conn, pk_sql)
     ensure_legacy_asset_tables(conn, pk_sql)
     ensure_liubuzhong_table(conn, pk_sql)

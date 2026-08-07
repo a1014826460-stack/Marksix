@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 26
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -625,6 +625,17 @@ def _sync_twwanli_featured_posts_authorization(conn: Any) -> None:
     _install_twwanli_site_profile(conn)
 
 
+def _create_publication_outbox(conn: Any) -> None:
+    """Install the durable publication Outbox through explicit PostgreSQL DDL."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.outbox import ensure_publication_outbox_table
+
+    ensure_publication_outbox_table(
+        conn,
+        auto_increment_primary_key("id", conn.engine),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -651,6 +662,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(23, "sync_twwanli_six_xiao_authorization", _install_twwanli_site_profile),
     Migration(24, "sync_twssz_title_five_authorization", _sync_twssz_title_five_authorization),
     Migration(25, "sync_twwanli_featured_posts_authorization", _sync_twwanli_featured_posts_authorization),
+    Migration(26, "create_publication_outbox", _create_publication_outbox),
 )
 
 
