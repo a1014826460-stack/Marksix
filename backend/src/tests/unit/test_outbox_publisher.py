@@ -279,5 +279,3 @@ def test_scheduler_drains_publications_before_durable_tasks(tmp_path, monkeypatc
 
     scheduler._schedule_task_loop()
     assert order == ["outbox", "tasks"]
-
-
