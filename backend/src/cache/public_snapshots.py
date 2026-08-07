@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 import re
 from time import time
 from typing import Any, Callable, Mapping
@@ -22,6 +23,7 @@ _CURRENT_PERIOD_FIELDS = frozenset(
     {"lottery_type_id", "lottery_name", "current_period", "current_year", "current_term"}
 )
 _FORBIDDEN_FIELDS = frozenset({"numbers", "res_sx", "res_color", "is_opened"})
+_BALL_FIELDS = frozenset({"value", "zodiac", "color"})
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,11 @@ def _snapshot_keys(lottery_type_id: int, snapshot_type: str, version: str) -> Sn
         pointer_key=f"{base}:pointer",
         version_key=f"{base}:version:{version_value}",
     )
+
+
+def _version_key_prefix(lottery_type_id: int, snapshot_type: str) -> str:
+    lottery_type = _validate_lottery_type(lottery_type_id)
+    return f"public:draw-snapshot:{_KEY_VERSION}:lottery:{lottery_type}:{snapshot_type}:version:"
 
 
 def latest_draw_snapshot_keys(lottery_type_id: int, version: str) -> SnapshotKeys:
@@ -145,7 +152,21 @@ class PublicDrawSnapshots:
         lottery_type = _validate_lottery_type(lottery_type_id)
         key_type = snapshot_type.replace("_", "-")
         pointer_key = _snapshot_keys(lottery_type, key_type, "pointer").pointer_key
-        raw = self._cache.get_versioned(pointer_key)
+        pointer = self._cache.get(pointer_key)
+        if pointer is None:
+            return None
+        try:
+            version_key = pointer.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        if not version_key.startswith(_version_key_prefix(lottery_type, key_type)):
+            return None
+        version = version_key.removeprefix(_version_key_prefix(lottery_type, key_type))
+        try:
+            _validate_version(version)
+        except ValueError:
+            return None
+        raw = self._cache.get(version_key)
         if raw is None:
             return None
         try:
@@ -158,7 +179,7 @@ class PublicDrawSnapshots:
             envelope.get("schema_version") != 1
             or envelope.get("snapshot_type") != snapshot_type
             or envelope.get("lottery_type_id") != lottery_type
-            or not isinstance(envelope.get("published_at"), (int, float))
+            or not _is_finite_number(envelope.get("published_at"))
         ):
             return None
         payload = envelope.get("payload")
@@ -200,8 +221,10 @@ def _validate_payload(
             raise ValueError("latest draw issue and time must be strings")
         if not isinstance(result["result_balls"], list):
             raise ValueError("latest draw result_balls must be a list")
-        if result["special_ball"] is not None and not isinstance(result["special_ball"], Mapping):
-            raise ValueError("latest draw special_ball must be an object or null")
+        for ball in result["result_balls"]:
+            _validate_ball(ball)
+        if result["special_ball"] is not None:
+            _validate_ball(result["special_ball"])
     else:
         if result["lottery_type_id"] != lottery_type_id:
             raise ValueError("current period lottery_type_id must match cache key")
@@ -212,3 +235,14 @@ def _validate_payload(
         if isinstance(result["current_term"], bool) or not isinstance(result["current_term"], int):
             raise ValueError("current_term must be an integer")
     return result
+
+
+def _validate_ball(ball: Any) -> None:
+    if not isinstance(ball, Mapping) or set(ball) != _BALL_FIELDS:
+        raise ValueError("latest draw ball fields are not allowed")
+    if any(not isinstance(ball[field], str) for field in _BALL_FIELDS):
+        raise ValueError("latest draw ball values must be strings")
+
+
+def _is_finite_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)

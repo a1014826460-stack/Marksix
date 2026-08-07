@@ -113,6 +113,71 @@ def test_invalid_pointer_or_invalid_json_is_treated_as_a_cache_miss():
     assert snapshots.get_latest_draw(3) is None
 
 
+def test_pointer_to_another_snapshot_scope_is_treated_as_a_cache_miss():
+    cache = MemoryCacheStore()
+    snapshots = PublicDrawSnapshots(cache)
+    latest_keys = latest_draw_snapshot_keys(3, "2026-131")
+    other_keys = current_period_snapshot_keys(3, "2026-131")
+    cache.set(latest_keys.pointer_key, other_keys.version_key.encode("utf-8"), ttl_seconds=60)
+    cache.set(
+        other_keys.version_key,
+        json.dumps(
+            {
+                "schema_version": 1,
+                "snapshot_type": "latest_draw",
+                "lottery_type_id": 3,
+                "published_at": 1234.5,
+                "payload": _latest_draw_payload(),
+            }
+        ).encode("utf-8"),
+        ttl_seconds=60,
+    )
+
+    assert snapshots.get_latest_draw(3) is None
+
+
+@pytest.mark.parametrize("nested_key", ["numbers", "res_sx", "res_color", "is_opened"])
+def test_latest_draw_rejects_forbidden_database_fields_nested_in_a_ball(nested_key: str):
+    snapshots = PublicDrawSnapshots(MemoryCacheStore())
+    payload = _latest_draw_payload()
+    payload["result_balls"] = [{"value": "01", "zodiac": "马", "color": "red", nested_key: "secret"}]
+
+    with pytest.raises(ValueError, match="ball"):
+        snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True)
+
+
+def test_latest_draw_rejects_ball_with_an_unexpected_type_or_field_set():
+    snapshots = PublicDrawSnapshots(MemoryCacheStore())
+    payload = _latest_draw_payload()
+    payload["special_ball"] = {"value": 7, "zodiac": "鼠", "color": "red"}
+
+    with pytest.raises(ValueError, match="ball"):
+        snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True)
+
+
+@pytest.mark.parametrize("published_at", [True, float("inf"), float("nan")])
+def test_nonfinite_or_boolean_published_at_is_treated_as_a_cache_miss(published_at: object):
+    cache = MemoryCacheStore()
+    snapshots = PublicDrawSnapshots(cache)
+    keys = latest_draw_snapshot_keys(3, "2026-131")
+    cache.set(keys.pointer_key, keys.version_key.encode("utf-8"), ttl_seconds=60)
+    cache.set(
+        keys.version_key,
+        json.dumps(
+            {
+                "schema_version": 1,
+                "snapshot_type": "latest_draw",
+                "lottery_type_id": 3,
+                "published_at": published_at,
+                "payload": _latest_draw_payload(),
+            }
+        ).encode("utf-8"),
+        ttl_seconds=60,
+    )
+
+    assert snapshots.get_latest_draw(3) is None
+
+
 def test_current_period_snapshot_has_its_own_typed_payload_and_pointer():
     cache = MemoryCacheStore()
     snapshots = PublicDrawSnapshots(cache)
