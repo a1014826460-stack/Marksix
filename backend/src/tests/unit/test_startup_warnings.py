@@ -9,6 +9,7 @@ def test_run_server_logs_startup_risk_warnings_without_starting_scheduler():
     with patch("app_http.server.ensure_prediction_configs_loaded"), \
          patch("app_http.server.ensure_admin_tables"), \
          patch("app_http.server.init_logging"), \
+         patch("app_http.server.create_cache_store") as create_cache_store, \
          patch("app_http.server.ThreadingHTTPServer") as http_server, \
          patch("app_http.server.log_startup_risk_warnings") as warnings:
         http_server.return_value.serve_forever = MagicMock(side_effect=KeyboardInterrupt)
@@ -19,6 +20,8 @@ def test_run_server_logs_startup_risk_warnings_without_starting_scheduler():
             pass
 
     warnings.assert_called_once_with()
+    create_cache_store.assert_called_once_with()
+    assert http_server.return_value.public_draw_snapshots is not None
     http_server.return_value.server_close.assert_called_once_with()
 
 

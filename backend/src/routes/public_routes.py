@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
+from cache.contracts import CacheUnavailable
 from public.api import (
     get_current_period,
     get_draw_history,
@@ -91,7 +93,20 @@ def latest_draw(ctx: RequestContext) -> None:
         lottery_type = int(site_ctx.lottery_type_id or 1)
     else:
         lottery_type = int(ctx.query_value("lottery_type", "1") or 1)
-    ctx.send_json(get_public_latest_draw(ctx.db_path, lottery_type))
+    snapshots = _public_draw_snapshots(ctx)
+    if snapshots is not None:
+        try:
+            cached = snapshots.get_latest_draw(lottery_type)
+        except CacheUnavailable:
+            cached = None
+        if cached is not None:
+            ctx.send_json(cached)
+            return
+
+    # A just-published result must not wait for a replica to catch up.
+    payload = get_public_latest_draw(ctx.write_db_path, lottery_type)
+    _backfill_latest_draw(snapshots, lottery_type, payload)
+    ctx.send_json(payload)
 
 
 def next_draw_deadline(ctx: RequestContext) -> None:
@@ -129,7 +144,67 @@ def draw_history(ctx: RequestContext) -> None:
 
 def current_period(ctx: RequestContext) -> None:
     lottery_type = int(ctx.query_value("lottery_type", "3") or 3)
-    ctx.send_json(get_current_period(ctx.db_path, lottery_type))
+    snapshots = _public_draw_snapshots(ctx)
+    if snapshots is not None:
+        try:
+            cached = snapshots.get_current_period(lottery_type)
+        except CacheUnavailable:
+            cached = None
+        if cached is not None:
+            ctx.send_json(cached)
+            return
+
+    # Use the primary for a cache miss so the draw publication SLA is preserved.
+    payload = get_current_period(ctx.write_db_path, lottery_type)
+    _backfill_current_period(snapshots, lottery_type, payload)
+    ctx.send_json(payload)
+
+
+def _public_draw_snapshots(ctx: RequestContext) -> Any | None:
+    snapshots = ctx.state.get("public_draw_snapshots")
+    if snapshots is None:
+        return None
+    required = (
+        "get_latest_draw",
+        "get_current_period",
+        "publish_latest_draw",
+        "publish_current_period",
+    )
+    return snapshots if all(callable(getattr(snapshots, name, None)) for name in required) else None
+
+
+def _backfill_latest_draw(
+    snapshots: Any | None,
+    lottery_type: int,
+    payload: dict,
+) -> None:
+    if snapshots is None:
+        return
+    version = str(payload.get("current_issue") or "")
+    if not version:
+        return
+    try:
+        snapshots.publish_latest_draw(lottery_type, payload, version=version, is_opened=True)
+    except (CacheUnavailable, ValueError):
+        # Cache safety and availability never change the authoritative response.
+        return
+
+
+def _backfill_current_period(
+    snapshots: Any | None,
+    lottery_type: int,
+    payload: dict,
+) -> None:
+    if snapshots is None:
+        return
+    version = str(payload.get("current_period") or "")
+    if not version:
+        return
+    try:
+        snapshots.publish_current_period(lottery_type, payload, version=version, is_opened=True)
+    except (CacheUnavailable, ValueError):
+        # Cache safety and availability never change the authoritative response.
+        return
 
 
 def notice(ctx: RequestContext) -> None:

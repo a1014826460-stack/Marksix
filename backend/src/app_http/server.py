@@ -14,6 +14,8 @@ from typing import Any
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from cache.public_snapshots import PublicDrawSnapshots
+from cache.runtime import create_cache_store
 from core.errors import AppError, UnauthorizedError, ForbiddenError
 from database.health import collect_database_health
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
@@ -203,6 +205,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             ctx.state["scheduler_worker_health"] = get_scheduler_worker_health
             ctx.state["lottery_draw_health"] = get_lottery_draw_health
             ctx.state["dependency_health"] = collect_database_health
+            ctx.state["public_draw_snapshots"] = self.server.public_draw_snapshots  # type: ignore[attr-defined]
             if ctx.path.startswith("/api/admin/"):
                 require_authenticated(ctx)
             ROUTER.dispatch(ctx)
@@ -222,6 +225,9 @@ def run_server(host: str, port: int, db_path: str | Path | DatabaseTargets) -> N
             "后端正式运行仅支持 PostgreSQL。"
             " 如需使用 SQLite，请只在明确的 legacy/test/migration 脚本中显式传入。"
         )
+    # Resolve this before opening the listener: production never silently loses
+    # its shared cache because of a local-memory fallback.
+    public_draw_snapshots = PublicDrawSnapshots(create_cache_store())
     ensure_admin_tables(targets.write)
     ensure_prediction_configs_loaded(targets.write)
     init_logging(targets.write)
@@ -229,6 +235,7 @@ def run_server(host: str, port: int, db_path: str | Path | DatabaseTargets) -> N
     server.db_path = targets.write  # type: ignore[attr-defined]
     server.write_db_path = targets.write  # type: ignore[attr-defined]
     server.read_db_path = targets.read  # type: ignore[attr-defined]
+    server.public_draw_snapshots = public_draw_snapshots  # type: ignore[attr-defined]
     print(f"Backend API running at http://{host}:{port}")
     print(f"CMS admin page: http://{host}:{port}/admin")
     print(f"Database engine: {detect_database_engine(targets.write)} (formal runtime requires PostgreSQL)")

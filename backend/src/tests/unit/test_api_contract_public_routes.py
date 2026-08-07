@@ -96,3 +96,100 @@ def test_public_site_links_contract_missing_current_site_key_defaults_to_empty()
     handler.assert_called_once_with(ctx.db_path, "")
     assert ctx.handler.response_status == 200
     assert response_json(ctx) == payload
+
+class _Snapshots:
+    def __init__(self, latest=None, current=None, error=None):
+        self.latest = latest
+        self.current = current
+        self.error = error
+        self.published = []
+
+    def get_latest_draw(self, lottery_type):
+        if self.error:
+            raise self.error
+        return self.latest
+
+    def get_current_period(self, lottery_type):
+        if self.error:
+            raise self.error
+        return self.current
+
+    def publish_latest_draw(self, lottery_type, payload, **kwargs):
+        self.published.append(("latest", lottery_type, payload, kwargs))
+        if self.error:
+            raise self.error
+        return True
+
+    def publish_current_period(self, lottery_type, payload, **kwargs):
+        self.published.append(("current", lottery_type, payload, kwargs))
+        if self.error:
+            raise self.error
+        return True
+
+
+def _with_snapshots(ctx, snapshots):
+    ctx.state["public_draw_snapshots"] = snapshots
+    ctx.handler.server.write_db_path = "postgresql://write:write@localhost:5432/test"
+    ctx.handler.server.read_db_path = "postgresql://read:read@localhost:5432/test"
+    return ctx
+
+
+def test_public_latest_draw_snapshot_hit_skips_database():
+    payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+    ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), _Snapshots(latest=payload))
+
+    with patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    latest_draw.assert_not_called()
+    assert response_json(ctx) == payload
+
+
+def test_public_latest_draw_miss_uses_write_database_and_backfills_snapshot():
+    payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+    snapshots = _Snapshots()
+    ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), snapshots)
+
+    with patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
+    assert snapshots.published == [("latest", 3, payload, {"version": "2026012", "is_opened": True})]
+    assert response_json(ctx) == payload
+
+
+def test_public_latest_draw_cache_failure_falls_back_to_write_database():
+    from cache.contracts import CacheUnavailable
+
+    payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
+    ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), _Snapshots(error=CacheUnavailable("offline")))
+
+    with patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
+    assert response_json(ctx) == payload
+
+
+def test_public_current_period_snapshot_hit_skips_database():
+    payload = {"lottery_type_id": 3, "lottery_name": "台湾彩", "current_period": "2026012", "current_year": 2026, "current_term": 12}
+    ctx = _with_snapshots(make_ctx("/api/public/current-period?lottery_type=3"), _Snapshots(current=payload))
+
+    with patch("routes.public_routes.get_current_period") as current_period:
+        public_routes.current_period(ctx)
+
+    current_period.assert_not_called()
+    assert response_json(ctx) == payload
+
+
+def test_public_current_period_miss_uses_write_database_and_backfills_snapshot():
+    payload = {"lottery_type_id": 3, "lottery_name": "台湾彩", "current_period": "2026012", "current_year": 2026, "current_term": 12}
+    snapshots = _Snapshots()
+    ctx = _with_snapshots(make_ctx("/api/public/current-period?lottery_type=3"), snapshots)
+
+    with patch("routes.public_routes.get_current_period", return_value=payload) as current_period:
+        public_routes.current_period(ctx)
+
+    current_period.assert_called_once_with(ctx.write_db_path, 3)
+    assert snapshots.published == [("current", 3, payload, {"version": "2026012", "is_opened": True})]
+    assert response_json(ctx) == payload

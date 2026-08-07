@@ -638,6 +638,7 @@ def test_api_validates_schema_before_loading_dynamic_prediction_configs(monkeypa
     monkeypatch.setattr(server, "init_logging", lambda _db_path: None)
     monkeypatch.setattr(server, "log_startup_risk_warnings", lambda: None)
     monkeypatch.setattr(server, "detect_database_engine", lambda _db_path: "postgres")
+    monkeypatch.setattr(server, "create_cache_store", lambda: object())
 
     class _HttpServer:
         def __init__(self, *_args):
