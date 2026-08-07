@@ -13,7 +13,7 @@ from cache.contracts import CacheUnavailable
 
 
 class RedisCacheStore:
-    """Bounded Redis operations and atomic pointer replacement via a pipeline."""
+    """Bounded Redis operations and immutable version publication."""
 
     def __init__(self, redis_url: str, *, socket_timeout: float = 0.2) -> None:
         if not redis_url.strip():
@@ -66,9 +66,22 @@ class RedisCacheStore:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive")
         try:
-            # MULTI/EXEC ensures readers cannot observe the new pointer first.
+            # SET NX establishes a version exactly once.  A failed claim is only
+            # idempotent when the existing bytes are identical; otherwise the
+            # pointer must remain untouched.
             with self._client.pipeline(transaction=True) as pipeline:
-                pipeline.set(version_key, bytes(value), ex=ttl_seconds)
+                pipeline.set(version_key, bytes(value), ex=ttl_seconds, nx=True)
+                created = pipeline.execute()[0]
+            if not created:
+                existing = self.get(version_key)
+                if existing != bytes(value):
+                    raise CacheUnavailable(
+                        "version key is immutable and already has a different value"
+                    )
+
+            # A Redis SET is atomic. It is deliberately a separate transaction:
+            # a version-key collision can never update the public pointer.
+            with self._client.pipeline(transaction=True) as pipeline:
                 pipeline.set(pointer_key, version_key.encode("utf-8"), ex=ttl_seconds)
                 pipeline.execute()
         except self._redis_errors as exc:

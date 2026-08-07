@@ -24,7 +24,12 @@ def create_cache_store(
     cache_backend: str | None = None,
     redis_url: str | None = None,
 ) -> CacheStore:
-    """Build one cache adapter without performing a Redis network operation."""
+    """Build the only approved runtime cache adapter without connecting to Redis.
+
+    HTTP server wiring is deferred to the public-read task; that integration must
+    call this factory rather than instantiate an adapter directly so production
+    cannot silently fall back to in-process memory.
+    """
     environment = (runtime_environment or os.getenv("LIUHECAI_RUNTIME_ENV", "")).strip().lower()
     if environment not in {DEVELOPMENT, PRODUCTION}:
         raise CacheRuntimeError("LIUHECAI_RUNTIME_ENV must be development or production.")

@@ -70,8 +70,15 @@ class MemoryCacheStore:
     ) -> None:
         try:
             with self._lock:
-                # The version is durable in the adapter before readers can see its pointer.
-                self._write(version_key, value, ttl_seconds)
+                existing = self._entries.get(version_key)
+                if existing is not None and existing.expires_at <= self._clock():
+                    self._entries.pop(version_key, None)
+                    existing = None
+                if existing is not None and existing.value != bytes(value):
+                    raise CacheUnavailable("version key is immutable and already has a different value")
+                if existing is None:
+                    # The version is durable in the adapter before readers can see its pointer.
+                    self._write(version_key, value, ttl_seconds)
                 self._write(pointer_key, version_key.encode("utf-8"), ttl_seconds)
         except CacheUnavailable:
             raise
