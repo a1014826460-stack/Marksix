@@ -15,6 +15,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from core.errors import AppError, UnauthorizedError, ForbiddenError
+from database.health import collect_database_health
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
 from database.runtime_targets import DatabaseTargets, resolve_database_targets
 from domains.lottery.service import get_lottery_draw_health
@@ -201,6 +202,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             ctx.state["detect_database_engine"] = detect_database_engine
             ctx.state["scheduler_worker_health"] = get_scheduler_worker_health
             ctx.state["lottery_draw_health"] = get_lottery_draw_health
+            ctx.state["dependency_health"] = collect_database_health
             if ctx.path.startswith("/api/admin/"):
                 require_authenticated(ctx)
             ROUTER.dispatch(ctx)
