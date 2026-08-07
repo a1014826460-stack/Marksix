@@ -59,3 +59,54 @@ def test_taiwan_scheduler_open_enqueues_before_next_time_calculation_commits(tmp
 
     assert CrawlerScheduler(db_path)._open_taiwan_draws_and_update_next_time() == 1
     assert _events(db_path) == [{"event_key": "draw-published:3:2026:188", "event_type": "draw.published"}]
+
+
+def _published_payload_matches_final_draw(db_path, lottery_type_id, year, term):
+    import json
+    from db import connect
+
+    with connect(db_path) as conn:
+        event = conn.execute(
+            "SELECT payload_json FROM publication_outbox WHERE event_key = ?",
+            (f"draw-published:{lottery_type_id}:{year}:{term}",),
+        ).fetchone()
+        draw = conn.execute(
+            """
+            SELECT lottery_type_id, year, term, numbers, draw_time, next_time,
+                   status, is_opened, next_term
+            FROM lottery_draws WHERE lottery_type_id = ? AND year = ? AND term = ?
+            """,
+            (lottery_type_id, year, term),
+        ).fetchone()
+    assert event is not None
+    assert json.loads(event["payload_json"]) == dict(draw)
+
+
+def test_auto_scheduler_publication_payload_matches_final_opened_draw(tmp_path):
+    from crawler.scheduler import CrawlerScheduler
+
+    db_path = _setup(tmp_path)
+    _insert_draw(db_path, 1, 2026, 100)
+
+    CrawlerScheduler(db_path)._auto_open_draws()
+    _published_payload_matches_final_draw(db_path, 1, 2026, 100)
+
+
+def test_taiwan_precise_publication_payload_includes_final_next_time(tmp_path):
+    from crawler.scheduler import CrawlerScheduler
+
+    db_path = _setup(tmp_path)
+    _insert_draw(db_path, 3, 2026, 188)
+
+    assert CrawlerScheduler(db_path)._open_taiwan_draws_and_update_next_time() == 1
+    _published_payload_matches_final_draw(db_path, 3, 2026, 188)
+
+
+def test_taiwan_auto_open_publication_payload_includes_final_next_time(tmp_path):
+    from crawler.scheduler import CrawlerScheduler
+
+    db_path = _setup(tmp_path)
+    _insert_draw(db_path, 3, 2026, 188)
+
+    CrawlerScheduler(db_path)._auto_open_draws()
+    _published_payload_matches_final_draw(db_path, 3, 2026, 188)

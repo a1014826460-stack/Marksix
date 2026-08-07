@@ -1212,7 +1212,9 @@ class CrawlerScheduler:
             with db_connect(self.db_path) as conn:
                 # 先查出即将被打开的记录，再执行 UPDATE，避免依赖脆弱的 updated_at 精确匹配
                 pending = conn.execute(
-                    """SELECT id, year, term, draw_time, lottery_type_id FROM lottery_draws
+                    """SELECT id, lottery_type_id, year, term, numbers, draw_time,
+                              next_time, status, is_opened, next_term
+                       FROM lottery_draws
                        WHERE is_opened = 0 AND draw_time IS NOT NULL AND draw_time != ''
                        AND draw_time <= ?""",
                     (now_beijing,),
@@ -1226,14 +1228,20 @@ class CrawlerScheduler:
                         f"WHERE id IN ({placeholders})",
                         [now_utc] + ids,
                     )
-                    for row in pending:
-                        enqueue_opened_draw_publication(conn, {**dict(row), "is_opened": 1}, now=now_utc)
                     _crawler_logger.info("AutoOpen: Set is_opened=1 for %d draw(s)", len(pending))
 
                     # 为刚打开的 type=3 记录更新 next_time
                     taiwan_opened = [r for r in pending if r["lottery_type_id"] == 3]
                     for row in taiwan_opened:
                         self._calc_and_update_next_time(conn, row, now_utc)
+                    for row in pending:
+                        draw = conn.execute(
+                            "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
+                            "status, is_opened, next_term FROM lottery_draws WHERE id = ?",
+                            (row["id"],),
+                        ).fetchone()
+                        if draw:
+                            enqueue_opened_draw_publication(conn, draw, now=now_utc)
                     if taiwan_opened:
                         conn.commit()
 
@@ -1536,8 +1544,6 @@ class CrawlerScheduler:
                     f"WHERE id IN ({placeholders})",
                     [now_utc] + ids,
                 )
-                for row in due_rows:
-                    enqueue_opened_draw_publication(conn, {**dict(row), "is_opened": 1}, now=now_utc)
             if opened_count > 0:
                 _crawler_logger.info("TaiwanOpen — opened %d Taiwan draw(s)", opened_count)
             else:
@@ -1545,6 +1551,15 @@ class CrawlerScheduler:
 
             for row in due_rows:
                 self._calc_and_update_next_time(conn, row, now_utc)
+
+            for row in due_rows:
+                draw = conn.execute(
+                    "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
+                    "status, is_opened, next_term FROM lottery_draws WHERE id = ?",
+                    (row["id"],),
+                ).fetchone()
+                if draw:
+                    enqueue_opened_draw_publication(conn, draw, now=now_utc)
 
             if due_rows:
                 conn.commit()
