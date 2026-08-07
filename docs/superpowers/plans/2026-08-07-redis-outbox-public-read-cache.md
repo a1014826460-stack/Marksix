@@ -110,4 +110,3 @@
 - [ ] Run `pwsh -File .\skills\prediction-release-review\scripts\run-regression.ps1`; all four required suites must pass.
 - [ ] Inspect `git diff --check main...HEAD`, obtain review, then locally integrate only after review passes.
 - [ ] Never run remote migrations, deploy, inspect servers, or restart services under this plan.
-

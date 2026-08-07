@@ -30,5 +30,3 @@ def test_lottery_save_draw_enqueues_when_an_admin_creates_an_opened_draw(tmp_pat
     assert [dict(row) for row in events] == [
         {"event_key": "draw-published:3:2026:188", "event_type": "draw.published"},
     ]
-
-

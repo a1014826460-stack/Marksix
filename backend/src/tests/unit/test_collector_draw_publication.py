@@ -30,7 +30,6 @@ def test_collector_upsert_enqueues_initial_and_corrected_opened_draw_events(tmp_
         {"event_key": "draw-refresh:2:2026:135:1", "event_type": "draw.refresh"},
     ]
 
-
 def test_collector_unopened_upsert_does_not_enqueue_until_it_is_opened(tmp_path):
     from crawler.collectors import _upsert_draw
     from db import connect
