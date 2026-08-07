@@ -117,8 +117,9 @@ def mark_retry(
         SET status = 'pending', available_at = ?, lease_owner = NULL,
             lease_until = NULL, last_error = ?, updated_at = ?
         WHERE id = ? AND status = 'processing' AND lease_owner = ?
+          AND lease_until > ?
         """,
-        (available_at, error, updated_at, event_id, owner),
+        (available_at, error, updated_at, event_id, owner, updated_at),
     )
     return cursor.rowcount == 1
 
@@ -138,8 +139,9 @@ def mark_published(
         SET status = 'published', lease_owner = NULL, lease_until = NULL,
             last_error = NULL, published_at = ?, updated_at = ?
         WHERE id = ? AND status = 'processing' AND lease_owner = ?
+          AND lease_until > ?
         """,
-        (published_at, published_at, event_id, owner),
+        (published_at, published_at, event_id, owner, published_at),
     )
     return cursor.rowcount == 1
 

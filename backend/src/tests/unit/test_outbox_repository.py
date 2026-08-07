@@ -117,6 +117,36 @@ def test_retry_releases_claim_at_requested_time_and_completion_is_owner_guarded(
     }
 
 
+def test_expired_lease_owner_cannot_retry_or_complete_an_event(tmp_path):
+    from outbox.repository import claim_due_events, enqueue_event, mark_published, mark_retry
+
+    with _connection(tmp_path) as conn:
+        enqueue_event(conn, event_key="draw-published:3:2026:192", event_type="draw.published", payload={})
+        event = claim_due_events(
+            conn, owner="worker-a", now="2026-08-07T14:32:01+00:00",
+            lease_until="2026-08-07T14:32:10+00:00", limit=1,
+        )[0]
+
+        assert mark_retry(
+            conn, event_id=event["id"], owner="worker-a",
+            available_at="2026-08-07T14:33:00+00:00", error="too late",
+            now="2026-08-07T14:32:10+00:00",
+        ) is False
+        assert mark_published(
+            conn, event_id=event["id"], owner="worker-a",
+            now="2026-08-07T14:32:10+00:00",
+        ) is False
+        row = conn.execute(
+            "SELECT status, lease_owner, lease_until FROM publication_outbox WHERE id = ?",
+            (event["id"],),
+        ).fetchone()
+
+    assert dict(row) == {
+        "status": "processing", "lease_owner": "worker-a",
+        "lease_until": "2026-08-07T14:32:10+00:00",
+    }
+
+
 def test_postgres_outbox_migration_is_registered_at_current_version():
     from database import versioned_migrations
 
