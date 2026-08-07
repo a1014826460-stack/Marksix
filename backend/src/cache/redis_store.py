@@ -12,6 +12,21 @@ from typing import Any
 from cache.contracts import CacheUnavailable
 
 
+_PUBLISH_VERSIONED_SCRIPT = """
+local existing = redis.call('GET', KEYS[1])
+if existing and existing ~= ARGV[1] then
+    return 0
+end
+if not existing then
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+else
+    redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+redis.call('SET', KEYS[2], ARGV[3], 'EX', ARGV[4])
+return 1
+"""
+
+
 class RedisCacheStore:
     """Bounded Redis operations and immutable version publication."""
 
@@ -66,25 +81,20 @@ class RedisCacheStore:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive")
         try:
-            # SET NX establishes a version exactly once.  A failed claim is only
-            # idempotent when the existing bytes are identical; otherwise the
-            # pointer must remain untouched.
-            with self._client.pipeline(transaction=True) as pipeline:
-                pipeline.set(version_key, bytes(value), ex=ttl_seconds, nx=True)
-                created = pipeline.execute()[0]
-            if not created:
-                existing = self.get(version_key)
-                if existing != bytes(value):
-                    raise CacheUnavailable(
-                        "version key is immutable and already has a different value"
-                    )
-                return
-
-            # A Redis SET is atomic. It is deliberately a separate transaction:
-            # a version-key collision can never update the public pointer.
-            with self._client.pipeline(transaction=True) as pipeline:
-                pipeline.set(pointer_key, version_key.encode("utf-8"), ex=ttl_seconds)
-                pipeline.execute()
+            # One script makes version/pointer publication retriable. The version
+            # gets a one-second TTL margin, so it always outlives the pointer.
+            published = self._client.eval(
+                _PUBLISH_VERSIONED_SCRIPT,
+                2,
+                version_key,
+                pointer_key,
+                bytes(value),
+                ttl_seconds + 1,
+                version_key.encode("utf-8"),
+                ttl_seconds,
+            )
+            if not published:
+                raise CacheUnavailable("version key is immutable and already has a different value")
         except self._redis_errors as exc:
             raise self._unavailable(exc) from exc
 

@@ -78,49 +78,30 @@ def test_memory_same_value_retry_never_extends_pointer_past_version_ttl():
     assert cache._entries["public:pointer"].expires_at <= cache._entries["public:v1"].expires_at
 
 
-class _FakePipeline:
-    def __init__(self, client: "_FakeRedisClient") -> None:
-        self._client = client
-        self._commands: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
-
-    def __enter__(self) -> "_FakePipeline":
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        return None
-
-    def set(self, *args: object, **kwargs: object) -> "_FakePipeline":
-        self._commands.append(("set", args, kwargs))
-        return self
-
-    def execute(self) -> list[bool]:
-        if self._client.execute_error is not None:
-            raise self._client.execute_error
-        results: list[bool] = []
-        for _name, args, kwargs in self._commands:
-            key, value = str(args[0]), bytes(args[1])
-            if kwargs.get("nx") and key in self._client.values:
-                results.append(False)
-                continue
-            self._client.values[key] = value
-            self._client.expires_at[key] = self._client.now + int(kwargs["ex"])
-            results.append(True)
-        return results
-
-
 class _FakeRedisClient:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
         self.expires_at: dict[str, float] = {}
         self.now = 0.0
-        self.execute_error: OSError | None = None
-        self.pipelines: list[_FakePipeline] = []
+        self.eval_error: OSError | None = None
+        self.evals: list[tuple[str, tuple[object, ...]]] = []
 
-    def pipeline(self, *, transaction: bool) -> _FakePipeline:
-        assert transaction is True
-        pipeline = _FakePipeline(self)
-        self.pipelines.append(pipeline)
-        return pipeline
+    def eval(self, script: str, key_count: int, *args: object) -> int:
+        self.evals.append((script, args))
+        if self.eval_error is not None:
+            raise self.eval_error
+        assert key_count == 2
+        version_key, pointer_key, value, version_ttl, pointer_value, pointer_ttl = args
+        version_key, pointer_key = str(version_key), str(pointer_key)
+        value, pointer_value = bytes(value), bytes(pointer_value)
+        existing = self.values.get(version_key)
+        if existing is not None and existing != value:
+            return 0
+        self.values[version_key] = value
+        self.expires_at[version_key] = self.now + int(version_ttl)
+        self.values[pointer_key] = pointer_value
+        self.expires_at[pointer_key] = self.now + int(pointer_ttl)
+        return 1
 
     def get(self, key: str) -> bytes | None:
         return self.values.get(key)
@@ -146,7 +127,7 @@ def test_redis_version_key_collision_does_not_switch_pointer():
     assert client.values["public:pointer"] == b"old-version"
 
 
-def test_redis_fake_pipeline_publishes_same_immutable_version_idempotently():
+def test_redis_eval_publishes_same_immutable_version_idempotently():
     client = _FakeRedisClient()
     cache = _redis_store_with(client)
     cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
@@ -154,7 +135,18 @@ def test_redis_fake_pipeline_publishes_same_immutable_version_idempotently():
     cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
 
     assert client.values["public:pointer"] == b"public:v1"
-    assert len(client.pipelines) == 3
+    assert len(client.evals) == 2
+
+
+def test_redis_retry_after_version_written_before_pointer_failure_publishes_pointer():
+    client = _FakeRedisClient()
+    client.values["public:v1"] = b"payload"
+    client.expires_at["public:v1"] = 60.0
+    cache = _redis_store_with(client)
+
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    assert client.values["public:pointer"] == b"public:v1"
 
 
 def test_redis_same_value_retry_never_extends_pointer_past_version_ttl():
@@ -170,7 +162,7 @@ def test_redis_same_value_retry_never_extends_pointer_past_version_ttl():
 
 def test_redis_pipeline_errors_are_mapped_to_cache_unavailable():
     client = _FakeRedisClient()
-    client.execute_error = OSError("redis unavailable")
+    client.eval_error = OSError("redis unavailable")
 
     with pytest.raises(CacheUnavailable, match="redis unavailable"):
         _redis_store_with(client).publish_versioned(
