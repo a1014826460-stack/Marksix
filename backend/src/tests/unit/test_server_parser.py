@@ -27,3 +27,12 @@ def test_build_parser_accepts_legacy_db_path_alias(monkeypatch):
     args = parser.parse_args(["--db_path", "postgresql://postgres:test@localhost:5432/liuhecai"])
 
     assert args.db_path == "postgresql://postgres:test@localhost:5432/liuhecai"
+
+
+def test_build_parser_uses_write_url_before_legacy_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://legacy/db")
+    monkeypatch.setenv("DATABASE_WRITE_URL", "postgresql://writer/db")
+
+    args = build_parser().parse_args([])
+
+    assert args.db_path == "postgresql://writer/db"

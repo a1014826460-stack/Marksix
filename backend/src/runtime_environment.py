@@ -15,6 +15,7 @@ DEVELOPMENT = "development"
 PRODUCTION = "production"
 _DEVELOPMENT_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _PRODUCTION_HOST = "pgbouncer"
+_DATABASE_MODES = {"compose", "managed"}
 
 
 class RuntimeEnvironmentError(RuntimeError):
@@ -45,6 +46,7 @@ def validate_runtime_database_target(
     target: str,
     *,
     runtime_environment: str | None = None,
+    database_mode: str | None = None,
 ) -> None:
     """Reject database DSNs that do not belong to the declared runtime profile."""
     profile = _runtime_environment(runtime_environment)
@@ -56,6 +58,16 @@ def validate_runtime_database_target(
                 "development runtime only accepts Windows native PostgreSQL at "
                 "127.0.0.1/localhost:5432."
             )
+        return
+
+    mode = (database_mode or os.getenv("LIUHECAI_DATABASE_MODE", "compose")).strip().lower()
+    if mode not in _DATABASE_MODES:
+        raise RuntimeEnvironmentError(
+            "LIUHECAI_DATABASE_MODE must be explicitly set to compose or managed."
+        )
+    if mode == "managed":
+        if host in _DEVELOPMENT_HOSTS:
+            raise RuntimeEnvironmentError("managed production database cannot use a loopback host.")
         return
 
     if host != _PRODUCTION_HOST or port != 6432:

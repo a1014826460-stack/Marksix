@@ -52,7 +52,17 @@ class RequestContext:
 
     @property
     def db_path(self) -> str | Path:
-        return self.handler.server.db_path  # type: ignore[attr-defined]
+        return self.write_db_path
+
+    @property
+    def write_db_path(self) -> str | Path:
+        server = self.handler.server
+        return getattr(server, "write_db_path", server.db_path)
+
+    @property
+    def read_db_path(self) -> str | Path:
+        server = self.handler.server
+        return getattr(server, "read_db_path", self.write_db_path)
 
     @property
     def headers(self) -> Any:

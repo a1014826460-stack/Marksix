@@ -32,6 +32,32 @@ def test_production_accepts_compose_pgbouncer_target():
     )
 
 
+def test_production_managed_mode_accepts_remote_postgres_endpoint():
+    validate_runtime_database_target(
+        "postgresql://postgres:secret@managed-db.internal:5432/liuhecai",
+        runtime_environment="production",
+        database_mode="managed",
+    )
+
+
+def test_production_managed_mode_rejects_loopback_postgres_endpoint():
+    with pytest.raises(RuntimeEnvironmentError, match="loopback"):
+        validate_runtime_database_target(
+            "postgresql://postgres:secret@127.0.0.1:5432/liuhecai",
+            runtime_environment="production",
+            database_mode="managed",
+        )
+
+
+def test_production_rejects_unknown_database_mode():
+    with pytest.raises(RuntimeEnvironmentError, match="LIUHECAI_DATABASE_MODE"):
+        validate_runtime_database_target(
+            "postgresql://postgres:secret@managed-db.internal:5432/liuhecai",
+            runtime_environment="production",
+            database_mode="other",
+        )
+
+
 @pytest.mark.parametrize(
     "target",
     [
