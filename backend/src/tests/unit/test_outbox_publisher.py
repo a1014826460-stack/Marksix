@@ -236,6 +236,54 @@ def test_refresh_event_uses_its_own_immutable_snapshot_version(tmp_path):
     )
 
 
+def test_refresh_replaces_initial_published_snapshot_and_completes_both_events(tmp_path):
+    from cache.memory import MemoryCacheStore
+    from cache.public_snapshots import PublicDrawSnapshots
+    from db import connect
+    from outbox.draw_publication import enqueue_draw_publication
+
+    db_path = _setup(tmp_path)
+    _enqueue_opened_event(db_path)
+    snapshots = PublicDrawSnapshots(MemoryCacheStore())
+    time = [datetime(2026, 8, 7, 14, 32, 5, tzinfo=timezone.utc)]
+    from outbox.publisher import DrawPublicationPublisher
+    publisher = DrawPublicationPublisher(
+        db_path, snapshots=snapshots, owner="scheduler-a", now=lambda: time[0],
+    )
+
+    assert publisher.drain(limit=4) == {"published": 1, "retried": 0}
+    initial = snapshots.get_latest_draw(3)
+    assert initial["result_balls"][0]["value"] == "01"
+
+    with connect(db_path) as conn:
+        previous = dict(conn.execute(
+            "SELECT * FROM lottery_draws WHERE lottery_type_id = 3 AND year = 2026 AND term = 188"
+        ).fetchone())
+        conn.execute(
+            "UPDATE lottery_draws SET numbers = ? WHERE lottery_type_id = 3 AND year = 2026 AND term = 188",
+            ("08,09,10,11,12,13,14",),
+        )
+        current = dict(conn.execute(
+            "SELECT * FROM lottery_draws WHERE lottery_type_id = 3 AND year = 2026 AND term = 188"
+        ).fetchone())
+        assert enqueue_draw_publication(
+            conn, previous=previous, current=current, now="2026-08-07T14:33:00+00:00",
+        ) == "draw.refresh"
+
+    time[0] = datetime(2026, 8, 7, 14, 33, 5, tzinfo=timezone.utc)
+    assert publisher.drain(limit=4) == {"published": 1, "retried": 0}
+    refreshed = snapshots.get_latest_draw(3)
+    assert refreshed["result_balls"][0]["value"] == "08"
+    with connect(db_path) as conn:
+        events = conn.execute(
+            "SELECT event_key, status FROM publication_outbox ORDER BY id"
+        ).fetchall()
+    assert [dict(event) for event in events] == [
+        {"event_key": "draw-published:3:2026:188", "status": "published"},
+        {"event_key": "draw-refresh:3:2026:188:1", "status": "published"},
+    ]
+
+
 def test_retry_after_cache_publish_reuses_identical_event_snapshot_bytes(tmp_path, monkeypatch):
     from cache.memory import MemoryCacheStore
     from cache.public_snapshots import PublicDrawSnapshots
