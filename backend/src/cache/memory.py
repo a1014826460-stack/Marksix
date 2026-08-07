@@ -79,7 +79,15 @@ class MemoryCacheStore:
                 if existing is None:
                     # The version is durable in the adapter before readers can see its pointer.
                     self._write(version_key, value, ttl_seconds)
-                    self._write(pointer_key, version_key.encode("utf-8"), ttl_seconds)
+                    existing = self._entries[version_key]
+                # A prior pointer write may have failed after storing the version.
+                # Recreate it, but cap its expiry at the immutable data expiry.
+                self._write(pointer_key, version_key.encode("utf-8"), ttl_seconds)
+                pointer = self._entries[pointer_key]
+                self._entries[pointer_key] = _Entry(
+                    pointer.value,
+                    min(pointer.expires_at, existing.expires_at),
+                )
         except CacheUnavailable:
             raise
         except Exception as exc:

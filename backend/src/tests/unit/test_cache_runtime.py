@@ -78,6 +78,30 @@ def test_memory_same_value_retry_never_extends_pointer_past_version_ttl():
     assert cache._entries["public:pointer"].expires_at <= cache._entries["public:v1"].expires_at
 
 
+def test_memory_retry_after_pointer_write_failure_recovers_pointer():
+    class PointerFailsOnceCache(MemoryCacheStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self._fail_pointer_once = True
+
+        def _write(self, key: str, value: bytes, ttl_seconds: int) -> None:
+            if key == "public:pointer" and self._fail_pointer_once:
+                self._fail_pointer_once = False
+                raise OSError("pointer write failed")
+            super()._write(key, value, ttl_seconds)
+
+    cache = PointerFailsOnceCache()
+    with pytest.raises(CacheUnavailable, match="pointer write failed"):
+        cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    assert cache.get("public:v1") == b"payload"
+    assert cache.get("public:pointer") is None
+
+    cache.publish_versioned("public:pointer", "public:v1", b"payload", ttl_seconds=60)
+
+    assert cache.get("public:pointer") == b"public:v1"
+
+
 class _FakeRedisClient:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
