@@ -4,6 +4,21 @@
 # ============================================================
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: liuhecai-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - liuhecai-network
+
   postgres:
     image: postgres:17
     container_name: liuhecai-postgres
@@ -60,12 +75,16 @@ services:
     depends_on:
       pgbouncer:
         condition: service_started
+      redis:
+        condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
     environment:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       LIUHECAI_RUNTIME_ENV: "production"
+      CACHE_BACKEND: "redis"
+      REDIS_URL: "redis://redis:6379/0"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
       LOTTERY_API_HOST: "0.0.0.0"
@@ -101,6 +120,8 @@ services:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       LIUHECAI_RUNTIME_ENV: "production"
+      CACHE_BACKEND: "redis"
+      REDIS_URL: "redis://redis:6379/0"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     volumes:
@@ -200,6 +221,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
