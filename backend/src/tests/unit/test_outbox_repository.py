@@ -102,7 +102,13 @@ def test_retry_releases_claim_at_requested_time_and_completion_is_owner_guarded(
     from outbox.repository import claim_due_events, enqueue_event, mark_published, mark_retry
 
     with _connection(tmp_path) as conn:
-        enqueue_event(conn, event_key="draw-published:3:2026:191", event_type="draw.published", payload={})
+        enqueue_event(
+            conn,
+            event_key="draw-published:3:2026:191",
+            event_type="draw.published",
+            payload={},
+            now="2026-08-07T14:32:00+00:00",
+        )
         event = claim_due_events(conn, owner="worker-a", now="2026-08-07T14:32:01+00:00", lease_until="2026-08-07T14:33:01+00:00", limit=1)[0]
         assert mark_retry(conn, event_id=event["id"], owner="worker-a", available_at="2026-08-07T14:32:31+00:00", error="redis unavailable", now="2026-08-07T14:32:02+00:00") is True
         assert claim_due_events(conn, owner="worker-b", now="2026-08-07T14:32:30+00:00", lease_until="2026-08-07T14:33:30+00:00", limit=1) == []
@@ -121,7 +127,13 @@ def test_expired_lease_owner_cannot_retry_or_complete_an_event(tmp_path):
     from outbox.repository import claim_due_events, enqueue_event, mark_published, mark_retry
 
     with _connection(tmp_path) as conn:
-        enqueue_event(conn, event_key="draw-published:3:2026:192", event_type="draw.published", payload={})
+        enqueue_event(
+            conn,
+            event_key="draw-published:3:2026:192",
+            event_type="draw.published",
+            payload={},
+            now="2026-08-07T14:32:00+00:00",
+        )
         event = claim_due_events(
             conn, owner="worker-a", now="2026-08-07T14:32:01+00:00",
             lease_until="2026-08-07T14:32:10+00:00", limit=1,
