@@ -1,0 +1,2 @@
+"""Forced announcement domain."""
+
