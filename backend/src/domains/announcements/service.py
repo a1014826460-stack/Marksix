@@ -375,6 +375,45 @@ def update_forced_announcement(
         return _admin_projection(conn, row)
 
 
+def list_forced_announcements(db_path: str | Path) -> list[dict[str, Any]]:
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM forced_announcements
+            ORDER BY starts_at DESC, id DESC
+            """
+        ).fetchall()
+        return [_admin_projection(conn, row) for row in rows]
+
+
+def get_forced_announcement(
+    db_path: str | Path, announcement_id: int
+) -> dict[str, Any]:
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM forced_announcements WHERE id = ?",
+            (announcement_id,),
+        ).fetchone()
+        if not row:
+            raise NotFoundError(f"公告 id={announcement_id} 不存在")
+        return _admin_projection(conn, row)
+
+
+def delete_forced_announcement(db_path: str | Path, announcement_id: int) -> None:
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        _lock_announcement_writes(conn)
+        deleted = conn.execute(
+            "DELETE FROM forced_announcements WHERE id = ?",
+            (announcement_id,),
+        )
+        if deleted.rowcount <= 0:
+            raise NotFoundError(f"公告 id={announcement_id} 不存在")
+
+
 def get_effective_forced_announcement(
     db_path: str | Path,
     *,
@@ -408,4 +447,3 @@ def get_effective_forced_announcement(
             (effective_at, effective_at, site_id),
         ).fetchone()
         return _public_projection(row) if row else None
-

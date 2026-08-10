@@ -9,7 +9,8 @@
     "start": "next start",
     "test:draws-auto-fill-contract": "node features/draws/draws-auto-fill-contract.mjs",
     "test:admin-shell-contract": "node features/admin-shell/admin-shell-contract.mjs",
-    "test:dashboard-api-contract": "node features/dashboard/dashboard-api-contract.mjs"
+    "test:dashboard-api-contract": "node features/dashboard/dashboard-api-contract.mjs",
+    "test:forced-announcements-contract": "node features/forced-announcements/forced-announcements-contract.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

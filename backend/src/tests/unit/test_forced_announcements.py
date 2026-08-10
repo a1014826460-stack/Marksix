@@ -8,7 +8,9 @@ from core.errors import ConflictError
 from db import connect
 from domains.announcements.service import (
     create_forced_announcement,
+    delete_forced_announcement,
     get_effective_forced_announcement,
+    list_forced_announcements,
     update_forced_announcement,
 )
 from tables import ensure_admin_tables
@@ -157,4 +159,29 @@ def test_update_rolls_version_and_sanitizes_controlled_html(announcement_db):
 
     assert updated["title"] == "更新公告"
     assert updated["version"] != created["version"]
+
+
+def test_public_projection_is_minimal_and_admin_list_supports_delete(announcement_db):
+    created = create_forced_announcement(
+        announcement_db,
+        _payload(scope="selected_sites", site_ids=[901]),
+    )
+    effective = get_effective_forced_announcement(
+        announcement_db,
+        site_id=901,
+        now=datetime(2026, 8, 11, 14, 40, tzinfo=timezone.utc),
+    )
+
+    assert set(effective or {}) == {
+        "id",
+        "version",
+        "title",
+        "html",
+        "starts_at",
+        "ends_at",
+    }
+    assert list_forced_announcements(announcement_db)[0]["site_ids"] == [901]
+
+    delete_forced_announcement(announcement_db, created["id"])
+    assert list_forced_announcements(announcement_db) == []
 

@@ -40,6 +40,7 @@ from routes import (
     admin_config_routes,
     admin_crawler_routes,
     admin_draw_routes,
+    admin_forced_announcement_routes,
     admin_log_routes,
     admin_lottery_routes,
     admin_lottery_routes_extra,
@@ -103,6 +104,7 @@ def build_router() -> Router:
     admin_crawler_routes.register(router)
     admin_number_routes.register(router)
     admin_site_routes.register(router)
+    admin_forced_announcement_routes.register(router)
     admin_payload_routes.register(router)
     admin_lottery_routes_extra.register(
         router,

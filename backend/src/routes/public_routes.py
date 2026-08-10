@@ -18,6 +18,7 @@ from app_http.router import Router
 from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from core.errors import ValidationError
 from domains.sites.service import get_public_notice, get_public_site_links
+from domains.announcements.service import get_effective_forced_announcement
 from domains.traffic.service import record_traffic_event
 
 
@@ -28,6 +29,7 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/draw-history", draw_history)
     router.add("GET", "/api/public/current-period", current_period)
     router.add("GET", "/api/public/notice", notice)
+    router.add("GET", "/api/public/forced-announcement", forced_announcement)
     router.add("GET", "/api/public/site-links", site_links)
     router.add("POST", "/api/public/traffic-events", traffic_events)
     # 旧前端兼容路径
@@ -255,6 +257,20 @@ def notice(ctx: RequestContext) -> None:
             pass
 
     ctx.send_json(get_public_notice(ctx.db_path, web_id))
+
+
+def forced_announcement(ctx: RequestContext) -> None:
+    site = resolve_site_context(
+        ctx.write_db_path,
+        query=ctx.query,
+        host=str(ctx.headers.get("Host", "") or "").split(":", 1)[0].strip(),
+    )
+    ctx.send_json(
+        get_effective_forced_announcement(
+            ctx.read_db_path,
+            site_id=site.site_id,
+        )
+    )
 
 
 def _client_ip(ctx: RequestContext) -> str | None:
