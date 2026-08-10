@@ -122,6 +122,13 @@
     var bodyData = document.body && document.body.dataset || {};
     var siteId = String(options && options.siteId || bodyData.siteId || "").trim();
     var siteKey = String(options && options.siteKey || bodyData.siteKey || "").trim();
+    if (!siteKey && window.location) {
+      var pathSiteKey = String(window.location.pathname || "").split("/")[1] || "";
+      if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pathSiteKey)
+          && ["api", "vendor", "_next", "fackyou"].indexOf(pathSiteKey) < 0) {
+        siteKey = pathSiteKey;
+      }
+    }
     if (siteId) params.set("site_id", siteId);
     else if (siteKey) params.set("site_key", siteKey);
     var query = params.toString();
@@ -155,6 +162,13 @@
   };
 
   function autoMount() {
+    try {
+      if (window.parent && window.parent !== window && window.parent.ForcedAnnouncement) {
+        return;
+      }
+    } catch (_) {
+      // Cross-origin parents cannot coordinate; mount in the current document.
+    }
     mount();
   }
   if (document.readyState === "loading") {
@@ -163,4 +177,3 @@
     autoMount();
   }
 })(window, document);
-

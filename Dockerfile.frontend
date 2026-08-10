@@ -19,7 +19,9 @@ COPY backend/package.json ./backend/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY frontend ./frontend
+COPY scripts ./scripts
 
+RUN node scripts/inject-forced-announcement.mjs
 RUN pnpm --filter @liuhecai/frontend exec cross-env BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true NODE_OPTIONS=--max-old-space-size=4096 next build
 
 FROM node:20-alpine AS runner

@@ -72,7 +72,7 @@ class Element {
   }
 }
 
-function createEnvironment(announcement) {
+function createEnvironment(announcement, options = {}) {
   const sessionStorage = createStorage()
   const localStorage = createStorage()
   const documentListeners = {}
@@ -90,20 +90,24 @@ function createEnvironment(announcement) {
       documentListeners[name] = handler
     },
   }
-  document.body.dataset.siteKey = "twssz"
+  if (options.bodySiteKey !== false) document.body.dataset.siteKey = "twssz"
 
+  let fetchCount = 0
   const window = {
     document,
     sessionStorage,
     localStorage,
     URLSearchParams,
+    location: { pathname: options.pathname || "/" },
     fetch: async (url, options) => {
+      fetchCount += 1
       assert.equal(url, "/api/public/forced-announcement?site_key=twssz")
       assert.equal(options.cache, "no-store")
       return { ok: true, json: async () => announcement }
     },
   }
   window.window = window
+  window.parent = options.parent || window
 
   vm.runInNewContext(source, {
     window,
@@ -112,7 +116,14 @@ function createEnvironment(announcement) {
     Promise,
   })
 
-  return { window, document, documentListeners, sessionStorage, localStorage }
+  return {
+    window,
+    document,
+    documentListeners,
+    sessionStorage,
+    localStorage,
+    fetchCount: () => fetchCount,
+  }
 }
 
 const announcement = {
@@ -122,6 +133,24 @@ const announcement = {
   html: "<p>请确认</p>",
   starts_at: "2026-08-11T22:32:00+08:00",
   ends_at: null,
+}
+
+{
+  const env = createEnvironment(announcement, {
+    bodySiteKey: false,
+    pathname: "/twssz",
+  })
+  const overlay = await env.window.ForcedAnnouncement.mount()
+  assert.ok(overlay)
+}
+
+{
+  const env = createEnvironment(announcement, {
+    parent: { ForcedAnnouncement: { mount() {} } },
+  })
+  env.documentListeners.DOMContentLoaded()
+  await Promise.resolve()
+  assert.equal(env.fetchCount(), 0)
 }
 
 {
@@ -162,4 +191,3 @@ const announcement = {
 }
 
 console.log("forced announcement runtime contract passed")
-

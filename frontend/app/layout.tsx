@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
+import Script from "next/script"
 import { buildSiteMetadata, findSiteByHost, findSiteByPathname } from "@/lib/sites"
 import "./globals.css"
 
@@ -59,7 +60,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        <Script
+          src="/vendor/_shared/forced-announcement.js"
+          strategy="beforeInteractive"
+        />
+        {children}
+      </body>
     </html>
   )
 }
