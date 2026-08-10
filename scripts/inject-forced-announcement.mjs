@@ -1,7 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
-const vendorRoot = path.resolve("frontend/public/vendor")
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const vendorRoot = path.join(repoRoot, "frontend", "public", "vendor")
 const runtimePath = "/vendor/_shared/forced-announcement.js"
 const scriptTag = `<script src="${runtimePath}"></script>`
 

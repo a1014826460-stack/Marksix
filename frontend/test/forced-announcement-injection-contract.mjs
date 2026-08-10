@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { execFileSync } from "node:child_process"
 
 const vendorRoot = path.resolve("frontend/public/vendor")
 const scriptPath = "/vendor/_shared/forced-announcement.js"
@@ -36,9 +37,14 @@ if ((layout.split(scriptPath).length - 1) !== 1 || !layout.includes("beforeInter
 }
 
 const injector = fs.readFileSync("scripts/inject-forced-announcement.mjs", "utf8")
-for (const token of ["frontend/public/vendor", scriptPath, "head\\s*>"]) {
+for (const token of ["frontend", "public", "vendor", scriptPath, "head\\s*>"]) {
   if (!injector.includes(token)) throw new Error(`injector contract missing: ${token}`)
 }
+
+execFileSync(process.execPath, ["../scripts/inject-forced-announcement.mjs"], {
+  cwd: path.resolve("frontend"),
+  stdio: "pipe",
+})
 
 const dockerfile = fs.readFileSync("Dockerfile.frontend", "utf8")
 if (!dockerfile.includes("inject-forced-announcement.mjs")) {
