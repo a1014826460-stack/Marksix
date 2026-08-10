@@ -56,6 +56,20 @@ def _coalesce_site_id(path_site_id: int | None, query: dict[str, list[str]] | No
     return None
 
 
+def _coalesce_site_key(
+    query: dict[str, list[str]] | None,
+    body: dict[str, Any] | None,
+) -> str:
+    for candidate in (
+        (query or {}).get("site_key", [None])[0],
+        body.get("site_key") if body else None,
+    ):
+        normalized = str(candidate or "").strip()
+        if normalized:
+            return normalized
+    return ""
+
+
 def resolve_site_context(
     db_path: str | Path,
     path_site_id: int | None = None,
@@ -65,7 +79,7 @@ def resolve_site_context(
 ) -> SiteContext:
     """解析站点上下文。
 
-    解析优先级：path_site_id > query/body 中的 site_id > domain/host 匹配。
+    解析优先级：path_site_id > query/body 中的 site_id > site_key > domain/host 匹配。
 
     不会静默回退到"第一个站点"。如果没有明确的 site_id 且无法通过
     domain/host 匹配，将抛出 ValidationError。
@@ -75,6 +89,7 @@ def resolve_site_context(
         NotFoundError: 指定的 site_id 对应的站点不存在
     """
     resolved_site_id = _coalesce_site_id(path_site_id, query, body)
+    resolved_site_key = _coalesce_site_key(query, body)
     normalized_host = str(host or "").strip().lower()
 
     with connect(db_path) as conn:
@@ -89,6 +104,17 @@ def resolve_site_context(
                 """,
                 (resolved_site_id,),
             ).fetchone()
+        elif resolved_site_key:
+            row = conn.execute(
+                """
+                SELECT id, web_id, name, domain, lottery_type_id, enabled
+                FROM managed_sites
+                WHERE blueprint_name = ?
+                ORDER BY id
+                LIMIT 1
+                """,
+                (resolved_site_key,),
+            ).fetchone()
         elif normalized_host:
             row = conn.execute(
                 """
@@ -102,8 +128,8 @@ def resolve_site_context(
             ).fetchone()
         else:
             raise ValidationError(
-                "无法确定站点上下文：缺少 site_id 且无法通过 domain/host 匹配站点。"
-                "请显式传入 site_id 参数。"
+                "无法确定站点上下文：缺少 site_id/site_key 且无法通过 domain/host 匹配站点。"
+                "请显式传入 site_id 或 site_key 参数。"
             )
 
         if not row:

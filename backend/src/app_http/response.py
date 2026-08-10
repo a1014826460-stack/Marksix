@@ -50,6 +50,9 @@ class ResponseWriter:
         self._handler.end_headers()
         self._handler.wfile.write(body)
 
+    def set_header(self, key: str, value: str) -> None:
+        self._pending_headers.append((str(key), str(value)))
+
     def set_session_cookie(self, token: str, *, max_age_seconds: int, secure: bool) -> None:
         attributes = [
             f"liuhecai_admin_session={token}",

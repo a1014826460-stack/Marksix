@@ -38,6 +38,7 @@ def test_public_forced_announcement_resolves_site_and_reads_replica():
     )
     get_effective.assert_called_once_with(ctx.read_db_path, site_id=901)
     assert response_json(ctx) == PUBLIC_ANNOUNCEMENT
+    assert ("Cache-Control", "no-store") in ctx.handler.response_headers
 
 
 def test_public_forced_announcement_returns_json_null_when_inactive():
@@ -103,4 +104,3 @@ def test_admin_forced_announcement_routes_require_super_admin():
     ]
     assert matching
     assert all(route.guard is require_super_admin for route in matching)
-

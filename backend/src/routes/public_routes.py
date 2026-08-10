@@ -265,6 +265,7 @@ def forced_announcement(ctx: RequestContext) -> None:
         query=ctx.query,
         host=str(ctx.headers.get("Host", "") or "").split(":", 1)[0].strip(),
     )
+    ctx.response.set_header("Cache-Control", "no-store")
     ctx.send_json(
         get_effective_forced_announcement(
             ctx.read_db_path,

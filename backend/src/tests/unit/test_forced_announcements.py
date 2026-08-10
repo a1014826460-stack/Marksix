@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from core.errors import ConflictError
+from app_http.site_context import resolve_site_context
 from db import connect
 from domains.announcements.service import (
     create_forced_announcement,
@@ -185,3 +186,14 @@ def test_public_projection_is_minimal_and_admin_list_supports_delete(announcemen
     delete_forced_announcement(announcement_db, created["id"])
     assert list_forced_announcements(announcement_db) == []
 
+
+def test_site_context_supports_manifest_site_key_for_local_vendor_development(
+    announcement_db,
+):
+    site = resolve_site_context(
+        announcement_db,
+        query={"site_key": ["site-901"]},
+    )
+
+    assert site.site_id == 901
+    assert site.web_id == 1901
