@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 26
+CURRENT_SCHEMA_VERSION = 27
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -636,6 +636,17 @@ def _create_publication_outbox(conn: Any) -> None:
     )
 
 
+def _create_forced_announcements(conn: Any) -> None:
+    """Install versioned forced announcements and their Site scope table."""
+    from database.connection import auto_increment_primary_key
+    from database.schema.forced_announcements import ensure_forced_announcement_tables
+
+    ensure_forced_announcement_tables(
+        conn,
+        auto_increment_primary_key("id", conn.engine),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -663,6 +674,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(24, "sync_twssz_title_five_authorization", _sync_twssz_title_five_authorization),
     Migration(25, "sync_twwanli_featured_posts_authorization", _sync_twwanli_featured_posts_authorization),
     Migration(26, "create_publication_outbox", _create_publication_outbox),
+    Migration(27, "create_forced_announcements", _create_forced_announcements),
 )
 
 

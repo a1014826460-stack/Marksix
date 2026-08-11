@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "node ../scripts/inject-forced-announcement.mjs",
     "dev": "next dev --webpack",
     "dev:turbopack": "next dev",
     "dev:webpack": "next dev --webpack",

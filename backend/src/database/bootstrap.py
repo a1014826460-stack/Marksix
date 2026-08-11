@@ -15,6 +15,7 @@ from database.seed import seed_bootstrap_data
 from database.schema.auth import ensure_auth_tables
 from database.schema.lottery import ensure_lottery_tables
 from database.schema.sites import ensure_site_tables
+from database.schema.forced_announcements import ensure_forced_announcement_tables
 from database.schema.prediction import ensure_prediction_tables
 from database.schema.scheduler import ensure_scheduler_tables
 from database.schema.outbox import ensure_publication_outbox_table
@@ -171,6 +172,7 @@ def _apply_legacy_schema_bootstrap(conn: Any) -> None:
     ensure_auth_tables(conn, pk_sql)
     ensure_lottery_tables(conn, pk_sql)
     ensure_site_tables(conn, pk_sql)
+    ensure_forced_announcement_tables(conn, pk_sql)
     ensure_scheduler_tables(conn, pk_sql)
     ensure_publication_outbox_table(conn, pk_sql)
     ensure_prediction_tables(conn, pk_sql)

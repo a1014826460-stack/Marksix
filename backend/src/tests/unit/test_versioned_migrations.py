@@ -3,6 +3,29 @@ from __future__ import annotations
 import pytest
 
 
+def test_latest_migration_creates_forced_announcement_tables():
+    from database import versioned_migrations
+
+    class _Connection:
+        engine = "sqlite"
+
+        def __init__(self):
+            self.statements: list[str] = []
+
+        def execute(self, sql, _params=None):
+            self.statements.append(str(sql))
+
+    conn = _Connection()
+    latest = versioned_migrations.MIGRATIONS[-1]
+
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 27
+    assert latest.version == 27
+    assert latest.name == "create_forced_announcements"
+    latest.apply(conn)
+    assert any("CREATE TABLE IF NOT EXISTS forced_announcements" in sql for sql in conn.statements)
+    assert any("CREATE TABLE IF NOT EXISTS forced_announcement_sites" in sql for sql in conn.statements)
+
+
 def test_runtime_validation_rejects_a_postgres_database_without_migration_ledger(monkeypatch):
     from database import versioned_migrations
 
