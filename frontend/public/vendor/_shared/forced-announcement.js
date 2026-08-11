@@ -202,12 +202,16 @@
   };
 
   function autoMount() {
-    try {
-      if (window.parent && window.parent !== window && window.parent.ForcedAnnouncement) {
+    if (window.parent && window.parent !== window) {
+      try {
+        // Exactly one document in a same-origin frame tree owns the overlay.
+        // Do not race the parent runtime: the highest same-origin ancestor will
+        // mount even if its ForcedAnnouncement global is not initialized yet.
+        void window.parent.document;
         return;
+      } catch (_) {
+        // A cross-origin parent cannot coordinate, so mount in this document.
       }
-    } catch (_) {
-      // Cross-origin parents cannot coordinate; mount in the current document.
     }
     mount();
   }

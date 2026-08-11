@@ -200,6 +200,34 @@ const announcement = {
 }
 
 {
+  const child = createEnvironment(announcement, {
+    parent: { document: {} },
+  })
+  child.documentListeners.DOMContentLoaded()
+  await Promise.resolve()
+  assert.equal(child.fetchCount(), 0)
+
+  const parent = createEnvironment(announcement)
+  parent.documentListeners.DOMContentLoaded()
+  const overlay = await parent.window.ForcedAnnouncement.mount()
+  assert.ok(overlay)
+  assert.equal(parent.fetchCount(), 1)
+}
+
+{
+  const crossOriginParent = {}
+  Object.defineProperty(crossOriginParent, "document", {
+    get() {
+      throw new Error("cross-origin access denied")
+    },
+  })
+  const env = createEnvironment(announcement, { parent: crossOriginParent })
+  env.documentListeners.DOMContentLoaded()
+  await Promise.resolve()
+  assert.equal(env.fetchCount(), 1)
+}
+
+{
   const env = createEnvironment(announcement)
   const overlay = await env.window.ForcedAnnouncement.mount()
   assert.ok(overlay)
