@@ -8,6 +8,7 @@ from core.errors import ConflictError
 from app_http.site_context import resolve_site_context
 from db import connect
 from domains.announcements.service import (
+    _validate_no_overlap,
     create_forced_announcement,
     delete_forced_announcement,
     get_effective_forced_announcement,
@@ -131,6 +132,41 @@ def test_overlap_is_rejected_per_site_but_adjacent_period_is_allowed(announcemen
         ),
     )
     assert adjacent["title"] == "后续公告"
+
+
+def test_postgres_open_ended_overlap_query_never_binds_untyped_null():
+    """PostgreSQL cannot infer a type for ``%s IS NULL`` when bound to None."""
+
+    class _Rows:
+        def fetchall(self):
+            return []
+
+    class _PostgresConnection:
+        engine = "postgres"
+
+        def __init__(self):
+            self.sql = ""
+            self.params = ()
+
+        def execute(self, sql, params=()):
+            self.sql = sql
+            self.params = params
+            return _Rows()
+
+    conn = _PostgresConnection()
+    _validate_no_overlap(
+        conn,
+        {
+            "enabled": 1,
+            "scope": "selected_sites",
+            "site_ids": [901],
+            "starts_at": "2026-08-11T22:32:00+08:00",
+            "ends_at": None,
+        },
+    )
+
+    assert "? IS NULL" not in conn.sql
+    assert conn.params == ("2026-08-11T22:32:00+08:00",)
 
 
 def test_update_rolls_version_and_sanitizes_controlled_html(announcement_db):

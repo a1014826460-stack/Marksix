@@ -250,23 +250,28 @@ def _validate_no_overlap(
     if not new_site_ids:
         return
 
+    # Do not bind ``None`` into ``? IS NULL``. PostgreSQL cannot infer the
+    # placeholder type there (unlike SQLite), causing a create with an open
+    # ended interval to fail before the overlap query can run.
+    clauses = ["enabled = 1"]
+    params: list[Any] = []
+    if exclude_id is not None:
+        clauses.append("id <> ?")
+        params.append(exclude_id)
+    if fields["ends_at"] is not None:
+        clauses.append("starts_at < ?")
+        params.append(fields["ends_at"])
+    clauses.append("(ends_at IS NULL OR ends_at > ?)")
+    params.append(fields["starts_at"])
     rows = conn.execute(
         """
         SELECT id, scope, starts_at, ends_at
         FROM forced_announcements
-        WHERE enabled = 1
-          AND (? IS NULL OR id <> ?)
-          AND (? IS NULL OR starts_at < ?)
-          AND (ends_at IS NULL OR ends_at > ?)
+        WHERE %s
         ORDER BY id
-        """,
-        (
-            exclude_id,
-            exclude_id,
-            fields["ends_at"],
-            fields["ends_at"],
-            fields["starts_at"],
-        ),
+        """
+        % " AND ".join(clauses),
+        tuple(params),
     ).fetchall()
     for row in rows:
         existing_sites = _site_ids_for_announcement(
