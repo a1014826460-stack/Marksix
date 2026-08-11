@@ -35,8 +35,14 @@ def liveness(ctx: RequestContext) -> None:
     ctx.send_json({"ok": True, "status": "alive"})
 
 
-def _dependency_payload(ctx: RequestContext) -> dict:
+def _dependency_payload(ctx: RequestContext, *, include_operational: bool = False) -> dict:
     dependency_health = ctx.state["dependency_health"]
+    if include_operational:
+        return dependency_health(
+            ctx.write_db_path,
+            ctx.read_db_path,
+            include_operational=True,
+        )
     return dependency_health(ctx.write_db_path, ctx.read_db_path)
 
 
@@ -47,19 +53,26 @@ def readiness(ctx: RequestContext) -> None:
 
 
 def dependencies(ctx: RequestContext) -> None:
-    payload = _dependency_payload(ctx)
+    payload = _dependency_payload(ctx, include_operational=True)
     ctx.send_json(payload, HTTPStatus.OK if payload["ok"] else HTTPStatus.SERVICE_UNAVAILABLE)
 
 
 def api_health(ctx: RequestContext) -> None:
     database_summary = ctx.state["database_summary"]
     scheduler_worker_health = ctx.state["scheduler_worker_health"]
+    scheduler_task_health = ctx.state["scheduler_task_health"]
     lottery_draw_health = ctx.state["lottery_draw_health"]
+    task_health = scheduler_task_health(ctx.db_path)
     ctx.send_json(
         {
             "ok": True,
             "summary": database_summary(ctx.db_path),
             "scheduler_worker": scheduler_worker_health(ctx.db_path),
+            "scheduler_tasks": {
+                "status": task_health["status"],
+                "threshold_seconds": task_health["threshold_seconds"],
+                "stalled_count": task_health["stalled_count"],
+            },
             "draws": lottery_draw_health(ctx.db_path),
         }
     )

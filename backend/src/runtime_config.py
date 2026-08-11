@@ -166,6 +166,24 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "失败调度任务默认重试延迟。",
         "is_secret": 0,
     },
+    "crawler.taiwan_lock_timeout_ms": {
+        "value": 5000,
+        "value_type": "int",
+        "description": "台湾彩精准开奖事务等待数据库锁的最长毫秒数，超时后进入持久化任务重试。",
+        "is_secret": 0,
+    },
+    "crawler.taiwan_statement_timeout_ms": {
+        "value": 60000,
+        "value_type": "int",
+        "description": "台湾彩精准开奖事务单条 SQL 的最长执行毫秒数。",
+        "is_secret": 0,
+    },
+    "crawler.taiwan_running_alert_seconds": {
+        "value": 60,
+        "value_type": "int",
+        "description": "台湾彩精准开奖任务持续 running 超过该秒数时触发健康告警。",
+        "is_secret": 0,
+    },
     "crawler.daily_prediction_timeout_seconds": {
         "value": 900,
         "value_type": "int",

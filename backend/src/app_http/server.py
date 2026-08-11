@@ -21,7 +21,7 @@ from database.health import collect_database_health
 from db import DEFAULT_POSTGRES_DSN, detect_database_engine, is_postgres_target
 from database.runtime_targets import DatabaseTargets, resolve_database_targets
 from domains.lottery.service import get_lottery_draw_health
-from domains.scheduler.service import get_scheduler_worker_health
+from domains.scheduler.service import get_scheduler_task_health, get_scheduler_worker_health
 from logger import init_logging
 from predict.mechanisms import ensure_prediction_configs_loaded
 from runtime_config import get_bootstrap_config_value
@@ -205,6 +205,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             ctx.state["database_summary"] = database_summary
             ctx.state["detect_database_engine"] = detect_database_engine
             ctx.state["scheduler_worker_health"] = get_scheduler_worker_health
+            ctx.state["scheduler_task_health"] = get_scheduler_task_health
             ctx.state["lottery_draw_health"] = get_lottery_draw_health
             ctx.state["dependency_health"] = collect_database_health
             ctx.state["public_draw_snapshots"] = self.server.public_draw_snapshots  # type: ignore[attr-defined]

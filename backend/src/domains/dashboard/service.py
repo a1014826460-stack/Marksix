@@ -7,7 +7,7 @@ from typing import Any
 
 from db import connect
 from domains.lottery.service import get_lottery_draw_health
-from domains.scheduler.service import get_scheduler_worker_health
+from domains.scheduler.service import get_scheduler_task_health, get_scheduler_worker_health
 from domains.traffic.service import get_traffic_overview, get_traffic_timeseries
 from tables import ensure_admin_tables
 
@@ -345,6 +345,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
 
     unresolved_alerts: list[dict[str, Any]] = []
     worker_health = get_scheduler_worker_health(db_path, now=now)
+    task_health = get_scheduler_task_health(db_path, now=now)
     draw_health = get_lottery_draw_health(db_path, now=now)
     if not worker_health["active"]:
         unresolved_alerts.append(
@@ -353,6 +354,30 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
                 "name": "调度 worker 未运行或租约已过期",
                 "source": "scheduler_worker",
                 "status": str(worker_health["status"]),
+            }
+        )
+    for task in task_health["stalled_tasks"]:
+        unresolved_alerts.append(
+            {
+                "severity": "high",
+                "name": "台湾彩精准开奖任务运行超时",
+                "source": "scheduler_tasks",
+                "status": f"{task['task_key']} 已运行 {task['running_seconds']} 秒",
+            }
+        )
+    continuity = draw_health.get("taiwan_continuity", {})
+    if not continuity.get("continuous", True):
+        continuity_problems = []
+        if continuity.get("missing_issues"):
+            continuity_problems.append("缺失: " + ", ".join(continuity["missing_issues"]))
+        if continuity.get("duplicate_issues"):
+            continuity_problems.append("重复: " + ", ".join(continuity["duplicate_issues"]))
+        unresolved_alerts.append(
+            {
+                "severity": "high",
+                "name": "台湾彩未来期号不连续",
+                "source": "lottery_draw_health",
+                "status": "; ".join(continuity_problems),
             }
         )
     for lottery in draw_health["lotteries"]:
@@ -529,6 +554,7 @@ def get_dashboard_overview(db_path: str | Path) -> dict[str, Any]:
             ],
         },
         "worker": worker_health,
+        "scheduler_task_health": task_health,
         "draw_health": draw_health,
         "alerts": unresolved_alerts[:20],
         "meta": {

@@ -253,6 +253,114 @@ def test_scheduler_worker_health_reports_missing_active_and_expired_leases(tmp_p
     }
 
 
+def test_scheduler_task_health_flags_taiwan_open_running_over_sixty_seconds(tmp_path):
+    from db import connect
+    from domains.scheduler import service
+    from tables import ensure_admin_tables
+
+    db_path = str(tmp_path / "scheduler-task-health.sqlite3")
+    ensure_admin_tables(db_path)
+    now = datetime(2026, 8, 10, 14, 34, tzinfo=timezone.utc)
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO scheduler_tasks (
+                task_key, task_type, payload_json, status, run_at, locked_at,
+                attempt_count, max_attempts, created_at, updated_at
+            ) VALUES (?, ?, '{}', 'running', ?, ?, 1, 3, ?, ?)
+            """,
+            (
+                "taiwan_precise_open:2026-08-10",
+                service.TASK_TYPE_TAIWAN_PRECISE_OPEN,
+                "2026-08-10T14:32:00+00:00",
+                "2026-08-10T14:32:24+00:00",
+                "2026-08-10T14:32:00+00:00",
+                "2026-08-10T14:32:24+00:00",
+            ),
+        )
+
+    payload = service.get_scheduler_task_health(db_path, now=now, threshold_seconds=60)
+
+    assert payload == {
+        "status": "degraded",
+        "threshold_seconds": 60,
+        "stalled_count": 1,
+        "stalled_tasks": [
+            {
+                "task_key": "taiwan_precise_open:2026-08-10",
+                "task_type": "taiwan_precise_open",
+                "running_seconds": 96,
+            }
+        ],
+    }
+
+
+def test_taiwan_lock_timeout_is_persisted_retried_and_completes_exactly_once(tmp_path):
+    from db import connect
+    from domains.scheduler import service
+    from psycopg.errors import LockNotAvailable
+    from tables import ensure_admin_tables
+
+    db_path = str(tmp_path / "taiwan-lock-retry.sqlite3")
+    ensure_admin_tables(db_path)
+    service.upsert_scheduler_task(
+        db_path,
+        task_type=service.TASK_TYPE_TAIWAN_PRECISE_OPEN,
+        payload={"schedule_date": "2026-08-10"},
+        run_at="2020-01-01T00:00:00+00:00",
+        max_attempts=3,
+    )
+    opened: list[str] = []
+
+    service.run_due_scheduler_tasks(
+        db_path,
+        worker_id="worker-a",
+        execute_task=lambda _task: (_ for _ in ()).throw(
+            LockNotAvailable("canceling statement due to lock timeout")
+        ),
+    )
+    with connect(db_path) as conn:
+        task_after_timeout = dict(
+            conn.execute(
+                "SELECT id, status, attempt_count, locked_at, last_error FROM scheduler_tasks"
+            ).fetchone()
+        )
+        failed_run = dict(
+            conn.execute(
+                "SELECT status, error_message FROM scheduler_task_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        )
+        conn.execute(
+            "UPDATE scheduler_tasks SET run_at = ? WHERE id = ?",
+            ("2020-01-01T00:00:00+00:00", task_after_timeout["id"]),
+        )
+
+    assert task_after_timeout["status"] == "pending"
+    assert task_after_timeout["attempt_count"] == 1
+    assert task_after_timeout["locked_at"] is None
+    assert "LockNotAvailable" in task_after_timeout["last_error"]
+    assert failed_run["status"] == "failed"
+    assert "lock timeout" in failed_run["error_message"]
+
+    service.run_due_scheduler_tasks(
+        db_path,
+        worker_id="worker-a",
+        execute_task=lambda _task: opened.append("opened"),
+    )
+    service.run_due_scheduler_tasks(
+        db_path,
+        worker_id="worker-a",
+        execute_task=lambda _task: opened.append("duplicate"),
+    )
+
+    with connect(db_path) as conn:
+        completed = dict(
+            conn.execute("SELECT status, attempt_count FROM scheduler_tasks").fetchone()
+        )
+    assert completed == {"status": "done", "attempt_count": 2}
+    assert opened == ["opened"]
+
+
 def test_scheduler_worker_stops_timers_when_leader_lease_renewal_fails(monkeypatch):
     import scheduler_worker
 

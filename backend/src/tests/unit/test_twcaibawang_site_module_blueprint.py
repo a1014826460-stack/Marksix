@@ -66,9 +66,9 @@ def test_twcaibawang_blocked_items_are_exposed_for_admin_audit():
 
 
 def test_twcaibawang_frontend_site_defaults_match_backend_target():
-    site_config_path = Path(__file__).resolve().parents[4] / "frontend" / "lib" / "sites.ts"
+    site_config_path = Path(__file__).resolve().parents[4] / "frontend" / "sites" / "twcaibawang" / "site.manifest.ts"
     source = site_config_path.read_text(encoding="utf-8")
 
     assert 'siteKey: "twcaibawang"' in source
-    assert "defaultWebId: 5" in source
-    assert "defaultLotteryTypeId: 3" in source
+    assert "webId: 5" in source
+    assert "defaultLotteryType: 3" in source

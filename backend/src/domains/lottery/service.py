@@ -490,6 +490,13 @@ def get_lottery_draw_health(
     """Expose expired next-draw deadlines so operators can spot a stalled feed."""
     current = now or datetime.now(timezone.utc)
     lotteries: list[dict[str, Any]] = []
+    taiwan_continuity = {
+        "continuous": True,
+        "latest_opened_issue": "",
+        "checked_through_issue": "",
+        "missing_issues": [],
+        "duplicate_issues": [],
+    }
     with connect(db_path) as conn:
         rows = conn.execute(
             """
@@ -509,6 +516,76 @@ def get_lottery_draw_health(
             ORDER BY lottery_type.id
             """
         ).fetchall()
+
+        latest_taiwan = conn.execute(
+            """
+            SELECT year, term
+            FROM lottery_draws
+            WHERE lottery_type_id = 3 AND is_opened = 1
+            ORDER BY year DESC, term DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if latest_taiwan:
+            latest_year = int(latest_taiwan["year"])
+            latest_term = int(latest_taiwan["term"])
+            try:
+                max_terms = max(1, int(get_config_from_conn(conn, "prediction.max_terms_per_year", 365)))
+            except (TypeError, ValueError):
+                max_terms = 365
+            try:
+                coverage_count = min(
+                    60,
+                    max(1, int(get_config_from_conn(conn, "taiwan_future_autofill.count", 12))),
+                )
+            except (TypeError, ValueError):
+                coverage_count = 12
+            expected_issues: list[tuple[int, int]] = []
+            cursor_issue = _next_issue(latest_year, latest_term, max_terms)
+            for _ in range(coverage_count):
+                expected_issues.append(cursor_issue)
+                cursor_issue = _next_issue(cursor_issue[0], cursor_issue[1], max_terms)
+            checked_through = expected_issues[-1]
+            future_rows = conn.execute(
+                """
+                SELECT year, term
+                FROM lottery_draws
+                WHERE lottery_type_id = 3 AND is_opened = 0
+                  AND (year > ? OR (year = ? AND term > ?))
+                  AND (year < ? OR (year = ? AND term <= ?))
+                ORDER BY year ASC, term ASC, id ASC
+                """,
+                (
+                    latest_year,
+                    latest_year,
+                    latest_term,
+                    checked_through[0],
+                    checked_through[0],
+                    checked_through[1],
+                ),
+            ).fetchall()
+
+            observed_counts: dict[tuple[int, int], int] = {}
+            for future in future_rows:
+                observed = (int(future["year"]), int(future["term"]))
+                observed_counts[observed] = observed_counts.get(observed, 0) + 1
+            missing = [
+                f"{issue[0]}{issue[1]:03d}"
+                for issue in expected_issues
+                if observed_counts.get(issue, 0) == 0
+            ]
+            duplicates = [
+                f"{issue[0]}{issue[1]:03d}"
+                for issue in expected_issues
+                if observed_counts.get(issue, 0) > 1
+            ]
+            taiwan_continuity = {
+                "continuous": not missing and not duplicates,
+                "latest_opened_issue": f"{latest_year}{latest_term:03d}",
+                "checked_through_issue": f"{checked_through[0]}{checked_through[1]:03d}",
+                "missing_issues": missing,
+                "duplicate_issues": duplicates,
+            }
 
     for row in rows:
         next_time = str(row["next_time"] or "").strip()
@@ -538,9 +615,10 @@ def get_lottery_draw_health(
         if item["stale"]
     ]
     return {
-        "status": "degraded" if stale_lottery_type_ids else "healthy",
+        "status": "degraded" if stale_lottery_type_ids or not taiwan_continuity["continuous"] else "healthy",
         "stale_lottery_type_ids": stale_lottery_type_ids,
         "lotteries": lotteries,
+        "taiwan_continuity": taiwan_continuity,
     }
 
 

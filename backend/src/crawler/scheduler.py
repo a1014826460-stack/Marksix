@@ -1540,6 +1540,23 @@ class CrawlerScheduler:
         now_beijing_dt = (now_utc_dt + timedelta(hours=8)).replace(tzinfo=None)
 
         with db_connect(self.db_path) as conn:
+            if conn.engine == "postgres":
+                lock_timeout_ms = max(
+                    100,
+                    int(_cfg(self.db_path, "crawler.taiwan_lock_timeout_ms", 5000)),
+                )
+                statement_timeout_ms = max(
+                    lock_timeout_ms,
+                    int(_cfg(self.db_path, "crawler.taiwan_statement_timeout_ms", 60000)),
+                )
+                conn.execute(
+                    "SELECT set_config('lock_timeout', ?, true)",
+                    (f"{lock_timeout_ms}ms",),
+                )
+                conn.execute(
+                    "SELECT set_config('statement_timeout', ?, true)",
+                    (f"{statement_timeout_ms}ms",),
+                )
             pending_rows = conn.execute(
                 """SELECT id, lottery_type_id, year, term, numbers, draw_time,
                           next_time, status, is_opened, next_term

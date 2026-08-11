@@ -94,7 +94,6 @@ def _send_taiwan_issue_gap_alert(
 ) -> None:
     try:
         from alerts.email_service import send_alert_async
-        from runtime_config import upsert_system_config
     except Exception:
         return
 
@@ -164,19 +163,6 @@ def _send_taiwan_issue_gap_alert(
                 )
     except Exception:
         pass
-
-    try:
-        upsert_system_config(
-            conn.target,
-            key=alert_key,
-            value=1,
-            value_type="int",
-            changed_by="helpers",
-            change_reason=f"台湾彩缺失期号告警已发送: {missing_issue}",
-        )
-    except Exception:
-        pass
-
 
 def _resolve_taiwan_next_issue_payload(conn: Any, latest_opened: dict[str, Any]) -> dict[str, Any]:
     current_year = int(latest_opened.get("year") or 0)

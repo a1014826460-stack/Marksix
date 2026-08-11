@@ -78,13 +78,13 @@ def test_twjinniu_confirmed_mode_configs_are_registered():
 
 
 def test_twjinniu_frontend_site_defaults_match_backend_target():
-    site_config_path = Path(__file__).resolve().parents[4] / "frontend" / "lib" / "sites.ts"
+    site_config_path = Path(__file__).resolve().parents[4] / "frontend" / "sites" / "twjinniu" / "site.manifest.ts"
     source = site_config_path.read_text(encoding="utf-8")
 
     assert 'siteKey: "twjinniu"' in source
     assert "routePath: \"/twjinniu\"" in source
-    assert "defaultWebId: 7" in source
-    assert "defaultLotteryTypeId: 3" in source
+    assert "webId: 7" in source
+    assert "defaultLotteryType: 3" in source
 
 
 def test_twjinniu_bootstrap_populates_missing_homepage_modes(tmp_path):

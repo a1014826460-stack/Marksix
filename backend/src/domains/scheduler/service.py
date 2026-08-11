@@ -139,6 +139,61 @@ def get_scheduler_worker_health(
     return {"status": "healthy", "active": True, "holder_id": holder_id}
 
 
+def get_scheduler_task_health(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+    threshold_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Report Taiwan precise-open tasks that remain claimed beyond their SLA."""
+    current = now or datetime.now(timezone.utc)
+    threshold = max(
+        1,
+        int(
+            threshold_seconds
+            if threshold_seconds is not None
+            else _cfg(db_path, "crawler.taiwan_running_alert_seconds", 60)
+        ),
+    )
+    with db_connect(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT task_key, task_type, locked_at
+            FROM {TASK_TABLE_NAME}
+            WHERE status = 'running'
+              AND task_type = ?
+              AND locked_at IS NOT NULL
+            ORDER BY locked_at ASC, id ASC
+            """,
+            (TASK_TYPE_TAIWAN_PRECISE_OPEN,),
+        ).fetchall()
+
+    stalled_tasks: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            locked_at = datetime.fromisoformat(str(row["locked_at"] or ""))
+            if locked_at.tzinfo is None:
+                locked_at = locked_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        running_seconds = max(0, int((current - locked_at).total_seconds()))
+        if running_seconds <= threshold:
+            continue
+        stalled_tasks.append(
+            {
+                "task_key": str(row["task_key"] or ""),
+                "task_type": str(row["task_type"] or ""),
+                "running_seconds": running_seconds,
+            }
+        )
+    return {
+        "status": "degraded" if stalled_tasks else "healthy",
+        "threshold_seconds": threshold,
+        "stalled_count": len(stalled_tasks),
+        "stalled_tasks": stalled_tasks,
+    }
+
+
 def _task_key(task_type: str, payload: dict[str, Any]) -> str:
     if task_type == TASK_TYPE_AUTO_PREDICTION:
         return f"{task_type}:{payload.get('lottery_type_id')}"

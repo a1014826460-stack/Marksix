@@ -90,6 +90,8 @@ def test_postgres_migration_baseline_orders_auth_lottery_sites_before_dependent_
         "ensure_prediction_tables", "ensure_legacy_asset_tables", "ensure_liubuzhong_table",
         "ensure_site_specific_prediction_tables", "ensure_twcaibawang_prediction_tables", "ensure_audit_tables",
         "ensure_log_tables", "ensure_traffic_tables", "ensure_config_history_tables",
+        "ensure_forced_announcement_tables", "ensure_publication_outbox_table",
+        "ensure_twjsz666_prediction_tables", "ensure_twbst528_prediction_tables",
     ):
         monkeypatch.setattr(
             "database.bootstrap." + name,

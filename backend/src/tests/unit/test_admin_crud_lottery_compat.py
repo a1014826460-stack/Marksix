@@ -219,6 +219,39 @@ def test_autofill_taiwan_future_draws_treats_count_as_total_future_target(tmp_pa
     ]
 
 
+def test_scheduled_autofill_repairs_holes_in_the_contiguous_future_sequence(tmp_path):
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-contiguous.sqlite3"
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        _insert_taiwan_draw(
+            conn, year=2026, term=222, numbers="01,02,03,04,05,06,07",
+            draw_time="2026-08-10 22:32:00", is_opened=1,
+        )
+        for term in (224, 225, 226, 227, 229, 230, 231, 232, 233, 234):
+            _insert_taiwan_draw(
+                conn, year=2026, term=term, numbers="08,09,10,11,12,13,14",
+                draw_time=f"2026-08-{term - 212:02d} 22:32:00", is_opened=0,
+            )
+
+    result = autofill_taiwan_future_draws(
+        db_path, count=12, rng=Random(17), target_total=True,
+    )
+
+    assert [(item["year"], item["term"]) for item in result["created"]] == [
+        (2026, 223), (2026, 228),
+    ]
+    with connect(db_path) as conn:
+        terms = [
+            int(row["term"])
+            for row in conn.execute(
+                "SELECT term FROM lottery_draws WHERE lottery_type_id = 3 AND is_opened = 0 ORDER BY term"
+            ).fetchall()
+        ]
+    assert terms == list(range(223, 235))
+
+
 def test_autofill_taiwan_future_draws_rejects_invalid_count_and_missing_baseline(tmp_path):
     from domains.lottery.service import autofill_taiwan_future_draws
 

@@ -61,6 +61,55 @@ def test_taiwan_scheduler_open_enqueues_before_next_time_calculation_commits(tmp
     assert _events(db_path) == [{"event_key": "draw-published:3:2026:188", "event_type": "draw.published"}]
 
 
+def test_taiwan_scheduler_sets_transaction_local_database_timeouts(tmp_path, monkeypatch):
+    from crawler.scheduler import CrawlerScheduler
+    from db import connect as real_connect
+
+    db_path = _setup(tmp_path)
+    _insert_draw(db_path, 3, 2026, 188)
+    statements: list[tuple[str, object]] = []
+
+    class PostgresLikeConnection:
+        engine = "postgres"
+
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.inner.__exit__(*args)
+
+        def execute(self, sql, params=None):
+            if "set_config" in sql:
+                statements.append((sql, params))
+                return type("Cursor", (), {"fetchall": lambda self: []})()
+            return self.inner.execute(sql, params)
+
+        def commit(self):
+            return self.inner.commit()
+
+    monkeypatch.setattr(
+        "crawler.scheduler.db_connect",
+        lambda _target: PostgresLikeConnection(real_connect(db_path)),
+    )
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _target, key, default: {
+            "crawler.taiwan_lock_timeout_ms": 4000,
+            "crawler.taiwan_statement_timeout_ms": 45000,
+        }.get(key, default),
+    )
+
+    assert CrawlerScheduler(db_path)._open_taiwan_draws_and_update_next_time() == 1
+    assert statements == [
+        ("SELECT set_config('lock_timeout', ?, true)", ("4000ms",)),
+        ("SELECT set_config('statement_timeout', ?, true)", ("45000ms",)),
+    ]
+
+
 def _published_payload_matches_final_draw(db_path, lottery_type_id, year, term):
     import json
     from db import connect

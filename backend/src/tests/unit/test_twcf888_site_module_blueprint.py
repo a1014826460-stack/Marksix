@@ -61,14 +61,12 @@ def test_twcf888_blocked_items_are_fixed():
 
 
 def test_frontend_site_config_matches_twcf888_defaults():
-    sites_file = (
-        Path(__file__).resolve().parents[4] / "frontend" / "lib" / "sites.ts"
-    )
+    sites_file = Path(__file__).resolve().parents[4] / "frontend" / "sites" / "twcf888" / "site.manifest.ts"
     text = sites_file.read_text(encoding="utf-8")
 
     assert 'siteKey: "twcf888"' in text
     assert 'routePath: "/twcf888"' in text
     assert 'vendorIndexPath: "/vendor/twcf888.com/index.html"' in text
     assert 'domains: ["www.twcf888.com", "twcf888.com"]' in text
-    assert "defaultWebId: 8" in text
-    assert "defaultLotteryTypeId: 3" in text
+    assert "webId: 8" in text
+    assert "defaultLotteryType: 3" in text

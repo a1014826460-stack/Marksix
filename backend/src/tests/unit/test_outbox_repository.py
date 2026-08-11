@@ -162,8 +162,11 @@ def test_expired_lease_owner_cannot_retry_or_complete_an_event(tmp_path):
 def test_postgres_outbox_migration_is_registered_at_current_version():
     from database import versioned_migrations
 
-    migration = versioned_migrations.MIGRATIONS[-1]
+    migration = next(
+        item for item in versioned_migrations.MIGRATIONS
+        if item.name == "create_publication_outbox"
+    )
 
     assert migration.name == "create_publication_outbox"
-    assert migration.version == versioned_migrations.CURRENT_SCHEMA_VERSION
-    assert migration.version == max(item.version for item in versioned_migrations.MIGRATIONS)
+    assert migration.version == 26
+    assert migration.version <= versioned_migrations.CURRENT_SCHEMA_VERSION

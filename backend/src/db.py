@@ -287,10 +287,12 @@ class _PooledPostgresConnectionManager:
             return
 
         try:
-            if status == TransactionStatus.INERROR:
+            if status in {TransactionStatus.INERROR, TransactionStatus.INTRANS}:
+                # Returning a connection to the pool must never make an
+                # unfinished caller transaction durable.  Successful context
+                # managers commit explicitly before close; anything left here
+                # is leaked/abandoned work and must be rolled back.
                 raw.rollback()
-            elif status == TransactionStatus.INTRANS:
-                raw.commit()
         except Exception:
             _PooledPostgresConnectionManager._close_raw(raw)
 

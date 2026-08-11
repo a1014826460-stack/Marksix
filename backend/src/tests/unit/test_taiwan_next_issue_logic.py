@@ -83,6 +83,12 @@ def test_taiwan_missing_issue_sends_gap_alert_once(tmp_path, monkeypatch):
         sent.append((str(target), subject, body_html))
 
     monkeypatch.setattr("alerts.email_service.send_alert_async", fake_send_alert_async)
+    nested_writes: list[str] = []
+
+    def record_nested_write(*_args, **_kwargs):
+        nested_writes.append("opened a second connection")
+
+    monkeypatch.setattr("runtime_config.upsert_system_config", record_nested_write)
 
     with connect(db_path) as conn:
         conn.execute(
@@ -119,6 +125,7 @@ def test_taiwan_missing_issue_sends_gap_alert_once(tmp_path, monkeypatch):
     assert payload_second["next_issue"] == "2026132"
     assert len(sent) == 1
     assert "2026132" in sent[0][1]
+    assert nested_writes == []
 
 
 def test_public_latest_draw_includes_draw_time(tmp_path):

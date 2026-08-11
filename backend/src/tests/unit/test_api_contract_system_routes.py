@@ -13,12 +13,18 @@ def _make_system_ctx(path: str):
         "active": True,
         "holder_id": "test-worker",
     }
+    ctx.state["scheduler_task_health"] = lambda db_path: {
+        "status": "healthy",
+        "threshold_seconds": 60,
+        "stalled_count": 0,
+        "stalled_tasks": [],
+    }
     ctx.state["lottery_draw_health"] = lambda db_path: {
         "status": "healthy",
         "stale_lottery_type_ids": [],
         "lotteries": [],
     }
-    ctx.state["dependency_health"] = lambda _write_target, _read_target: {
+    ctx.state["dependency_health"] = lambda _write_target, _read_target, **_kwargs: {
         "ok": True,
         "database": {
             "write": {"ok": True},
@@ -51,6 +57,38 @@ def test_api_health_route_contract():
         "active": True,
         "holder_id": "test-worker",
     }
+    assert payload["scheduler_tasks"] == {
+        "status": "healthy",
+        "threshold_seconds": 60,
+        "stalled_count": 0,
+    }
+    assert "database" not in payload
+
+
+def test_public_api_health_redacts_stalled_task_details():
+    ctx = _make_system_ctx("/api/health")
+    ctx.state["scheduler_task_health"] = lambda _db_path: {
+        "status": "degraded",
+        "threshold_seconds": 60,
+        "stalled_count": 1,
+        "stalled_tasks": [
+            {
+                "task_key": "taiwan_precise_open:2026-08-10",
+                "task_type": "taiwan_precise_open",
+                "running_seconds": 1900,
+            }
+        ],
+    }
+
+    system_routes.api_health(ctx)
+
+    payload = response_json(ctx)
+    assert payload["scheduler_tasks"] == {
+        "status": "degraded",
+        "threshold_seconds": 60,
+        "stalled_count": 1,
+    }
+    assert "taiwan_precise_open" not in repr(payload)
     assert payload["draws"] == {
         "status": "healthy",
         "stale_lottery_type_ids": [],

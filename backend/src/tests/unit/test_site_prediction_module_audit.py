@@ -482,6 +482,7 @@ def test_twcaibawang_vendor_composite_source_map_is_auditable():
         "shujinguang": (44,),
         "daxiao_2tou": (57, 108),
         "tiandi_2xiao": (5, 251),
+        "tw_pmt_image": (478,),
     }
 
 
@@ -511,7 +512,7 @@ def test_frontend_dependency_audit_reports_composite_sources_separately():
 
     assert audit["twjinniu"]["missing_from_blueprint"] == []
     assert audit["twcaibawang"]["composite_source_mode_ids"] == [
-        5, 38, 44, 47, 49, 57, 69, 108, 151, 251,
+        5, 38, 44, 47, 49, 57, 69, 108, 151, 251, 478,
     ]
     assert audit["twcaibawang"]["authorization"] == "runtime_site_prediction_modules"
 

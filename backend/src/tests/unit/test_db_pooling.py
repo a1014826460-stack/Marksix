@@ -101,3 +101,12 @@ def test_postgres_connect_discards_broken_connection(monkeypatch):
     assert len(created) == 2
     assert created[0].closed is True
     assert created[1].closed is False
+
+
+def test_pool_rolls_back_an_unfinished_transaction_instead_of_committing_it():
+    raw = _FakePgConn(TransactionStatus.INTRANS)
+
+    db._PooledPostgresConnectionManager._reset_connection(raw)
+
+    assert raw.rollbacks == 1
+    assert raw.commits == 0

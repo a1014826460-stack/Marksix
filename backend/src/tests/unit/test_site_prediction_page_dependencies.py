@@ -75,7 +75,8 @@ def test_shengshi8800_manifest_source_paths_match_live_prediction_scripts():
         "static/js/djck.js",
         "static/js/kj.js",
         "static/js/tu1.js",
-        "/vendor/_shared/managed-site-links.js",
+            "/vendor/_shared/managed-site-links.js",
+            "/vendor/_shared/forced-announcement.js",
     }
 
     assert {
