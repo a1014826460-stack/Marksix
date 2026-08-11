@@ -63,10 +63,12 @@ def api_health(ctx: RequestContext) -> None:
     scheduler_task_health = ctx.state["scheduler_task_health"]
     lottery_draw_health = ctx.state["lottery_draw_health"]
     task_health = scheduler_task_health(ctx.db_path)
+    public_summary = dict(database_summary(ctx.db_path))
+    public_summary.pop("db_target", None)
     ctx.send_json(
         {
             "ok": True,
-            "summary": database_summary(ctx.db_path),
+            "summary": public_summary,
             "scheduler_worker": scheduler_worker_health(ctx.db_path),
             "scheduler_tasks": {
                 "status": task_health["status"],

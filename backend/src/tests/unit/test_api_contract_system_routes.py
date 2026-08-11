@@ -89,6 +89,21 @@ def test_public_api_health_redacts_stalled_task_details():
         "stalled_count": 1,
     }
     assert "taiwan_precise_open" not in repr(payload)
+
+
+def test_public_api_health_does_not_expose_database_targets():
+    ctx = _make_system_ctx("/api/health")
+    ctx.state["database_summary"] = lambda _db_path: {
+        "db_engine": "postgres",
+        "db_target": "postgresql://admin:secret@pgbouncer:6432/liuhecai",
+        "lottery_draws": 100,
+    }
+
+    system_routes.api_health(ctx)
+
+    payload = response_json(ctx)
+    assert payload["summary"] == {"db_engine": "postgres", "lottery_draws": 100}
+    assert "secret" not in repr(payload)
     assert payload["draws"] == {
         "status": "healthy",
         "stale_lottery_type_ids": [],

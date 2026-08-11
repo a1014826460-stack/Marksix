@@ -75,7 +75,7 @@ def test_database_operational_metrics_report_transactions_locks_and_outbox(monke
             executed.append(query)
 
         def fetchone(self):
-            if len(executed) == 1:
+            if "pg_stat_activity" in executed[-1]:
                 return (2, 321.8, 3, 44.9)
             return (5,)
 
@@ -94,8 +94,8 @@ def test_database_operational_metrics_report_transactions_locks_and_outbox(monke
         "lock_waits": {"count": 3, "longest_seconds": 44},
         "publication_outbox_unpublished": 5,
     }
-    assert "pg_stat_activity" in executed[0]
-    assert "publication_outbox" in executed[1]
+    assert "pg_stat_activity" in executed[1]
+    assert "publication_outbox" in executed[2]
 
 
 def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
@@ -103,7 +103,7 @@ def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
 
     class Cursor:
         def execute(self, query):
-            assert query == "SELECT 1"
+            captured.setdefault("queries", []).append(query)
 
         def fetchone(self):
             return (1,)
@@ -115,12 +115,11 @@ def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
         def close(self):
             captured["closed"] = True
 
-    def fake_connect(target, *, connect_timeout, options):
+    def fake_connect(target, *, connect_timeout):
         captured.update(
             {
                 "target": target,
                 "connect_timeout": connect_timeout,
-                "options": options,
             }
         )
         return Connection()
@@ -134,6 +133,35 @@ def test_probe_uses_a_dedicated_short_timeout_connection(monkeypatch):
     assert captured == {
         "target": "postgresql://writer/secret",
         "connect_timeout": 2,
-        "options": "-c statement_timeout=2000",
+        "queries": ["SET LOCAL statement_timeout = 2000", "SELECT 1"],
         "closed": True,
     }
+
+
+def test_operational_probe_uses_transaction_local_timeout_for_pgbouncer(monkeypatch):
+    captured: list[str] = []
+
+    class Cursor:
+        def execute(self, query):
+            captured.append(query)
+
+        def fetchone(self):
+            return (0, 0, 0, 0) if "pg_stat_activity" in captured[-1] else (0,)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "database.health.psycopg.connect",
+        lambda _target, *, connect_timeout: Connection(),
+    )
+
+    from database.health import _collect_operational_metrics
+
+    _collect_operational_metrics("postgresql://writer/secret")
+
+    assert captured[0] == "SET LOCAL statement_timeout = 2000"

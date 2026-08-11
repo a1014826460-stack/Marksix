@@ -13,10 +13,12 @@ def _probe_target(target: str) -> None:
     connection = psycopg.connect(
         target,
         connect_timeout=PROBE_CONNECT_TIMEOUT_SECONDS,
-        options=f"-c statement_timeout={PROBE_STATEMENT_TIMEOUT_MILLISECONDS}",
     )
     try:
         cursor = connection.cursor()
+        cursor.execute(
+            f"SET LOCAL statement_timeout = {PROBE_STATEMENT_TIMEOUT_MILLISECONDS}"
+        )
         cursor.execute("SELECT 1")
         row = cursor.fetchone()
         if not row or int(row[0]) != 1:
@@ -37,10 +39,12 @@ def _collect_operational_metrics(target: str) -> dict[str, Any]:
     connection = psycopg.connect(
         target,
         connect_timeout=PROBE_CONNECT_TIMEOUT_SECONDS,
-        options=f"-c statement_timeout={PROBE_STATEMENT_TIMEOUT_MILLISECONDS}",
     )
     try:
         cursor = connection.cursor()
+        cursor.execute(
+            f"SET LOCAL statement_timeout = {PROBE_STATEMENT_TIMEOUT_MILLISECONDS}"
+        )
         cursor.execute(
             """
             SELECT
