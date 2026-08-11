@@ -90,7 +90,8 @@ function createEnvironment(announcement, options = {}) {
       documentListeners[name] = handler
     },
   }
-  if (options.bodySiteKey !== false) document.body.dataset.siteKey = "twssz"
+  if (options.bodySiteKey !== false) document.body.dataset.siteKey = options.bodySiteKey || "twssz"
+  const expectedUrl = options.expectedUrl || `/api/public/forced-announcement?site_key=${document.body.dataset.siteKey}`
 
   let fetchCount = 0
   const window = {
@@ -101,7 +102,7 @@ function createEnvironment(announcement, options = {}) {
     location: { pathname: options.pathname || "/" },
     fetch: async (url, options) => {
       fetchCount += 1
-      assert.equal(url, "/api/public/forced-announcement?site_key=twssz")
+      assert.equal(url, expectedUrl)
       assert.equal(options.cache, "no-store")
       return { ok: true, json: async () => announcement }
     },
@@ -139,9 +140,35 @@ const announcement = {
   const env = createEnvironment(announcement, {
     bodySiteKey: false,
     pathname: "/twssz",
+    expectedUrl: "/api/public/forced-announcement?site_key=twssz",
   })
   const overlay = await env.window.ForcedAnnouncement.mount()
   assert.ok(overlay)
+}
+
+{
+  const vendorSiteKeys = {
+    shengshi8800: "shengshi8800",
+    twsaimahui: "twsaimahui",
+    "twcaibawang.com": "twcaibawang",
+    twjinniu: "twjinniu",
+    "twcf888.com": "twcf888",
+    twssz: "twssz",
+    twbst528: "twbst528",
+    twjsz666: "twjsz666",
+    twwanli: "twwanli",
+    twsyw: "twsyw",
+  }
+
+  for (const [vendorDirectory, siteKey] of Object.entries(vendorSiteKeys)) {
+    const env = createEnvironment(announcement, {
+      bodySiteKey: "stale-site-key",
+      pathname: `/vendor/${vendorDirectory}/nested/page.html`,
+      expectedUrl: `/api/public/forced-announcement?site_key=${siteKey}`,
+    })
+    const overlay = await env.window.ForcedAnnouncement.mount()
+    assert.ok(overlay)
+  }
 }
 
 {

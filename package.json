@@ -21,7 +21,7 @@
     "lint:backend-admin": "eslint backend --ext .js,.jsx,.ts,.tsx",
     "site:sync-manifests": "node scripts/sync-site-manifests.mjs",
     "site:inject-forced-announcement": "node scripts/inject-forced-announcement.mjs",
-    "site:test-forced-announcement": "node frontend/test/forced-announcement-runtime-contract.mjs && node frontend/test/forced-announcement-injection-contract.mjs",
+    "site:test-forced-announcement": "node frontend/test/forced-announcement-runtime-contract.mjs && node frontend/test/forced-announcement-route-contract.mjs && node frontend/test/forced-announcement-injection-contract.mjs",
     "site:scaffold": "node scripts/scaffold-vendor-site.mjs",
     "site:validate": "node scripts/validate-vendor-site.mjs",
     "site:test-ui-baseline": "node frontend/test/run-site-ui-baseline-contract.mjs",

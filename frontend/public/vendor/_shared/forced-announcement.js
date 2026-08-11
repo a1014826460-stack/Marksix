@@ -3,6 +3,21 @@
 
   var SESSION_PREFIX = "forced-announcement:session:";
   var CONFIRMED_PREFIX = "forced-announcement:confirmed:";
+  // Vendor resources retain historical directory names, while the backend
+  // resolves announcements by the registered manifest site key. Do not depend
+  // on Host for iframe/static pages: their URL provides a stable identity.
+  var VENDOR_SITE_KEYS = {
+    "shengshi8800": "shengshi8800",
+    "twsaimahui": "twsaimahui",
+    "twcaibawang.com": "twcaibawang",
+    "twjinniu": "twjinniu",
+    "twcf888.com": "twcf888",
+    "twssz": "twssz",
+    "twbst528": "twbst528",
+    "twjsz666": "twjsz666",
+    "twwanli": "twwanli",
+    "twsyw": "twsyw"
+  };
   var mountedPromise = null;
 
   function storageHas(storage, key) {
@@ -121,7 +136,12 @@
     var params = new window.URLSearchParams();
     var bodyData = document.body && document.body.dataset || {};
     var siteId = String(options && options.siteId || bodyData.siteId || "").trim();
-    var siteKey = String(options && options.siteKey || bodyData.siteKey || "").trim();
+    var siteKey = String(options && options.siteKey || "").trim();
+    if (!siteKey && window.location) {
+      var vendorMatch = String(window.location.pathname || "").match(/^\/vendor\/([^/]+)/i);
+      if (vendorMatch) siteKey = VENDOR_SITE_KEYS[vendorMatch[1].toLowerCase()] || "";
+    }
+    if (!siteKey) siteKey = String(bodyData.siteKey || "").trim();
     if (!siteKey && window.location) {
       var pathSiteKey = String(window.location.pathname || "").split("/")[1] || "";
       if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pathSiteKey)
@@ -129,8 +149,8 @@
         siteKey = pathSiteKey;
       }
     }
-    if (siteId) params.set("site_id", siteId);
-    else if (siteKey) params.set("site_key", siteKey);
+    if (siteKey) params.set("site_key", siteKey);
+    else if (siteId) params.set("site_id", siteId);
     var query = params.toString();
     return "/api/public/forced-announcement" + (query ? "?" + query : "");
   }
