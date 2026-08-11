@@ -73,8 +73,8 @@ class Element {
 }
 
 function createEnvironment(announcement, options = {}) {
-  const sessionStorage = createStorage()
-  const localStorage = createStorage()
+  const sessionStorage = options.sessionStorage || createStorage()
+  const localStorage = options.localStorage || createStorage()
   const documentListeners = {}
   const document = {
     readyState: "loading",
@@ -99,12 +99,16 @@ function createEnvironment(announcement, options = {}) {
     sessionStorage,
     localStorage,
     URLSearchParams,
-    location: { pathname: options.pathname || "/" },
-    fetch: async (url, options) => {
+    location: { pathname: options.pathname || "/", host: options.host || "127.0.0.1:3000" },
+    fetch: async (url, fetchOptions) => {
       fetchCount += 1
       assert.equal(url, expectedUrl)
-      assert.equal(options.cache, "no-store")
-      return { ok: true, json: async () => announcement }
+      assert.equal(fetchOptions.cache, "no-store")
+      return {
+        ok: true,
+        headers: { get: () => options.responseSiteKey || null },
+        json: async () => announcement,
+      }
     },
   }
   window.window = window
@@ -173,6 +177,21 @@ const announcement = {
 
 {
   const env = createEnvironment(announcement, {
+    bodySiteKey: "stale-body-key",
+    pathname: "/vendor/twcf888.com/nested/page.html",
+    expectedUrl: "/api/public/forced-announcement?site_key=twjinniu",
+    responseSiteKey: "twjinniu",
+  })
+  const overlay = await env.window.ForcedAnnouncement.mount({ siteKey: "twjinniu" })
+  overlay.findByAction("confirm").dispatch("click")
+  assert.equal(
+    env.localStorage.getItem("forced-announcement:confirmed:twjinniu:version-one"),
+    "1",
+  )
+}
+
+{
+  const env = createEnvironment(announcement, {
     parent: { ForcedAnnouncement: { mount() {} } },
   })
   env.documentListeners.DOMContentLoaded()
@@ -191,7 +210,7 @@ const announcement = {
   assert.ok(close)
   close.dispatch("click")
   assert.equal(
-    env.sessionStorage.getItem("forced-announcement:session:version-one"),
+    env.sessionStorage.getItem("forced-announcement:session:twssz:version-one"),
     "1",
   )
   assert.equal(env.window.ForcedAnnouncement.shouldDisplay(announcement), false)
@@ -207,7 +226,7 @@ const announcement = {
   assert.ok(confirm)
   confirm.dispatch("click")
   assert.equal(
-    env.localStorage.getItem("forced-announcement:confirmed:version-one"),
+    env.localStorage.getItem("forced-announcement:confirmed:twssz:version-one"),
     "1",
   )
   assert.equal(env.window.ForcedAnnouncement.shouldDisplay(announcement), false)
@@ -215,6 +234,68 @@ const announcement = {
     env.window.ForcedAnnouncement.shouldDisplay({ ...announcement, version: "version-two" }),
     true,
   )
+}
+
+{
+  const sharedLocalStorage = createStorage()
+  const twssz = createEnvironment(announcement, {
+    bodySiteKey: "twssz",
+    pathname: "/twssz",
+    localStorage: sharedLocalStorage,
+  })
+  const twsszOverlay = await twssz.window.ForcedAnnouncement.mount()
+  twsszOverlay.findByAction("confirm").dispatch("click")
+
+  const twcf888 = createEnvironment(announcement, {
+    bodySiteKey: "twcf888",
+    pathname: "/twcf888",
+    expectedUrl: "/api/public/forced-announcement?site_key=twcf888",
+    localStorage: sharedLocalStorage,
+  })
+  assert.ok(await twcf888.window.ForcedAnnouncement.mount())
+}
+
+{
+  const sharedSessionStorage = createStorage()
+  const twssz = createEnvironment(announcement, {
+    bodySiteKey: "twssz",
+    pathname: "/twssz",
+    sessionStorage: sharedSessionStorage,
+  })
+  const twsszOverlay = await twssz.window.ForcedAnnouncement.mount()
+  twsszOverlay.findByAction("session-close").dispatch("click")
+
+  const twcf888 = createEnvironment(announcement, {
+    bodySiteKey: "twcf888",
+    pathname: "/twcf888",
+    expectedUrl: "/api/public/forced-announcement?site_key=twcf888",
+    sessionStorage: sharedSessionStorage,
+  })
+  assert.ok(await twcf888.window.ForcedAnnouncement.mount())
+}
+
+{
+  const sharedLocalStorage = createStorage()
+  const hostRoot = createEnvironment(announcement, {
+    bodySiteKey: false,
+    pathname: "/",
+    host: "www.twcf888.com",
+    expectedUrl: "/api/public/forced-announcement",
+    responseSiteKey: "twcf888",
+    localStorage: sharedLocalStorage,
+  })
+  const hostOverlay = await hostRoot.window.ForcedAnnouncement.mount()
+  hostOverlay.findByAction("confirm").dispatch("click")
+  assert.equal(hostRoot.window.ForcedAnnouncement.shouldDisplay(announcement), false)
+
+  const explicitPath = createEnvironment(announcement, {
+    bodySiteKey: "twcf888",
+    pathname: "/twcf888",
+    expectedUrl: "/api/public/forced-announcement?site_key=twcf888",
+    responseSiteKey: "twcf888",
+    localStorage: sharedLocalStorage,
+  })
+  assert.equal(await explicitPath.window.ForcedAnnouncement.mount(), null)
 }
 
 console.log("forced announcement runtime contract passed")

@@ -24,7 +24,9 @@ export async function GET(request: Request) {
     const payload = await backendFetchJson("/public/forced-announcement", {
       query: { site_key: siteKey },
     })
-    return noStoreJson(payload)
+    return noStoreJson(payload, {
+      headers: { "X-Announcement-Site-Key": siteKey },
+    })
   } catch {
     return noStoreJson(
       { ok: false, error: "upstream request failed" },

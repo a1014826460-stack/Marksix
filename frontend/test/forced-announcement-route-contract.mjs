@@ -48,6 +48,9 @@ function assertNoStore(response, scenario) {
   const response = await GET(new Request("http://localhost/api/public/forced-announcement?site_key=twcf888"))
   if (response.status !== 200) throw new Error(`announcement proxy returned ${response.status}, expected 200`)
   assertNoStore(response, "successful announcement proxy response")
+  if (response.headers.get("X-Announcement-Site-Key") !== "twcf888") {
+    throw new Error("announcement proxy must expose the canonical site key")
+  }
   const body = await response.json()
   if (body.version !== "v1") throw new Error("announcement proxy must preserve backend payload")
   if (globalThis.__announcementBackendCall?.pathname !== "/public/forced-announcement") {
@@ -63,6 +66,9 @@ function assertNoStore(response, scenario) {
     headers: { host: "www.twcf888.com" },
   }))
   if (response.status !== 200) throw new Error(`host fallback returned ${response.status}, expected 200`)
+  if (response.headers.get("X-Announcement-Site-Key") !== "twcf888") {
+    throw new Error("Host fallback must expose the resolved canonical site key")
+  }
   if (globalThis.__announcementBackendCall?.options?.query?.site_key !== "twcf888") {
     throw new Error("announcement proxy must fall back to the registered Host identity")
   }

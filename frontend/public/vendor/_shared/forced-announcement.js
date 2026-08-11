@@ -19,6 +19,7 @@
     "twsyw": "twsyw"
   };
   var mountedPromise = null;
+  var activeSiteKey = "";
 
   function storageHas(storage, key) {
     try {
@@ -40,11 +41,18 @@
     return String(announcement && announcement.version || "").trim();
   }
 
-  function shouldDisplay(announcement) {
+  function storageKey(prefix, version, siteKey) {
+    var scope = String(siteKey || "").trim().toLowerCase();
+    if (!scope && window.location) scope = String(window.location.host || "").trim().toLowerCase();
+    return prefix + (scope || "default") + ":" + version;
+  }
+
+  function shouldDisplay(announcement, siteKey) {
     var version = versionOf(announcement);
     if (!version) return false;
-    return !storageHas(window.sessionStorage, SESSION_PREFIX + version)
-      && !storageHas(window.localStorage, CONFIRMED_PREFIX + version);
+    var resolvedSiteKey = siteKey || activeSiteKey || resolveSiteKey();
+    return !storageHas(window.sessionStorage, storageKey(SESSION_PREFIX, version, resolvedSiteKey))
+      && !storageHas(window.localStorage, storageKey(CONFIRMED_PREFIX, version, resolvedSiteKey));
   }
 
   function installStyles() {
@@ -73,8 +81,8 @@
     if (overlay && typeof overlay.remove === "function") overlay.remove();
   }
 
-  function render(announcement) {
-    if (!shouldDisplay(announcement)) return null;
+  function render(announcement, siteKey) {
+    if (!shouldDisplay(announcement, siteKey)) return null;
     installStyles();
 
     var version = versionOf(announcement);
@@ -103,7 +111,7 @@
     close.setAttribute("title", "关闭");
     close.textContent = "\u00d7";
     close.addEventListener("click", function () {
-      storageSet(window.sessionStorage, SESSION_PREFIX + version);
+      storageSet(window.sessionStorage, storageKey(SESSION_PREFIX, version, siteKey));
       closeOverlay(overlay);
     });
     header.appendChild(close);
@@ -122,7 +130,7 @@
     confirm.dataset.action = "confirm";
     confirm.textContent = "我已确认，不再提示";
     confirm.addEventListener("click", function () {
-      storageSet(window.localStorage, CONFIRMED_PREFIX + version);
+      storageSet(window.localStorage, storageKey(CONFIRMED_PREFIX, version, siteKey));
       closeOverlay(overlay);
     });
     actions.appendChild(confirm);
@@ -132,10 +140,8 @@
     return overlay;
   }
 
-  function requestUrl(options) {
-    var params = new window.URLSearchParams();
+  function resolveSiteKey(options) {
     var bodyData = document.body && document.body.dataset || {};
-    var siteId = String(options && options.siteId || bodyData.siteId || "").trim();
     var siteKey = String(options && options.siteKey || "").trim();
     if (!siteKey && window.location) {
       var vendorMatch = String(window.location.pathname || "").match(/^\/vendor\/([^/]+)/i);
@@ -149,6 +155,13 @@
         siteKey = pathSiteKey;
       }
     }
+    return siteKey;
+  }
+
+  function requestUrl(options, siteKey) {
+    var params = new window.URLSearchParams();
+    var bodyData = document.body && document.body.dataset || {};
+    var siteId = String(options && options.siteId || bodyData.siteId || "").trim();
     if (siteKey) params.set("site_key", siteKey);
     else if (siteId) params.set("site_id", siteId);
     var query = params.toString();
@@ -157,19 +170,26 @@
 
   function mount(options) {
     if (mountedPromise) return mountedPromise;
-    mountedPromise = window.fetch(requestUrl(options), {
+    var siteKey = resolveSiteKey(options);
+    var canonicalSiteKey = siteKey;
+    activeSiteKey = siteKey;
+    mountedPromise = window.fetch(requestUrl(options, siteKey), {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
       cache: "no-store"
     }).then(function (response) {
       if (!response || !response.ok) throw new Error("request failed");
+      if (response.headers && typeof response.headers.get === "function") {
+        canonicalSiteKey = String(response.headers.get("X-Announcement-Site-Key") || siteKey).trim();
+      }
+      activeSiteKey = canonicalSiteKey;
       return response.json();
     }).then(function (announcement) {
       if (!announcement || typeof announcement !== "object") return null;
       if (typeof announcement.version !== "string") return null;
       if (typeof announcement.title !== "string") return null;
       if (typeof announcement.html !== "string") return null;
-      return render(announcement);
+      return render(announcement, canonicalSiteKey);
     }).catch(function () {
       return null;
     });
