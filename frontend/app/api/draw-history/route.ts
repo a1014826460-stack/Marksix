@@ -71,7 +71,7 @@ function normalizePageSize(value: string | null) {
 function historyUnlockAt(dateText: string, lotteryType: 1 | 2 | 3) {
   const drawTime = lotteryType === 3 ? "22:32:00" : "21:30:00"
   const parsed = new Date(`${dateText}T${drawTime}+08:00`)
-  return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime() + 60 * 60 * 1000
+  return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime() + 4 * 60 * 1000
 }
 
 function paginateItems(items: DrawHistoryItem[], page: number, pageSize: number) {

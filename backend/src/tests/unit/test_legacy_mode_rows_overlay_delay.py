@@ -104,9 +104,9 @@ def _setup_db(tmp_path: Path) -> str:
     return db_path
 
 
-def test_load_legacy_mode_rows_only_exposes_results_after_delay(tmp_path: Path, monkeypatch):
+def test_load_legacy_mode_rows_hides_results_until_fixed_four_minute_window(tmp_path: Path, monkeypatch):
     db_path = _setup_db(tmp_path)
-    fixed_now = datetime(2026, 5, 20, 12, 31, 0, tzinfo=timezone(timedelta(hours=8)))
+    fixed_now = datetime(2026, 5, 20, 11, 53, 59, tzinfo=timezone(timedelta(hours=8)))
     monkeypatch.setattr(helpers, "beijing_now", lambda: fixed_now)
 
     payload = load_legacy_mode_rows(
@@ -125,3 +125,20 @@ def test_load_legacy_mode_rows_only_exposes_results_after_delay(tmp_path: Path, 
     assert row_54["res_code"] == ""
     assert row_54["res_sx"] == ""
     assert row_54["res_color"] == ""
+
+
+def test_load_legacy_mode_rows_shows_results_at_four_minute_window(tmp_path: Path, monkeypatch):
+    db_path = _setup_db(tmp_path)
+    fixed_now = datetime(2026, 5, 20, 11, 54, 0, tzinfo=timezone(timedelta(hours=8)))
+    monkeypatch.setattr(helpers, "beijing_now", lambda: fixed_now)
+
+    payload = load_legacy_mode_rows(
+        db_path,
+        modes_id=152,
+        limit=10,
+        web=6,
+        type_value=1,
+    )
+
+    row_54 = next(row for row in payload["rows"] if str(row.get("term")) == "54")
+    assert row_54["res_code"] == "02,14,23,35,46,48"

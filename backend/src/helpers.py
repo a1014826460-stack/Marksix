@@ -624,7 +624,7 @@ def load_lottery_draw_map(
 
 
 def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> bool:
-    """Only expose draw results after draw_time has passed and the backfill delay has elapsed."""
+    """Only expose historical draw results at draw_time plus four Beijing minutes."""
     if not bool(draw_row.get("is_opened")):
         return False
 
@@ -636,16 +636,11 @@ def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> 
     if now_dt <= draw_dt:
         return False
 
-    try:
-        from runtime_config import get_config_from_conn
-
-        delay_minutes = float(get_config_from_conn(conn, "history_backfill_delay_after_draw", 60))
-    except Exception:
-        delay_minutes = 60.0
-    delay_minutes = max(60.0, delay_minutes)
-
+    # Legacy prediction outlets are historical-result outlets too.  Their
+    # visibility must use the same fixed window as /public/draw-history and
+    # must not inherit a stale, administrator-configured backfill delay.
     elapsed_minutes = (now_dt - draw_dt).total_seconds() / 60.0
-    return elapsed_minutes >= delay_minutes
+    return elapsed_minutes >= 4.0
 
 
 def apply_lottery_draw_overlay(

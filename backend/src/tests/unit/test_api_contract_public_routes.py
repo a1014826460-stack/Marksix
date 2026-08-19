@@ -23,6 +23,27 @@ def test_public_latest_draw_contract():
     assert response_json(ctx) == payload
 
 
+def test_public_latest_draw_does_not_apply_history_visibility_gate(monkeypatch):
+    ctx = make_ctx("/api/public/latest-draw?lottery_type=3")
+    payload = {
+        "year": 2026,
+        "term": 188,
+        "numbers": "01,02,03,04,05,06,07",
+        "is_opened": True,
+    }
+
+    monkeypatch.setattr(
+        "public.api._history_result_visible",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("history gate called")),
+    )
+    with patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
+        public_routes.latest_draw(ctx)
+
+    latest_draw.assert_called_once_with(ctx.db_path, 3)
+    assert ctx.handler.response_status == 200
+    assert response_json(ctx) == payload
+
+
 def test_public_next_draw_deadline_contract_adds_server_time():
     ctx = make_ctx("/api/public/next-draw-deadline?lottery_type=2")
     payload = {

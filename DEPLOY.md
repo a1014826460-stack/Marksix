@@ -939,22 +939,22 @@ Liuhecai/
     └── ssl/
 ```
 
-## 2026-08-19 历史开奖记录延迟发布记录
+## 2026-08-19 历史开奖记录强制窗口发布记录
 
 发布提交：`ce73a89f597a39e55929fe04a2719ff2076ac8dc`（已推送至 `origin/main`）。
 
-本次变更包含：历史开奖记录统一入口 `/history`、后端及兼容出口的最少 60 分钟闸门、`no-store` 缓存策略、旧历史 URL rewrite，以及实时开奖接口与历史接口解耦。台湾彩以北京时间开奖时间 `22:32:00` 为基准，`23:31:59` 前隐藏，`23:32:00` 起允许显示。实时开奖、开奖状态更新和调度流程未改动。
+当前强制窗口为固定 4 分钟：历史开奖记录统一入口 `/history`、后端及兼容出口、前端快照降级均以实际 `draw_time + 4 分钟` 控制，使用 `no-store` 缓存策略与旧历史 URL rewrite。台湾彩以北京时间 `22:32:00` 开奖为例，`22:35:59` 前隐藏，`22:36:00` 起显示；香港彩、澳门彩同样从各自实际开奖时间起计算 4 分钟。实时开奖接口、开奖状态更新和调度发布流程不读取此展示闸门，保持正常显示。
 
 本次目标节点：
 
 - 前端节点：`207.56.2.71:62594`，使用 `/root/Marksix/docker-compose.frontend-node.yml`，保留其 `.env`、Nginx 本地配置、证书、站点运行期内容和其他非 Liuhecai 容器。
-- 中心后端节点：`103.203.48.178:19789`，应使用 `/root/Marksix/docker-compose.yml`，保留 PostgreSQL、PgBouncer、数据库卷、`backend/data`、上传文件、备份、证书和本地 Nginx 配置。
+- 中心后端节点：`207.56.3.82:29618`，使用 `/root/Marksix/docker-compose.yml`，保留 PostgreSQL、PgBouncer、数据库卷、`backend/data`、上传文件、备份、证书和本地 Nginx 配置。
 
 标准发布顺序：
 
 ```bash
 git fetch origin main
-git reset --hard ce73a89f597a39e55929fe04a2719ff2076ac8dc
+git reset --hard <4-minute-release-commit>
 docker compose -f docker-compose.frontend-node.yml build frontend
 docker compose -f docker-compose.frontend-node.yml up -d frontend nginx
 docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
@@ -966,14 +966,14 @@ curl -fsS -D - https://<frontend-host>/api/draw-history?lottery_type=3&year=2026
 
 ```bash
 git fetch origin main
-git reset --hard ce73a89f597a39e55929fe04a2719ff2076ac8dc
+git reset --hard <4-minute-release-commit>
 docker compose build python-api scheduler-worker frontend
 docker compose up -d python-api scheduler-worker frontend nginx
 docker compose exec -T nginx nginx -t
 curl -fsS https://<backend-host>/health
 ```
 
-验收要求：十个站点的 `/history?type=3` 和所有旧历史 URL 均返回标准历史页面；`/api/draw-history` 与 `/index/ajax/ttklsjl` 均返回 `Cache-Control: no-store`；后端在 `23:31:59` 隐藏、`23:32:00` 显示；`/api/latest-draw`、`/wy.json` 和开奖发布测试保持通过。
+验收要求：十个站点的 `/history?type=3` 和所有旧历史 URL 均返回标准历史页面；`/api/draw-history` 与 `/index/ajax/ttklsjl` 均返回 `Cache-Control: no-store`；台湾彩在 `22:35:59` 隐藏、`22:36:00` 显示，其他彩种以实际 `draw_time + 4 分钟` 验证；`/api/latest-draw`、`/wy.json` 和开奖发布测试保持通过。
 
 本次执行记录：本地回归已通过，前端节点 SSH 只读预检成功并确认运行前端专用 Compose；中心后端节点 `103.203.48.178:19789` 在 `2026-08-19` 预检时 TCP 连接被拒绝，因此在该端口恢复前不得声称中心后端已部署或重启。远端工作树存在大量站点运行期修改，任何后续发布必须先按本指南创建时间戳备份，再同步发布提交。
 
@@ -992,3 +992,32 @@ curl -fsS https://<backend-host>/health
 - 中心 `python-api`、`frontend`、`backend-admin` 健康状态均为 `healthy`；`scheduler-worker` 正常运行；Nginx `nginx -t` 通过。
 - 中心历史 API `https://www.tw8800.com/central-api/api/public/draw-history?lottery_type=3&year=2026` 返回 HTTP `200` 和 `Cache-Control: no-store`；实时开奖 API `/api/latest-draw?lottery_type=3` 返回 HTTP `200` 与当前期号。
 - 中心五站 `www.tw8800.com`、`www.twtongtian.com`、`www.twsaimahui.com`、`www.twcf888.com`、`www.twcaibawang.com` 的 `/history?type=3` 均返回 HTTP `200`；前端节点五站 `www.twbst528.com`、`www.twjsz666.com`、`www.twssz.com`、`www.twsyw.com`、`www.twwanli.com` 均已在前述记录中验证为 HTTP `200`。8 个旧历史兼容路径在中心节点均返回 HTTP `200`。
+
+### 4 分钟窗口部署执行记录（2026-08-19）
+
+发布提交：`<4-minute-release-commit>`。
+
+1. 后端节点发布前，在 `/root/Marksix` 生成时间戳备份目录，保存工作树 patch、运行期文件清单、Compose 快照和 PostgreSQL 自定义格式备份及 SHA-256。
+2. 同步发布提交后，显式将数据库配置更新为 `4`，使已存在的 `system_config` 不再保留旧的 `60`：
+
+```bash
+docker compose exec -T postgres psql -U postgres -d liuhecai -c "UPDATE system_config SET value_text = '4', value_type = 'int', updated_at = NOW() WHERE key = 'history_backfill_delay_after_draw';"
+```
+
+3. 仅重建 `python-api`、`scheduler-worker` 和 `frontend`；不重建 PostgreSQL、PgBouncer 或数据卷：
+
+```bash
+docker compose build python-api scheduler-worker frontend
+docker compose up -d python-api scheduler-worker frontend nginx
+docker compose exec -T nginx nginx -t
+```
+
+4. 前端节点使用 `docker-compose.frontend-node.yml`，仅重建 `frontend` 并保留 Nginx/TLS：
+
+```bash
+docker compose -f docker-compose.frontend-node.yml build frontend
+docker compose -f docker-compose.frontend-node.yml up -d frontend nginx
+docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
+```
+
+5. 发布后检查所有十个站点的 `/history?type=3`、历史 API `Cache-Control: no-store`，并分别检查 `/api/latest-draw?lottery_type=3` 和 `/wy.json` 返回成功；后两项用于确认实时开奖未受历史展示窗口影响。

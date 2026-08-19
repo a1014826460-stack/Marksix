@@ -143,9 +143,9 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "history_backfill_delay_after_draw": {
-        "value": 60,
+        "value": 4,
         "value_type": "int",
-        "description": "开奖后延迟执行历史回填任务的分钟数。默认 60 分钟。",
+        "description": "开奖后延迟执行历史回填任务的分钟数。默认 4 分钟。",
         "is_secret": 0,
     },
     "crawler.task_poll_interval_seconds": {

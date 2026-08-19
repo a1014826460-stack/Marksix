@@ -644,11 +644,11 @@ def _build_ball_attributes(
 
 
 LOTTERY_NAMES = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
-HISTORY_RESULT_DELAY = timedelta(hours=1)
+HISTORY_RESULT_DELAY = timedelta(minutes=4)
 
 
 def _history_result_visible(draw_time: object, *, now: datetime | None = None) -> bool:
-    """Expose historical numbers only at draw time plus one Beijing hour."""
+    """Expose historical numbers only at draw time plus four Beijing minutes."""
     draw_dt = parse_draw_datetime(str(draw_time or "").strip())
     if draw_dt is None:
         return False
