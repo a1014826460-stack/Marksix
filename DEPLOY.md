@@ -938,3 +938,41 @@ Liuhecai/
     ├── nginx.www.shengshi8800.ssl.conf.example
     └── ssl/
 ```
+
+## 2026-08-19 历史开奖记录延迟发布记录
+
+发布提交：`ce73a89f597a39e55929fe04a2719ff2076ac8dc`（已推送至 `origin/main`）。
+
+本次变更包含：历史开奖记录统一入口 `/history`、后端及兼容出口的最少 60 分钟闸门、`no-store` 缓存策略、旧历史 URL rewrite，以及实时开奖接口与历史接口解耦。台湾彩以北京时间开奖时间 `22:32:00` 为基准，`23:31:59` 前隐藏，`23:32:00` 起允许显示。实时开奖、开奖状态更新和调度流程未改动。
+
+本次目标节点：
+
+- 前端节点：`207.56.2.71:62594`，使用 `/root/Marksix/docker-compose.frontend-node.yml`，保留其 `.env`、Nginx 本地配置、证书、站点运行期内容和其他非 Liuhecai 容器。
+- 中心后端节点：`103.203.48.178:19789`，应使用 `/root/Marksix/docker-compose.yml`，保留 PostgreSQL、PgBouncer、数据库卷、`backend/data`、上传文件、备份、证书和本地 Nginx 配置。
+
+标准发布顺序：
+
+```bash
+git fetch origin main
+git reset --hard ce73a89f597a39e55929fe04a2719ff2076ac8dc
+docker compose -f docker-compose.frontend-node.yml build frontend
+docker compose -f docker-compose.frontend-node.yml up -d frontend nginx
+docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
+curl -fsS https://<frontend-host>/health
+curl -fsS -D - https://<frontend-host>/api/draw-history?lottery_type=3&year=2026 -o /tmp/history.json
+```
+
+中心后端节点在应用重建前先执行数据库备份和迁移检查；本次代码无数据库 schema 变更，正常发布只需重建 `python-api`、`scheduler-worker`、`frontend` 和必要的 Nginx：
+
+```bash
+git fetch origin main
+git reset --hard ce73a89f597a39e55929fe04a2719ff2076ac8dc
+docker compose build python-api scheduler-worker frontend
+docker compose up -d python-api scheduler-worker frontend nginx
+docker compose exec -T nginx nginx -t
+curl -fsS https://<backend-host>/health
+```
+
+验收要求：十个站点的 `/history?type=3` 和所有旧历史 URL 均返回标准历史页面；`/api/draw-history` 与 `/index/ajax/ttklsjl` 均返回 `Cache-Control: no-store`；后端在 `23:31:59` 隐藏、`23:32:00` 显示；`/api/latest-draw`、`/wy.json` 和开奖发布测试保持通过。
+
+本次执行记录：本地回归已通过，前端节点 SSH 只读预检成功并确认运行前端专用 Compose；中心后端节点 `103.203.48.178:19789` 在 `2026-08-19` 预检时 TCP 连接被拒绝，因此在该端口恢复前不得声称中心后端已部署或重启。远端工作树存在大量站点运行期修改，任何后续发布必须先按本指南创建时间戳备份，再同步发布提交。
