@@ -954,7 +954,7 @@ Liuhecai/
 
 ```bash
 git fetch origin main
-git reset --hard <4-minute-release-commit>
+git reset --hard b9e2c921b0184dfdd98923b0ad8e2c28229d7bfd
 docker compose -f docker-compose.frontend-node.yml build frontend
 docker compose -f docker-compose.frontend-node.yml up -d frontend nginx
 docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
@@ -966,7 +966,7 @@ curl -fsS -D - https://<frontend-host>/api/draw-history?lottery_type=3&year=2026
 
 ```bash
 git fetch origin main
-git reset --hard <4-minute-release-commit>
+git reset --hard b9e2c921b0184dfdd98923b0ad8e2c28229d7bfd
 docker compose build python-api scheduler-worker frontend
 docker compose up -d python-api scheduler-worker frontend nginx
 docker compose exec -T nginx nginx -t
@@ -995,7 +995,7 @@ curl -fsS https://<backend-host>/health
 
 ### 4 分钟窗口部署执行记录（2026-08-19）
 
-发布提交：`<4-minute-release-commit>`。
+发布提交：`b9e2c921b0184dfdd98923b0ad8e2c28229d7bfd`。
 
 1. 后端节点发布前，在 `/root/Marksix` 生成时间戳备份目录，保存工作树 patch、运行期文件清单、Compose 快照和 PostgreSQL 自定义格式备份及 SHA-256。
 2. 同步发布提交后，显式将数据库配置更新为 `4`，使已存在的 `system_config` 不再保留旧的 `60`：
