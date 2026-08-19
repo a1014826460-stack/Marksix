@@ -983,3 +983,12 @@ curl -fsS https://<backend-host>/health
 - 前端节点备份目录：`/root/Marksix/.deploy-backups/history-delay-20260819T032328Z`。备份含部署前 HEAD、工作树 patch、未跟踪文件清单、`.env`、TLS 证书、本地 Nginx 配置、`backend/data` 与前端 Compose 配置。
 - 已验证的前端域名：`www.twbst528.com`、`www.twjsz666.com`、`www.twssz.com`、`www.twsyw.com`、`www.twwanli.com`；各自 `/history?type=3` 返回 HTTP `200`。全部 8 个兼容历史路径返回 HTTP `200`，`/api/draw-history` 返回 `Cache-Control: no-store`。
 - 中心后端节点尚未接入：`103.203.48.178:19789` 返回连接拒绝；`103.203.48.178:22` 可建立 SSH 握手但拒绝当前公钥认证。待 SSH 服务恢复至指定端口或提供可认证的访问方式后，按本节“中心后端节点”步骤同步同一发布提交、重建 `python-api`/`scheduler-worker`/`frontend`、执行 Nginx 与健康检查。
+
+后端实际发布结果（2026-08-19，修正后的中心节点地址）：
+
+- 中心后端节点为 `207.56.3.82:29618`；已同步 `6a3ff82bbe7131582bc2368a1df4140b3384b832`，并完成 `python-api`、`scheduler-worker`、`frontend`、`backend-admin`、Nginx 重建。
+- 迁移命令 `docker compose run --rm db-migrate` 输出 `Schema migrations are already current.`；PostgreSQL 与 PgBouncer 卷未重建或删除。
+- 中心节点发布前备份目录：`/root/Marksix/.deploy-backups/history-delay-backend-20260819T033711Z`，其中包含工作树 patch、运行期文件归档、Compose 快照、Nginx 检查结果，以及 `liuhecai.before.dump` 和 SHA-256 校验文件。
+- 中心 `python-api`、`frontend`、`backend-admin` 健康状态均为 `healthy`；`scheduler-worker` 正常运行；Nginx `nginx -t` 通过。
+- 中心历史 API `https://www.tw8800.com/central-api/api/public/draw-history?lottery_type=3&year=2026` 返回 HTTP `200` 和 `Cache-Control: no-store`；实时开奖 API `/api/latest-draw?lottery_type=3` 返回 HTTP `200` 与当前期号。
+- 中心五站 `www.tw8800.com`、`www.twtongtian.com`、`www.twsaimahui.com`、`www.twcf888.com`、`www.twcaibawang.com` 的 `/history?type=3` 均返回 HTTP `200`；前端节点五站 `www.twbst528.com`、`www.twjsz666.com`、`www.twssz.com`、`www.twsyw.com`、`www.twwanli.com` 均已在前述记录中验证为 HTTP `200`。8 个旧历史兼容路径在中心节点均返回 HTTP `200`。
