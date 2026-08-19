@@ -1029,4 +1029,3 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 中心后端节点 `207.56.3.82:29618`：部署前备份目录为 `/root/Marksix/.deploy-backups/history-delay-4min-backend-20260819T083604Z`，包括 `liuhecai.before.dump` 与 SHA-256；`system_config.history_backfill_delay_after_draw` 已显式更新为 `4`；已重建 `python-api`、`scheduler-worker`、`frontend`，未重建 PostgreSQL、PgBouncer 或其数据卷；Nginx `nginx -t` 成功。
 - 十个站点的 `/history?type=3` 与 `/api/latest-draw?lottery_type=3` 均返回 HTTP `200`；历史 API 均返回 `Cache-Control: no-store`。
 - `/wy.json` 为站点按需端点：中心的 `www.twtongtian.com`、`www.twcf888.com`、`www.twcaibawang.com` 返回 HTTP `200`；其余站点返回 HTTP `404`，但十个站点的实时开奖统一接口 `/api/latest-draw?lottery_type=3` 全部返回 HTTP `200`，不受历史展示闸门影响。
-
