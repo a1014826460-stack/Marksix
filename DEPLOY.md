@@ -976,3 +976,10 @@ curl -fsS https://<backend-host>/health
 验收要求：十个站点的 `/history?type=3` 和所有旧历史 URL 均返回标准历史页面；`/api/draw-history` 与 `/index/ajax/ttklsjl` 均返回 `Cache-Control: no-store`；后端在 `23:31:59` 隐藏、`23:32:00` 显示；`/api/latest-draw`、`/wy.json` 和开奖发布测试保持通过。
 
 本次执行记录：本地回归已通过，前端节点 SSH 只读预检成功并确认运行前端专用 Compose；中心后端节点 `103.203.48.178:19789` 在 `2026-08-19` 预检时 TCP 连接被拒绝，因此在该端口恢复前不得声称中心后端已部署或重启。远端工作树存在大量站点运行期修改，任何后续发布必须先按本指南创建时间戳备份，再同步发布提交。
+
+实际发布结果（2026-08-19）：
+
+- 前端节点 `207.56.2.71:62594` 已同步 `92ed6cb8dca5825d2329ecba72bb12a099cf5842`，仅重建 `frontend` 容器；`liuhecai-frontend` 健康检查为 `healthy`，Nginx `nginx -t` 通过。
+- 前端节点备份目录：`/root/Marksix/.deploy-backups/history-delay-20260819T032328Z`。备份含部署前 HEAD、工作树 patch、未跟踪文件清单、`.env`、TLS 证书、本地 Nginx 配置、`backend/data` 与前端 Compose 配置。
+- 已验证的前端域名：`www.twbst528.com`、`www.twjsz666.com`、`www.twssz.com`、`www.twsyw.com`、`www.twwanli.com`；各自 `/history?type=3` 返回 HTTP `200`。全部 8 个兼容历史路径返回 HTTP `200`，`/api/draw-history` 返回 `Cache-Control: no-store`。
+- 中心后端节点尚未接入：`103.203.48.178:19789` 返回连接拒绝；`103.203.48.178:22` 可建立 SSH 握手但拒绝当前公钥认证。待 SSH 服务恢复至指定端口或提供可认证的访问方式后，按本节“中心后端节点”步骤同步同一发布提交、重建 `python-api`/`scheduler-worker`/`frontend`、执行 Nginx 与健康检查。
