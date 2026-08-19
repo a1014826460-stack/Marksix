@@ -106,7 +106,7 @@ def _setup_db(tmp_path: Path) -> str:
 
 def test_load_legacy_mode_rows_only_exposes_results_after_delay(tmp_path: Path, monkeypatch):
     db_path = _setup_db(tmp_path)
-    fixed_now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+    fixed_now = datetime(2026, 5, 20, 12, 31, 0, tzinfo=timezone(timedelta(hours=8)))
     monkeypatch.setattr(helpers, "beijing_now", lambda: fixed_now)
 
     payload = load_legacy_mode_rows(

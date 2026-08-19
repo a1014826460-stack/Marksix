@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import { backendFetchJson } from "@/lib/backend-api"
-import type { DrawHistoryResponse } from "@/lib/draw-history"
 import { matchSiteRequest } from "@/lib/sites"
 
 type LatestDrawResponse = {
@@ -10,11 +9,13 @@ type LatestDrawResponse = {
     value: string
     color: "red" | "blue" | "green" | string
     zodiac: string
+    element?: string
   }>
   special_ball: {
     value: string
     color: "red" | "blue" | "green" | string
     zodiac: string
+    element?: string
   } | null
 }
 
@@ -114,19 +115,6 @@ async function loadNextDeadline(lotteryType: number) {
   })
 }
 
-async function loadHistorySnapshot(lotteryType: number, issue: string) {
-  const year = Number(issue.slice(0, 4)) || new Date().getFullYear()
-  const response = await backendFetchJson<DrawHistoryResponse>("/public/draw-history", {
-    query: {
-      lottery_type: lotteryType,
-      year,
-      sort: "l",
-    },
-  })
-
-  return response.items.find((item) => `${year}${item.issue}` === issue) || null
-}
-
 export async function GET(request: Request) {
   const match =
     matchSiteRequest(request, "twcaibawang") ||
@@ -145,11 +133,6 @@ export async function GET(request: Request) {
     ])
 
     const issue = normalizeIssue(latestDraw.current_issue)
-    const historyItem = issue ? await loadHistorySnapshot(lotteryType, issue) : null
-    const historyBalls = historyItem
-      ? [...historyItem.balls, ...(historyItem.specialBall ? [historyItem.specialBall] : [])]
-      : []
-
     const resultBalls = [
       ...latestDraw.result_balls,
       ...(latestDraw.special_ball ? [latestDraw.special_ball] : []),
@@ -158,7 +141,7 @@ export async function GET(request: Request) {
     const zodiac = resultBalls.map((ball) => normalizeZodiac(ball.zodiac)).join(",")
     const wave = resultBalls.map((ball) => normalizeWave(ball.color)).join(",")
     const wuxin = resultBalls
-      .map((ball, index) => historyBalls[index]?.element || "")
+      .map((ball) => ball.element || "")
       .join(",")
 
     const nextIssue = normalizeIssue(nextDeadline.next_issue)

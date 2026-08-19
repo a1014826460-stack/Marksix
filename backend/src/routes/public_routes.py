@@ -132,6 +132,7 @@ def next_draw_deadline(ctx: RequestContext) -> None:
 
 
 def draw_history(ctx: RequestContext) -> None:
+    ctx.response.set_header("Cache-Control", "no-store")
     site_id = ctx.query_value("site_id")
     if site_id not in (None, ""):
         site_ctx = resolve_site_context(ctx.db_path, path_site_id=int(site_id), query=ctx.query)

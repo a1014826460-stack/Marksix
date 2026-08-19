@@ -68,6 +68,12 @@ function normalizePageSize(value: string | null) {
   return Math.min(MAX_PAGE_SIZE, normalizePositiveInteger(value, DEFAULT_PAGE_SIZE))
 }
 
+function historyUnlockAt(dateText: string, lotteryType: 1 | 2 | 3) {
+  const drawTime = lotteryType === 3 ? "22:32:00" : "21:30:00"
+  const parsed = new Date(`${dateText}T${drawTime}+08:00`)
+  return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime() + 60 * 60 * 1000
+}
+
 function paginateItems(items: DrawHistoryItem[], page: number, pageSize: number) {
   const total = items.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -140,6 +146,8 @@ function parseSnapshot(html: string, lotteryType: 1 | 2 | 3, year: number, sort:
     })
   }
 
+  const visibleItems = items.filter((item) => Date.now() >= historyUnlockAt(item.date, lotteryType))
+
   return {
     lottery_type: lotteryType,
     lottery_name: LOTTERY_TYPE_NAMES[lotteryType],
@@ -147,10 +155,10 @@ function parseSnapshot(html: string, lotteryType: 1 | 2 | 3, year: number, sort:
     sort,
     years: [2026, 2025],
     page: 1,
-    page_size: items.length || DEFAULT_PAGE_SIZE,
-    total: items.length,
+    page_size: visibleItems.length || DEFAULT_PAGE_SIZE,
+    total: visibleItems.length,
     total_pages: 1,
-    items,
+    items: visibleItems,
   }
 }
 
@@ -161,7 +169,25 @@ async function getFallbackHistory(lotteryType: 1 | 2 | 3, year: number, sort: "l
     "Zz_admin.shengshi8800.com",
     SNAPSHOT_BY_YEAR[fallbackYear],
   )
-  const html = await readFile(filePath, "utf8")
+  let html: string
+  try {
+    html = await readFile(filePath, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+
+    return {
+      lottery_type: lotteryType,
+      lottery_name: LOTTERY_TYPE_NAMES[lotteryType],
+      year: fallbackYear,
+      sort,
+      years: Object.keys(SNAPSHOT_BY_YEAR).map(Number).sort((left, right) => right - left),
+      page: 1,
+      page_size: pageSize,
+      total: 0,
+      total_pages: 1,
+      items: [],
+    }
+  }
   const snapshot = parseSnapshot(html, lotteryType, fallbackYear, sort)
   return {
     ...snapshot,
@@ -187,11 +213,15 @@ export async function GET(request: Request) {
 
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (response.ok) {
-      return NextResponse.json(withPaginationMetadata((await response.json()) as DrawHistoryResponse, page, pageSize))
+      return NextResponse.json(withPaginationMetadata((await response.json()) as DrawHistoryResponse, page, pageSize), {
+        headers: { "Cache-Control": "no-store" },
+      })
     }
   } catch {
     // 后端接口尚未接入时使用原站快照兜底，方便前端先完整还原页面。
   }
 
-  return NextResponse.json(await getFallbackHistory(lotteryType, year, sort, page, pageSize))
+  return NextResponse.json(await getFallbackHistory(lotteryType, year, sort, page, pageSize), {
+    headers: { "Cache-Control": "no-store" },
+  })
 }

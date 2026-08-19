@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from db import connect
@@ -21,6 +22,8 @@ from admin.prediction import resolve_prediction_table_for_mode
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME, created_table_exists, normalize_color_label,
 )
+from core.time_utils import beijing_now
+from domains.lottery.draw_time import parse_draw_datetime
 
 
 def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
@@ -431,6 +434,9 @@ def load_public_draw_snapshot(
             color_map,
         )
         balls = draw_result["balls"]
+        element_map = _build_number_map(conn, "五行")
+        for ball in balls:
+            ball["element"] = element_map.get(str(ball.get("value") or ""), "")
 
     return {
         "current_issue": f"{latest_draw.get('year') or ''}{latest_draw.get('term') or ''}",
@@ -561,6 +567,9 @@ def get_public_latest_draw(
             color_map,
         )
         balls = draw_result["balls"]
+        element_map = _build_number_map(conn, "五行")
+        for ball in balls:
+            ball["element"] = element_map.get(str(ball.get("value") or ""), "")
 
         return {
             "current_issue": f"{latest_draw['year']}{latest_draw['term']}",
@@ -635,6 +644,18 @@ def _build_ball_attributes(
 
 
 LOTTERY_NAMES = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
+HISTORY_RESULT_DELAY = timedelta(hours=1)
+
+
+def _history_result_visible(draw_time: object, *, now: datetime | None = None) -> bool:
+    """Expose historical numbers only at draw time plus one Beijing hour."""
+    draw_dt = parse_draw_datetime(str(draw_time or "").strip())
+    if draw_dt is None:
+        return False
+    current = now or beijing_now()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=draw_dt.tzinfo)
+    return current >= draw_dt + HISTORY_RESULT_DELAY
 
 
 def get_draw_history(
@@ -647,21 +668,22 @@ def get_draw_history(
 
     sort: "l" = 落球顺序（数据库原样），"d" = 号码大小排序
     """
-    from datetime import datetime as _dt
-
-    current_year = year or _dt.now().year
+    current_year = year or beijing_now().year
 
     with connect(db_path) as conn:
         # 可用年份
         year_rows = conn.execute(
             """
-            SELECT DISTINCT year FROM lottery_draws
+            SELECT DISTINCT year, draw_time FROM lottery_draws
             WHERE lottery_type_id = ? AND is_opened = 1
             ORDER BY year DESC
             """,
             (int(lottery_type),),
         ).fetchall()
-        years = [int(r["year"]) for r in year_rows]
+        years = sorted(
+            {int(r["year"]) for r in year_rows if _history_result_visible(r["draw_time"])},
+            reverse=True,
+        )
 
         # 开奖记录
         rows = conn.execute(
@@ -682,6 +704,8 @@ def get_draw_history(
 
     items: list[dict[str, Any]] = []
     for row in rows:
+        if not _history_result_visible(row["draw_time"]):
+            continue
         numbers = split_csv(row["numbers"])
         if len(numbers) < 7:
             continue
@@ -710,7 +734,7 @@ def get_draw_history(
         special_data["sumOddEven"] = total_odd_even
 
         issue = f"{row['year']}{row['term']}"
-        draw_time = str(row.get("draw_time") or "")
+        draw_time = str(row["draw_time"] or "")
         date_str = draw_time[:10] if draw_time else ""
         items.append({
             "issue": str(row["term"]),

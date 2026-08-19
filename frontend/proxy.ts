@@ -10,6 +10,18 @@ export default function proxy(request: NextRequest) {
   const host = request.headers.get("host")
   const matchedSite = findSiteByHost(host)
 
+  const legacyHistoryPath =
+    pathname === "/index/index/history.html" ||
+    pathname === "/baomaqg/am/kaijiangjilu.html" ||
+    pathname.endsWith("/history.html") ||
+    pathname.endsWith("/wylhc.html")
+  if (legacyHistoryPath) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/history"
+    if (!url.searchParams.has("type")) url.searchParams.set("type", "3")
+    return NextResponse.rewrite(url)
+  }
+
   if (pathname === "/") {
     if (matchedSite && matchedSite.routePath !== "/") {
       const url = request.nextUrl.clone()
@@ -30,5 +42,14 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/vendor/shengshi8800/embed.html", "/twsaimahui", "/twcaibawang"],
+  matcher: [
+    "/",
+    "/index/index/history.html",
+    "/baomaqg/am/kaijiangjilu.html",
+    "/vendor/:path*/history.html",
+    "/vendor/:path*/wylhc.html",
+    "/vendor/shengshi8800/embed.html",
+    "/twsaimahui",
+    "/twcaibawang",
+  ],
 }

@@ -59,7 +59,7 @@
     var links = window.document.querySelectorAll("a[href]");
     for (var index = 0; index < links.length; index += 1) {
       var href = links[index].getAttribute("href");
-      if (href === "/baomaqg/am/kaijiangjilu.html") links[index].setAttribute("href", siteBasePath + "wylhc.html");
+      if (href === "/baomaqg/am/kaijiangjilu.html") links[index].setAttribute("href", "/history?type=3");
     }
   }
 

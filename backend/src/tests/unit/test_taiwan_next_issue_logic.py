@@ -132,6 +132,9 @@ def test_public_latest_draw_includes_draw_time(tmp_path):
     db_path = _setup_db(tmp_path)
     with connect(db_path) as conn:
         conn.execute(
+            "CREATE TABLE fixed_data (id INTEGER PRIMARY KEY, sign TEXT, name TEXT, code TEXT)"
+        )
+        conn.execute(
             """
             INSERT INTO lottery_draws (
                 lottery_type_id, year, term, numbers, draw_time, next_time, status,
@@ -144,8 +147,14 @@ def test_public_latest_draw_includes_draw_time(tmp_path):
                 "", 1, 1, 132, "2026-05-14 14:30:00", "2026-05-14 14:30:00",
             ),
         )
+        conn.execute(
+            "INSERT INTO fixed_data (sign, name, code) VALUES (?, ?, ?)",
+            ("五行", "火", "01,02"),
+        )
 
     payload = get_public_latest_draw(db_path, 3)
 
     assert payload["current_issue"] == "2026131"
     assert payload["draw_time"] == "2026-05-14 22:30:00"
+    assert payload["result_balls"][0]["element"] == "火"
+    assert payload["result_balls"][1]["element"] == "火"

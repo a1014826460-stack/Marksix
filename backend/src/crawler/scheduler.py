@@ -1657,10 +1657,10 @@ def _log_taiwan_task_error(message: str) -> None:
 def _schedule_backfill_after_draw(db_path: str | Path, lottery_type_id: int) -> None:
     """开奖后延迟执行历史回填任务。
 
-    延迟分钟数由 system_config 表 history_backfill_delay_after_draw 控制（默认 5 分钟）。
+    延迟分钟数由 system_config 表 history_backfill_delay_after_draw 控制（默认 60 分钟）。
     管理员可在后台实时修改此延迟时间。
     """
-    delay_minutes = float(_cfg(db_path, "history_backfill_delay_after_draw", 5))
+    delay_minutes = float(_cfg(db_path, "history_backfill_delay_after_draw", 60))
     if delay_minutes <= 0:
         # 延迟为 0 或负数时立即执行回填
         _backfill_latest_opened_prediction_results(db_path, lottery_type_id)

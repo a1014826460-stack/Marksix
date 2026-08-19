@@ -3,7 +3,7 @@ import path from "node:path"
 
 const root = "frontend/public/vendor/twjsz666"
 const contentPages = Array.from({ length: 14 }, (_, index) => `${index + 154}.html`)
-const pageNames = ["index.html", "kai.html", "sx.html", "wylhc.html", ...contentPages]
+const pageNames = ["index.html", "kai.html", "sx.html", ...contentPages]
 const actualPages = fs.readdirSync(root).filter((name) => name.endsWith(".html")).sort()
 
 function fail(message) {
@@ -15,7 +15,7 @@ function source(name) {
 }
 
 if (actualPages.length !== pageNames.length || pageNames.some((name) => !actualPages.includes(name))) {
-  fail(`expected the complete 18-page inventory, got: ${actualPages.join(", ")}`)
+  fail(`expected the complete 17-page inventory, got: ${actualPages.join(", ")}`)
 }
 
 for (const name of pageNames) {
@@ -42,7 +42,7 @@ for (const name of pageNames) {
     if (!url || url.includes("${") || url.startsWith("#")) continue
     if (/^(?:https?:)?\/\//i.test(url) || /^(?:javascript|data):/i.test(url)) fail(`${name}: unsafe URL ${url}`)
     if (url.startsWith("/")) {
-      const allowed = ["/favicon.ico", "/twjsz666", "/vendor/twjsz666/", "/vendor/shengshi8800/kj/local.html", "/vendor/_shared/", "/uploads/"]
+      const allowed = ["/favicon.ico", "/history", "/twjsz666", "/vendor/twjsz666/", "/vendor/shengshi8800/kj/local.html", "/vendor/_shared/", "/uploads/"]
       if (!allowed.some((prefix) => url === prefix || url.startsWith(prefix))) fail(`${name}: route escapes the site boundary: ${url}`)
       continue
     }
@@ -52,7 +52,7 @@ for (const name of pageNames) {
 }
 
 const index = source("index.html")
-if (!index.includes('class="nav clearfix"') || !index.includes('href="wylhc.html"')) fail("index: navigation contract missing")
+if (!index.includes('class="nav clearfix"') || !index.includes('href="/history?type=3"')) fail("index: standard history navigation missing")
 if (!index.includes('class="foot-img"') || !index.includes('src="kai.html"')) fail("index: footer/draw iframe contract missing")
 
 const kai = source("kai.html")
@@ -67,10 +67,6 @@ const sx = source("sx.html")
 for (const image of ["long", "tu", "hu", "niu", "shu", "zhu", "gou", "ji", "hou", "yang", "ma", "she"]) {
   if (!sx.includes(`src="static/picture/${image}.gif"`)) fail(`sx: missing ${image}.gif`)
 }
-
-const records = source("wylhc.html")
-if (!records.includes('id="saveAoMenRecordcontainer"')) fail("wylhc: record container missing")
-if (!records.includes('href="index.html"')) fail("wylhc: return-home navigation missing")
 
 for (const name of contentPages) {
   const html = source(name)

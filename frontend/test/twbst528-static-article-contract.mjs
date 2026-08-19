@@ -27,9 +27,8 @@ for (const page of pages) {
 }
 
 const adapter = fs.readFileSync("frontend/public/vendor/twbst528/static-article-data-adapter.js", "utf8")
-const history = fs.readFileSync("frontend/public/vendor/twbst528/history.html", "utf8")
-const historyAdapter = fs.readFileSync("frontend/public/vendor/twbst528/history-data-adapter.js", "utf8")
 const legacyHomepage = fs.readFileSync("frontend/public/vendor/twbst528/index1.html", "utf8")
+const homepage = fs.readFileSync("frontend/public/vendor/twbst528/index.html", "utf8")
 for (const moduleKey of Object.values(expectedModules)) {
   if (!adapter.includes(`"${moduleKey}"`)) throw new Error(`article adapter missing ${moduleKey}`)
 }
@@ -39,12 +38,8 @@ for (const page of pages) {
 for (const token of ["loadPredictions", "historyLimit: 8", "PAGE_CONTRACTS", "writeArticleRow", "暂无后端资料"]) {
   if (!adapter.includes(token)) throw new Error(`article adapter missing ${token}`)
 }
-for (const token of ["site-config.js", "history-data-adapter.js"]) {
-  if (!history.includes(token)) throw new Error(`history page missing ${token}`)
-}
-for (const token of ["/api/draw-history?lottery_type=3", "renderItem", "第" + '" + String(item.issue']) {
-  if (!historyAdapter.includes(token)) throw new Error(`history adapter missing ${token}`)
-}
+if (!homepage.includes('href="/history?type=3"')) throw new Error("homepage must use the standard history page")
+if (fs.existsSync("frontend/public/vendor/twbst528/history.html")) throw new Error("independent history template remains")
 if (!legacyHomepage.includes('window.location.replace("index.html")')) {
   throw new Error("legacy static homepage must redirect to the data-backed homepage")
 }

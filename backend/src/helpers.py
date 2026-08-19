@@ -639,12 +639,13 @@ def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> 
     try:
         from runtime_config import get_config_from_conn
 
-        delay_minutes = float(get_config_from_conn(conn, "history_backfill_delay_after_draw", 15))
+        delay_minutes = float(get_config_from_conn(conn, "history_backfill_delay_after_draw", 60))
     except Exception:
-        delay_minutes = 15.0
+        delay_minutes = 60.0
+    delay_minutes = max(60.0, delay_minutes)
 
     elapsed_minutes = (now_dt - draw_dt).total_seconds() / 60.0
-    return elapsed_minutes > delay_minutes
+    return elapsed_minutes >= delay_minutes
 
 
 def apply_lottery_draw_overlay(

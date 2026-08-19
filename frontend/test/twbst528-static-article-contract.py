@@ -63,8 +63,7 @@ def main() -> None:
             assert marker.count() == 1
             assert "rgb(255, 255, 0)" in (marker.get_attribute("style") or "")
 
-            # The visible draw-history page must replace every supplier issue
-            # and ball with the same-origin draw-history payload.
+            # The legacy URL must render the single standard history page.
             page.route("**/api/draw-history?**", lambda route: route.fulfill(json={
                 "items": [{
                     "issue": "510", "date": "2026-07-31", "balls": [
@@ -80,14 +79,13 @@ def main() -> None:
             }))
             base_url = os.environ.get("SITE_TEST_BASE_URL", "http://127.0.0.1:3000")
             page.goto(base_url + "/vendor/twbst528/history.html", wait_until="domcontentloaded")
-            history = page.locator("#lishi")
+            history = page.locator(".history-page")
             deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and "第510期开奖结果" not in history.inner_text():
+            while time.monotonic() < deadline and "台湾彩开奖记录" not in history.inner_text():
                 page.wait_for_timeout(100)
-            assert "第510期开奖结果" in history.inner_text()
-            assert "第323期开奖结果" not in history.inner_text()
-            assert "49" in history.locator(".open-item").first.inner_text()
-            assert history.locator(".open-item").nth(1).inner_text().strip() == ""
+            assert "台湾彩开奖记录" in history.inner_text()
+            assert "第510期" in history.inner_text()
+            assert "49" in history.inner_text()
         finally:
             browser.close()
 
