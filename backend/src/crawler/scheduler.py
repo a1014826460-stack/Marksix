@@ -77,6 +77,18 @@ _LT_NAME_MAP: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 _PRECISE_PASSED_RETRY_SECONDS = 60
 
 
+def _draw_latency_seconds(draw_time: Any, event_at_utc: datetime | None = None) -> int | None:
+    """Return event latency using Beijing ``draw_time`` and a UTC event instant."""
+    draw_at_beijing = _parse_beijing_draw_datetime(draw_time)
+    if draw_at_beijing is None:
+        return None
+    event_at = event_at_utc or datetime.now(timezone.utc)
+    if event_at.tzinfo is None:
+        event_at = event_at.replace(tzinfo=timezone.utc)
+    draw_at_utc = (draw_at_beijing - timedelta(hours=8)).replace(tzinfo=timezone.utc)
+    return max(0, int((event_at - draw_at_utc).total_seconds()))
+
+
 def _parse_beijing_draw_datetime(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -214,7 +226,9 @@ _PRECISE_DRAW_COLLECT_URLS: dict[int, str] = {
 }
 
 
-def _get_effective_collect_url(db_path: str | Path, lottery_type_id: int) -> tuple[str, str]:
+def _get_effective_collect_url(
+    db_path: str | Path, lottery_type_id: int, *, prefer_backup: bool = False,
+) -> tuple[str, str]:
     """返回 (主 URL, 备用 URL)，根据失败次数可能将备用提升为主。
 
     当连续失败次数达到 crawler.backup_fail_count_threshold 且备用 URL 已配置时，
@@ -230,12 +244,13 @@ def _get_effective_collect_url(db_path: str | Path, lottery_type_id: int) -> tup
         primary = _PRECISE_DRAW_COLLECT_URLS.get(lottery_type_id, "")
 
     backup_cfg_key = "draw.hk_backup_collect_url" if lottery_type_id == 1 else "draw.macau_backup_collect_url"
-    backup = str(_cfg(db_path, backup_cfg_key, "")).strip()
+    backup_env_key = "DRAW_HK_BACKUP_COLLECT_URL" if lottery_type_id == 1 else "DRAW_MACAU_BACKUP_COLLECT_URL"
+    backup = str(_cfg(db_path, backup_cfg_key, "") or os.environ.get(backup_env_key, "")).strip()
 
     fail_count = int(_cfg(db_path, _crawler_fail_count_key(lottery_type_id), 0))
     threshold = int(_cfg(db_path, "crawler.backup_fail_count_threshold", 2))
 
-    if fail_count >= threshold and backup:
+    if (prefer_backup or fail_count >= threshold) and backup:
         _crawler_logger.warning(
             "Switching to backup URL for lt=%s (fail_count=%d >= threshold=%d)",
             lottery_type_id, fail_count, threshold,
@@ -243,6 +258,12 @@ def _get_effective_collect_url(db_path: str | Path, lottery_type_id: int) -> tup
         return backup, ""
 
     return primary, backup
+
+
+def _has_backup_collect_url(db_path: str | Path, lottery_type_id: int) -> bool:
+    backup_cfg_key = "draw.hk_backup_collect_url" if lottery_type_id == 1 else "draw.macau_backup_collect_url"
+    backup_env_key = "DRAW_HK_BACKUP_COLLECT_URL" if lottery_type_id == 1 else "DRAW_MACAU_BACKUP_COLLECT_URL"
+    return bool(str(_cfg(db_path, backup_cfg_key, "") or os.environ.get(backup_env_key, "")).strip())
 
 
 def _cfg_from_conn(conn: Any, key: str, fallback: Any) -> Any:
@@ -298,7 +319,9 @@ def _trigger_draw_mismatch_alert(
         pass
 
 
-def _fetch_current_draw_period(lottery_type_id: int, db_path: str | Path) -> tuple[str | None, str | None]:
+def _fetch_current_draw_period(
+    lottery_type_id: int, db_path: str | Path, *, prefer_backup: bool = False,
+) -> tuple[str | None, str | None]:
     """向开奖号码查询接口发送 HTTP 请求，获取当前期号。
 
     :return: (period, error_message)，成功时 error_message 为 None
@@ -306,7 +329,9 @@ def _fetch_current_draw_period(lottery_type_id: int, db_path: str | Path) -> tup
     try:
         from crawler.result_crawler import fetch_current_term_data, transform_standard_list
 
-        collect_url, backup_url = _get_effective_collect_url(db_path, lottery_type_id)
+        collect_url, backup_url = _get_effective_collect_url(
+            db_path, lottery_type_id, prefer_backup=prefer_backup,
+        )
         crawler_type = 1 if lottery_type_id == 1 else 2
         raw, status_code = fetch_current_term_data(
             type=crawler_type, collect_url=collect_url, backup_url=backup_url,
@@ -435,11 +460,15 @@ def _do_precise_draw_check(lottery_type_id: int, db_path: str) -> None:
     )
 
 
-def _fetch_current_draw_records(db_path: str | Path, lottery_type_id: int) -> list[dict[str, Any]]:
+def _fetch_current_draw_records(
+    db_path: str | Path, lottery_type_id: int, *, prefer_backup: bool = False,
+) -> list[dict[str, Any]]:
     """调用当前开奖 API，返回标准化后的开奖记录列表。"""
     from crawler.result_crawler import fetch_current_term_data, transform_standard_list
 
-    collect_url, backup_url = _get_effective_collect_url(db_path, lottery_type_id)
+    collect_url, backup_url = _get_effective_collect_url(
+        db_path, lottery_type_id, prefer_backup=prefer_backup,
+    )
     crawler_type = 1 if lottery_type_id == 1 else 2
     raw, status_code = fetch_current_term_data(
         type=crawler_type, collect_url=collect_url, backup_url=backup_url,
@@ -450,8 +479,6 @@ def _fetch_current_draw_records(db_path: str | Path, lottery_type_id: int) -> li
 
     import json as _json
     parsed = _json.loads(raw) if isinstance(raw, str) else raw
-    if isinstance(parsed, dict):
-        parsed = [parsed]
     return transform_standard_list(parsed, crawler_type=crawler_type)
 
 
@@ -501,7 +528,7 @@ def _upsert_current_draw_records(
             year = int(open_time[:4])
             issue = str(record.get("issue") or "")
             try:
-                term = int(issue)
+                term = int(issue[4:]) if issue.isdigit() and len(issue) >= 7 else int(issue)
             except ValueError:
                 _crawler_logger.warning("Auto-crawl upsert skip: cannot parse term from issue=%s", issue)
                 continue
@@ -670,6 +697,7 @@ class CrawlerScheduler:
         now_utc_dt = datetime.now(timezone.utc)
         now_beijing_dt = (now_utc_dt + timedelta(hours=8)).replace(tzinfo=None)
         now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
+        now_beijing = now_beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         with db_connect(self.db_path) as conn:
             if latest_draw and latest_draw.get("year") and latest_draw.get("term"):
@@ -735,6 +763,7 @@ class CrawlerScheduler:
 
         # ── Phase 1: 验证期号匹配（最多 4 次重试） ──
         period_matched = False
+        matched_on_backup = False
         for attempt in range(4):
             if attempt > 0:
                 time.sleep(2)
@@ -762,13 +791,31 @@ class CrawlerScheduler:
                 )
                 break
 
-            # API 期号等于 current_period → 外部数据源尚未更新，正常推迟
+            # API 期号等于 current_period: leave the precise timer's normal
+            # path and make the periodic crawler poll every five seconds.
             if period and period == current_period:
                 _crawler_logger.info(
                     "Precise fetch lt=%s: API still at current_period=%s, deferring (attempt=%d)",
                     lottery_type_id, current_period, attempt + 1,
                 )
-                return {"status": "deferred", "detail": "API period unchanged, deferred", "upsert_result": None}
+                if _has_backup_collect_url(self.db_path, lottery_type_id):
+                    backup_period, backup_error = _fetch_current_draw_period(
+                        lottery_type_id, self.db_path, prefer_backup=True,
+                    )
+                    if backup_period == expected_period:
+                        period_matched = True
+                        matched_on_backup = True
+                        _crawler_logger.info(
+                            "Precise fetch lt=%s: backup period matched expected=%s",
+                            lottery_type_id, expected_period,
+                        )
+                        break
+                    _crawler_logger.info(
+                        "Precise fetch lt=%s: backup still unavailable actual=%s error=%s",
+                        lottery_type_id, backup_period or "N/A", backup_error or "N/A",
+                    )
+                self._set_lottery_chase_mode(lottery_type_id, True)
+                return {"status": "deferred", "detail": "API period unchanged; chase enabled", "upsert_result": None}
 
             _crawler_logger.warning(
                 "Precise fetch lt=%s: MISMATCH expected=%s actual=%s error=%s (attempt=%d/4)",
@@ -810,7 +857,9 @@ class CrawlerScheduler:
         records: list[dict[str, Any]] = []
         fetch_error: str | None = None
         try:
-            records = _fetch_current_draw_records(self.db_path, lottery_type_id)
+            records = _fetch_current_draw_records(
+                self.db_path, lottery_type_id, prefer_backup=matched_on_backup,
+            )
         except Exception as exc:
             fetch_error = str(exc)
             _crawler_logger.error("Precise fetch lt=%s: full record fetch failed: %s", lottery_type_id, exc)
@@ -1289,6 +1338,46 @@ class CrawlerScheduler:
         self._auto_crawl_timer.daemon = True
         self._auto_crawl_timer.start()
 
+    def _process_auto_crawl_batch(
+        self, lottery_type_id: int, lt_name: str, records: list[dict[str, Any]]
+    ) -> bool:
+        """将一次自动抓取结果 upsert 并立即开盘，返回是否产生新增/更新。
+
+        批量内新增或更新任意一条记录时，重置失败计数、关闭 chase mode、
+        对最新记录立即开盘并写 audit（含 public_open_delay_seconds）。
+
+        Returns:
+            True 表示该批次产生了新增或更新（已开盘）。
+        """
+        if not records:
+            return False
+        result = _upsert_current_draw_records(self.db_path, lottery_type_id, records)
+        inserted = result.get("inserted", 0)
+        updated = result.get("updated", 0)
+        if inserted <= 0 and updated <= 0:
+            return False
+        _crawler_logger.info(
+            "Auto-crawl %s: inserted=%d updated=%d",
+            lt_name, inserted, updated,
+        )
+        reset_crawler_fail_count(self.db_path, lottery_type_id)
+        self._set_lottery_chase_mode(lottery_type_id, False)
+        opened = self._open_specific_records(lottery_type_id, result.get("latest_draw"))
+        latest_draw = result.get("latest_draw") or {}
+        latency_s = _draw_latency_seconds(latest_draw.get("open_time"))
+        _log_draw_audit(
+            self.db_path,
+            lottery_type_id,
+            f"{latest_draw.get('year', '')}{int(latest_draw.get('term', 0)):03d}",
+            event="auto_open",
+            detail=f"opened={opened} public_open_delay_seconds={latency_s}",
+        )
+        _crawler_logger.info(
+            "Auto-crawl %s: opened=%d in the same cycle (public_open_delay_seconds=%s)",
+            lt_name, opened, latency_s,
+        )
+        return True
+
     def _auto_crawl(self) -> None:
         """自动爬取：按外部 API 当前期号与本地期号比对，决定是否爬取。
 
@@ -1299,7 +1388,9 @@ class CrawlerScheduler:
         - 完全一致 → 跳过
 
         只有确实新增或更新了开奖记录，才触发自动预测任务 + 立即开盘。
-        单个彩种失败不影响另一个彩种。
+        单个彩种失败不影响另一个彩种（数据会一个个返回，两彩种各自独立开盘）。
+        追赶模式下备用源优先、主源兜底：任一源命中即开盘，命中后不再探测另一源，
+        避免两源号码不一致时互相覆盖。未命中（追赶中）不触发失败告警，由分级超时告警兜底。
         """
         try:
             with db_connect(self.db_path) as conn:
@@ -1315,37 +1406,44 @@ class CrawlerScheduler:
             lt_name = str(lt_row["name"])
 
             try:
-                records = _fetch_current_draw_records(self.db_path, lt_id)
-
-                if not records:
-                    _crawler_logger.warning(
-                        "Auto-crawl %s: API returned no records", lt_name
-                    )
-                    alert_crawler_failure(self.db_path, lt_id, "API returned no records")
-                    continue
-
-                result = _upsert_current_draw_records(self.db_path, lt_id, records)
-                inserted = result.get("inserted", 0)
-                updated = result.get("updated", 0)
-                skipped = result.get("skipped", 0)
-
-                if inserted > 0 or updated > 0:
-                    _crawler_logger.info(
-                        "Auto-crawl %s: inserted=%d updated=%d skipped=%d",
-                        lt_name, inserted, updated, skipped,
-                    )
-                    reset_crawler_fail_count(self.db_path, lt_id)
-                    self._set_lottery_chase_mode(lt_id, False)
-                    _crawler_logger.info(
-                        "Auto-crawl %s: draw cached and waiting for precise open",
-                        lt_name,
-                    )
+                chase_mode = bool(getattr(self, "_chase_modes", {}).get(lt_id))
+                if chase_mode and _has_backup_collect_url(self.db_path, lt_id):
+                    opened_any = False
+                    for prefer_backup in (True, False):
+                        try:
+                            batch = _fetch_current_draw_records(
+                                self.db_path, lt_id, prefer_backup=prefer_backup,
+                            )
+                        except Exception as exc:
+                            _crawler_logger.warning(
+                                "Auto-crawl %s chase fetch prefer_backup=%s failed: %s",
+                                lt_name, prefer_backup, exc,
+                            )
+                            continue
+                        if self._process_auto_crawl_batch(lt_id, lt_name, batch):
+                            opened_any = True
+                            break
+                    if not opened_any:
+                        _crawler_logger.info(
+                            "Auto-crawl %s: chase sources all up-to-date, skipped",
+                            lt_name,
+                        )
                 else:
-                    _crawler_logger.info(
-                        "Auto-crawl %s: all %d record(s) already up-to-date, skipped",
-                        lt_name, skipped,
+                    records = _fetch_current_draw_records(
+                        self.db_path, lt_id, prefer_backup=False,
                     )
-                    reset_crawler_fail_count(self.db_path, lt_id)
+                    if not records:
+                        _crawler_logger.warning(
+                            "Auto-crawl %s: API returned no records", lt_name
+                        )
+                        alert_crawler_failure(self.db_path, lt_id, "API returned no records")
+                        continue
+                    if not self._process_auto_crawl_batch(lt_id, lt_name, records):
+                        _crawler_logger.info(
+                            "Auto-crawl %s: all %d record(s) already up-to-date, skipped",
+                            lt_name, len(records),
+                        )
+                        reset_crawler_fail_count(self.db_path, lt_id)
             except Exception as exc:
                 _crawler_logger.warning("Auto-crawl %s failed: %s", lt_name, exc)
                 alert_crawler_failure(self.db_path, lt_id, str(exc))

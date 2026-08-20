@@ -54,13 +54,13 @@ def _setup_db(tmp_path: Path) -> str:
     return db_path
 
 
-def test_auto_crawl_does_not_mark_macau_draw_opened_before_precise_open(tmp_path, monkeypatch):
+def test_auto_crawl_marks_new_macau_draw_opened_in_the_same_cycle(tmp_path, monkeypatch):
     db_path = _setup_db(tmp_path)
 
     monkeypatch.setattr(
         scheduler,
         "_fetch_current_draw_records",
-        lambda _db_path, _lt_id: [
+        lambda _db_path, _lt_id, *, prefer_backup=False: [
             {
                 "issue": "135",
                 "open_time": "2026-05-15 21:30:00",
@@ -94,7 +94,7 @@ def test_auto_crawl_does_not_mark_macau_draw_opened_before_precise_open(tmp_path
         ).fetchone()
 
     assert row is not None
-    assert int(row["is_opened"] or 0) == 0
+    assert int(row["is_opened"] or 0) == 1
     assert str(row["numbers"] or "") == "08,09,10,11,12,13,14"
     assert str(current_period["value_text"] or "") == "2026134"
 

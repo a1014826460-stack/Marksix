@@ -56,7 +56,8 @@ def fetch_current_term_data(
         "upgrade-insecure-requests": "1",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
     }
-    params = {
+    is_csjid = "csjid.com" in (collect_url or "")
+    params = {} if is_csjid else {
         "lottery_id": "49" if type == 2 else "20",
         "action": "current"
     }
@@ -136,8 +137,18 @@ def transform_standard_list(
     if isinstance(data, str):
         data = json.loads(data)
 
-    if not isinstance(data, list) and isinstance(data, dict):
-        data = [data]
+    if isinstance(data, dict):
+        # csjid smallSix API: {errorCode, result: {businessCode, data: {...}}}.
+        # preDraw* is the last opened draw; every timestamp is Beijing time.
+        csjid_data = data.get("result", {}).get("data") if isinstance(data.get("result"), dict) else None
+        if isinstance(csjid_data, dict):
+            data = [{
+                "issue": csjid_data.get("preDrawIssue"),
+                "open_time": csjid_data.get("preDrawTime"),
+                "result": csjid_data.get("preDrawCode"),
+            }]
+        else:
+            data = [data]
 
     output = []
     for item in data:
@@ -145,7 +156,7 @@ def transform_standard_list(
         open_time = item.get("open_time")
         result = item.get("result")
 
-        if issue is not None and open_time is not None and result is not None:
+        if issue is not None and open_time is not None and str(result or "").strip():
             output.append({
                 "issue": _normalize_issue(str(issue), crawler_type),
                 "open_time": str(open_time),
