@@ -89,6 +89,8 @@ services:
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
       LOTTERY_API_HOST: "0.0.0.0"
       LOTTERY_API_PORT: "8000"
+      DRAW_HK_BACKUP_COLLECT_URL: "${DRAW_HK_BACKUP_COLLECT_URL:-}"
+      DRAW_MACAU_BACKUP_COLLECT_URL: "${DRAW_MACAU_BACKUP_COLLECT_URL:-}"
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -124,6 +126,8 @@ services:
       REDIS_URL: "redis://redis:6379/0"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
+      DRAW_HK_BACKUP_COLLECT_URL: "${DRAW_HK_BACKUP_COLLECT_URL:-}"
+      DRAW_MACAU_BACKUP_COLLECT_URL: "${DRAW_MACAU_BACKUP_COLLECT_URL:-}"
     volumes:
       - ./backend/data:/app/data
       - ${BACKUP_DIR:-./backend/data/backups}:/app/data/backups
