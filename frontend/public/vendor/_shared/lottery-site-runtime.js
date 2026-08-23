@@ -18,6 +18,16 @@
     return element;
   }
   function clear(element) { while (element && element.firstChild) element.removeChild(element.firstChild); }
+  function mergeDraw(previous, incoming) {
+    if (window.LotterySiteDrawState && typeof window.LotterySiteDrawState.merge === "function") return window.LotterySiteDrawState.merge(previous, incoming);
+    if (!incoming) return previous || null;
+    var issue = text(incoming.current_issue || incoming.issue).trim();
+    var oldIssue = text(previous && (previous.current_issue || previous.issue)).trim();
+    if (oldIssue && issue && oldIssue !== issue) return Object.assign({}, incoming, { balls: (incoming.balls || []).slice() });
+    var balls = previous && Array.isArray(previous.balls) ? previous.balls.slice() : [];
+    (incoming.balls || []).forEach(function (ball, index) { if (ball && text(ball.value).trim()) balls[index] = ball; });
+    return Object.assign({}, previous || {}, incoming, { balls: balls });
+  }
 
   function renderDraw(config, draw, loading) {
     var mount = target(config, "draw_selector");
@@ -127,18 +137,37 @@
     var bridge = options && options.bridge || window.LotterySiteBridge;
     if (!bridge || window.LotterySiteRuntimeMounted) return;
     window.LotterySiteRuntimeMounted = true;
+    var activationEpoch = 0;
+    var drawState = null;
+    function scheduleIdle(callback) {
+      if (typeof window.requestIdleCallback === "function") return window.requestIdleCallback(callback, { timeout: 120 });
+      return window.setTimeout(callback, 0);
+    }
     function activate(config) {
+      var epoch = ++activationEpoch;
+      drawState = null;
       installStyles();
       enableStickyNavigation(config);
       renderFooter(config);
       var query = "lottery_type=" + lotteryType();
       if (config.bridge.auto_load.draw) {
         renderDraw(config, null, true);
-        bridge.getDraw(query).then(function (draw) { renderDraw(config, draw, false); }).catch(function () { renderDraw(config, null, false); });
+        bridge.getDraw(query).then(function (draw) {
+          if (epoch !== activationEpoch) return;
+          drawState = mergeDraw(drawState, draw);
+          renderDraw(config, drawState, false);
+        }).catch(function () { if (epoch === activationEpoch) renderDraw(config, null, false); });
       }
       if (config.bridge.auto_load.prediction) {
         renderPredictions(config, null, true, false);
-        bridge.getPredictionModules(query).then(function (data) { renderPredictions(config, data.canonical_modules || [], false, false); }).catch(function () { renderPredictions(config, null, false, true); });
+        bridge.getPredictionModules(query).then(function (data) {
+          if (epoch !== activationEpoch) return;
+          scheduleIdle(function () {
+            if (epoch === activationEpoch) renderPredictions(config, data.canonical_modules || [], false, false);
+          });
+        }).catch(function () {
+          if (epoch === activationEpoch) scheduleIdle(function () { if (epoch === activationEpoch) renderPredictions(config, null, false, true); });
+        });
       }
     }
     function activateWhenReady(config) {

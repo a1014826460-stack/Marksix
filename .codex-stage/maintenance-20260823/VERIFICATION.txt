@@ -1,0 +1,17 @@
+BASELINE command (exit 0):
+ssh -p 29618 root@207.56.3.82 'docker compose exec -T postgres psql -U postgres -d liuhecai -Atc "SELECT COALESCE(MAX(version),0); SELECT site_id,mode_id,mechanism_key,status FROM site_prediction_modules WHERE site_id=4 AND mode_id=123 ORDER BY mechanism_key;"'
+literal result: 27; 4|123|sanxiao_siwei_wei|1; 4|123|title_123|1.
+
+MODIFIED command (exit 0):
+ssh -p 29618 root@207.56.3.82 'docker compose run --rm db-migrate; docker compose up -d --no-deps --force-recreate frontend python-api scheduler-worker'
+literal result: Applied schema migrations: 28; all three containers recreated and started.
+Verification command (exit 0): migration max=28; 4|123|sanxiao_siwei_wei|1; 4|123|title_123|0; API health=200 {"ok":true,"status":"alive"}; frontend health={"ok":true,"service":"frontend"}; all services running and healthy where healthchecks exist.
+Source hash result: local and remote hashes matched for all three modified files.
+Idempotence command (exit 0): `docker compose run --rm db-migrate` -> `Schema migrations are already current.`
+Log check command (exit 0): `docker compose logs --since 30s --no-color python-api scheduler-worker frontend` -> no ERROR/Traceback/Exception lines.
+
+ROLLBACK command/result (exit 0, copied workspace only):
+ROLLBACK.sh <copied-root> <baseline-backup>
+literal result: RESTORED_SOURCE_FILES=/tmp/marksix-rollback-drill-20260823; ROLLBACK_VERIFIED (all three `cmp` checks exit 0). Baseline hashes: daa3e24a9cbaba351bfbef241269366fded49d7a5eb0de6ea8cc3b326e6d8d4f, 7d2b8ded40f1653c40a87bd7d401fc6e6cc4bd437317ea6caf440a4af06b94c8, bb46cd3f23c9aff8f2277690cfa5dbf90792e25fa8b454d860fe6c6fdaf30bf4. Production was not changed by this drill.
+
+Restored behavior/status: copied workspace contains the pre-change announcement runtime, fixed-content alert logic, and pre-migration module code; production remains on migration 28 with title_123 disabled.

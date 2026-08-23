@@ -4,6 +4,18 @@
 # ============================================================
 
 services:
+  mihomo:
+    image: metacubex/mihomo:latest
+    container_name: liuhecai-mihomo
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/mihomo/entrypoint.sh"]
+    environment:
+      DRAW_PROXY_SUBSCRIPTION_URL: "${DRAW_PROXY_SUBSCRIPTION_URL:-}"
+    volumes:
+      - ./deploy/mihomo:/etc/mihomo:ro
+    networks:
+      - liuhecai-network
+
   redis:
     image: redis:7.4-alpine
     container_name: liuhecai-redis
@@ -91,6 +103,10 @@ services:
       LOTTERY_API_PORT: "8000"
       DRAW_HK_BACKUP_COLLECT_URL: "${DRAW_HK_BACKUP_COLLECT_URL:-}"
       DRAW_MACAU_BACKUP_COLLECT_URL: "${DRAW_MACAU_BACKUP_COLLECT_URL:-}"
+      DRAW_HK_BACKUP2_COLLECT_URL: "${DRAW_HK_BACKUP2_COLLECT_URL:-}"
+      DRAW_MACAU_BACKUP2_COLLECT_URL: "${DRAW_MACAU_BACKUP2_COLLECT_URL:-}"
+      DRAW_PROXY_URL: "${DRAW_PROXY_URL:-}"
+      DRAW_HK_MACAU_MIN_REQUEST_INTERVAL_SECONDS: "${DRAW_HK_MACAU_MIN_REQUEST_INTERVAL_SECONDS:-10}"
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -128,6 +144,10 @@ services:
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
       DRAW_HK_BACKUP_COLLECT_URL: "${DRAW_HK_BACKUP_COLLECT_URL:-}"
       DRAW_MACAU_BACKUP_COLLECT_URL: "${DRAW_MACAU_BACKUP_COLLECT_URL:-}"
+      DRAW_HK_BACKUP2_COLLECT_URL: "${DRAW_HK_BACKUP2_COLLECT_URL:-}"
+      DRAW_MACAU_BACKUP2_COLLECT_URL: "${DRAW_MACAU_BACKUP2_COLLECT_URL:-}"
+      DRAW_PROXY_URL: "${DRAW_PROXY_URL:-}"
+      DRAW_HK_MACAU_MIN_REQUEST_INTERVAL_SECONDS: "${DRAW_HK_MACAU_MIN_REQUEST_INTERVAL_SECONDS:-10}"
     volumes:
       - ./backend/data:/app/data
       - ${BACKUP_DIR:-./backend/data/backups}:/app/data/backups

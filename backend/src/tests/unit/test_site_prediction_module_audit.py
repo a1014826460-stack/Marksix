@@ -42,6 +42,29 @@ def test_site_blueprint_equals_manifest_required_modes(site_key, web_id):
     )
 
 
+def test_migration_disables_only_site_four_legacy_title_123(tmp_path):
+    from database.versioned_migrations import _disable_shengshi8800_legacy_title_123
+
+    db_path = str(tmp_path / "disable-title-123.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE site_prediction_modules (site_id INTEGER, mode_id INTEGER, mechanism_key TEXT, status INTEGER, updated_at TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO site_prediction_modules VALUES (4, 123, 'title_123', 1, 'old'), (4, 123, 'sanxiao_siwei_wei', 1, 'old'), (5, 123, 'title_123', 1, 'old')"
+        )
+        _disable_shengshi8800_legacy_title_123(conn)
+        rows = conn.execute(
+            "SELECT site_id, mechanism_key, status FROM site_prediction_modules ORDER BY site_id, mechanism_key"
+        ).fetchall()
+
+    assert [(row["site_id"], row["mechanism_key"], row["status"]) for row in rows] == [
+        (4, "sanxiao_siwei_wei", 1),
+        (4, "title_123", 0),
+        (5, "title_123", 1),
+    ]
+
+
 @pytest.mark.parametrize(
     "site_key, constant_name",
     (

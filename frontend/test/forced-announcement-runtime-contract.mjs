@@ -150,6 +150,15 @@ const announcement = {
   assert.ok(overlay)
 }
 
+for (const pathname of ["/history", "/a"]) {
+  const env = createEnvironment(announcement, {
+    bodySiteKey: false,
+    pathname,
+  })
+  assert.equal(await env.window.ForcedAnnouncement.mount(), null)
+  assert.equal(env.fetchCount(), 0)
+}
+
 {
   const vendorSiteKeys = {
     shengshi8800: "shengshi8800",

@@ -1,0 +1,14 @@
+MODIFIED_FILE paths:
+frontend/public/vendor/_shared/forced-announcement.js
+backend/src/alerts/alert_service.py
+backend/src/database/versioned_migrations.py
+
+Changed branch/field:
+- forced announcement: registered site key/host validation; /history and /a produce no request
+- alert_prediction_gap: mode_payload_* columns are discovered from the live table
+- schema migration 28: site_id=4, mode_id=123, mechanism_key=title_123 -> status=0
+
+Local SHA-256:
+20147ea132c3dcddce142b3114b97de5b1a8517486af711b942fd4c443d0c0fd  forced-announcement.js
+a4cf22aa2184352b5affc42bd176cf6d1c52a7696109d53de0809f0d7e9655d3  alert_service.py
+5e204e64d9d7fa64e0a1050f026e2a80971c611d8aea9e9e1a869e77f8e4d1d1  versioned_migrations.py

@@ -1,0 +1,9 @@
+DIFF_FILE: working-tree diff for the three modified production files.
+
+BASELINE branch/state (remote, before deployment): schema_migrations max=27;
+site 4 / mode 123: sanxiao_siwei_wei=1, title_123=1.
+
+MODIFIED branch/state (remote, after deployment): schema_migrations max=28;
+site 4 / mode 123: sanxiao_siwei_wei=1, title_123=0.
+
+The source SHA-256 values in MODIFIED_FILE matched byte-for-byte on the remote host.

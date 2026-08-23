@@ -298,6 +298,18 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "澳门彩备用采集 URL，主 URL 连续失败后自动切换。",
         "is_secret": 0,
     },
+    "draw.hk_backup2_collect_url": {
+        "value": "",
+        "value_type": "string",
+        "description": "香港彩第二备用采集 URL。",
+        "is_secret": 0,
+    },
+    "draw.macau_backup2_collect_url": {
+        "value": "",
+        "value_type": "string",
+        "description": "澳门彩第二备用采集 URL。",
+        "is_secret": 0,
+    },
     "draw.taiwan_import_file": {
         "value": "data/lottery_data/lottery_page_1_20260506_194209.json",
         "value_type": "string",

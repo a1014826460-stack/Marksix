@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 27
+CURRENT_SCHEMA_VERSION = 28
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -647,6 +647,20 @@ def _create_forced_announcements(conn: Any) -> None:
     )
 
 
+def _disable_shengshi8800_legacy_title_123(conn: Any) -> None:
+    """Disable the duplicate unsupported site-4 title_123 module."""
+    if not conn.table_exists("site_prediction_modules"):
+        return
+    conn.execute(
+        """
+        UPDATE site_prediction_modules
+        SET status = 0, updated_at = ?
+        WHERE site_id = 4 AND mode_id = 123 AND mechanism_key = 'title_123'
+        """,
+        (utc_now(),),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -675,6 +689,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(25, "sync_twwanli_featured_posts_authorization", _sync_twwanli_featured_posts_authorization),
     Migration(26, "create_publication_outbox", _create_publication_outbox),
     Migration(27, "create_forced_announcements", _create_forced_announcements),
+    Migration(28, "disable_shengshi8800_legacy_title_123", _disable_shengshi8800_legacy_title_123),
 )
 
 

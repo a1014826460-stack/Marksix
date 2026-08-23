@@ -66,6 +66,58 @@ def test_compute_next_issue_year_boundary():
     assert _compute_next_issue(2026, 365) == (2027, 1)
 
 
+def test_prediction_gap_uses_columns_present_in_payload_table(monkeypatch):
+    from alerts.alert_service import alert_prediction_gap
+
+    class Result:
+        def __init__(self, rows=None, row=None):
+            self.rows = rows or []
+            self.row = row
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.row
+
+    class Conn:
+        engine = "postgres"
+
+        def __init__(self):
+            self.sql = []
+
+        def execute(self, sql, params=()):
+            self.sql.append(sql)
+            if "FROM lottery_draws" in sql:
+                return Result(rows=[{"lottery_type_id": 3, "year": 2026, "term": 100}])
+            if "FROM managed_sites" in sql:
+                return Result(rows=[{"id": 4, "name": "site", "lottery_type_id": 3, "web_id": 4}])
+            if "FROM site_prediction_modules" in sql:
+                return Result(row={"mode_id": 123})
+            return Result()
+
+        def table_exists(self, name):
+            return name in {"mode_payload_123", "managed_sites"}
+
+        def table_columns(self, name):
+            return ("type", "year", "term", "res_code")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    conn = Conn()
+    monkeypatch.setattr("alerts.alert_service.connect", lambda _db: conn)
+    issues = alert_prediction_gap("fake")
+
+    payload_sql = next(sql for sql in conn.sql if "mode_payload_123" in sql)
+    assert "res_code IS NOT NULL" in payload_sql
+    assert "content IS NOT NULL" not in payload_sql
+    assert issues
+
+
 # ── 爬虫失败报警阈值测试 ──────────────────────────────
 
 

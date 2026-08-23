@@ -48,6 +48,20 @@ def _is_alert_suppressed(alert_key: str, db_path, default_cooldown: int = _DEFAU
 
 LOTTERY_NAMES: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 
+_PAYLOAD_VALUE_COLUMNS = (
+    "content", "res_code", "res_sx", "res_color", "image_url",
+    "answer", "tips", "jiexi",
+)
+
+
+def _payload_value_columns(conn: Any, table_name: str) -> tuple[str, ...]:
+    """Return payload columns actually present in a mode table."""
+    try:
+        columns = set(conn.table_columns(table_name))
+    except Exception:
+        columns = set()
+    return tuple(column for column in _PAYLOAD_VALUE_COLUMNS if column in columns)
+
 
 def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
     try:
@@ -287,11 +301,20 @@ def alert_prediction_gap(
                     continue
 
                 table_name = f"mode_payload_{mode_id}"
+                if not conn.table_exists(table_name):
+                    continue
+                value_columns = _payload_value_columns(conn, table_name)
+                if not value_columns:
+                    continue
+                value_predicate = " OR ".join(
+                    f"{column} IS NOT NULL AND {column} != ''"
+                    for column in value_columns
+                )
                 # 检查 created schema 中是否存在目标期记录
                 has_target = conn.execute(
                     f"SELECT 1 FROM created.{table_name} "
                     "WHERE type = ? AND year = ? AND term = ? "
-                    "AND content IS NOT NULL AND content != '' LIMIT 1",
+                    f"AND ({value_predicate}) LIMIT 1",
                     (str(lt), str(target_year), str(target_term)),
                 ).fetchone()
 

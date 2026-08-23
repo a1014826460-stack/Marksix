@@ -1,0 +1,28 @@
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: warning
+external-controller: 0.0.0.0:9090
+
+# Rendered by entrypoint.sh from the deployment-only subscription secret.
+proxy-providers:
+  upstream:
+    type: http
+    url: "${DRAW_PROXY_SUBSCRIPTION_URL}"
+    interval: 3600
+    path: ./proxies/upstream.yaml
+    health-check:
+      enable: true
+      interval: 300
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: draw-upstream
+    type: url-test
+    use:
+      - upstream
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - MATCH,draw-upstream

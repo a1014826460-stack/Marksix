@@ -18,6 +18,30 @@
     "twwanli": "twwanli",
     "twsyw": "twsyw"
   };
+  var REGISTERED_SITE_KEYS = {
+    "shengshi8800": true,
+    "twsaimahui": true,
+    "twcaibawang": true,
+    "twjinniu": true,
+    "twcf888": true,
+    "twssz": true,
+    "twbst528": true,
+    "twjsz666": true,
+    "twwanli": true,
+    "twsyw": true
+  };
+  var REGISTERED_HOSTS = {
+    "www.tw8800.com": true,
+    "www.twsaimahui.com": true,
+    "www.twcaibawang.com": true,
+    "www.twjinniu.com": true,
+    "www.twcf888.com": true,
+    "www.twssz.com": true,
+    "www.twbst528.com": true,
+    "www.twjsz666.com": true,
+    "www.twwanli.com": true,
+    "www.twsyw.com": true
+  };
   var mountedPromise = null;
   var activeSiteKey = "";
 
@@ -150,12 +174,11 @@
     if (!siteKey) siteKey = String(bodyData.siteKey || "").trim();
     if (!siteKey && window.location) {
       var pathSiteKey = String(window.location.pathname || "").split("/")[1] || "";
-      if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pathSiteKey)
-          && ["api", "vendor", "_next", "fackyou"].indexOf(pathSiteKey) < 0) {
+      if (REGISTERED_SITE_KEYS[pathSiteKey.toLowerCase()]) {
         siteKey = pathSiteKey;
       }
     }
-    return siteKey;
+    return REGISTERED_SITE_KEYS[siteKey.toLowerCase()] ? siteKey : "";
   }
 
   function requestUrl(options, siteKey) {
@@ -171,6 +194,8 @@
   function mount(options) {
     if (mountedPromise) return mountedPromise;
     var siteKey = resolveSiteKey(options);
+    var host = String(window.location && window.location.host || "").toLowerCase().split(":")[0];
+    if (!siteKey && !(options && options.siteId) && !REGISTERED_HOSTS[host]) return Promise.resolve(null);
     var canonicalSiteKey = siteKey;
     activeSiteKey = siteKey;
     mountedPromise = window.fetch(requestUrl(options, siteKey), {
