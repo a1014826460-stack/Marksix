@@ -96,10 +96,11 @@ def test_prediction_gap_uses_columns_present_in_payload_table(monkeypatch):
                 return Result(row={"mode_id": 123})
             return Result()
 
-        def table_exists(self, name):
-            return name in {"mode_payload_123", "managed_sites"}
+        def table_exists(self, name, *, schema=None):
+            return name == "mode_payload_123" and schema == "created"
 
-        def table_columns(self, name):
+        def table_columns(self, name, *, schema=None):
+            assert schema == "created"
             return ("type", "year", "term", "res_code")
 
         def __enter__(self):
@@ -116,6 +117,62 @@ def test_prediction_gap_uses_columns_present_in_payload_table(monkeypatch):
     assert "res_code IS NOT NULL" in payload_sql
     assert "content IS NOT NULL" not in payload_sql
     assert issues
+
+
+def test_prediction_gap_uses_created_schema_jia_ye_payload_columns(monkeypatch):
+    """created 表的 jia/ye 有值时不得报预测断层。"""
+    from alerts.alert_service import alert_prediction_gap
+
+    class Result:
+        def __init__(self, rows=None, row=None):
+            self.rows = rows or []
+            self.row = row
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.row
+
+    class Conn:
+        engine = "postgres"
+
+        def __init__(self):
+            self.sql = []
+
+        def execute(self, sql, params=()):
+            self.sql.append(sql)
+            if "FROM lottery_draws" in sql:
+                return Result(rows=[{"lottery_type_id": 3, "year": 2026, "term": 100}])
+            if "FROM managed_sites" in sql:
+                return Result(rows=[{"id": 13, "name": "台湾神预网", "lottery_type_id": 3, "web_id": 13}])
+            if "FROM site_prediction_modules" in sql:
+                return Result(row={"mode_id": 14})
+            if "FROM created.mode_payload_14" in sql:
+                return Result(row={"present": 1})
+            return Result()
+
+        def table_exists(self, name, *, schema=None):
+            return name == "mode_payload_14" and schema == "created"
+
+        def table_columns(self, name, *, schema=None):
+            assert name == "mode_payload_14"
+            assert schema == "created"
+            return ("type", "year", "term", "jia", "ye")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    conn = Conn()
+    monkeypatch.setattr("alerts.alert_service.connect", lambda _db: conn)
+
+    assert alert_prediction_gap("fake") == []
+    payload_sql = next(sql for sql in conn.sql if "created.mode_payload_14" in sql)
+    assert "jia IS NOT NULL" in payload_sql
+    assert "ye IS NOT NULL" in payload_sql
 
 
 # ── 爬虫失败报警阈值测试 ──────────────────────────────

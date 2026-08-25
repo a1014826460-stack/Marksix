@@ -1,0 +1,30 @@
+Changed branch/field: Taiwan automatic draw auto-fill schedule timezone and target-total future-period semantics.
+
+Artifacts:
+- MODIFIED_FILE.txt: .codex-stage/autofill-maintenance-20260823/MODIFIED_FILE.txt
+- DIFF_FILE.txt: .codex-stage/autofill-maintenance-20260823/DIFF_FILE.txt
+- VERIFICATION.txt: .codex-stage/autofill-maintenance-20260823/VERIFICATION.txt
+- ROLLBACK.sh: .codex-stage/autofill-maintenance-20260823/ROLLBACK.sh
+
+BASELINE command:
+python -m pytest src/tests/unit/test_api_contract_admin_routes.py::test_admin_autofill_future_draw_exact_route_wins_over_draw_detail_prefix -q
+BASELINE result: historical baseline assertion expected autofill(..., count=3); this was the single failing assertion after the implementation changed the contract.
+BASELINE exit status: 1 (expected red test before assertion update).
+
+MODIFIED command:
+python -m pytest src/tests/unit/test_taiwan_autofill_beijing_schedule.py src/tests/unit/test_admin_crud_lottery_compat.py src/tests/unit/test_scheduler_domain_service.py src/tests/unit/test_scheduler_task_loop_runs.py src/tests/unit/test_api_contract_admin_routes.py -q
+MODIFIED literal output/result: 51 passed in 4.28s
+MODIFIED exit status: 0.
+Frontend contract command:
+node features/draws/draws-auto-fill-contract.mjs
+Frontend result: exit status 0.
+
+ROLLBACK command:
+sh ROLLBACK.sh rollback-copy.txt
+ROLLBACK result: restores rollback-copy.txt from rollback-copy.txt.original and leaves MODIFIED_FILE.txt changed.
+ROLLBACK exit status: 0 (script checks restored bytes).
+Restored behavior/status: rollback copy matches its original checksum; working MODIFIED_FILE remains changed.
+
+Full backend suite observation:
+python -m pytest src/tests -q
+785 passed, 17 skipped, 8 unrelated pre-existing failures (outbox publisher environment and migration-version expectation); exit status 1.

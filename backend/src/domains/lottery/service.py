@@ -83,7 +83,7 @@ def _resolve_taiwan_draw_clock(conn: Any) -> tuple[int, int, int]:
 
 
 TAIWAN_FUTURE_AUTOFILL_CONFIG_PREFIX = "taiwan_future_autofill."
-TAIWAN_FUTURE_AUTOFILL_TIMEZONE = "UTC"
+TAIWAN_FUTURE_AUTOFILL_TIMEZONE = "Asia/Shanghai"
 
 
 def parse_taiwan_future_autofill_settings(payload: dict[str, Any]) -> dict[str, Any]:

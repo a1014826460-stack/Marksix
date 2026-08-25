@@ -1,0 +1,5 @@
+DIFF_FILE
+
+Baseline: frontend requests through /central-api/api returned 502; Nginx error showed connect() failed to stale upstream 172.18.0.4:8000.
+Modified: active Nginx config uses proxy_pass http://python-api:8000/api/ and the service name resolves to the current container.
+No application source or database change was made.

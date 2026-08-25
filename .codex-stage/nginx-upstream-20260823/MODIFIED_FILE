@@ -1,0 +1,9 @@
+MODIFIED_FILE
+
+Target: central server 207.56.3.82:29618, /root/Marksix/deploy/nginx.conf.local
+Changed branch/field: /central-api/api/ upstream resolution and Nginx runtime state.
+Observed source config already contained:
+proxy_pass http://python-api:8000/api/;
+No fixed 172.18.x.x upstream remained in the source file. Nginx was reloaded to refresh service-name DNS resolution.
+
+Post-reload resolution: python-api -> 172.18.0.5.

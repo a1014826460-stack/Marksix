@@ -23,7 +23,7 @@ _CURRENT_PERIOD_FIELDS = frozenset(
     {"lottery_type_id", "lottery_name", "current_period", "current_year", "current_term"}
 )
 _FORBIDDEN_FIELDS = frozenset({"numbers", "res_sx", "res_color", "is_opened"})
-_BALL_FIELDS = frozenset({"value", "zodiac", "color"})
+_BALL_FIELDS = frozenset({"value", "zodiac", "color", "element"})
 
 
 @dataclass(frozen=True)
@@ -244,9 +244,9 @@ def _validate_payload(
 
 
 def _validate_ball(ball: Any) -> None:
-    if not isinstance(ball, Mapping) or set(ball) != _BALL_FIELDS:
+    if not isinstance(ball, Mapping) or not ball or not set(ball) <= _BALL_FIELDS:
         raise ValueError("latest draw ball fields are not allowed")
-    if any(not isinstance(ball[field], str) for field in _BALL_FIELDS):
+    if any(not isinstance(ball[field], str) for field in ball):
         raise ValueError("latest draw ball values must be strings")
 
 

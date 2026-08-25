@@ -81,7 +81,7 @@ def test_taiwan_future_autofill_task_executes_configured_target_and_schedules_ne
     monkeypatch.setattr(
         scheduler.lottery_service,
         "get_taiwan_future_autofill_settings",
-        lambda _db_path: {"enabled": True, "count": 18, "time": "07:45", "timezone": "UTC"},
+        lambda _db_path: {"enabled": True, "count": 18, "time": "07:45", "timezone": "Asia/Shanghai"},
     )
     monkeypatch.setattr(
         scheduler.lottery_service,

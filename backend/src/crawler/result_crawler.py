@@ -1,6 +1,8 @@
 import time as _time
 import os
 import threading
+from collections.abc import Callable
+from urllib.parse import urlsplit
 
 import requests
 import json
@@ -57,6 +59,7 @@ def fetch_current_term_data(
     retry_delay: float = 1.0,
     timeout: int = 30,
     expected_period: str | None = None,
+    on_attempt: Callable[[dict[str, Any]], None] | None = None,
     ) -> tuple[str, int]:
     """获取香港/澳门彩当前期开奖数据，支持主/备 URL 和重试。
 
@@ -103,6 +106,31 @@ def fetch_current_term_data(
             urls.append(u)
 
     expected_period = str(expected_period or "").strip()
+    def _source_name(url: str) -> str:
+        return urlsplit(url).netloc or "unknown"
+
+    def _report(
+        url: str,
+        attempt: int,
+        *,
+        status_code: int,
+        returned_period: str = "",
+        outcome: str,
+        elapsed_ms: int,
+        error: str = "",
+    ) -> None:
+        if on_attempt is None:
+            return
+        on_attempt({
+            "source": _source_name(url),
+            "attempt": attempt,
+            "status_code": status_code,
+            "returned_period": returned_period,
+            "outcome": outcome,
+            "elapsed_ms": elapsed_ms,
+            "error": error,
+        })
+
     last_status = 0
     first_old_response: str | None = None
     for url in urls:
@@ -112,6 +140,7 @@ def fetch_current_term_data(
             "action": "current"
         }
         for attempt in range(1 + retry_count):
+            started_at = _time.monotonic()
             try:
                 _throttle_source(url, type)
                 request_kwargs = {"headers": headers, "params": params, "timeout": timeout}
@@ -120,30 +149,42 @@ def fetch_current_term_data(
                     request_kwargs["proxies"] = proxy
                 response = requests.get(url, **request_kwargs)
                 last_status = response.status_code
+                elapsed_ms = round((_time.monotonic() - started_at) * 1000)
                 if response.status_code == 200:
                     if expected_period and type in (1, 2):
                         try:
                             records = transform_standard_list(response.text, crawler_type=type)
                         except (TypeError, ValueError, json.JSONDecodeError):
                             records = []
-                        if any(
-                            _standard_record_period(record) == expected_period
-                            for record in records
-                        ):
+                        returned_period = next(
+                            (_standard_record_period(record) for record in records if _standard_record_period(record)),
+                            "",
+                        )
+                        if any(_standard_record_period(record) == expected_period for record in records):
+                            _report(url, attempt + 1, status_code=200, returned_period=returned_period,
+                                    outcome="expected_period", elapsed_ms=elapsed_ms)
                             return response.text, response.status_code
                         if records and first_old_response is None:
                             first_old_response = response.text
+                        _report(url, attempt + 1, status_code=200, returned_period=returned_period,
+                                outcome="old_period" if records else "no_records", elapsed_ms=elapsed_ms)
                         # HTTP 成功但返回旧期或无有效记录，继续检查后续来源。
                         break
+                    _report(url, attempt + 1, status_code=200, outcome="success", elapsed_ms=elapsed_ms)
                     return response.text, response.status_code
+                _report(url, attempt + 1, status_code=response.status_code, outcome="http_error", elapsed_ms=elapsed_ms)
                 if attempt < retry_count:
                     _time.sleep(retry_delay * (2 ** attempt))
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
                 last_status = 0
+                _report(url, attempt + 1, status_code=0, outcome="network_error",
+                        elapsed_ms=round((_time.monotonic() - started_at) * 1000), error=exc.__class__.__name__)
                 if attempt < retry_count:
                     _time.sleep(retry_delay * (2 ** attempt))
-            except Exception:
+            except Exception as exc:
                 last_status = 0
+                _report(url, attempt + 1, status_code=0, outcome="request_error",
+                        elapsed_ms=round((_time.monotonic() - started_at) * 1000), error=exc.__class__.__name__)
                 if attempt < retry_count:
                     _time.sleep(retry_delay * (2 ** attempt))
 

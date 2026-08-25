@@ -1,0 +1,5 @@
+BASELINE -> MODIFIED
+1. Scheduler interprets configured daily time in Asia/Shanghai and persists the equivalent UTC instant.
+2. Admin auto-fill route passes target_total=True, so count means total future periods from latest opened issue + 1.
+3. Frontend formats next_run_at/finished_at and date inputs in Asia/Shanghai; labels explicitly state Beijing time (UTC+8).
+4. Taiwan future auto-fill tests cover latest opened 100 with existing 101/102 and target 12, producing 101..112.

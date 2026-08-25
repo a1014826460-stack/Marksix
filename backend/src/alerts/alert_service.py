@@ -50,14 +50,19 @@ LOTTERY_NAMES: dict[int, str] = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
 
 _PAYLOAD_VALUE_COLUMNS = (
     "content", "res_code", "res_sx", "res_color", "image_url",
-    "answer", "tips", "jiexi",
+    "answer", "tips", "jiexi", "jia", "ye",
 )
 
 
-def _payload_value_columns(conn: Any, table_name: str) -> tuple[str, ...]:
-    """Return payload columns actually present in a mode table."""
+def _payload_value_columns(
+    conn: Any,
+    table_name: str,
+    *,
+    schema: str | None = None,
+) -> tuple[str, ...]:
+    """Return payload columns actually present in the queried schema table."""
     try:
-        columns = set(conn.table_columns(table_name))
+        columns = set(conn.table_columns(table_name, schema=schema))
     except Exception:
         columns = set()
     return tuple(column for column in _PAYLOAD_VALUE_COLUMNS if column in columns)
@@ -301,9 +306,9 @@ def alert_prediction_gap(
                     continue
 
                 table_name = f"mode_payload_{mode_id}"
-                if not conn.table_exists(table_name):
+                if not conn.table_exists(table_name, schema="created"):
                     continue
-                value_columns = _payload_value_columns(conn, table_name)
+                value_columns = _payload_value_columns(conn, table_name, schema="created")
                 if not value_columns:
                     continue
                 value_predicate = " OR ".join(

@@ -136,6 +136,21 @@ def test_pointer_to_another_snapshot_scope_is_treated_as_a_cache_miss():
     assert snapshots.get_latest_draw(3) is None
 
 
+def test_latest_draw_ball_may_include_wuxing_element_field():
+    snapshots = PublicDrawSnapshots(MemoryCacheStore())
+    payload = _latest_draw_payload()
+    payload["result_balls"] = [
+        {"value": "01", "zodiac": "马", "color": "red", "element": "金"},
+        {"value": "02", "zodiac": "蛇", "color": "blue", "element": "水"},
+    ]
+    payload["special_ball"] = {"value": "07", "zodiac": "鼠", "color": "red", "element": "木"}
+
+    published = snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True)
+
+    assert published is True
+    assert snapshots.get_latest_draw(3) == payload
+
+
 @pytest.mark.parametrize("nested_key", ["numbers", "res_sx", "res_color", "is_opened"])
 def test_latest_draw_rejects_forbidden_database_fields_nested_in_a_ball(nested_key: str):
     snapshots = PublicDrawSnapshots(MemoryCacheStore())

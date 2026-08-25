@@ -62,14 +62,14 @@ def test_publisher_uses_authoritative_opened_draw_and_marks_event_published(tmp_
         "current_issue": "2026188",
         "draw_time": "2026-08-07 22:32:00",
         "result_balls": [
-            {"value": "01", "zodiac": "", "color": "red"},
-            {"value": "02", "zodiac": "", "color": "red"},
-            {"value": "03", "zodiac": "", "color": "red"},
-            {"value": "04", "zodiac": "", "color": "red"},
-            {"value": "05", "zodiac": "", "color": "red"},
-            {"value": "06", "zodiac": "", "color": "red"},
+            {"value": "01", "zodiac": "", "color": "red", "element": ""},
+            {"value": "02", "zodiac": "", "color": "red", "element": ""},
+            {"value": "03", "zodiac": "", "color": "red", "element": ""},
+            {"value": "04", "zodiac": "", "color": "red", "element": ""},
+            {"value": "05", "zodiac": "", "color": "red", "element": ""},
+            {"value": "06", "zodiac": "", "color": "red", "element": ""},
         ],
-        "special_ball": {"value": "07", "zodiac": "", "color": "red"},
+        "special_ball": {"value": "07", "zodiac": "", "color": "red", "element": ""},
     }
     assert snapshots.get_current_period(3) == {
         "lottery_type_id": 3,

@@ -14,14 +14,14 @@ def test_taiwan_future_autofill_settings_defaults_and_validation(tmp_path):
 
     db_path = tmp_path / "taiwan-autofill-settings.sqlite3"
     settings = get_taiwan_future_autofill_settings(db_path)
-    assert settings == {"enabled": False, "count": 12, "time": "00:00", "timezone": "UTC"}
+    assert settings == {"enabled": False, "count": 12, "time": "00:00", "timezone": "Asia/Shanghai"}
 
     saved = save_taiwan_future_autofill_settings(
         db_path,
         {"enabled": True, "count": 18, "time": "07:45"},
         changed_by="admin",
     )
-    assert saved == {"enabled": True, "count": 18, "time": "07:45", "timezone": "UTC"}
+    assert saved == {"enabled": True, "count": 18, "time": "07:45", "timezone": "Asia/Shanghai"}
     assert get_taiwan_future_autofill_settings(db_path) == saved
 
     for payload in (
@@ -217,6 +217,39 @@ def test_autofill_taiwan_future_draws_treats_count_as_total_future_target(tmp_pa
     assert [dict(row) for row in future_rows] == [
         {"id": existing_id, "numbers": "08,09,10,11,12,13,14", "is_opened": 0}
     ]
+
+
+def test_autofill_taiwan_future_draws_fills_to_configured_total_after_two_existing_rows(tmp_path):
+    """Latest opened 100 plus preserved 101/102 must cover the full 101..112 target."""
+    from domains.lottery.service import autofill_taiwan_future_draws
+
+    db_path = tmp_path / "autofill-total-twelve.sqlite3"
+    ensure_admin_tables(db_path)
+    with connect(db_path) as conn:
+        _insert_taiwan_draw(
+            conn, year=2026, term=100, numbers="01,02,03,04,05,06,07",
+            draw_time="2026-04-10 22:30:00", is_opened=1,
+        )
+        for term, numbers, date in (
+            (101, "08,09,10,11,12,13,14", "2026-04-11 22:30:00"),
+            (102, "15,16,17,18,19,20,21", "2026-04-12 22:30:00"),
+        ):
+            _insert_taiwan_draw(
+                conn, year=2026, term=term, numbers=numbers, draw_time=date, is_opened=0,
+            )
+
+    result = autofill_taiwan_future_draws(db_path, count=12, rng=Random(31), target_total=True)
+
+    assert result["created_count"] == 10
+    assert result["preserved_existing_count"] == 2
+    with connect(db_path) as conn:
+        terms = [
+            int(row["term"])
+            for row in conn.execute(
+                "SELECT term FROM lottery_draws WHERE lottery_type_id = 3 AND is_opened = 0 ORDER BY term"
+            ).fetchall()
+        ]
+    assert terms == list(range(101, 113))
 
 
 def test_scheduled_autofill_repairs_holes_in_the_contiguous_future_sequence(tmp_path):

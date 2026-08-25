@@ -99,7 +99,7 @@ def test_admin_autofill_future_draw_contract():
     ) as autofill:
         admin_draw_routes.autofill_future_draws(ctx)
 
-    autofill.assert_called_once_with(ctx.db_path, count=8)
+    autofill.assert_called_once_with(ctx.db_path, count=8, target_total=True)
     assert ctx.handler.response_status == 201
     assert response_json(ctx) == {"ok": True, "data": payload}
 
@@ -108,12 +108,12 @@ def test_admin_autofill_future_draw_defaults_to_twelve():
     ctx = make_ctx("/api/admin/draws/auto-fill-future", "POST", {})
     with patch("routes.admin_draw_routes.autofill_taiwan_future_draws", return_value={}) as autofill:
         admin_draw_routes.autofill_future_draws(ctx)
-    autofill.assert_called_once_with(ctx.db_path, count=12)
+    autofill.assert_called_once_with(ctx.db_path, count=12, target_total=True)
 
 
 def test_admin_autofill_settings_contract_and_actor_mapping():
     read_ctx = make_ctx("/api/admin/draws/auto-fill-future/settings")
-    settings = {"enabled": True, "count": 12, "time": "07:45", "timezone": "UTC"}
+    settings = {"enabled": True, "count": 12, "time": "07:45", "timezone": "Asia/Shanghai"}
     status = {"last_run": None, "next_run_at": "2026-07-28T07:45:00+00:00"}
     with patch("routes.admin_draw_routes.get_taiwan_future_autofill_settings", return_value=settings), patch(
         "routes.admin_draw_routes.get_taiwan_future_autofill_schedule_status", return_value=status
@@ -146,7 +146,7 @@ def test_admin_autofill_future_draw_exact_route_wins_over_draw_detail_prefix():
     with patch("routes.admin_draw_routes.autofill_taiwan_future_draws", return_value={}) as autofill:
         router.dispatch(ctx)
 
-    autofill.assert_called_once_with(ctx.db_path, count=3)
+    autofill.assert_called_once_with(ctx.db_path, count=3, target_total=True)
     assert ctx.handler.response_status == 201
 
 

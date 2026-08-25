@@ -52,16 +52,33 @@ type AutoFillSettings = {
   enabled: boolean
   count: number
   time: string
-  timezone: "UTC"
+  timezone: "Asia/Shanghai"
   last_run: { status: string; finished_at: string | null; error: string } | null
   next_run_at: string | null
 }
 
 function formatDateInput(date: Date) {
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, "0")
-  const dd = String(date.getDate()).padStart(2, "0")
-  return `${yyyy}-${mm}-${dd}`
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date)
+}
+
+function formatBeijingDateTime(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(parsed)
 }
 
 function parseBeijingDateTime(value: string) {
@@ -358,7 +375,7 @@ export function DrawsPage() {
       toast.error("自动填写期数必须在 1 到 60 之间")
       return
     }
-    if (!confirm(`确认自动新增 ${count} 期台湾彩未来开奖记录吗？已有未来期号将跳过保留。`)) return
+    if (!confirm(`确认补齐台湾彩未来记录至 ${count} 期吗？从最新已开奖期的下一期开始计算，已有未来期号将保留。`)) return
 
     setAutoFilling(true)
     try {
@@ -368,7 +385,7 @@ export function DrawsPage() {
       )
       await load(1)
       toast.success(
-        `已新增 ${result.data.created_count} 期；保留已有未来期 ${result.data.preserved_existing_count} 期`,
+        `已新增 ${result.data.created_count} 期；保留已有未来期 ${result.data.preserved_existing_count} 期；已补齐至 ${count} 期`,
       )
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "自动填写失败，请稍后重试。")
@@ -469,7 +486,7 @@ export function DrawsPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
             <div className="min-w-48">
               <h2 className="text-base font-semibold">台湾彩自动填写设置</h2>
-              <p className="text-sm text-muted-foreground">每天自动补齐未来开奖，既有记录不会覆盖。</p>
+              <p className="text-sm text-muted-foreground">每天从最新已开奖期的下一期开始补齐至设定数量，既有未来记录不会覆盖。</p>
             </div>
             <label className="flex h-9 items-center gap-2 text-sm whitespace-nowrap">
               <input
@@ -490,7 +507,7 @@ export function DrawsPage() {
                 onChange={(event) => setAutoFillSettings((current) => current ? { ...current, count: Number(event.target.value) } : current)}
               />
             </Field>
-            <Field label="每日执行时间（UTC）" className="w-full lg:w-40">
+            <Field label="每日执行时间（北京时间 UTC+8）" className="w-full lg:w-48">
               <Input
                 type="time"
                 value={autoFillSettings?.time ?? ""}
@@ -505,9 +522,9 @@ export function DrawsPage() {
           </div>
           {autoFillSettings && (
             <p className="mt-3 text-sm text-muted-foreground">
-              服务器时区：{autoFillSettings.timezone}；
-              {autoFillSettings.next_run_at ? `下次执行：${autoFillSettings.next_run_at}` : "尚未计划下次执行"}
-              {autoFillSettings.last_run ? `；上次执行：${autoFillSettings.last_run.status}` : ""}
+              执行时区：北京时间（UTC+8）；
+              {autoFillSettings.next_run_at ? `下次执行：${formatBeijingDateTime(autoFillSettings.next_run_at)}` : "尚未计划下次执行"}
+              {autoFillSettings.last_run ? `；上次执行：${autoFillSettings.last_run.status}${autoFillSettings.last_run.finished_at ? `（${formatBeijingDateTime(autoFillSettings.last_run.finished_at)}）` : ""}` : ""}
             </p>
           )}
         </Card>

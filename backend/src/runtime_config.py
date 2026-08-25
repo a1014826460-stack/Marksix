@@ -139,7 +139,7 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
     "taiwan_future_autofill.time": {
         "value": "00:00",
         "value_type": "time",
-        "description": "台湾彩自动填写每日执行时间（服务器时区 UTC），格式 HH:mm。",
+        "description": "台湾彩自动填写每日执行时间（北京时间 UTC+8），格式 HH:mm。",
         "is_secret": 0,
     },
     "history_backfill_delay_after_draw": {

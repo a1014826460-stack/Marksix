@@ -357,6 +357,9 @@ def _fetch_current_draw_period(
         raw, status_code = fetch_current_term_data(
             type=crawler_type, collect_url=collect_url, backup_url=backup_url,
             expected_period=expected_period,
+            on_attempt=_build_source_audit_logger(
+                db_path, lottery_type_id, expected_period=expected_period, context="precise_period_check",
+            ),
         )
 
         if status_code != 200:
@@ -503,6 +506,9 @@ def _fetch_current_draw_records(
     raw, status_code = fetch_current_term_data(
         type=crawler_type, collect_url=collect_url, backup_url=backup_url,
         expected_period=expected_period,
+        on_attempt=_build_source_audit_logger(
+            db_path, lottery_type_id, expected_period=expected_period, context="auto_crawl",
+        ),
     )
 
     if status_code != 200:
@@ -647,6 +653,44 @@ def _log_draw_audit(
             )
     except Exception:
         _crawler_logger.debug("Failed to write draw audit log: period=%s event=%s", period, event)
+
+
+def _build_source_audit_logger(
+    db_path: str | Path,
+    lottery_type_id: int,
+    *,
+    expected_period: str | None,
+    context: str,
+):
+    """Return a callback that persists one redacted outcome per source request."""
+    period = str(expected_period or "")
+
+    def _audit(event: dict[str, Any]) -> None:
+        outcome = str(event.get("outcome") or "unknown")
+        status_code = int(event.get("status_code") or 0)
+        returned_period = str(event.get("returned_period") or "")
+        source = str(event.get("source") or "unknown")
+        detail = (
+            f"context={context} source={source} attempt={int(event.get('attempt') or 0)} "
+            f"http_status={status_code} returned_period={returned_period or 'N/A'} "
+            f"expected_period={period or 'N/A'} outcome={outcome}"
+        )
+        error = str(event.get("error") or "")
+        if error:
+            detail += f" error={error}"
+        _log_draw_audit(
+            db_path,
+            lottery_type_id,
+            period or returned_period,
+            event="source_fetch",
+            status="success" if outcome in {"success", "expected_period"} else "failed",
+            detail=detail,
+            duration_ms=int(event.get("elapsed_ms") or 0),
+            operator="crawler",
+        )
+        _crawler_logger.info("Draw source fetch: %s", detail)
+
+    return _audit
 
 
 class CrawlerScheduler:

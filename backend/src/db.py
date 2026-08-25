@@ -368,16 +368,17 @@ class ConnectionAdapter:
             return
         self._raw.close()
 
-    def table_exists(self, table_name: str) -> bool:
+    def table_exists(self, table_name: str, *, schema: str | None = None) -> bool:
         if self.engine == "postgres":
+            table_schema = schema or "public"
             row = self.execute(
                 """
                 SELECT 1
                 FROM information_schema.tables
-                WHERE table_schema = current_schema()
+                WHERE table_schema = ?
                   AND table_name = ?
                 """,
-                (table_name,),
+                (table_schema, table_name),
             ).fetchone()
             return bool(row)
 
@@ -387,17 +388,18 @@ class ConnectionAdapter:
         ).fetchone()
         return bool(row)
 
-    def table_columns(self, table_name: str) -> tuple[str, ...]:
+    def table_columns(self, table_name: str, *, schema: str | None = None) -> tuple[str, ...]:
         if self.engine == "postgres":
+            table_schema = schema or "public"
             rows = self.execute(
                 """
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_schema = current_schema()
+                WHERE table_schema = ?
                   AND table_name = ?
                 ORDER BY ordinal_position
                 """,
-                (table_name,),
+                (table_schema, table_name),
             ).fetchall()
             return tuple(str(row["column_name"]) for row in rows)
 

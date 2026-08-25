@@ -74,7 +74,7 @@ def _parse_autofill_count(value: object) -> int:
 def autofill_future_draws(ctx: RequestContext) -> None:
     payload = ctx.read_json()
     count = _parse_autofill_count(payload.get("count", 12))
-    result = autofill_taiwan_future_draws(ctx.db_path, count=count)
+    result = autofill_taiwan_future_draws(ctx.db_path, count=count, target_total=True)
     ctx.send_json({"ok": True, "data": result}, HTTPStatus.CREATED)
 
 

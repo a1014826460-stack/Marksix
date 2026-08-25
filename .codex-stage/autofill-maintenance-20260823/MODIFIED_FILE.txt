@@ -1,0 +1,10 @@
+Branch: Taiwan auto-fill scheduling and future-period completion
+Changed files:
+- backend/src/domains/lottery/service.py
+- backend/src/domains/scheduler/service.py
+- backend/src/routes/admin_draw_routes.py
+- backend/src/runtime_config.py
+- backend/features/draws/DrawsPage.tsx
+- backend/src/tests/unit/test_api_contract_admin_routes.py
+
+The modified working-tree branch uses Asia/Shanghai (UTC+8), target_total=True for manual auto-fill, and Beijing-time display formatting.

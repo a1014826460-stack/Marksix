@@ -1,0 +1,14 @@
+BASELINE command (exit 0):
+ssh -p 29618 root@207.56.3.82 'docker compose exec -T nginx nginx -T'
+literal result: active route showed `proxy_pass http://python-api:8000/api/`, while prior request log showed stale upstream `172.18.0.4:8000` and 502.
+
+MODIFIED command (exit 0):
+ssh -p 29618 root@207.56.3.82 'docker compose exec -T nginx nginx -t; docker compose exec -T nginx nginx -s reload'
+literal result: nginx syntax is ok; signal process started; python-api resolved to 172.18.0.5.
+
+Verification command (exit 0):
+center /central-api latest-draw=200; next-draw-deadline=200; frontend-node five sites twbst528, twssz, twjsz666, twwanli, twsyw all returned HTTP 200 and current_issue=2026234; frontend and nginx running.
+
+ROLLBACK command (exit 0, copied workspace only):
+ROLLBACK.sh <copied-root> <baseline-backup>
+literal result: baseline Nginx file restored and `nginx -t` passed; production was not changed by the drill.

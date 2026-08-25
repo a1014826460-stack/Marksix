@@ -192,7 +192,7 @@ def test_taiwan_future_autofill_schedule_catches_up_once_and_rolls_to_next_utc_d
             ("taiwan_future_draw_autofill:2026-07-28",),
         ).fetchone()
     assert next_task["status"] == "pending"
-    assert next_task["run_at"] == "2026-07-28T07:45:00+00:00"
+    assert next_task["run_at"] == "2026-07-27T23:45:00+00:00"
 
 
 def test_taiwan_future_autofill_schedule_is_not_created_when_disabled(tmp_path):

@@ -11,6 +11,7 @@ from crawler.collectors import _cfg
 from db import connect as db_connect
 from security.redaction import redact_value
 from domains.lottery.service import get_taiwan_future_autofill_settings
+from core.time_utils import BEIJING_TZ
 
 from . import repository
 
@@ -311,7 +312,7 @@ def has_completed_daily_prediction_task(db_path: str | Path, schedule_date: str)
         )
 
 
-def _parse_utc_schedule_time(value: object) -> tuple[int, int]:
+def _parse_beijing_schedule_time(value: object) -> tuple[int, int]:
     text = str(value or "").strip()
     try:
         hour_text, minute_text = text.split(":", 1)
@@ -333,24 +334,25 @@ def ensure_taiwan_future_autofill_task(
     *,
     now: datetime | None = None,
 ) -> None:
-    """Persist today's due task or tomorrow's task after today's successful run."""
+    """Persist the Beijing-calendar due task, stored as an absolute UTC instant."""
     settings = get_taiwan_future_autofill_settings(db_path)
     if not settings["enabled"]:
         return
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    current = current.astimezone(timezone.utc)
-    hour, minute = _parse_utc_schedule_time(settings["time"])
-    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    schedule_date = target.strftime("%Y-%m-%d")
-    if current >= target and _has_completed_task_for_date(
+    current_utc = now or datetime.now(timezone.utc)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=timezone.utc)
+    current_beijing = current_utc.astimezone(BEIJING_TZ)
+    hour, minute = _parse_beijing_schedule_time(settings["time"])
+    target_beijing = current_beijing.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    schedule_date = target_beijing.strftime("%Y-%m-%d")
+    if current_beijing >= target_beijing and _has_completed_task_for_date(
         db_path,
         task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
         schedule_date=schedule_date,
     ):
-        target += timedelta(days=1)
-        schedule_date = target.strftime("%Y-%m-%d")
+        target_beijing += timedelta(days=1)
+        schedule_date = target_beijing.strftime("%Y-%m-%d")
+    target_utc = target_beijing.astimezone(timezone.utc)
     task_key = _task_key(TASK_TYPE_TAIWAN_FUTURE_AUTOFILL, {"schedule_date": schedule_date})
     with db_connect(db_path) as conn:
         existing = repository.find_task_by_key(conn, task_key)
@@ -362,7 +364,7 @@ def ensure_taiwan_future_autofill_task(
         db_path,
         task_type=TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
         payload={"schedule_date": schedule_date},
-        run_at=target.isoformat(),
+        run_at=target_utc.isoformat(),
         max_attempts=3,
         schedule_scope=SCHEDULE_SCOPE_AUTO,
     )

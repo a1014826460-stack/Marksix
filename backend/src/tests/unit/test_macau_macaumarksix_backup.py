@@ -145,6 +145,54 @@ def test_fetch_current_term_data_uses_later_source_when_first_source_is_old(monk
     assert transform_standard_list(raw, crawler_type=2)[0]["issue"] == "234"
 
 
+def test_fetch_current_term_data_audits_old_then_matching_sources(monkeypatch):
+    """每个来源都记录响应期号，旧期后立即继续尝试下一来源。"""
+    import json
+
+    from crawler.result_crawler import fetch_current_term_data
+
+    primary = "https://first.example/api"
+    backup = "https://second.example/api"
+    events: list[dict[str, object]] = []
+    payloads = {
+        primary: [{
+            "expect": "2026234",
+            "openTime": "2026-08-22 21:32:32",
+            "openCode": "01,02,03,04,05,06,07",
+        }],
+        backup: [{
+            "expect": "2026235",
+            "openTime": "2026-08-23 21:32:32",
+            "openCode": "08,09,10,11,12,13,14",
+        }],
+    }
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.text = json.dumps(payload)
+
+    monkeypatch.setenv("DRAW_HK_MACAU_MIN_REQUEST_INTERVAL_SECONDS", "0")
+    monkeypatch.setattr("crawler.result_crawler.requests.get", lambda url, **_kwargs: Response(payloads[url]))
+
+    raw, status = fetch_current_term_data(
+        type=2,
+        collect_url=f"{primary},{backup}",
+        retry_count=0,
+        expected_period="2026235",
+        on_attempt=events.append,
+    )
+
+    assert status == 200
+    assert json.loads(raw)[0]["expect"] == "2026235"
+    assert [(event["source"], event["returned_period"], event["outcome"]) for event in events] == [
+        ("first.example", "2026234", "old_period"),
+        ("second.example", "2026235", "expected_period"),
+    ]
+    assert all("url" not in event for event in events)
+
+
 def test_fetch_current_term_data_returns_old_response_only_after_all_sources_are_old(monkeypatch):
     import json
 
