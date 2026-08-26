@@ -565,7 +565,18 @@ def _upsert_current_draw_records(
             year = int(open_time[:4])
             issue = str(record.get("issue") or "")
             try:
-                term = int(issue[4:]) if issue.isdigit() and len(issue) >= 7 else int(issue)
+                if issue.isdigit() and len(issue) >= 7:
+                    # 完整期号须为 7 位 YYYY###；切出的 term 须在合理范围（1-999）。
+                    # 防止源站把日期等拼进期号（如 csjid 的 20260825093）产生脏数据。
+                    if len(issue) != 7:
+                        raise ValueError(f"invalid issue length {len(issue)}")
+                    term = int(issue[4:])
+                    if not (0 < term <= 999):
+                        raise ValueError(f"term out of range: {term}")
+                else:
+                    term = int(issue)
+                    if not (0 < term <= 999):
+                        raise ValueError(f"term out of range: {term}")
             except ValueError:
                 _crawler_logger.warning("Auto-crawl upsert skip: cannot parse term from issue=%s", issue)
                 continue

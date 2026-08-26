@@ -338,6 +338,61 @@ def test_has_backup_collect_url_returns_false_when_neither_backup_set(monkeypatc
     assert _has_backup_collect_url(":memory:", 2) is False
 
 
+# ── term 边界校验：拒绝 csjid 异常期号 ──────────────────────────────────────
+
+def _upsert_db(tmp_path, name):
+    from database.bootstrap import ensure_admin_tables
+
+    db_path = str(tmp_path / name)
+    ensure_admin_tables(db_path)
+    return db_path
+
+
+def test_upsert_rejects_issue_with_embedded_date(tmp_path):
+    """csjid 返回含日期的异常期号（如 20260825093）必须被拒绝，不能入库。"""
+    from crawler.scheduler import _upsert_current_draw_records
+
+    db_path = _upsert_db(tmp_path, "reject-date-issue.sqlite3")
+    result = _upsert_current_draw_records(db_path, 1, [{
+        "issue": "20260825093",
+        "open_time": "2026-08-25 21:34:55",
+        "result": "34,01,25,19,18,38,07",
+        "next_time": "",
+    }])
+
+    assert result == {"inserted": 0, "updated": 0, "skipped": 0, "latest_draw": None}
+
+
+def test_upsert_accepts_valid_7_digit_issue(tmp_path):
+    from crawler.scheduler import _upsert_current_draw_records
+
+    db_path = _upsert_db(tmp_path, "valid-7-digit.sqlite3")
+    result = _upsert_current_draw_records(db_path, 1, [{
+        "issue": "2026093",
+        "open_time": "2026-08-25 21:34:55",
+        "result": "34,01,25,19,18,38,07",
+        "next_time": "",
+    }])
+
+    assert result["inserted"] == 1
+    assert result["latest_draw"] == {"year": 2026, "term": 93, "issue": "2026093", "open_time": "2026-08-25 21:34:55"}
+
+
+def test_upsert_rejects_out_of_range_term(tmp_path):
+    """完整期号切出的 term 超过合理范围（如 4 位）必须拒绝。"""
+    from crawler.scheduler import _upsert_current_draw_records
+
+    db_path = _upsert_db(tmp_path, "reject-out-of-range.sqlite3")
+    result = _upsert_current_draw_records(db_path, 1, [{
+        "issue": "202601234",
+        "open_time": "2026-08-25 21:34:55",
+        "result": "34,01,25,19,18,38,07",
+        "next_time": "",
+    }])
+
+    assert result == {"inserted": 0, "updated": 0, "skipped": 0, "latest_draw": None}
+
+
 def test_hk_macau_requests_use_dedicated_proxy(monkeypatch):
     from crawler.result_crawler import fetch_current_term_data
 

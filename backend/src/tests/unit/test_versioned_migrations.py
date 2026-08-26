@@ -18,10 +18,13 @@ def test_latest_migration_creates_forced_announcement_tables():
     conn = _Connection()
     latest = versioned_migrations.MIGRATIONS[-1]
 
-    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 27
-    assert latest.version == 27
-    assert latest.name == "create_forced_announcements"
-    latest.apply(conn)
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 28
+    assert latest.version == 28
+    assert latest.name == "disable_shengshi8800_legacy_title_123"
+    # forced_announcements 表由迁移 27 创建，验证它仍然存在
+    forced = next(m for m in versioned_migrations.MIGRATIONS if m.version == 27)
+    assert forced.name == "create_forced_announcements"
+    forced.apply(conn)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcements" in sql for sql in conn.statements)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcement_sites" in sql for sql in conn.statements)
 
