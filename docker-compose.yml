@@ -13,6 +13,7 @@ services:
       DRAW_PROXY_SUBSCRIPTION_URL: "${DRAW_PROXY_SUBSCRIPTION_URL:-}"
     volumes:
       - ./deploy/mihomo:/etc/mihomo:ro
+      - ./deploy/mihomo/proxies:/tmp/proxies:ro
     networks:
       - liuhecai-network
 

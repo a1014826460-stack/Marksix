@@ -740,7 +740,7 @@ class CrawlerScheduler:
         self._publication_publisher = publication_publisher
 
     def _auto_crawl_interval_seconds(self) -> int:
-        return max(30, int(_cfg(self.db_path, "crawler.auto_crawl_interval_seconds", 600)))
+        return max(30, int(_cfg(self.db_path, "crawler.auto_crawl_interval_seconds", 30000)))
 
     def _auto_crawl_recent_minutes(self) -> int:
         return max(1, int(_cfg(self.db_path, "crawler.auto_crawl_recent_minutes", 30)))
@@ -1042,7 +1042,8 @@ class CrawlerScheduler:
             return max(5, int(_cfg(self.db_path, "crawler.crawl_interval_chase", 5)))
 
         near_interval = max(5, int(_cfg(self.db_path, "crawler.crawl_interval_near_draw", 10)))
-        far_interval = max(30, int(_cfg(self.db_path, "crawler.crawl_interval_far_draw", 300)))
+        # 平时（非开奖窗口、非追赶）只需低频巡检，避免无效高频请求。
+        far_interval = max(30, int(_cfg(self.db_path, "crawler.crawl_interval_far_draw", 30000)))
         window = timedelta(minutes=5)
         now_dt = datetime.now(timezone.utc)
 

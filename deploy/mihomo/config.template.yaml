@@ -4,13 +4,13 @@ mode: rule
 log-level: warning
 external-controller: 0.0.0.0:9090
 
-# Rendered by entrypoint.sh from the deployment-only subscription secret.
+# 订阅源 47.112.97.173:5000 从本机不可达；改为静态 file provider，
+# 节点由离线导入 deploy/mihomo/proxies/upstream.yaml（转换自 base64 订阅），
+# 经 compose 挂载到 mihomo home(/tmp) 下的 /tmp/proxies。
 proxy-providers:
   upstream:
-    type: http
-    url: "${DRAW_PROXY_SUBSCRIPTION_URL}"
-    interval: 3600
-    path: ./proxies/upstream.yaml
+    type: file
+    path: /tmp/proxies/upstream.yaml
     health-check:
       enable: true
       interval: 300

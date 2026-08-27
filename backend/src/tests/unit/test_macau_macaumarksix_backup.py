@@ -458,3 +458,45 @@ def test_same_source_requests_wait_for_minimum_interval(monkeypatch):
     fetch_current_term_data(type=2, collect_url=_MACAU_BACKUP1)
 
     assert sleeps == [7.0]
+
+
+# ── 动态爬取间隔：平时低频、开奖窗口高频 ────────────────────────────────────
+
+def _crawl_scheduler(tmp_path):
+    from database.bootstrap import ensure_admin_tables
+    from crawler.scheduler import CrawlerScheduler
+
+    db_path = str(tmp_path / "crawl-interval.sqlite3")
+    ensure_admin_tables(db_path)
+    return CrawlerScheduler(db_path)
+
+
+def test_dynamic_crawl_interval_far_draw_default_is_30000s(tmp_path, monkeypatch):
+    """平时（无追赶、非开奖窗口）爬取间隔应为 30000s，而不是 300s。"""
+    sched = _crawl_scheduler(tmp_path)
+    monkeypatch.setattr("crawler.scheduler._cfg", lambda _db, k, d: d)
+    assert sched._compute_dynamic_crawl_interval() == 30000
+
+
+def test_dynamic_crawl_interval_uses_near_draw_in_draw_window(tmp_path, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+
+    sched = _crawl_scheduler(tmp_path)
+    near_ms = int((datetime.now(timezone.utc) + timedelta(minutes=3)).timestamp() * 1000)
+
+    def cfg(db, k, d):
+        if k == "lottery.hk_next_time":
+            return str(near_ms)
+        if k == "crawler.crawl_interval_near_draw":
+            return 10
+        return d
+
+    monkeypatch.setattr("crawler.scheduler._cfg", cfg)
+    assert sched._compute_dynamic_crawl_interval() == 10
+
+
+def test_dynamic_crawl_interval_uses_chase_interval_in_chase_mode(tmp_path, monkeypatch):
+    sched = _crawl_scheduler(tmp_path)
+    sched._set_lottery_chase_mode(1, True)
+    monkeypatch.setattr("crawler.scheduler._cfg", lambda _db, k, d: d)
+    assert sched._compute_dynamic_crawl_interval() == 5
