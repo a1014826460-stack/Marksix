@@ -211,3 +211,60 @@ def test_repair_text_prediction_diversity_keeps_non_duplicate_row(monkeypatch):
     )
 
     assert result == row_data
+
+
+def test_normalize_created_term_three_digit_padding():
+    assert created_prediction_store._normalize_created_term("94") == "094"
+    assert created_prediction_store._normalize_created_term(94) == "094"
+    assert created_prediction_store._normalize_created_term("052") == "052"
+    assert created_prediction_store._normalize_created_term("113") == "113"
+    assert created_prediction_store._normalize_created_term("") == ""
+
+
+def test_upsert_created_prediction_row_normalizes_term_to_three_digits(monkeypatch):
+    class _Cursor:
+        def fetchone(self):
+            return None
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        engine = "postgres"
+
+        def execute(self, _sql, _params=None):
+            return _Cursor()
+
+        def commit(self):
+            pass
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(created_prediction_store, "schema_table_exists", lambda *_args: True)
+    monkeypatch.setattr(
+        created_prediction_store,
+        "list_table_columns",
+        lambda *_args: [type("Col", (), {"name": "term", "sql_type": "text"})()],
+    )
+    def _capture_normalized(_conn, _table, row):
+        captured["term"] = row.get("term")
+        return row
+
+    monkeypatch.setattr(
+        created_prediction_store,
+        "normalize_three_period_special_row",
+        _capture_normalized,
+    )
+    monkeypatch.setattr(created_prediction_store, "enrich_prediction_result_fields", lambda _c, _t, row: row)
+    monkeypatch.setattr(created_prediction_store, "normalize_prediction_result_placeholders", lambda row: row)
+    monkeypatch.setattr(created_prediction_store, "sanitize_created_prediction_row_data", lambda _t, row, _d: row)
+    monkeypatch.setattr(created_prediction_store, "find_existing_created_row", lambda *_args: None)
+    monkeypatch.setattr(created_prediction_store, "sync_three_period_special_window_rows", lambda *_args: None)
+
+    created_prediction_store.upsert_created_prediction_row(
+        _Conn(),
+        "mode_payload_100",
+        {"type": "1", "year": "2026", "term": "94", "web": "8", "content": "x"},
+    )
+
+    assert captured["term"] == "094"

@@ -1024,6 +1024,14 @@ def find_existing_created_row(
     return dict(row) if row else None
 
 
+def _normalize_created_term(term: Any) -> str:
+    """预测结果期号统一 3 位补零（'94' -> '094'），避免同期待号出现两种格式。"""
+    try:
+        return f"{int(term):03d}"
+    except (TypeError, ValueError):
+        return str(term or "")
+
+
 def upsert_created_prediction_row(
     conn: Any,
     source_table_name: str,
@@ -1056,6 +1064,8 @@ def upsert_created_prediction_row(
         for column in list_table_columns(conn, CREATED_SCHEMA_NAME, table_name)
     }
     target_columns = set(target_column_defs)
+    if "term" in row_data:
+        row_data = {**row_data, "term": _normalize_created_term(row_data.get("term"))}
     normalized_row_data = normalize_three_period_special_row(conn, table_name, row_data)
     enriched_row_data = enrich_prediction_result_fields(conn, table_name, normalized_row_data)
     prepared_row_data = normalize_prediction_result_placeholders(enriched_row_data)
