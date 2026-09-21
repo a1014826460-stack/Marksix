@@ -117,6 +117,7 @@
     </div>
   </div>
 
+  <script src="/vendor/_shared/kj-runtime.js"></script>
   <script>
     (function () {
       var params = new URLSearchParams(window.location.search);
@@ -126,6 +127,23 @@
       var ballPrefixIds = ["m1", "m2", "m3", "m4", "m5", "m6", "s1"];
       var zodiacPrefixIds = ["m1x", "m2x", "m3x", "m4x", "m5x", "m6x", "s1x"];
       var ballWrapIds = ["w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+
+      // /vendor/_shared/kj-runtime.js 提供站点 URL 垫片；缺失时退化为无前缀路径，
+      // 保证共享面板在垫片未加载时仍可用。
+      function legacyKjRuntime() {
+        return window.LegacyKjRuntime || {
+          buildAppUrl: function (path) {
+            var text = String(path || "/");
+            return text.charAt(0) === "/" ? text : "/" + text;
+          },
+          buildHistoryUrl: function (type) {
+            return "/history?type=" + encodeURIComponent(String(type));
+          },
+          buildVendorPath: function (path) {
+            return "/vendor/shengshi8800/" + String(path || "").replace(/^\/+/, "");
+          }
+        };
+      }
 
       var beijingDateFormatter = new Intl.DateTimeFormat("zh-CN", {
         timeZone: "Asia/Shanghai",
@@ -152,6 +170,7 @@
       var _revealWindowEndsAtSec = 0;
       var _lastRenderedIssue = "";
       var _loadingLatestDraw = false;
+      var _lastProgressiveBallCount = 0;
       var _scheduledCurrentIssue = "";
       var _scheduledNextIssue = "";
       var _revealTargetIssue = "";
@@ -165,6 +184,13 @@
       var REVEAL_INTERVAL_SEC = REVEAL_INTERVAL_MS / 1000;
       var REVEAL_POLL_INTERVAL_MS = 5000;
       var REVEAL_WINDOW_SEC = 210;
+
+      // 香港彩（lottery_type=1）的源站按号码逐个补全，采用“轮序发布”：
+      // 不等 7 个号码齐全，直接把当前已公布的号码前缀按顺序展示出来，
+      // 每轮询到新号码就补上一个，直到号码齐全为止。
+      var PROGRESSIVE_REVEAL_LOTTERY_TYPES = { 1: true };
+      var PROGRESSIVE_POLL_WINDOW_SEC = 900;
+      var isProgressiveReveal = !!PROGRESSIVE_REVEAL_LOTTERY_TYPES[Number(lotteryType)];
       var UI_TEXT = {
         countdownPrefix: "下次开奖 ",
         countdownWaiting: "开奖核验中...",
@@ -299,7 +325,7 @@
       function updateHistoryLink() {
         var historyLink = $("historyLink");
         if (historyLink) {
-          historyLink.href = "/history?type=" + encodeURIComponent(String(lotteryType));
+          historyLink.href = legacyKjRuntime().buildHistoryUrl(lotteryType);
           historyLink.textContent = UI_TEXT.historyLink;
         }
       }
@@ -386,6 +412,18 @@
           if (!balls[i] || !balls[i].value) return false;
         }
         return true;
+      }
+
+      // 已按顺序公布了多少个号码（1..7）。香港彩轮序发布用它决定“再补一个号码”。
+      function _progressiveBallCount(payload) {
+        if (!payload || !Array.isArray(payload.result_balls)) return 0;
+        var balls = payload.result_balls.slice(0, 6);
+        if (payload.special_ball && payload.special_ball.value) balls.push(payload.special_ball);
+        var count = 0;
+        for (var i = 0; i < balls.length && i < 7; i++) {
+          if (balls[i] && balls[i].value) count = i + 1;
+        }
+        return count;
       }
 
       function _shouldRevealPayload(payload) {
@@ -575,7 +613,10 @@
 
       async function fetchCountdownDeadline() {
         try {
-          var resp = await fetch("/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType)), { cache: "no-store" });
+          var countdownUrl = legacyKjRuntime().buildAppUrl(
+            "/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType))
+          );
+          var resp = await fetch(countdownUrl, { cache: "no-store" });
           var data = await resp.json();
           debugLog("next-draw-deadline:response", data);
           if (data && data.next_time) {
@@ -623,15 +664,15 @@
           serverNow: getServerNowSeconds()
         });
         _revealWindowEndsAtSec = countdownDeadline > 0
-          ? countdownDeadline + REVEAL_WINDOW_SEC
-          : getServerNowSeconds() + REVEAL_WINDOW_SEC;
+          ? countdownDeadline + (isProgressiveReveal ? PROGRESSIVE_POLL_WINDOW_SEC : REVEAL_WINDOW_SEC)
+          : getServerNowSeconds() + (isProgressiveReveal ? PROGRESSIVE_POLL_WINDOW_SEC : REVEAL_WINDOW_SEC);
         if (_revealPolling) return;
         _revealPolling = true;
         updateCountdownDisplay();
         load({ reveal: true, background: true, preserveWhenPending: true });
         _revealPollTimerId = setInterval(function () {
           if (_revealActive) return;
-          if (_revealWindowEndsAtSec > 0 && getServerNowSeconds() > _revealWindowEndsAtSec) {
+          if (!isProgressiveReveal && _revealWindowEndsAtSec > 0 && getServerNowSeconds() > _revealWindowEndsAtSec) {
             stopRevealPolling();
             fetchCountdownDeadline();
             return;
@@ -750,7 +791,8 @@
             lottery_type: String(lotteryType),
             _ts: String(Date.now())
           });
-          var response = await fetch("/api/latest-draw?" + query.toString(), {
+          var latestDrawUrl = legacyKjRuntime().buildAppUrl("/api/latest-draw?" + query.toString());
+          var response = await fetch(latestDrawUrl, {
             cache: "no-store"
           });
           if (!response.ok) {
@@ -769,6 +811,9 @@
           var shouldHoldPendingTarget = _shouldHoldPendingTarget(issue, payload);
           var shouldStartTargetReveal = !!_revealTargetIssue && !_revealActive && (isRevealTargetIssue || isNewerThanRevealTarget) && hasFullBalls;
           var shouldStartRevealFromPolling = !!useReveal && !_revealActive && hasFullBalls && (!_revealTargetIssue || comparedToRevealTarget >= 0) && (isNewIssue || shouldStartTargetReveal);
+          var progressiveBallCount = _progressiveBallCount(payload);
+          var hasProgressiveBalls = isProgressiveReveal && progressiveBallCount > 0;
+          var progressiveGrew = hasProgressiveBalls && progressiveBallCount > _lastProgressiveBallCount;
           debugLog("latest-draw:evaluated", {
             issue: issue,
             payloadCurrentIssue: payload && payload.current_issue,
@@ -785,8 +830,40 @@
             shouldStartTargetReveal: shouldStartTargetReveal,
             shouldStartRevealFromPolling: shouldStartRevealFromPolling,
             hasFullBalls: hasFullBalls,
+            progressiveBallCount: progressiveBallCount,
             drawTime: payload && payload.draw_time ? payload.draw_time : ""
           });
+
+          if (hasProgressiveBalls) {
+            // 香港彩轮序发布：按当前已公布的前缀立即展示，不做定时揭示；
+            // 号码没齐就保持 5s 轮询，每多一个号码补渲染一次。
+            if (isNewIssue || progressiveGrew || !_lastRenderedIssue) {
+              debugLog("latest-draw:branch-progressive-render", {
+                issue: issue,
+                announcedBalls: progressiveBallCount,
+                previousAnnouncedBalls: _lastProgressiveBallCount
+              });
+              render(payload || {});
+            }
+            _lastProgressiveBallCount = progressiveBallCount;
+            _lastRenderedIssue = issue || _lastRenderedIssue;
+            if (_revealTargetIssue && compareIssues(issue, _revealTargetIssue) >= 0) {
+              _revealTargetIssue = "";
+            }
+            if (progressiveBallCount < 7) {
+              if (!_revealPolling) beginRevealPolling();
+            } else {
+              stopRevealPolling(true);
+              fetchCountdownDeadline().then(function () {
+                countdownExpired = false;
+                updateCountdownDisplay();
+              });
+            }
+            if (isManual) {
+              setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+            }
+            return;
+          }
 
           if (shouldStartTargetReveal || shouldStartRevealFromPolling || shouldRevealCurrentPayload) {
             if (issue) {

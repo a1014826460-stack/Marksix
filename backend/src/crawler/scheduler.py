@@ -50,7 +50,10 @@ from helpers import (
     get_effective_next_draw_payload,
     sync_lottery_type_next_time_from_latest_draw,
 )
-from outbox.draw_publication import enqueue_opened_draw_publication
+from outbox.draw_publication import (
+    draw_numbers_are_publishable,
+    enqueue_opened_draw_publication,
+)
 from runtime_config import get_config, get_config_from_conn
 from security.redaction import redact_text
 
@@ -100,6 +103,96 @@ def _parse_beijing_draw_datetime(value: Any) -> datetime | None:
             continue
     _crawler_logger.warning("Invalid Beijing draw_time format: %s", text)
     return None
+
+
+def _parse_utc_timestamp(value: Any) -> datetime | None:
+    """解析 ``lottery_draws.created_at`` 形态的 UTC 时间戳文本。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                parsed = datetime.strptime(normalized, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+_DRAW_LATENCY_BASELINE_CACHE: dict[tuple[str, int], tuple[float, int]] = {}
+_DRAW_LATENCY_BASELINE_TTL_SECONDS = 300
+
+
+def _observed_draw_arrival_latency_seconds(db_path: str | Path, lottery_type_id: int) -> int:
+    """最近若干期“源站开奖时间 → 入库时间”的滑动分位数（秒）。
+
+    上游源站在计划开奖时间之后 2~6 分钟才发布结果属于常态，因此告警基线不能再用
+    计划开奖时间，而应使用自身历史入库时延的滑动分位数。结果按 5 分钟缓存。
+    """
+    cache_key = (str(db_path), int(lottery_type_id))
+    cached = _DRAW_LATENCY_BASELINE_CACHE.get(cache_key)
+    now_monotonic = time.monotonic()
+    if cached is not None and now_monotonic - cached[0] < _DRAW_LATENCY_BASELINE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        percentile = float(_cfg(db_path, "alert.draw_latency_baseline_percentile", 90))
+    except (TypeError, ValueError):
+        percentile = 90.0
+    percentile = min(100.0, max(50.0, percentile))
+    try:
+        sample_size = max(5, int(_cfg(db_path, "alert.draw_latency_baseline_samples", 40)))
+    except (TypeError, ValueError):
+        sample_size = 40
+
+    latencies: list[int] = []
+    try:
+        with db_connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT draw_time, created_at FROM lottery_draws "
+                "WHERE lottery_type_id = ? AND is_opened = 1 "
+                "AND draw_time IS NOT NULL AND draw_time != '' "
+                "ORDER BY year DESC, term DESC, id DESC LIMIT ?",
+                (int(lottery_type_id), sample_size),
+            ).fetchall()
+        for row in rows:
+            draw_dt = _parse_beijing_draw_datetime(row["draw_time"])
+            created_dt = _parse_utc_timestamp(row["created_at"])
+            if draw_dt is None or created_dt is None:
+                continue
+            draw_utc = (draw_dt - timedelta(hours=8)).replace(tzinfo=timezone.utc)
+            latencies.append(int((created_dt - draw_utc).total_seconds()))
+    except Exception as exc:
+        _crawler_logger.warning(
+            "Draw latency baseline query failed lt=%s: %s", lottery_type_id, exc
+        )
+        return 0
+
+    if not latencies:
+        return 0
+
+    latencies.sort()
+    index = min(len(latencies) - 1, max(0, int(round(percentile / 100.0 * len(latencies))) - 1))
+    baseline = max(0, latencies[index])
+    _DRAW_LATENCY_BASELINE_CACHE[cache_key] = (now_monotonic, baseline)
+    return baseline
+
+
+def _draw_alert_baseline_seconds(db_path: str | Path, lottery_type_id: int) -> int:
+    """告警基线 = max(配置下限, 本彩种历史入库时延滑动分位数)。"""
+    try:
+        floor = int(_cfg(db_path, "alert.draw_latency_baseline_seconds", 120))
+    except (TypeError, ValueError):
+        floor = 120
+    return max(max(0, floor), _observed_draw_arrival_latency_seconds(db_path, lottery_type_id))
 
 
 def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) -> None:
@@ -409,6 +502,17 @@ def _compute_next_period(current_period: str) -> str:
         return f"{year}{term + 1:03d}"
     except (ValueError, IndexError):
         return ""
+
+
+def _period_to_year_term(period: str) -> tuple[int, int] | None:
+    """把完整期号 ``YYYY###`` 拆成 ``(year, term)``；无法解析时返回 None。"""
+    text = str(period or "").strip()
+    if len(text) < 5 or not text.isdigit():
+        return None
+    try:
+        return int(text[:4]), int(text[4:])
+    except ValueError:
+        return None
 
 
 def _do_precise_draw_check(lottery_type_id: int, db_path: str) -> None:
@@ -724,6 +828,8 @@ class CrawlerScheduler:
         self._running = False
         self._auto_open_timer: threading.Timer | None = None
         self._auto_crawl_timer: threading.Timer | None = None
+        self._auto_crawl_running = False
+        self._staged_alert_timer: threading.Timer | None = None
         self._task_timer: threading.Timer | None = None
         self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
         self._precise_reschedule_active = False
@@ -741,6 +847,14 @@ class CrawlerScheduler:
 
     def _auto_crawl_interval_seconds(self) -> int:
         return max(30, int(_cfg(self.db_path, "crawler.auto_crawl_interval_seconds", 30000)))
+
+    def _staged_alert_interval_seconds(self) -> int:
+        """分级开奖超时告警独立轮询间隔（默认 15 秒）。
+
+        该检查会开启追赶模式，因此不能挂在 ``_auto_crawl`` 上：否则它的执行频率
+        等于它本应加速的那条慢轮询，形成最长 5 分钟的自锁盲区。
+        """
+        return max(5, int(_cfg(self.db_path, "crawler.staged_alert_interval_seconds", 15)))
 
     def _auto_crawl_recent_minutes(self) -> int:
         return max(1, int(_cfg(self.db_path, "crawler.auto_crawl_recent_minutes", 30)))
@@ -764,18 +878,56 @@ class CrawlerScheduler:
     # ── 改进方法：精确开奖完整管线（期号验证 + 数据抓取 + 开盘 + 回填） ──
 
     def _set_lottery_chase_mode(self, lottery_type_id: int, chase: bool) -> None:
-        """启用或禁用指定彩种的加速追赶模式。"""
+        """启用或禁用指定彩种的加速追赶模式。
+
+        进入追赶时必须立即把 auto-crawl 定时器切到追赶间隔。否则该标记只能在
+        上一轮排程到期后才生效：如果上一轮恰好排成 far（默认 300s），系统会在
+        “计划开奖时间已过、新数据未到”时整段失明最长 5 分钟。
+        """
         if not hasattr(self, "_chase_modes"):
             self._chase_modes: dict[int, bool] = {}
+        was_chasing = bool(self._chase_modes.get(lottery_type_id))
         self._chase_modes[lottery_type_id] = chase
-        if chase:
+        if chase and not was_chasing:
             _crawler_logger.warning("Chase mode enabled for lt=%s", lottery_type_id)
+            self._rearm_auto_crawl_for_chase()
+
+    def _rearm_auto_crawl_for_chase(self) -> None:
+        """把已在运行的 auto-crawl 定时器立刻切换到当前动态间隔。"""
+        if not self._running:
+            return
+        if getattr(self, "_auto_crawl_running", False):
+            # 当前这一轮抓取结束后会按新的动态间隔自行重排，重排会产生重复定时器。
+            return
+        timer = getattr(self, "_auto_crawl_timer", None)
+        if timer is None:
+            return
+        try:
+            interval = self._compute_dynamic_crawl_interval()
+        except Exception as exc:  # pragma: no cover - 配置异常不应中断调度
+            _crawler_logger.warning("Chase rearm: cannot compute interval: %s", exc)
+            return
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+        self._auto_crawl_timer = threading.Timer(interval, self._schedule_auto_crawl)
+        self._auto_crawl_timer.daemon = True
+        self._auto_crawl_timer.start()
+        _crawler_logger.warning(
+            "Chase mode re-armed auto-crawl timer: next poll in %ss (lt chase=%s)",
+            interval,
+            sorted(lt for lt, on in self._chase_modes.items() if on),
+        )
 
     def _open_specific_records(self, lottery_type_id: int, latest_draw: dict[str, Any] | None = None) -> int:
         """立即对刚 upsert 的记录执行开盘（is_opened=1），延迟 ≤ 1 秒。
 
         若传入 latest_draw，仅开盘匹配的 year+term 记录；
         否则回退为开盘该彩种所有未开奖且 draw_time 已过的记录。
+
+        号码不完整（澳门彩/台湾彩需要 7 个合法号码；香港彩为“轮序发布”，只要
+        有合法号码即可）的记录只入库不开盘，避免把半成品号码推给公众。
 
         Returns:
             开盘的记录数。
@@ -785,43 +937,61 @@ class CrawlerScheduler:
         now_utc = now_utc_dt.strftime("%Y-%m-%d %H:%M:%S")
         now_beijing = now_beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
 
+        opened = 0
         with db_connect(self.db_path) as conn:
             if latest_draw and latest_draw.get("year") and latest_draw.get("term"):
                 year = int(latest_draw["year"])
                 term = int(latest_draw["term"])
-                cur = conn.execute(
-                    """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
-                       WHERE lottery_type_id = ? AND year = ? AND term = ?
-                       AND is_opened = 0""",
-                    (now_utc, int(lottery_type_id), year, term),
-                )
-                if cur.rowcount == 1:
-                    draw = conn.execute(
-                        "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
-                        "status, is_opened, next_term FROM lottery_draws "
-                        "WHERE lottery_type_id = ? AND year = ? AND term = ?",
-                        (int(lottery_type_id), year, term),
-                    ).fetchone()
-                    if draw:
-                        enqueue_opened_draw_publication(conn, draw, now=now_utc)
+                draw = conn.execute(
+                    "SELECT id, lottery_type_id, year, term, numbers, draw_time, next_time, "
+                    "status, is_opened, next_term FROM lottery_draws "
+                    "WHERE lottery_type_id = ? AND year = ? AND term = ? AND is_opened = 0",
+                    (int(lottery_type_id), year, term),
+                ).fetchone()
+                if draw and draw_numbers_are_publishable(lottery_type_id, draw["numbers"]):
+                    cur = conn.execute(
+                        "UPDATE lottery_draws SET is_opened = 1, updated_at = ? WHERE id = ?",
+                        (now_utc, draw["id"]),
+                    )
+                    opened = cur.rowcount
+                    if opened:
+                        enqueue_opened_draw_publication(
+                            conn, {**dict(draw), "is_opened": 1}, now=now_utc
+                        )
+                elif draw:
+                    _crawler_logger.warning(
+                        "Open skipped lt=%s %s%s: incomplete numbers=%s",
+                        lottery_type_id, year, term, draw["numbers"],
+                    )
             else:
                 pending = conn.execute(
-                    "SELECT lottery_type_id, year, term, numbers, draw_time, next_time, "
+                    "SELECT id, lottery_type_id, year, term, numbers, draw_time, next_time, "
                     "status, is_opened, next_term FROM lottery_draws "
                     "WHERE lottery_type_id = ? AND is_opened = 0 "
                     "AND draw_time IS NOT NULL AND draw_time != '' AND draw_time <= ?",
                     (int(lottery_type_id), now_beijing),
                 ).fetchall()
-                cur = conn.execute(
-                    """UPDATE lottery_draws SET is_opened = 1, updated_at = ?
-                       WHERE lottery_type_id = ? AND is_opened = 0
-                       AND draw_time IS NOT NULL AND draw_time != ''
-                       AND draw_time <= ?""",
-                    (now_utc, int(lottery_type_id), now_beijing),
-                )
-                for draw in pending:
-                    enqueue_opened_draw_publication(conn, {**dict(draw), "is_opened": 1}, now=now_utc)
-            return cur.rowcount
+                openable = [
+                    row for row in pending
+                    if draw_numbers_are_publishable(lottery_type_id, row["numbers"])
+                ]
+                for row in openable:
+                    cur = conn.execute(
+                        "UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                        "WHERE id = ? AND is_opened = 0",
+                        (now_utc, row["id"]),
+                    )
+                    opened += cur.rowcount
+                    if cur.rowcount:
+                        enqueue_opened_draw_publication(
+                            conn, {**dict(row), "is_opened": 1}, now=now_utc
+                        )
+                if len(openable) != len(pending):
+                    _crawler_logger.warning(
+                        "Open skipped lt=%s: %d of %d past-due row(s) have incomplete numbers",
+                        lottery_type_id, len(pending) - len(openable), len(pending),
+                    )
+        return opened
 
     def _do_precise_draw_fetch_and_open(self, lottery_type_id: int) -> dict[str, Any]:
         """精确开奖完整管线：验证期号 → 拉取数据 → 入库 → 开盘 → 回填 → 同步。
@@ -1035,8 +1205,12 @@ class CrawlerScheduler:
         """根据距离最近开奖时间窗口计算 auto_crawl 的动态轮询间隔。
 
         - 追赶模式 → crawl_interval_chase（默认 5s）
-        - 开奖窗口（±5 分钟）→ crawl_interval_near_draw（默认 10s）
+        - 开奖窗口（±5 分钟）或“计划时间已过但新期未到” → crawl_interval_near_draw（默认 10s）
         - 平时 → crawl_interval_far_draw（默认 300s）
+
+        “逾期未到”判定是必需的：一旦某期被 upsert，``next_time`` 会被同步推进到
+        下一期（通常是 24 小时之后），仅靠 ±5 分钟窗口会把“开奖时间已过、结果还没
+        到”误判成 far（300s），从而产生最长 5 分钟的抓取盲区。
         """
         if hasattr(self, "_chase_modes") and any(self._chase_modes.values()):
             return max(5, int(_cfg(self.db_path, "crawler.crawl_interval_chase", 5)))
@@ -1061,20 +1235,55 @@ class CrawlerScheduler:
                 target_dt = datetime.fromtimestamp(next_ms / 1000, tz=timezone.utc)
                 if abs(now_dt - target_dt) <= window:
                     return near_interval
+                if target_dt <= now_dt and self._draw_is_overdue_and_unfilled(lt_id, cfg_prefix):
+                    return near_interval
             except (ValueError, OSError):
                 continue
         return far_interval
 
+    def _draw_is_overdue_and_unfilled(self, lottery_type_id: int, cfg_prefix: str) -> bool:
+        """计划开奖时间已过、但期望的新期还没有入库（或还没拿到完整/可发布号码）。"""
+        try:
+            current_period = str(_cfg(self.db_path, f"{cfg_prefix}_current_period", ""))
+        except Exception:
+            return False
+        if not current_period:
+            return False
+        expected_period = _compute_next_period(current_period)
+        try:
+            expected_term = _period_to_year_term(expected_period)
+        except (TypeError, ValueError):
+            return False
+        if expected_term is None:
+            return False
+        year, term = expected_term
+        try:
+            with db_connect(self.db_path) as conn:
+                row = conn.execute(
+                    "SELECT numbers, is_opened FROM lottery_draws "
+                    "WHERE lottery_type_id = ? AND year = ? AND term = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (int(lottery_type_id), year, term),
+                ).fetchone()
+        except Exception:
+            return False
+        if row is None:
+            return True
+        if not int(row["is_opened"] or 0):
+            return True
+        return not draw_numbers_are_publishable(lottery_type_id, row["numbers"])
+
     def _check_staged_timeout_alerts(self) -> None:
         """分级超时告警：检查各彩种开奖时间已过是否数据仍未入库。
 
-        - 黄色 30s：日志 WARNING + 加速轮询
-        - 橙色 120s：邮件告警 + 尝试备用 URL
-        - 红色 300s：邮件告警 + 标记延迟
+        阈值 = max(配置下限, 本彩种历史入库时延滑动分位数) + 分级增量：
+        - 黄色 +30s：日志 WARNING + 加速轮询
+        - 橙色 +120s：邮件告警 + 尝试备用 URL
+        - 红色 +300s：邮件告警 + 标记延迟
         """
-        yellow_s = int(_cfg(self.db_path, "alert.draw_yellow_timeout_seconds", 30))
-        orange_s = int(_cfg(self.db_path, "alert.draw_orange_timeout_seconds", 120))
-        red_s = int(_cfg(self.db_path, "alert.draw_red_timeout_seconds", 300))
+        yellow_delta = max(0, int(_cfg(self.db_path, "alert.draw_yellow_timeout_seconds", 180)))
+        orange_delta = max(0, int(_cfg(self.db_path, "alert.draw_orange_timeout_seconds", 300)))
+        red_delta = max(0, int(_cfg(self.db_path, "alert.draw_red_timeout_seconds", 600)))
         now_dt = datetime.now(timezone.utc)
 
         for lt_id in [1, 2, 3]:
@@ -1084,6 +1293,10 @@ class CrawlerScheduler:
             next_time_str = str(_cfg(self.db_path, f"{cfg_prefix}_next_time", ""))
             if not next_time_str:
                 continue
+            baseline_s = _draw_alert_baseline_seconds(self.db_path, lt_id)
+            yellow_s = max(yellow_delta, baseline_s + 30)
+            orange_s = max(orange_delta, baseline_s + 120)
+            red_s = max(red_delta, baseline_s + 300)
             try:
                 next_ms = int(next_time_str)
                 if next_ms <= 0:
@@ -1286,6 +1499,7 @@ class CrawlerScheduler:
         )
         self._schedule_auto_open()
         self._schedule_auto_crawl()
+        self._schedule_staged_timeout_alerts()
         self._schedule_task_loop()
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
@@ -1346,6 +1560,9 @@ class CrawlerScheduler:
         if hasattr(self, "_auto_crawl_timer") and self._auto_crawl_timer:
             self._auto_crawl_timer.cancel()
             self._auto_crawl_timer = None
+        if hasattr(self, "_staged_alert_timer") and self._staged_alert_timer:
+            self._staged_alert_timer.cancel()
+            self._staged_alert_timer = None
         if self._task_timer:
             self._task_timer.cancel()
             self._task_timer = None
@@ -1357,6 +1574,9 @@ class CrawlerScheduler:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
         同时为 type=3 记录补充 next_time（作为精准调度器的兜底）。
 
+        号码不完整（澳门彩/台湾彩需要 7 个合法号码；香港彩为“轮序发布”）的行
+        保持未开盘并等待下一次抓取，绝不以空号码或半成品号码开盘。
+
         注意：draw_time 字段存储的是北京时间字符串，比较时也必须使用北京时间。"""
         try:
             now_utc_dt = datetime.now(timezone.utc)
@@ -1364,7 +1584,7 @@ class CrawlerScheduler:
             now_beijing = (now_utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             with db_connect(self.db_path) as conn:
                 # 先查出即将被打开的记录，再执行 UPDATE，避免依赖脆弱的 updated_at 精确匹配
-                pending = conn.execute(
+                due = conn.execute(
                     """SELECT id, lottery_type_id, year, term, numbers, draw_time,
                               next_time, status, is_opened, next_term
                        FROM lottery_draws
@@ -1372,13 +1592,23 @@ class CrawlerScheduler:
                        AND draw_time <= ?""",
                     (now_beijing,),
                 ).fetchall()
+                pending = [
+                    row for row in due
+                    if draw_numbers_are_publishable(row["lottery_type_id"], row["numbers"])
+                ]
+                skipped = len(due) - len(pending)
+                if skipped:
+                    _crawler_logger.warning(
+                        "AutoOpen: %d past-due draw(s) kept closed for incomplete numbers",
+                        skipped,
+                    )
 
                 if pending:
                     ids = [row["id"] for row in pending]
                     placeholders = ",".join("?" for _ in ids)
                     conn.execute(
                         f"UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
-                        f"WHERE id IN ({placeholders})",
+                        f"WHERE id IN ({placeholders}) AND is_opened = 0",
                         [now_utc] + ids,
                     )
                     _crawler_logger.info("AutoOpen: Set is_opened=1 for %d draw(s)", len(pending))
@@ -1419,6 +1649,20 @@ class CrawlerScheduler:
         self._auto_open_timer.daemon = True
         self._auto_open_timer.start()
 
+    def _schedule_staged_timeout_alerts(self) -> None:
+        """独立的分级开奖超时告警轮询（默认 15 秒）。"""
+        if not self._running:
+            return
+        try:
+            self._check_staged_timeout_alerts()
+        except Exception as exc:
+            _crawler_logger.warning("Staged timeout check failed: %s", exc)
+        self._staged_alert_timer = threading.Timer(
+            self._staged_alert_interval_seconds(), self._schedule_staged_timeout_alerts
+        )
+        self._staged_alert_timer.daemon = True
+        self._staged_alert_timer.start()
+
     def _schedule_auto_crawl(self) -> None:
         """动态间隔自动爬取：根据开奖窗口距离动态调整轮询频率。
 
@@ -1428,7 +1672,11 @@ class CrawlerScheduler:
         """
         if not self._running:
             return
-        self._auto_crawl()
+        self._auto_crawl_running = True
+        try:
+            self._auto_crawl()
+        finally:
+            self._auto_crawl_running = False
         interval = self._compute_dynamic_crawl_interval()
         _crawler_logger.debug("Auto-crawl next in %ds", interval)
         self._auto_crawl_timer = threading.Timer(interval, self._schedule_auto_crawl)
@@ -1438,13 +1686,15 @@ class CrawlerScheduler:
     def _process_auto_crawl_batch(
         self, lottery_type_id: int, lt_name: str, records: list[dict[str, Any]]
     ) -> bool:
-        """将一次自动抓取结果 upsert 并立即开盘，返回是否产生新增/更新。
+        """将一次自动抓取结果 upsert 并在“确实出现更新期”时立即开盘。
 
-        批量内新增或更新任意一条记录时，重置失败计数、关闭 chase mode、
-        对最新记录立即开盘并写 audit（含 public_open_delay_seconds）。
+        批量内新增或更新任意一条记录时都会刷新失败计数并关闭 chase mode；但只有
+        当批次里的最新期**晚于**本地最新已开奖期时，才执行开盘并写 ``auto_open``
+        审计。源站反复改写上一期（香港彩先给部分号码、后补全）只走 ``draw.refresh``
+        刷新通道，不再制造 ``public_open_delay_seconds`` 为 24 小时级别的假延迟。
 
         Returns:
-            True 表示该批次产生了新增或更新（已开盘）。
+            True 表示该批次产生了新增或更新。
         """
         if not records:
             return False
@@ -1458,9 +1708,19 @@ class CrawlerScheduler:
             lt_name, inserted, updated,
         )
         reset_crawler_fail_count(self.db_path, lottery_type_id)
-        self._set_lottery_chase_mode(lottery_type_id, False)
-        opened = self._open_specific_records(lottery_type_id, result.get("latest_draw"))
         latest_draw = result.get("latest_draw") or {}
+        if not self._is_newer_than_latest_opened(lottery_type_id, latest_draw):
+            self._set_lottery_chase_mode(lottery_type_id, False)
+            _crawler_logger.info(
+                "Auto-crawl %s: refreshed an already-published draw (%s%s), no "
+                "re-open and no auto_open audit",
+                lt_name,
+                latest_draw.get("year", ""),
+                latest_draw.get("term", ""),
+            )
+            return True
+        self._set_lottery_chase_mode(lottery_type_id, False)
+        opened = self._open_specific_records(lottery_type_id, latest_draw)
         latency_s = _draw_latency_seconds(latest_draw.get("open_time"))
         _log_draw_audit(
             self.db_path,
@@ -1474,6 +1734,39 @@ class CrawlerScheduler:
             lt_name, opened, latency_s,
         )
         return True
+
+    def _is_newer_than_latest_opened(
+        self, lottery_type_id: int, candidate: Any
+    ) -> bool:
+        """批次里的最新期是否晚于本地最新已开奖期（没有已开奖期时视为更新）。"""
+        if not isinstance(candidate, dict):
+            return False
+        try:
+            year = int(candidate.get("year") or 0)
+            term = int(candidate.get("term") or 0)
+        except (TypeError, ValueError):
+            return False
+        if year <= 0 or term <= 0:
+            return False
+        try:
+            with db_connect(self.db_path) as conn:
+                row = conn.execute(
+                    "SELECT year, term FROM lottery_draws "
+                    "WHERE lottery_type_id = ? AND is_opened = 1 "
+                    "ORDER BY year DESC, term DESC LIMIT 1",
+                    (int(lottery_type_id),),
+                ).fetchone()
+        except Exception as exc:
+            _crawler_logger.warning(
+                "Auto-crawl: latest opened lookup failed lt=%s: %s", lottery_type_id, exc
+            )
+            return True
+        if row is None:
+            return True
+        try:
+            return (year, term) > (int(row["year"]), int(row["term"]))
+        except (TypeError, ValueError):
+            return True
 
     def _auto_crawl(self) -> None:
         """自动爬取：按外部 API 当前期号与本地期号比对，决定是否爬取。
@@ -1554,11 +1847,8 @@ class CrawlerScheduler:
                 _crawler_logger.warning("Auto-crawl %s failed: %s", lt_name, exc)
                 alert_crawler_failure(self.db_path, lt_id, str(exc))
 
-        # 分级超时告警
-        try:
-            self._check_staged_timeout_alerts()
-        except Exception as exc:
-            _crawler_logger.warning("Staged timeout check failed: %s", exc)
+        # 分级超时告警已移到独立的 _schedule_staged_timeout_alerts 轮询，
+        # 不再依赖 auto-crawl 的（可能很慢的）动态间隔。
 
         try:
             sync_all_lottery_type_next_times(
@@ -1569,7 +1859,13 @@ class CrawlerScheduler:
         except Exception as exc:
             _crawler_logger.warning("Periodic next_time sync failed: %s", exc)
         try:
-            alert_draw_staleness(self.db_path)
+            alert_draw_staleness(
+                self.db_path,
+                grace_by_lottery={
+                    lt_id: _draw_alert_baseline_seconds(self.db_path, lt_id)
+                    for lt_id in (1, 2, 3)
+                },
+            )
         except Exception:
             pass
 
@@ -1775,6 +2071,14 @@ class CrawlerScheduler:
                     and draw_dt <= now_beijing_dt
                 )
             ]
+            # 台湾彩没有“轮序发布”：号码不完整时只入库不开盘。
+            incomplete = [row for row in due_rows if not draw_numbers_are_publishable(3, row["numbers"])]
+            due_rows = [row for row in due_rows if draw_numbers_are_publishable(3, row["numbers"])]
+            if incomplete:
+                _crawler_logger.warning(
+                    "TaiwanOpen — %d past-due draw(s) kept closed for incomplete numbers",
+                    len(incomplete),
+                )
             opened_count = len(due_rows)
             if due_rows:
                 ids = [row["id"] for row in due_rows]
@@ -1861,10 +2165,10 @@ def _log_taiwan_task_error(message: str) -> None:
 def _schedule_backfill_after_draw(db_path: str | Path, lottery_type_id: int) -> None:
     """开奖后延迟执行历史回填任务。
 
-    延迟分钟数由 system_config 表 history_backfill_delay_after_draw 控制（默认 4 分钟）。
-    管理员可在后台实时修改此延迟时间。
+    延迟分钟数由 system_config 表 history_backfill_delay_after_draw 控制（默认 8 分钟）。
+    管理员可在后台实时修改此延迟时间；历史开奖页展示闸门读取同一个配置。
     """
-    delay_minutes = float(_cfg(db_path, "history_backfill_delay_after_draw", 4))
+    delay_minutes = float(_cfg(db_path, "history_backfill_delay_after_draw", 8))
     if delay_minutes <= 0:
         # 延迟为 0 或负数时立即执行回填
         _backfill_latest_opened_prediction_results(db_path, lottery_type_id)

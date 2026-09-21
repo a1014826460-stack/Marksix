@@ -212,6 +212,8 @@ services:
     environment:
       LOTTERY_BACKEND_BASE_URL: "http://python-api:8000/api"
       LOTTERY_SITE_ID: "${LOTTERY_SITE_ID:-1}"
+      # 历史开奖页快照兜底闸门；须与 system_config.history_backfill_delay_after_draw 一致。
+      HISTORY_UNLOCK_DELAY_MINUTES: "${HISTORY_UNLOCK_DELAY_MINUTES:-8}"
       NODE_ENV: production
     ports:
       - "127.0.0.1:3000:3000"

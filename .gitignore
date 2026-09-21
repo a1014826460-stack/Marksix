@@ -80,3 +80,6 @@ frontend/public/data/
 backend/data/logs/
 backend/data/logs/app.log.1
 backend/data/logs/app.log.10
+
+# CodeGraph 本地索引（不要提交）
+.codegraph/

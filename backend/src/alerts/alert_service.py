@@ -17,7 +17,7 @@ import logging
 import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from db import connect
 from runtime_config import get_config, get_config_from_conn, upsert_system_config
@@ -384,16 +384,31 @@ def alert_prediction_gap(
 def alert_draw_staleness(
     db_path: str | Path,
     lottery_type_id: int | None = None,
+    *,
+    grace_seconds: int = 0,
+    grace_by_lottery: Mapping[int, int] | None = None,
 ) -> bool:
     """检查开奖数据是否滞后。
 
     判定条件：最新已开奖记录的 next_time 已过北京时间现在，
     但还没有更晚一期的已开奖数据入库。
 
+    上游源站通常在计划开奖时间之后 2~6 分钟才发布结果，因此调用方应传入基于
+    自身历史入库时延的宽限（``grace_seconds`` 或按彩种的 ``grace_by_lottery``），
+    否则每一期都会触发一次“开奖数据滞后”误报。
+
     :return: True 如果当前仍存在滞后问题（即使同一问题已被去重抑制）
     """
     now_utc = datetime.now(timezone.utc)
     now_beijing_str = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S 北京时间")
+
+    def _grace_for(lottery_type: int) -> int:
+        if grace_by_lottery:
+            try:
+                return max(0, int(grace_by_lottery.get(int(lottery_type), grace_seconds)))
+            except (TypeError, ValueError):
+                return max(0, int(grace_seconds or 0))
+        return max(0, int(grace_seconds or 0))
 
     lt_ids = [lottery_type_id] if lottery_type_id else [1, 2, 3]
     stale_items: list[dict[str, Any]] = []
@@ -430,7 +445,7 @@ def alert_draw_staleness(
                 except (ValueError, OSError):
                     continue
 
-                if next_dt < now_utc:
+                if next_dt < now_utc and (now_utc - next_dt).total_seconds() >= _grace_for(lt):
                     lt_name = LOTTERY_NAMES.get(lt, str(lt))
                     year = int(row["year"] or 0)
                     term = int(row["term"] or 0)

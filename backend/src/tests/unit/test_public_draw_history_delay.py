@@ -51,13 +51,17 @@ def _setup_db(tmp_path: Path) -> str:
     return db_path
 
 
-def test_draw_history_hides_current_issue_until_four_minutes_after_draw(tmp_path: Path, monkeypatch):
+def test_draw_history_hides_current_issue_until_configured_delay_after_draw(
+    tmp_path: Path, monkeypatch
+):
     db_path = _setup_db(tmp_path)
+    # 未显式配置时使用默认闸门 8 分钟：22:32 开奖 → 22:40 才可见。
+    monkeypatch.setattr(runtime_config, "get_config", lambda _db, _key, default: default)
 
     monkeypatch.setattr(
         public_api,
         "beijing_now",
-        lambda: datetime(2026, 8, 19, 22, 35, 59, tzinfo=BEIJING),
+        lambda: datetime(2026, 8, 19, 22, 39, 59, tzinfo=BEIJING),
     )
     before_unlock = public_api.get_draw_history(db_path, lottery_type=3, year=2026)
     assert [item["issue"] for item in before_unlock["items"]] == ["99"]
@@ -65,23 +69,48 @@ def test_draw_history_hides_current_issue_until_four_minutes_after_draw(tmp_path
     monkeypatch.setattr(
         public_api,
         "beijing_now",
-        lambda: datetime(2026, 8, 19, 22, 36, 0, tzinfo=BEIJING),
+        lambda: datetime(2026, 8, 19, 22, 40, 0, tzinfo=BEIJING),
     )
     at_unlock = public_api.get_draw_history(db_path, lottery_type=3, year=2026)
     assert [item["issue"] for item in at_unlock["items"]] == ["100", "99"]
 
 
-def test_history_backfill_default_is_four_minutes():
-    assert runtime_config.CONFIG_DEFAULTS["history_backfill_delay_after_draw"]["value"] == 4
+def test_draw_history_unlock_follows_system_config_delay(tmp_path: Path, monkeypatch):
+    db_path = _setup_db(tmp_path)
+    monkeypatch.setattr(runtime_config, "get_config", lambda _db, _key, _default: 30)
+
+    monkeypatch.setattr(
+        public_api,
+        "beijing_now",
+        lambda: datetime(2026, 8, 19, 23, 1, 59, tzinfo=BEIJING),
+    )
+    assert [
+        item["issue"]
+        for item in public_api.get_draw_history(db_path, lottery_type=3, year=2026)["items"]
+    ] == ["99"]
+
+    monkeypatch.setattr(
+        public_api,
+        "beijing_now",
+        lambda: datetime(2026, 8, 19, 23, 2, 0, tzinfo=BEIJING),
+    )
+    assert [
+        item["issue"]
+        for item in public_api.get_draw_history(db_path, lottery_type=3, year=2026)["items"]
+    ] == ["100", "99"]
 
 
-def test_legacy_history_overlay_unlocks_at_exactly_four_minutes(monkeypatch):
+def test_history_backfill_default_is_eight_minutes():
+    assert runtime_config.CONFIG_DEFAULTS["history_backfill_delay_after_draw"]["value"] == 8
+
+
+def test_legacy_history_overlay_unlocks_at_exactly_configured_delay(monkeypatch):
     monkeypatch.setattr(
         helpers,
         "beijing_now",
-        lambda: datetime(2026, 8, 19, 22, 36, 0, tzinfo=BEIJING),
+        lambda: datetime(2026, 8, 19, 22, 40, 0, tzinfo=BEIJING),
     )
-    monkeypatch.setattr(runtime_config, "get_config_from_conn", lambda _conn, _key, _default: 4)
+    monkeypatch.setattr(runtime_config, "get_config_from_conn", lambda _conn, _key, _default: 8)
 
     assert helpers._history_result_visible_after_delay(
         object(),
@@ -92,18 +121,25 @@ def test_legacy_history_overlay_unlocks_at_exactly_four_minutes(monkeypatch):
     )
 
 
-def test_legacy_history_overlay_uses_fixed_window_despite_stale_config(monkeypatch):
+def test_legacy_history_overlay_follows_system_config_delay(monkeypatch):
     monkeypatch.setattr(
         helpers,
         "beijing_now",
-        lambda: datetime(2026, 8, 19, 22, 36, 0, tzinfo=BEIJING),
+        lambda: datetime(2026, 8, 19, 22, 52, 0, tzinfo=BEIJING),
     )
     monkeypatch.setattr(runtime_config, "get_config_from_conn", lambda _conn, _key, _default: 60)
 
-    assert helpers._history_result_visible_after_delay(
+    assert not helpers._history_result_visible_after_delay(
         object(),
         {
             "is_opened": 1,
             "draw_time": "2026-08-19 22:32:00",
+        },
+    )
+    assert helpers._history_result_visible_after_delay(
+        object(),
+        {
+            "is_opened": 1,
+            "draw_time": "2026-08-19 21:00:00",
         },
     )

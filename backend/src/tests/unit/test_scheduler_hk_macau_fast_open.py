@@ -374,7 +374,7 @@ def test_auto_crawl_opens_macau_when_only_macau_data_has_arrived(tmp_path, monke
             return [{
                 "issue": "2026232",
                 "open_time": "2026-08-20 21:32:00",
-                "result": "11,22,33,44,55,66,77",
+                "result": "11,22,33,44,45,46,47",
                 "next_time": "",
             }]
         return []  # 香港彩数据尚未到达

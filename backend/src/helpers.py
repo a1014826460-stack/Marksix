@@ -623,8 +623,23 @@ def load_lottery_draw_map(
     return draw_map
 
 
+def _resolve_history_delay_minutes(conn: Any, default: float = 8.0) -> float:
+    """读取历史开奖展示闸门分钟数（system_config.history_backfill_delay_after_draw）。"""
+    try:
+        from runtime_config import get_config_from_conn
+
+        minutes = float(get_config_from_conn(conn, "history_backfill_delay_after_draw", default))
+    except Exception:
+        return float(default)
+    return max(0.0, minutes)
+
+
 def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> bool:
-    """Only expose historical draw results at draw_time plus four Beijing minutes."""
+    """Only expose historical draw results at draw_time plus the configured delay.
+
+    旧站预测出口与 /public/draw-history 共用同一个闸门，闸门分钟数由
+    ``system_config.history_backfill_delay_after_draw`` 控制（默认 20 分钟）。
+    """
     if not bool(draw_row.get("is_opened")):
         return False
 
@@ -636,11 +651,8 @@ def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> 
     if now_dt <= draw_dt:
         return False
 
-    # Legacy prediction outlets are historical-result outlets too.  Their
-    # visibility must use the same fixed window as /public/draw-history and
-    # must not inherit a stale, administrator-configured backfill delay.
     elapsed_minutes = (now_dt - draw_dt).total_seconds() / 60.0
-    return elapsed_minutes >= 4.0
+    return elapsed_minutes >= _resolve_history_delay_minutes(conn)
 
 
 def apply_lottery_draw_overlay(

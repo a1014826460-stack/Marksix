@@ -18,15 +18,61 @@ def test_latest_migration_creates_forced_announcement_tables():
     conn = _Connection()
     latest = versioned_migrations.MIGRATIONS[-1]
 
-    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 28
-    assert latest.version == 28
-    assert latest.name == "disable_shengshi8800_legacy_title_123"
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 29
+    assert latest.version == 29
+    assert latest.name == "raise_history_publication_delay_to_eight_minutes"
     # forced_announcements 表由迁移 27 创建，验证它仍然存在
     forced = next(m for m in versioned_migrations.MIGRATIONS if m.version == 27)
     assert forced.name == "create_forced_announcements"
     forced.apply(conn)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcements" in sql for sql in conn.statements)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcement_sites" in sql for sql in conn.statements)
+
+
+def test_migration_twenty_nine_moves_the_history_gate_without_touching_custom_values(tmp_path):
+    from db import connect
+    from database.versioned_migrations import _raise_history_publication_delay_to_eight_minutes
+
+    db_path = str(tmp_path / "history-delay-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE system_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT NOT NULL UNIQUE,
+                value_text TEXT,
+                value_type TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO system_config (key, value_text, value_type, updated_at) VALUES "
+            "('history_backfill_delay_after_draw', '4', 'int', 'old'), "
+            "('alert.draw_red_timeout_seconds', '300', 'int', 'old')"
+        )
+
+        _raise_history_publication_delay_to_eight_minutes(conn)
+        migrated = conn.execute(
+            "SELECT value_text, updated_at FROM system_config WHERE key = 'history_backfill_delay_after_draw'"
+        ).fetchone()
+        untouched = conn.execute(
+            "SELECT value_text FROM system_config WHERE key = 'alert.draw_red_timeout_seconds'"
+        ).fetchone()
+
+        # 管理员显式改过的值不会被迁移覆盖。
+        conn.execute(
+            "UPDATE system_config SET value_text = '45' WHERE key = 'history_backfill_delay_after_draw'"
+        )
+        _raise_history_publication_delay_to_eight_minutes(conn)
+        custom = conn.execute(
+            "SELECT value_text FROM system_config WHERE key = 'history_backfill_delay_after_draw'"
+        ).fetchone()
+
+    assert migrated["value_text"] == "8"
+    assert migrated["updated_at"] != "old"
+    assert untouched["value_text"] == "300"
+    assert custom["value_text"] == "45"
 
 
 def test_runtime_validation_rejects_a_postgres_database_without_migration_ledger(monkeypatch):

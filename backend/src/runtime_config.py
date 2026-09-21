@@ -143,9 +143,9 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "history_backfill_delay_after_draw": {
-        "value": 4,
+        "value": 8,
         "value_type": "int",
-        "description": "开奖后延迟执行历史回填任务的分钟数。默认 4 分钟。",
+        "description": "开奖后历史开奖页展示闸门与历史回填任务的延迟分钟数。默认 8 分钟。",
         "is_secret": 0,
     },
     "crawler.task_poll_interval_seconds": {
@@ -230,6 +230,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "value": 5,
         "value_type": "int",
         "description": "开奖超时未获数据时的应急加速轮询间隔秒数。",
+        "is_secret": 0,
+    },
+    "crawler.staged_alert_interval_seconds": {
+        "value": 15,
+        "value_type": "int",
+        "description": "开奖分级超时告警（黄/橙/红）与追赶模式判定的独立轮询间隔秒数。",
         "is_secret": 0,
     },
     "crawler.backup_fail_count_threshold": {
@@ -566,21 +572,39 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "alert.draw_yellow_timeout_seconds": {
-        "value": 30,
+        "value": 180,
         "value_type": "int",
-        "description": "开奖后 N 秒数据未入库触发黄色预警（日志 + 加速轮询）。",
+        "description": "开奖后 N 秒数据未入库触发黄色预警（日志 + 加速轮询）。同时作为基线下限。",
         "is_secret": 0,
     },
     "alert.draw_orange_timeout_seconds": {
-        "value": 120,
+        "value": 300,
         "value_type": "int",
-        "description": "开奖后 N 秒数据未入库触发橙色告警（邮件 + 备用 URL 切换）。",
+        "description": "开奖后 N 秒数据未入库触发橙色告警（邮件 + 备用 URL 切换）。同时作为基线下限。",
         "is_secret": 0,
     },
     "alert.draw_red_timeout_seconds": {
-        "value": 300,
+        "value": 600,
         "value_type": "int",
-        "description": "开奖后 N 秒数据未入库触发红色告警（邮件 + 需人工介入）。",
+        "description": "开奖后 N 秒数据未入库触发红色告警（邮件 + 需人工介入）。同时作为基线下限。",
+        "is_secret": 0,
+    },
+    "alert.draw_latency_baseline_seconds": {
+        "value": 120,
+        "value_type": "int",
+        "description": "开奖告警基线下限秒数；实际基线取它与本彩种历史入库时延滑动分位数的较大值。",
+        "is_secret": 0,
+    },
+    "alert.draw_latency_baseline_percentile": {
+        "value": 90,
+        "value_type": "int",
+        "description": "历史入库时延滑动分位数的百分位（50-100），用于开奖告警基线。",
+        "is_secret": 0,
+    },
+    "alert.draw_latency_baseline_samples": {
+        "value": 40,
+        "value_type": "int",
+        "description": "计算开奖告警基线时取样的最近已开奖期数。",
         "is_secret": 0,
     },
     "legacy.images_dir": {

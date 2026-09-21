@@ -104,7 +104,7 @@ def _setup_db(tmp_path: Path) -> str:
     return db_path
 
 
-def test_load_legacy_mode_rows_hides_results_until_fixed_four_minute_window(tmp_path: Path, monkeypatch):
+def test_load_legacy_mode_rows_hides_results_until_configured_window(tmp_path: Path, monkeypatch):
     db_path = _setup_db(tmp_path)
     fixed_now = datetime(2026, 5, 20, 11, 53, 59, tzinfo=timezone(timedelta(hours=8)))
     monkeypatch.setattr(helpers, "beijing_now", lambda: fixed_now)
@@ -121,15 +121,17 @@ def test_load_legacy_mode_rows_hides_results_until_fixed_four_minute_window(tmp_
     row_53 = next(row for row in rows if str(row.get("term")) == "53")
     row_54 = next(row for row in rows if str(row.get("term")) == "54")
 
+    # system_config.history_backfill_delay_after_draw = 15 分钟：
+    # 第 53 期 11:30 + 15min = 11:45 已解锁；第 54 期 11:50 + 15min = 12:05 仍未解锁。
     assert row_53["res_code"] == "01,13,22,34,45,49"
     assert row_54["res_code"] == ""
     assert row_54["res_sx"] == ""
     assert row_54["res_color"] == ""
 
 
-def test_load_legacy_mode_rows_shows_results_at_four_minute_window(tmp_path: Path, monkeypatch):
+def test_load_legacy_mode_rows_shows_results_at_configured_window(tmp_path: Path, monkeypatch):
     db_path = _setup_db(tmp_path)
-    fixed_now = datetime(2026, 5, 20, 11, 54, 0, tzinfo=timezone(timedelta(hours=8)))
+    fixed_now = datetime(2026, 5, 20, 12, 5, 0, tzinfo=timezone(timedelta(hours=8)))
     monkeypatch.setattr(helpers, "beijing_now", lambda: fixed_now)
 
     payload = load_legacy_mode_rows(

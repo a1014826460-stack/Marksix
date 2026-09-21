@@ -14,7 +14,7 @@ from crawler.HK_history_crawler import fetch_hongkong_history_data, transform_st
 from crawler.Macau_history_crawler import fetch_macau_history_data
 from db import connect as db_connect
 from helpers import sync_lottery_type_next_time_from_latest_draw
-from outbox.draw_publication import enqueue_draw_publication
+from outbox.draw_publication import draw_numbers_are_publishable, enqueue_draw_publication
 from runtime_config import get_config
 
 _collector_logger = logging.getLogger("crawler.collector")
@@ -87,6 +87,13 @@ def _upsert_draw(
     now: str,
     next_time: str = "",
 ) -> None:
+    # 已开盘的一期永不因为后续同一期的数据刷新而回退成未开盘：
+    # 否则一个已发布的号码会短暂消失，并触发一次假的“重复开盘”。
+    # 同时，号码不完整（香港彩为“轮序发布”，只要有序号即可）的行不得置为已开盘。
+    effective_is_opened = 1 if (
+        int(is_opened or 0) == 1 and draw_numbers_are_publishable(lottery_type_id, numbers)
+    ) else 0
+
     previous = conn.execute(
         """
         SELECT lottery_type_id, year, term, numbers, draw_time, next_time,
@@ -106,12 +113,15 @@ def _upsert_draw(
             ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
                 numbers = excluded.numbers,
                 draw_time = excluded.draw_time,
-                is_opened = excluded.is_opened,
+                is_opened = CASE
+                    WHEN lottery_draws.is_opened = 1 THEN 1
+                    ELSE excluded.is_opened
+                END,
                 next_time = excluded.next_time,
                 updated_at = excluded.updated_at
             """,
             (lottery_type_id, year, term, numbers, draw_time,
-             is_opened, term + 1, next_time, now, now),
+             effective_is_opened, term + 1, next_time, now, now),
         )
     else:
         conn.execute(
@@ -123,11 +133,14 @@ def _upsert_draw(
             ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
                 numbers = excluded.numbers,
                 draw_time = excluded.draw_time,
-                is_opened = excluded.is_opened,
+                is_opened = CASE
+                    WHEN lottery_draws.is_opened = 1 THEN 1
+                    ELSE excluded.is_opened
+                END,
                 updated_at = excluded.updated_at
             """,
             (lottery_type_id, year, term, numbers, draw_time,
-             is_opened, term + 1, now, now),
+             effective_is_opened, term + 1, now, now),
         )
     current = conn.execute(
         """

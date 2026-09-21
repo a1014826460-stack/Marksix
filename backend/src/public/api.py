@@ -644,18 +644,46 @@ def _build_ball_attributes(
 
 
 LOTTERY_NAMES = {1: "香港彩", 2: "澳门彩", 3: "台湾彩"}
-HISTORY_RESULT_DELAY = timedelta(minutes=4)
+# 历史开奖页展示闸门：默认 8 分钟。实际值由 system_config 的
+# history_backfill_delay_after_draw 控制，管理员可在后台调整。
+HISTORY_RESULT_DELAY_MINUTES_DEFAULT = 8
+HISTORY_RESULT_DELAY = timedelta(minutes=HISTORY_RESULT_DELAY_MINUTES_DEFAULT)
 
 
-def _history_result_visible(draw_time: object, *, now: datetime | None = None) -> bool:
-    """Expose historical numbers only at draw time plus four Beijing minutes."""
+def _history_result_delay_minutes(db_path: str | Path | None = None) -> float:
+    """读取历史开奖展示闸门的分钟数（非负）。"""
+    if db_path is None:
+        return float(HISTORY_RESULT_DELAY_MINUTES_DEFAULT)
+    try:
+        from runtime_config import get_config
+
+        minutes = float(
+            get_config(
+                db_path,
+                "history_backfill_delay_after_draw",
+                HISTORY_RESULT_DELAY_MINUTES_DEFAULT,
+            )
+        )
+    except Exception:
+        return float(HISTORY_RESULT_DELAY_MINUTES_DEFAULT)
+    return max(0.0, minutes)
+
+
+def _history_result_visible(
+    draw_time: object,
+    *,
+    now: datetime | None = None,
+    delay: timedelta | None = None,
+) -> bool:
+    """Expose historical numbers only at draw time plus the configured delay."""
     draw_dt = parse_draw_datetime(str(draw_time or "").strip())
     if draw_dt is None:
         return False
     current = now or beijing_now()
     if current.tzinfo is None:
         current = current.replace(tzinfo=draw_dt.tzinfo)
-    return current >= draw_dt + HISTORY_RESULT_DELAY
+    effective_delay = HISTORY_RESULT_DELAY if delay is None else delay
+    return current >= draw_dt + effective_delay
 
 
 def get_draw_history(
@@ -669,6 +697,7 @@ def get_draw_history(
     sort: "l" = 落球顺序（数据库原样），"d" = 号码大小排序
     """
     current_year = year or beijing_now().year
+    history_delay = timedelta(minutes=_history_result_delay_minutes(db_path))
 
     with connect(db_path) as conn:
         # 可用年份
@@ -681,7 +710,7 @@ def get_draw_history(
             (int(lottery_type),),
         ).fetchall()
         years = sorted(
-            {int(r["year"]) for r in year_rows if _history_result_visible(r["draw_time"])},
+            {int(r["year"]) for r in year_rows if _history_result_visible(r["draw_time"], delay=history_delay)},
             reverse=True,
         )
 
@@ -704,7 +733,7 @@ def get_draw_history(
 
     items: list[dict[str, Any]] = []
     for row in rows:
-        if not _history_result_visible(row["draw_time"]):
+        if not _history_result_visible(row["draw_time"], delay=history_delay):
             continue
         numbers = split_csv(row["numbers"])
         if len(numbers) < 7:

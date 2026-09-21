@@ -19,6 +19,13 @@ const SNAPSHOT_BY_YEAR: Record<number, string> = {
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 50
 
+// 历史开奖展示闸门：与后端 system_config.history_backfill_delay_after_draw 保持一致，
+// 默认 8 分钟。快照兜底路径无法读取数据库，因此只接受环境变量覆盖。
+const HISTORY_UNLOCK_DELAY_MINUTES = (() => {
+  const parsed = Number(process.env.HISTORY_UNLOCK_DELAY_MINUTES)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 8
+})()
+
 function stripTags(value: string) {
   return value
     .replace(/<[^>]+>/g, "")
@@ -71,7 +78,9 @@ function normalizePageSize(value: string | null) {
 function historyUnlockAt(dateText: string, lotteryType: 1 | 2 | 3) {
   const drawTime = lotteryType === 3 ? "22:32:00" : "21:30:00"
   const parsed = new Date(`${dateText}T${drawTime}+08:00`)
-  return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime() + 4 * 60 * 1000
+  return Number.isNaN(parsed.getTime())
+    ? Number.POSITIVE_INFINITY
+    : parsed.getTime() + HISTORY_UNLOCK_DELAY_MINUTES * 60 * 1000
 }
 
 function paginateItems(items: DrawHistoryItem[], page: number, pageSize: number) {

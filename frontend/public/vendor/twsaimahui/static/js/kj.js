@@ -14,9 +14,9 @@ function __legacyTwsBuildKjUrl(lotteryType, label) {
 		}
 	}
 
-	var basePath = __legacyTwsRuntime && typeof __legacyTwsRuntime.buildVendorPath === "function"
-		? __legacyTwsRuntime.buildVendorPath("kj/local.html")
-		: "kj/local.html";
+	var basePath = window.LegacyKjRuntime && typeof window.LegacyKjRuntime.buildVendorPath === "function"
+		? window.LegacyKjRuntime.buildVendorPath("kj/local.html")
+		: "/vendor/shengshi8800/kj/local.html";
 
 	return basePath + "?" + params.toString();
 }
