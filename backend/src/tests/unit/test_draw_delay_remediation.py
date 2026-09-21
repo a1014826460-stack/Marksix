@@ -427,3 +427,100 @@ def test_staged_alert_thresholds_use_observed_latency_baseline(tmp_path, monkeyp
     scheduler._check_staged_timeout_alerts()
 
     assert alerts == []
+
+
+# ── 5. 开奖后回填任务必须按期重排 ────────────────────────────────────
+
+def test_backfill_after_draw_task_key_is_per_issue_so_it_rearms(tmp_path, monkeypatch):
+    """回填任务 key 必须带期号；按彩种固定的 key 会在第一次 done 后永久停摆。"""
+    from crawler.scheduler import _schedule_backfill_after_draw
+    from db import connect
+
+    db_path = _setup(tmp_path)
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _db, key, default: 1 if key == "history_backfill_delay_after_draw" else default,
+    )
+    with connect(db_path) as conn:
+        _insert_draw(conn, MACAU, 2026, 264, COMPLETE, "2026-09-21 21:32:32", 1)
+        conn.commit()
+
+    _schedule_backfill_after_draw(db_path, MACAU)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_key, status FROM scheduler_tasks WHERE task_type = 'backfill_after_draw'"
+        ).fetchall()
+    assert [dict(row) for row in rows] == [
+        {"task_key": "backfill_after_draw:2:2026264", "status": "pending"}
+    ]
+
+    # 第一期已执行完成，随后出现下一期
+    with connect(db_path) as conn:
+        conn.execute("UPDATE scheduler_tasks SET status = 'done' WHERE task_type = 'backfill_after_draw'")
+        _insert_draw(conn, MACAU, 2026, 265, COMPLETE, "2026-09-22 21:32:32", 1)
+        conn.commit()
+
+    _schedule_backfill_after_draw(db_path, MACAU)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_key, status FROM scheduler_tasks WHERE task_type = 'backfill_after_draw' "
+            "ORDER BY task_key"
+        ).fetchall()
+    assert [dict(row) for row in rows] == [
+        {"task_key": "backfill_after_draw:2:2026264", "status": "done"},
+        {"task_key": "backfill_after_draw:2:2026265", "status": "pending"},
+    ]
+
+
+# ── 6. 入库时延基线按“计划开奖钟点”衡量 ──────────────────────────────
+
+def _insert_draw_with_created_at(conn, lottery_type_id, year, term, draw_time, created_at):
+    conn.execute(
+        """
+        INSERT INTO lottery_draws (
+            lottery_type_id, year, term, numbers, draw_time, next_time,
+            status, is_opened, next_term, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            lottery_type_id, year, term, COMPLETE, draw_time, "",
+            1, 1, term + 1, created_at, created_at,
+        ),
+    )
+
+
+def test_arrival_latency_baseline_uses_the_scheduled_draw_clock(tmp_path, monkeypatch):
+    """香港彩先给部分号码，draw_time 晚于入库时间；基线必须相对计划钟点计算才不为 0。"""
+    from crawler.scheduler import _observed_draw_arrival_latency_seconds
+    from db import connect
+
+    db_path = _setup(tmp_path)
+    with connect(db_path) as conn:
+        # 计划 21:30（=13:30 UTC），首次入库 13:33:19 → 相对计划时延 199 秒
+        _insert_draw_with_created_at(
+            conn, HK, 2026, 101, "2026-09-17 21:34:00", "2026-09-17T13:33:19+00:00"
+        )
+        _insert_draw_with_created_at(
+            conn, HK, 2026, 102, "2026-09-19 21:34:00", "2026-09-19T13:33:19+00:00"
+        )
+        conn.commit()
+
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _db, key, default: {"draw.hk_default_draw_time": "21:30"}.get(key, default),
+    )
+
+    # 按 draw_time 口径会算成负数并夹到 0；按计划钟点口径为 199。
+    assert _observed_draw_arrival_latency_seconds(db_path, HK) == 199
+
+
+def test_scheduled_draw_utc_converts_beijing_clock_to_utc(tmp_path, monkeypatch):
+    from crawler.scheduler import _scheduled_draw_utc
+
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _db, key, default: {"draw.macau_default_draw_time": "21:32"}.get(key, default),
+    )
+    assert _scheduled_draw_utc(str(tmp_path), MACAU, "2026-09-21") == datetime(
+        2026, 9, 21, 13, 32, tzinfo=timezone.utc
+    )

@@ -130,12 +130,43 @@ def _parse_utc_timestamp(value: Any) -> datetime | None:
 _DRAW_LATENCY_BASELINE_CACHE: dict[tuple[str, int], tuple[float, int]] = {}
 _DRAW_LATENCY_BASELINE_TTL_SECONDS = 300
 
+# 各彩种的“计划开奖钟点”配置键，用于把入库时延换算成“相对计划开奖时间晚多久”。
+_DRAW_CLOCK_CFG_KEY = {
+    1: "draw.hk_default_draw_time",
+    2: "draw.macau_default_draw_time",
+    3: "draw.taiwan_default_draw_time",
+}
+
+
+def _scheduled_draw_utc(db_path: str | Path, lottery_type_id: int, draw_date: str) -> datetime | None:
+    """把某期开奖日期 + 配置的计划开奖钟点换算成 UTC 时刻。"""
+    cfg_key = _DRAW_CLOCK_CFG_KEY.get(int(lottery_type_id))
+    if not cfg_key:
+        return None
+    raw = str(_cfg(db_path, cfg_key, "") or "").strip()
+    if not raw:
+        return None
+    try:
+        parts = raw.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        return None
+    try:
+        base = datetime.strptime(str(draw_date).strip(), "%Y-%m-%d")
+    except ValueError:
+        return None
+    beijing = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return (beijing - timedelta(hours=8)).replace(tzinfo=timezone.utc)
+
 
 def _observed_draw_arrival_latency_seconds(db_path: str | Path, lottery_type_id: int) -> int:
-    """最近若干期“源站开奖时间 → 入库时间”的滑动分位数（秒）。
+    """最近若干期“计划开奖时间 → 首次入库时间”的滑动分位数（秒）。
 
-    上游源站在计划开奖时间之后 2~6 分钟才发布结果属于常态，因此告警基线不能再用
-    计划开奖时间，而应使用自身历史入库时延的滑动分位数。结果按 5 分钟缓存。
+    必须相对**计划开奖时间**衡量，而不是相对 ``draw_time``：香港彩的源站先给部分号码，
+    其 ``draw_time`` 常晚于首次入库时间，按 ``draw_time`` 计算会得到负值而被夹到 0，
+    使基线退化成下限值，于是每期都误报“开奖数据滞后”。``next_time`` 在生产库里多为空，
+    因此这里改用 ``draw.<彩种>_default_draw_time`` 配置的计划钟点。结果按 5 分钟缓存。
     """
     cache_key = (str(db_path), int(lottery_type_id))
     cached = _DRAW_LATENCY_BASELINE_CACHE.get(cache_key)
@@ -168,8 +199,11 @@ def _observed_draw_arrival_latency_seconds(db_path: str | Path, lottery_type_id:
             created_dt = _parse_utc_timestamp(row["created_at"])
             if draw_dt is None or created_dt is None:
                 continue
-            draw_utc = (draw_dt - timedelta(hours=8)).replace(tzinfo=timezone.utc)
-            latencies.append(int((created_dt - draw_utc).total_seconds()))
+            scheduled_utc = _scheduled_draw_utc(db_path, lottery_type_id, str(row["draw_time"])[:10])
+            if scheduled_utc is None:
+                # 没有配置计划钟点时退回 draw_time 口径。
+                scheduled_utc = (draw_dt - timedelta(hours=8)).replace(tzinfo=timezone.utc)
+            latencies.append(max(0, int((created_dt - scheduled_utc).total_seconds())))
     except Exception as exc:
         _crawler_logger.warning(
             "Draw latency baseline query failed lt=%s: %s", lottery_type_id, exc
@@ -2167,6 +2201,10 @@ def _schedule_backfill_after_draw(db_path: str | Path, lottery_type_id: int) -> 
 
     延迟分钟数由 system_config 表 history_backfill_delay_after_draw 控制（默认 8 分钟）。
     管理员可在后台实时修改此延迟时间；历史开奖页展示闸门读取同一个配置。
+
+    任务 key 必须带上具体期号：``upsert_scheduler_task`` 对已 ``done`` 的同名 key 只更新
+    元数据、不会重新排程，因此按彩种固定的 key 会在第一次成功执行后永久停摆
+    （生产环境自 2026-05-14 起即为该状态）。
     """
     delay_minutes = float(_cfg(db_path, "history_backfill_delay_after_draw", 8))
     if delay_minutes <= 0:
@@ -2175,16 +2213,30 @@ def _schedule_backfill_after_draw(db_path: str | Path, lottery_type_id: int) -> 
         return
 
     target_dt = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+    issue = ""
+    try:
+        row = lottery_service.get_latest_opened_draw_result(db_path, int(lottery_type_id))
+        if row:
+            issue = f"{int(row['year'] or 0)}{int(row['term'] or 0):03d}"
+    except Exception as exc:
+        _crawler_logger.warning(
+            "Backfill schedule lt=%s: cannot resolve latest issue: %s", lottery_type_id, exc
+        )
+    task_key = (
+        f"backfill_after_draw:{int(lottery_type_id)}:"
+        f"{issue or target_dt.strftime('%Y%m%dT%H%M%S')}"
+    )
     _upsert_scheduler_task(
         db_path,
         task_type="backfill_after_draw",
-        payload={"lottery_type_id": int(lottery_type_id)},
+        payload={"lottery_type_id": int(lottery_type_id), "issue": issue},
         run_at=target_dt.isoformat(),
         max_attempts=1,
+        task_key_override=task_key,
     )
     _crawler_logger.info(
-        "Backfill scheduled for lt=%s in %.1f minutes (at %s)",
-        lottery_type_id, delay_minutes, target_dt.isoformat(),
+        "Backfill scheduled for lt=%s issue=%s in %.1f minutes (at %s, key=%s)",
+        lottery_type_id, issue or "N/A", delay_minutes, target_dt.isoformat(), task_key,
     )
 
 
