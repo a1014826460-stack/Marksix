@@ -189,7 +189,65 @@ node frontend/test/*.mjs          # 7 个失败全部在原始工作树上同样
 - 慢周期不再出现 ~5 分钟抓取空窗（对比 `public_open_delay_seconds` 是否稳定 ≤200s）；
 - 计划开奖时间之后不再收到常规“开奖数据滞后”邮件。
 
-### 3.5 原验收清单
+### 3.5 第二轮修复（2026-09-21T19:4x UTC，提交 `9089bf2` + `d924696`）
+
+由一封真实的「开奖数据滞后报警」邮件（台湾彩 2026262，滞后 17 秒，触发于 2026-09-20 22:32:17 北京）
+复查时发现的两个缺陷，以及邮件模板本身的整改。
+
+**缺陷 1：开奖后预测结果回填自 2026-05-14 起永久停摆**
+
+`backfill_after_draw` 的任务 key 只含 `lottery_type_id`（`_task_key()` 落到默认分支生成
+`backfill_after_draw:{"lottery_type_id": N}`）；`upsert_scheduler_task` 对已 `done` 的同名 key
+只更新元数据、**不会重新排程**，因此第一次成功执行后再也没有被排入。生产库证据：
+
+```
+task_type=backfill_after_draw  n=3   latest_run_at=2026-05-14T14:35:30Z
+```
+
+后果：某期开奖后，该期预测的「对/错」回填要等到次日 12:00 的 `daily_prediction` 才补上。
+修复：`_schedule_backfill_after_draw` 用 `task_key_override` 带上期号
+（`backfill_after_draw:<lt>:<YYYY###>`），并在 payload 里附 `issue`，每期都能重新排程。
+
+**缺陷 2：滞后告警基线口径错误 → 香港彩每期必误报**
+
+原基线用 `created_at - (draw_time - 8h)`。香港彩源站先给部分号码，`draw_time` 常晚于首次入库时间，
+计算结果为负并被夹到 0，基线退化成下限。部署前后实测：
+
+| 彩种 | 旧口径 observed p90 | 旧基线 | 新口径 observed p90 | 新基线 |
+| --- | --- | --- | --- | --- |
+| 香港彩 | 0s | 120s | **199s** | **199s** |
+| 澳门彩 | 451s | 451s | **483s** | **483s** |
+| 台湾彩 | 0s | 120s | 0s | 120s |
+
+新口径相对 `draw.<彩种>_default_draw_time` 配置的**计划开奖钟点**衡量
+（生产库 `lottery_draws.next_time` 多为空，不能作为计划时间来源），无配置时回退旧口径。
+
+**邮件模板整改（9 条）**
+
+| # | 原问题 | 现状 |
+| --- | --- | --- |
+| 1 | 基线无宽限，计划时间一到就报 | 宽限后阈值 = `max(配置下限, 基线 + 30/120/300)`，级别写入主题 |
+| 2 | `next_time` 用 UTC、触发时间用北京 | 全部统一北京时间，UTC 仅作小字附注 |
+| 3 | 缺 draw_time / 期望期号 / 抓取结论 | 表格补「最新已开奖期+draw_time」「期望期号」「基线秒数」，并新增「最近源站抓取结论」表（来源/outcome/HTTP/成败，取自 `draw_audit_log`） |
+| 4 | 台湾彩建议「后台手工录入」误导（且 `import-taiwan` 接口并不存在） | 改为「由 `taiwan_precise_open` 在 22:32 自动开盘 → 先查 scheduler-worker 与该任务状态 → 再在后台开奖记录页 `POST /api/admin/draws` 补录」，并给出 `crawl-and-generate` |
+| 5 | 没有恢复通知 | 状态解除时补发 `[已恢复]` 邮件 |
+| 6 | `服务器: b706fba18be5 (172.18.0.4)` 只是容器 ID | 优先级 `LIUHECAI_NODE_NAME`（compose 注入）→ 实测 `中心节点 207.56.3.82 · 容器 58da7a09e9f4 (172.18.0.5) · 环境 production` |
+| 7 | 主题无级别/期号/环境 | `[production][提示] 开奖数据滞后 · 台湾彩 · 超计划 1分17秒（期号 2026262）` |
+| 8 | `max(1, ceil(秒/60))` 把 17 秒显示成“1 分钟” | 统一「X分Y秒」，17 秒 → `17秒`，451 秒 → `7分31秒` |
+| 9 | 无抑制窗口说明、无后台链接 | 附冷却窗口说明 + `alert.admin_base_url` 生成的后台入口链接 |
+
+**第二轮发布结果**
+
+| 项 | 结果 |
+| --- | --- |
+| 推送 | `6c967de..d924696` |
+| 中心节点备份 | `.deploy-backups/alert-email-rework-20260921T194203Z`（含 `pg_dump -Fc` + SHA-256） |
+| 重建范围 | 仅 `python-api`、`scheduler-worker`（纯后端 + compose 注入节点名）；`db-migrate` 依赖门通过，无崩溃重启 |
+| 健康 | `python-api` healthy、`scheduler-worker` Up、5 个中心站点 `/history`+`/api/latest-draw` 全部 200、重部署后 8 分钟内 0 条 Traceback/ERROR |
+| 容器内实测 | `LIUHECAI_NODE_NAME=中心节点 207.56.3.82`；`format_lag(17)=17秒`；基线 lt1=199s / lt2=483s / lt3=120s；`lag=200s` 判级 HK/Macau=`观察`、台湾=`提示` |
+| 前端节点 | 本轮无前端改动，未重建；仍为 `6c967de` |
+
+### 3.6 原验收清单
 
 - 澳门彩/香港彩计划开奖时间后 ≤20 秒内 `is_opened=1`（源站已发布的前提下）；
 - 慢周期不再出现 5 分钟抓取空窗；
