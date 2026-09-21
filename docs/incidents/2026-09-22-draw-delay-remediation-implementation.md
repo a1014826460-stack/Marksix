@@ -104,13 +104,47 @@ node frontend/test/*.mjs          # 7 个失败全部在原始工作树上同样
 
 ## 3. 部署（本次已获授权执行）
 
+### 3.1 发布前预检（已完成，2026-09-21T18:5x UTC）
+
+两个节点均为 `/root/Marksix` 的 git 检出，`HEAD = 964aaeb`，`origin/main = 35d480b`，
+且 `964aaeb` 是本次提交 `5f338b8` 的**严格祖先**（本地领先 8 个提交）→ `git reset --hard` 是快进，不会产生分叉。
+
+两个节点的 `git status` 都显示大量“已修改”，需要区分两类：
+
+- **CRLF 行尾噪声**：`scheduler.py` 2561 行全部带 `\r`、`embed.html` 1237 行全部带 `\r`，
+  直接 `git diff` 会显示 5016 行改动；`git diff --ignore-cr-at-eol` 后真实改动只有
+  **584 插入 / 93 删除 / 22 文件**。
+- **是否为“只存在于服务器”的生产代码**：不是。把服务器工作树按 CRLF 归一化后逐文件求
+  SHA-256，与本地 `5f338b8` 的 blob 对比：**23 个文件中 16 个完全一致**（含
+  `result_crawler.py` 的多备用源、`_shared/lottery-site-runtime.js` 的 `mergeDraw`、
+  未跟踪的 `_shared/lottery-site-draw-state.js`）；剩余 7 个的差异经逐行核对，
+  **服务器侧多出来的行全部是本次提交已经取代的旧版本代码**
+  （旧的 `_open_specific_records` 片段、`CURRENT_SCHEMA_VERSION = 28`、
+  `test_alert_service.py` 里没有 `schema=` 的旧桩、`test_scheduler_hk_macau_fast_open.py` 里
+  非法的 `11,22,33,44,55,66,77` 夹具、`from typing import Any`、`if next_dt < now_utc:`）。
+  即服务器工作树是**本地已提交内容的过期快照**，不存在会被 `reset --hard` 抹掉的生产独有代码。
+
+另外确认：中心节点实际挂载的是 `deploy/nginx.conf.local`（未跟踪的本地文件），
+`deploy/nginx.conf` 虽被 `reset` 更新，但不影响线上 Nginx；证书、`.env`、`.codex-stage/` 等
+未跟踪运行时文件不会被 `git reset --hard` 删除（不使用 `git clean`）。
+
+### 3.2 备份（已完成）
+
+| 节点 | 备份目录 | 内容 |
+| --- | --- | --- |
+| 中心 | `/root/Marksix/.deploy-backups/draw-delay-8min-backend-20260921T185212Z`（21 MB） | `HEAD.txt`、`STATUS.txt`、`worktree.patch`、`worktree-eol-normalized.patch`（62 KB 真实改动）、`untracked.txt`、`env.root`、`env.example`、`docker-compose.yml`、`deploy-runtime.tgz`（ssl + nginx.conf.local）、`backend-data-manifest.txt`、`compose-ps.txt`、`nginx-t.txt`、`liuhecai.before.dump`（20.6 MB `pg_dump -Fc`）+ `.sha256`（`17a6d1d94391ba56…badc997`） |
+| 前端 | `/root/Marksix/.deploy-backups/draw-delay-8min-frontend-20260921T185445Z`（60 KB） | 同上（无 dump），含 `docker-compose.frontend-node.yml` 与 `env.root` |
+
+### 3.3 发布步骤
+
 1. 提交并推送代码。
-2. 中心节点 `207.56.3.82:29618`：备份后重建 `python-api`、`scheduler-worker`、`frontend`，并执行
+2. 中心节点 `207.56.3.82:29618`：`git fetch origin main` + `git reset --hard 5f338b8`，重建
+   `python-api`、`scheduler-worker`、`frontend`，并执行
    `docker compose run --rm db-migrate`（即 `python -m database.versioned_migrations --db-path $DATABASE_URL`）
    以应用迁移 29，把 `system_config.history_backfill_delay_after_draw` 从 4 改为 8。
-3. 前端节点 `207.56.2.71:62594`：备份后在 `.env` 增加 `HISTORY_UNLOCK_DELAY_MINUTES=8`，仅重建 `frontend`
-   （`docker-compose.frontend-node.yml`）。该变量已加入两个 compose 文件的 `frontend.environment`，否则
-   `.env` 的值不会进入容器。
+3. 前端节点 `207.56.2.71:62594`：在 `.env` 增加 `HISTORY_UNLOCK_DELAY_MINUTES=8`，`git fetch/reset` 后仅重建
+   `frontend`（`docker-compose.frontend-node.yml`）。该变量已加入两个 compose 文件的 `frontend.environment`，
+   否则 `.env` 的值不会进入容器。
 4. 验收：
    - 澳门彩/香港彩计划开奖时间后 ≤20 秒内 `is_opened=1`（源站已发布的前提下）；
    - 慢周期不再出现 5 分钟抓取空窗；
