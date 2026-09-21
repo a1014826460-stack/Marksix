@@ -607,6 +607,12 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "description": "计算开奖告警基线时取样的最近已开奖期数。",
         "is_secret": 0,
     },
+    "alert.admin_base_url": {
+        "value": "",
+        "value_type": "string",
+        "description": "后台管理入口的完整地址（用于告警邮件里的排查链接），例如 https://www.tw8800.com。留空则只显示路径。",
+        "is_secret": 0,
+    },
     "legacy.images_dir": {
         "value": "data/Images",
         "value_type": "string",

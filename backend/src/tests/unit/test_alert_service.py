@@ -382,7 +382,8 @@ def test_alert_draw_staleness_taiwan_subject_uses_taiwan_name(monkeypatch):
 
     result = alert_draw_staleness("fake", lottery_type_id=3)
     assert result is True
-    assert captured["subject"] == "[台湾彩] 开奖数据滞后报警"
+    assert "台湾彩" in captured["subject"]
+    assert "开奖数据滞后" in captured["subject"]
     assert "六合彩" not in captured["subject"]
     assert "台湾彩" in captured["body_html"]
 
@@ -435,7 +436,179 @@ def test_alert_draw_staleness_same_issue_only_sends_once(monkeypatch):
     monkeypatch.setattr("alerts.alert_service.datetime", FakeDatetime)
 
     assert alert_draw_staleness("fake", lottery_type_id=3) is True
-    assert sent_subjects == ["[台湾彩] 开奖数据滞后报警"]
+    assert len(sent_subjects) == 1
+    assert "台湾彩" in sent_subjects[0]
 
     assert alert_draw_staleness("fake", lottery_type_id=3) is True
-    assert sent_subjects == ["[台湾彩] 开奖数据滞后报警"]
+    assert len(sent_subjects) == 1
+
+
+# ── 开奖滞后告警邮件整改 ────────────────────────────────────────────
+
+def _fake_datetime(real_datetime, moment):
+    class FakeDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment
+    return FakeDatetime
+
+
+def test_draw_staleness_email_is_beijing_time_and_actionable(monkeypatch):
+    from alerts.alert_service import alert_draw_staleness
+    from datetime import datetime as real_datetime, timezone
+
+    class FakeRow(dict):
+        pass
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            self.sql = str(sql)
+            return self
+
+        def fetchone(self):
+            if "FROM lottery_draws" in getattr(self, "sql", ""):
+                return FakeRow({
+                    "year": 2026,
+                    "term": 262,
+                    "next_time": str(int(real_datetime(2026, 9, 20, 14, 32, tzinfo=timezone.utc).timestamp() * 1000)),
+                    "draw_time": "2026-09-19 22:32:00",
+                })
+            return None
+
+        def fetchall(self):
+            return [FakeRow({
+                "created_at": "2026-09-20T14:31:00+00:00",
+                "status": "failed",
+                "detail": "context=auto_crawl source=www.lnlllt.com attempt=1 http_status=200 "
+                          "returned_period=2026261 expected_period=2026262 outcome=old_period",
+            })]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    captured: dict[str, str] = {}
+
+    monkeypatch.setattr("alerts.alert_service.connect", lambda db_path: FakeConn())
+    monkeypatch.setattr(
+        "alerts.email_service.send_alert_async",
+        lambda db_path, subject, body_html: captured.update({"subject": subject, "body_html": body_html}),
+    )
+    monkeypatch.setattr("alerts.alert_service._load_draw_staleness_state", lambda conn: {})
+    monkeypatch.setattr("alerts.alert_service._save_draw_staleness_state", lambda db_path, state: None)
+    monkeypatch.setattr(
+        "alerts.alert_service.datetime",
+        _fake_datetime(real_datetime, real_datetime(2026, 9, 20, 14, 33, 17, tzinfo=timezone.utc)),
+    )
+    monkeypatch.setattr("alerts.alert_service._runtime_env_label", lambda db_path: "production")
+    monkeypatch.setattr(
+        "alerts.alert_service._cfg",
+        lambda db_path, key, fallback: {
+            "alert.admin_base_url": "https://www.tw8800.com",
+            "alert.cooldown_seconds": 3600,
+        }.get(key, fallback),
+    )
+
+    assert alert_draw_staleness("fake", lottery_type_id=3) is True
+    subject = captured["subject"]
+    body = captured["body_html"]
+
+    # 主题带环境、级别、分秒级滞后与期号
+    assert "[production]" in subject
+    assert "台湾彩" in subject
+    assert "1分17秒" in subject
+    assert "2026262" in subject
+
+    # 正文统一北京时间（next_time 14:32 UTC -> 22:32 北京），并补齐定位信息
+    assert "2026-09-20 22:32:00" in body
+    assert "2026-09-19 22:32:00" in body       # 最新已开奖期的 draw_time
+    assert "2026263" in body                   # 期望期号
+    assert "基线" in body
+    assert "www.lnlllt.com" in body            # 最近源站抓取结论
+    assert "old_period" in body
+    assert "https://www.tw8800.com/fackyou/login" in body
+    assert "3600" in body                      # 抑制窗口说明
+
+
+def test_taiwan_repair_hint_points_at_the_durable_task_not_manual_entry():
+    from alerts.alert_service import _draw_staleness_repair_hint
+
+    hint = _draw_staleness_repair_hint(3)
+    assert "taiwan_precise_open" in hint
+    assert "自动开盘" in hint
+    assert "import-taiwan" not in hint          # 该接口并不存在
+    assert _draw_staleness_repair_hint(1).endswith("POST /api/admin/crawler/run-hk")
+    assert _draw_staleness_repair_hint(2).endswith("POST /api/admin/crawler/run-macau")
+
+
+def test_draw_staleness_sends_recovery_notice_when_the_issue_clears(monkeypatch):
+    from alerts.alert_service import alert_draw_staleness
+    from datetime import datetime as real_datetime, timezone
+
+    holder = {"stale": True}
+    sent: list[str] = []
+    stored: dict = {}
+
+    class FakeRow(dict):
+        pass
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            self.sql = str(sql)
+            return self
+
+        def fetchone(self):
+            if "FROM lottery_draws" in getattr(self, "sql", ""):
+                if holder["stale"]:
+                    moment = real_datetime(2026, 9, 20, 14, 32, tzinfo=timezone.utc)
+                    term = 262
+                else:
+                    moment = real_datetime(2026, 9, 21, 14, 32, tzinfo=timezone.utc)
+                    term = 263
+                return FakeRow({
+                    "year": 2026,
+                    "term": term,
+                    "next_time": str(int(moment.timestamp() * 1000)),
+                    "draw_time": "2026-09-20 22:32:00",
+                })
+            return None
+
+        def fetchall(self):
+            return []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def _save(_db_path, new_state):
+        stored.clear()
+        stored.update(new_state)
+
+    monkeypatch.setattr("alerts.alert_service.connect", lambda db_path: FakeConn())
+    monkeypatch.setattr(
+        "alerts.email_service.send_alert_async",
+        lambda db_path, subject, body_html: sent.append(subject),
+    )
+    monkeypatch.setattr("alerts.alert_service._load_draw_staleness_state", lambda conn: dict(stored))
+    monkeypatch.setattr("alerts.alert_service._save_draw_staleness_state", _save)
+    monkeypatch.setattr(
+        "alerts.alert_service.datetime",
+        _fake_datetime(real_datetime, real_datetime(2026, 9, 20, 15, 0, 0, tzinfo=timezone.utc)),
+    )
+    monkeypatch.setattr("alerts.alert_service._runtime_env_label", lambda db_path: "production")
+    monkeypatch.setattr("alerts.alert_service._cfg", lambda db_path, key, fallback: fallback)
+
+    assert alert_draw_staleness("fake", lottery_type_id=3) is True
+    assert len(sent) == 1
+    assert "滞后" in sent[0]
+    assert stored
+
+    holder["stale"] = False
+    assert alert_draw_staleness("fake", lottery_type_id=3) is False
+    assert len(sent) == 2
+    assert "已恢复" in sent[1]
+    assert not stored

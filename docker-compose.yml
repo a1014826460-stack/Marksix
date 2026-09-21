@@ -96,6 +96,8 @@ services:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       LIUHECAI_RUNTIME_ENV: "production"
+      # 告警邮件里显示的节点名，避免只出现容器 ID；可用 .env 覆盖。
+      LIUHECAI_NODE_NAME: "${LIUHECAI_NODE_NAME:-中心节点 207.56.3.82}"
       CACHE_BACKEND: "redis"
       REDIS_URL: "redis://redis:6379/0"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
@@ -139,6 +141,8 @@ services:
       LOTTERY_DB_PATH: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       LIUHECAI_RUNTIME_ENV: "production"
+      # 告警邮件里显示的节点名，避免只出现容器 ID；可用 .env 覆盖。
+      LIUHECAI_NODE_NAME: "${LIUHECAI_NODE_NAME:-中心节点 207.56.3.82}"
       CACHE_BACKEND: "redis"
       REDIS_URL: "redis://redis:6379/0"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
@@ -170,6 +174,8 @@ services:
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-change_me_in_production}@pgbouncer:6432/liuhecai"
       LIUHECAI_RUNTIME_ENV: "production"
+      # 告警邮件里显示的节点名，避免只出现容器 ID；可用 .env 覆盖。
+      LIUHECAI_NODE_NAME: "${LIUHECAI_NODE_NAME:-中心节点 207.56.3.82}"
       POSTGRES_POOL_MAX_SIZE: "${POSTGRES_POOL_MAX_SIZE:-120}"
       POSTGRES_POOL_TIMEOUT: "${POSTGRES_POOL_TIMEOUT:-15}"
     networks:

@@ -29,7 +29,16 @@ def _cfg(db_path: str | Path, key: str, fallback: Any) -> Any:
 
 
 def _get_server_identity() -> str:
-    """获取服务器标识信息（主机名 + IP），用于报警邮件中定位问题服务器。"""
+    """节点标识，用于报警邮件中定位问题服务器。
+
+    只暴露容器 hostname（形如 ``b706fba18be5``）对管理员没有意义，且容器重建即变化。
+    因此优先使用部署时注入的 ``LIUHECAI_NODE_NAME``（例如「中心节点 207.56.3.82」），
+    并附上容器 hostname/IP 与运行环境。
+    """
+    import os
+
+    node_name = str(os.environ.get("LIUHECAI_NODE_NAME") or "").strip()
+    runtime_env = str(os.environ.get("LIUHECAI_RUNTIME_ENV") or "").strip()
     hostname = "unknown"
     try:
         hostname = socket.gethostname()
@@ -47,7 +56,12 @@ def _get_server_identity() -> str:
             ip = socket.gethostbyname(hostname)
         except Exception:
             pass
-    return f"{hostname} ({ip})"
+
+    parts = [node_name or hostname]
+    parts.append(f"容器 {hostname} ({ip})" if node_name else f"({ip})")
+    if runtime_env:
+        parts.append(f"环境 {runtime_env}")
+    return " · ".join(parts)
 
 
 def _load_smtp_config(db_path: str | Path) -> dict[str, Any]:

@@ -81,12 +81,130 @@ def _cfg_int(db_path: str | Path, key: str, fallback: int) -> int:
 
 def _draw_staleness_repair_hint(lottery_type_id: int) -> str:
     if lottery_type_id == 1:
-        return "POST /api/admin/crawler/run-hk"
+        return (
+            "香港彩源站先给部分号码再补全，通常再等 1~3 分钟即可。"
+            "需要立即重试：POST /api/admin/crawler/run-hk"
+        )
     if lottery_type_id == 2:
-        return "POST /api/admin/crawler/run-macau"
+        return (
+            "澳门彩源站常在计划时间后 2~6 分钟发布。"
+            "需要立即重试：POST /api/admin/crawler/run-macau"
+        )
     if lottery_type_id == 3:
-        return "后台手工录入开奖记录，随后重跑日常预测"
+        return (
+            "台湾彩由持久化任务 taiwan_precise_open 在 22:32（北京）自动开盘；"
+            "先确认 scheduler-worker 存活并查看 scheduler_tasks 中该任务的 status，"
+            "再在后台开奖记录页（POST /api/admin/draws）补录真实号码"
+        )
     return "检查对应彩种的采集/录入入口"
+
+
+def _beijing_text_from_stored_timestamp(value: Any) -> str:
+    """把库里的时间戳文本（多为 UTC）转成北京时间 HH:MM:SS 显示。"""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace("Z", "+00:00")
+    parsed: datetime | None = None
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                parsed = datetime.strptime(normalized[:19], fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return text[:19]
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (parsed.astimezone(timezone.utc) + timedelta(hours=8)).strftime("%m-%d %H:%M:%S")
+
+
+def _format_lag(lag_seconds: int) -> str:
+    """滞后时长统一按“X分Y秒”展示，保留秒级敏感度。"""
+    seconds = max(0, int(lag_seconds))
+    return f"{seconds // 60}分{seconds % 60:02d}秒" if seconds >= 60 else f"{seconds}秒"
+
+
+def _runtime_env_label(db_path: str | Path) -> str:
+    import os
+
+    raw = str(os.environ.get("LIUHECAI_RUNTIME_ENV") or "").strip()
+    if raw:
+        return raw
+    try:
+        return str(_cfg(db_path, "runtime.environment", "") or "").strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _staleness_grade(db_path: str | Path, grace_seconds: int, lag_seconds: int) -> tuple[str, str]:
+    """按与分级告警一致的阈值给出 (级别, 中文标签)。"""
+
+    def _threshold(key: str, default: int) -> int:
+        try:
+            return max(0, int(_cfg(db_path, key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    yellow = max(_threshold("alert.draw_yellow_timeout_seconds", 180), grace_seconds + 30)
+    orange = max(_threshold("alert.draw_orange_timeout_seconds", 300), grace_seconds + 120)
+    red = max(_threshold("alert.draw_red_timeout_seconds", 600), grace_seconds + 300)
+    if lag_seconds >= red:
+        return "red", "严重"
+    if lag_seconds >= orange:
+        return "orange", "警告"
+    if lag_seconds >= yellow:
+        return "yellow", "提示"
+    return "info", "观察"
+
+
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    """安全读取一行记录里的字段，兼容 sqlite3.Row / psycopg row / dict。"""
+    try:
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
+def _recent_source_fetch_summary(conn: Any, lottery_type_id: int, limit: int = 3) -> str:
+    """最近几次源站抓取的结论，直接来自 draw_audit_log。"""
+    try:
+        rows = conn.execute(
+            "SELECT created_at, status, detail FROM draw_audit_log "
+            "WHERE lottery_type_id = ? AND event = 'source_fetch' "
+            "ORDER BY id DESC LIMIT ?",
+            (int(lottery_type_id), int(limit)),
+        ).fetchall()
+    except Exception:
+        return ""
+
+    lines: list[str] = []
+    try:
+        for row in rows:
+            detail = str(_row_value(row, "detail", "") or "")
+            source = ""
+            outcome = ""
+            http_status = ""
+            for token in detail.split():
+                if token.startswith("source="):
+                    source = token.split("=", 1)[1]
+                elif token.startswith("outcome="):
+                    outcome = token.split("=", 1)[1]
+                elif token.startswith("http_status="):
+                    http_status = token.split("=", 1)[1]
+            stamp = _beijing_text_from_stored_timestamp(_row_value(row, "created_at", ""))
+            pieces = [stamp, source or "-", outcome or "-"]
+            if http_status:
+                pieces.append(f"HTTP {http_status}")
+            pieces.append(f"[{_row_value(row, 'status', '')}]")
+            lines.append(" ".join(piece for piece in pieces if piece))
+    except Exception:
+        return "；".join(lines)
+    return "；".join(lines)
 
 
 def _draw_staleness_state_for_item(item: dict[str, Any]) -> dict[str, str]:
@@ -422,7 +540,7 @@ def alert_draw_staleness(
             for lt in lt_ids:
                 row = conn.execute(
                     """
-                    SELECT year, term, next_time
+                    SELECT year, term, next_time, draw_time
                     FROM lottery_draws
                     WHERE lottery_type_id = ? AND is_opened = 1
                     ORDER BY year DESC, term DESC LIMIT 1
@@ -445,31 +563,52 @@ def alert_draw_staleness(
                 except (ValueError, OSError):
                     continue
 
-                if next_dt < now_utc and (now_utc - next_dt).total_seconds() >= _grace_for(lt):
+                grace_seconds = _grace_for(lt)
+                if next_dt < now_utc and (now_utc - next_dt).total_seconds() >= grace_seconds:
                     lt_name = LOTTERY_NAMES.get(lt, str(lt))
                     year = int(row["year"] or 0)
                     term = int(row["term"] or 0)
                     lag_seconds = max(0, int((now_utc - next_dt).total_seconds()))
                     issue = f"{year}{term:03d}"
+                    expected_year, expected_term = _compute_next_issue(year, term)
+                    expected_issue = f"{expected_year}{expected_term:03d}"
+                    level, level_label = _staleness_grade(db_path, grace_seconds, lag_seconds)
                     _alert_logger.warning(
-                        "Draw staleness: lt=%s latest=%s/%s next_time=%s < now=%s",
+                        "Draw staleness: lt=%s latest=%s/%s next_time=%s < now=%s lag=%ss grace=%ss level=%s",
                         lt_name, year, term,
                         next_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
                         now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        lag_seconds, grace_seconds, level,
                     )
                     stale_items.append({
                         "lottery_type_id": lt,
                         "lottery_name": lt_name,
                         "issue": issue,
+                        "expected_issue": expected_issue,
+                        "draw_time_beijing": str(_row_value(row, "draw_time", "") or ""),
                         "next_time_ms": str(next_ms),
+                        "next_time_beijing": (next_dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S"),
                         "next_time_utc": next_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        "lag_seconds": lag_seconds,
+                        "lag_text": _format_lag(lag_seconds),
+                        "grace_seconds": grace_seconds,
+                        "level": level,
+                        "level_label": level_label,
+                        # 兼容既有字段
                         "lag_minutes": max(1, (lag_seconds + 59) // 60),
                         "repair_hint": _draw_staleness_repair_hint(lt),
+                        "source_fetch": _recent_source_fetch_summary(conn, lt),
                     })
                     current_state[str(lt)] = _draw_staleness_state_for_item(stale_items[-1])
     except Exception as exc:
         _alert_logger.error("Draw staleness check failed: %s", exc)
         return False
+
+    recovered_state = {
+        key: value
+        for key, value in previous_state.items()
+        if key in checked_lt_keys and key not in current_state
+    }
 
     next_state = {
         key: value
@@ -479,6 +618,13 @@ def alert_draw_staleness(
     next_state.update(current_state)
     if next_state != previous_state:
         _save_draw_staleness_state(db_path, next_state)
+
+    if recovered_state:
+        _send_draw_staleness_recovery(
+            db_path,
+            recovered_state,
+            now_utc=now_utc,
+        )
 
     if not stale_items:
         return False
@@ -497,42 +643,133 @@ def alert_draw_staleness(
 
     from alerts.email_service import send_alert_async
 
+    env_label = _runtime_env_label(db_path)
+    try:
+        admin_base = str(_cfg(db_path, "alert.admin_base_url", "") or "").strip().rstrip("/")
+    except Exception:
+        admin_base = ""
+    admin_link = (
+        f'<a href="{escape(admin_base)}/fackyou/login">{escape(admin_base)}/fackyou/login</a>'
+        if admin_base
+        else "<code>/fackyou/login</code>（未配置 alert.admin_base_url）"
+    )
+    try:
+        cooldown = int(_cfg(db_path, "alert.cooldown_seconds", 3600))
+    except (TypeError, ValueError):
+        cooldown = 3600
+
+    worst = max(stale_items, key=lambda item: int(item["lag_seconds"]))
     subject_names = " / ".join(item["lottery_name"] for item in stale_items) or "开奖数据"
     rows_html = "".join(
         f"""
         <tr>
             <td>{escape(str(item["lottery_name"]))}</td>
-            <td>{escape(str(item["issue"]))}</td>
-            <td>{escape(str(item["next_time_utc"]))}</td>
-            <td style="color:red"><b>{escape(str(item["lag_minutes"]))} 分钟</b></td>
-            <td>{escape(str(item["repair_hint"]))}</td>
+            <td>{escape(str(item["level_label"]))}</td>
+            <td>{escape(str(item["issue"]))}<br><span style="color:#888;font-size:12px">开奖 {escape(str(item["draw_time_beijing"])) or "-"}</span></td>
+            <td>{escape(str(item["expected_issue"]))}</td>
+            <td>{escape(str(item["next_time_beijing"]))} 北京<br><span style="color:#888;font-size:12px">{escape(str(item["next_time_utc"]))}</span></td>
+            <td style="color:red"><b>{escape(str(item["lag_text"]))}</b><br><span style="color:#888;font-size:12px">基线 {int(item["grace_seconds"])}s</span></td>
+            <td style="font-size:12px">{escape(str(item["repair_hint"]))}</td>
+        </tr>
+        """
+        for item in stale_items
+    )
+    diagnostics_html = "".join(
+        f"""
+        <tr>
+            <td>{escape(str(item["lottery_name"]))}</td>
+            <td style="font-size:12px">{escape(str(item["source_fetch"])) or "（无 source_fetch 审计记录）"}</td>
         </tr>
         """
         for item in stale_items
     )
     send_alert_async(
         db_path,
-        subject=f"[{subject_names}] 开奖数据滞后报警",
+        subject=(
+            f"[{env_label}][{worst['level_label']}] 开奖数据滞后 · {subject_names} · "
+            f"超计划 {worst['lag_text']}（期号 {worst['issue']}）"
+        ),
         body_html=f"""
         <h2>开奖数据滞后报警</h2>
-        <p>以下彩种的最新已开奖期已超出当前 UTC 时间，但暂未看到更晚一期入库。</p>
+        <p>以下彩种最新已开奖期的下一期计划时间已过，且超过该彩种的历史入库时延基线（正常源站发布延迟），
+        仍未看到更晚一期入库。时间为<b>北京时间</b>，括号内为 UTC。</p>
         <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
             <tr style="background:#f5f5f5">
-                <th>彩种</th><th>期号</th><th>next_time (UTC)</th><th>滞后</th><th>快速修复</th>
+                <th>彩种</th><th>级别</th><th>最新已开奖期</th><th>期望期号</th>
+                <th>下一期计划时间</th><th>超计划时长</th><th>建议动作</th>
             </tr>
             {rows_html}
         </table>
-        <p>触发时间: {escape(now_beijing_str)}</p>
+        <p><b>最近源站抓取结论</b>（来自 draw_audit_log）</p>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            {diagnostics_html}
+        </table>
+        <p>触发时间: <b>{escape(now_beijing_str)}</b>（{(now_utc).strftime("%Y-%m-%d %H:%M:%S UTC")}）</p>
         <p><b>快速修复顺序</b></p>
         <ol>
-            <li>香港彩: 直接调用 <code>POST /api/admin/crawler/run-hk</code></li>
-            <li>澳门彩: 直接调用 <code>POST /api/admin/crawler/run-macau</code></li>
-            <li>台湾彩: 到后台手工录入开奖记录，然后重跑日常预测</li>
+            <li>先看上面的「最近源站抓取结论」：若为 <code>old_period</code>，说明源站还没出新期，等待即可。</li>
+            <li>香港彩: <code>POST /api/admin/crawler/run-hk</code></li>
+            <li>澳门彩: <code>POST /api/admin/crawler/run-macau</code></li>
+            <li>台湾彩: 由持久化任务 <code>taiwan_precise_open</code> 在 22:32（北京）自动开盘；先确认 <code>scheduler-worker</code> 存活并查看该任务状态，再在后台开奖记录页补录真实号码。</li>
+            <li>需要重跑当日预测生成: <code>POST /api/admin/lottery-types/&lt;id&gt;/crawl-and-generate</code></li>
         </ol>
-        <p>如果数据已恢复但邮件仍重复，请优先检查 <code>crawler.scheduler</code> 日志和 <code>lottery_draws</code> 最新记录。</p>
+        <p>后台入口: {admin_link}</p>
+        <p style="color:#666;font-size:12px">
+            同类告警在 {cooldown} 秒冷却窗口内不会重复发送；仅当“期号/计划时间”变化或状态恢复时再次通知。
+            恢复时会单独发送一封「已恢复」邮件。
+        </p>
         """,
     )
     return True
+
+
+def _send_draw_staleness_recovery(
+    db_path: str | Path,
+    recovered_state: Mapping[str, dict[str, str]],
+    *,
+    now_utc: datetime,
+) -> None:
+    """滞后状态恢复时补发一封恢复通知，避免管理员只能靠“不再收到邮件”推断。"""
+    if not recovered_state:
+        return
+    try:
+        from alerts.email_service import send_alert_async
+
+        env_label = _runtime_env_label(db_path)
+        rows_html = ""
+        names: list[str] = []
+        for lt_key, state in sorted(recovered_state.items()):
+            try:
+                lt_id = int(lt_key)
+            except (TypeError, ValueError):
+                continue
+            lt_name = LOTTERY_NAMES.get(lt_id, lt_key)
+            names.append(lt_name)
+            rows_html += f"""
+            <tr>
+                <td>{escape(lt_name)}</td>
+                <td>{escape(str(state.get("issue") or "-"))}</td>
+                <td style="font-size:12px">{escape(str(state.get("next_time_utc") or "-"))}</td>
+            </tr>"""
+        now_beijing = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+        send_alert_async(
+            db_path,
+            subject=f"[{env_label}][已恢复] 开奖数据滞后已恢复 · {' / '.join(names) or '开奖数据'}",
+            body_html=f"""
+        <h2>开奖数据滞后已恢复</h2>
+        <p>以下彩种已看到更晚一期入库，滞后状态解除。</p>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            <tr style="background:#f5f5f5"><th>彩种</th><th>此前落后的期号</th><th>此前的计划时间 (UTC)</th></tr>
+            {rows_html}
+        </table>
+        <p>恢复时间: <b>{escape(now_beijing)} 北京时间</b>（{now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")}）</p>
+        """,
+        )
+        _alert_logger.info(
+            "Draw staleness recovery notice sent for lt=%s", ", ".join(sorted(recovered_state))
+        )
+    except Exception as exc:
+        _alert_logger.error("Draw staleness recovery notice failed: %s", exc)
 
 
 def alert_precise_draw_mismatch(
