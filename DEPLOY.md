@@ -754,7 +754,21 @@ VERIFY_HOST=www.twsaimahui.com ./deploy/verify.sh
 部署前先运行显式 schema 迁移；API 和 worker 不会自行建表：
 
 ```bash
+docker compose build db-migrate        # 必须先重建：db-migrate 是运行时依赖，不在常规 build 列表里
 docker compose run --rm db-migrate
+```
+
+`docker compose build python-api scheduler-worker frontend` **不会**重建 `marksix-db-migrate`。
+若该镜像仍停留在旧版本，迁移脚本里没有新版本号，会打印
+`Schema migrations are already current.` 而什么都不做；随后 `python-api`/`scheduler-worker`
+会因 `validate_runtime_schema()` 缺少新版本号而崩溃重启
+（`SchemaMigrationRequired: 数据库缺少 schema migration 版本 N`）。
+出现该报错时用新镜像执行迁移即可：
+
+```bash
+docker compose build db-migrate
+docker compose run --rm db-migrate     # 期望输出 Applied schema migrations: <N>
+docker compose up -d python-api scheduler-worker
 ```
 
 该迁移同时对齐 `created.mode_payload_*` 镜像：它使用 `public.mode_payload_*` 实际表与

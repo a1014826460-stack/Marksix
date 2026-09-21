@@ -137,21 +137,66 @@ node frontend/test/*.mjs          # 7 个失败全部在原始工作树上同样
 
 ### 3.3 发布步骤
 
-1. 提交并推送代码。
-2. 中心节点 `207.56.3.82:29618`：`git fetch origin main` + `git reset --hard 5f338b8`，重建
-   `python-api`、`scheduler-worker`、`frontend`，并执行
-   `docker compose run --rm db-migrate`（即 `python -m database.versioned_migrations --db-path $DATABASE_URL`）
-   以应用迁移 29，把 `system_config.history_backfill_delay_after_draw` 从 4 改为 8。
+1. 提交并推送代码（`git push origin main` → `35d480b..bffcb27`）。
+2. 中心节点 `207.56.3.82:29618`：`git fetch origin main` + `git reset --hard origin/main`，重建
+   `python-api`、`scheduler-worker`、`frontend`，并执行数据库迁移以应用迁移 29，
+   把 `system_config.history_backfill_delay_after_draw` 从 4 改为 8。
 3. 前端节点 `207.56.2.71:62594`：在 `.env` 增加 `HISTORY_UNLOCK_DELAY_MINUTES=8`，`git fetch/reset` 后仅重建
    `frontend`（`docker-compose.frontend-node.yml`）。该变量已加入两个 compose 文件的 `frontend.environment`，
    否则 `.env` 的值不会进入容器。
-4. 验收：
-   - 澳门彩/香港彩计划开奖时间后 ≤20 秒内 `is_opened=1`（源站已发布的前提下）；
-   - 慢周期不再出现 5 分钟抓取空窗；
-   - `draw_audit_log.auto_open` 不再出现 `public_open_delay_seconds ≈ 86400`；
-   - 香港彩按号码逐个出现在开奖位；
-   - 历史开奖页在 `draw_time + 8 分钟`（且号码齐全）后出现最新一期；
-   - 近 7 天不再收到常规“开奖数据滞后”邮件。
+
+> **必须重建 `db-migrate` 镜像**：`docker compose build python-api scheduler-worker frontend`
+> **不会**重建 `marksix-db-migrate`（它是运行时依赖，不是构建依赖）。若该镜像陈旧，迁移脚本里没有新版本号，
+> 会打印 `Schema migrations are already current.` 而什么都不做，随后 `python-api` / `scheduler-worker`
+> 因 `validate_runtime_schema()` 缺少新版本号而崩溃重启。正确做法：
+>
+> ```bash
+> docker compose build db-migrate        # 让迁移镜像与新代码一致
+> docker compose run --rm db-migrate     # 期望输出 Applied schema migrations: 29
+> ```
+
+### 3.4 实际发布结果（2026-09-21T19:0x–19:2x UTC）
+
+| 项 | 结果 |
+| --- | --- |
+| 推送 | `35d480b..bffcb27 main -> main`；本地与 `origin/main` 一致 |
+| 中心节点 HEAD | `bffcb27`（`git reset --hard` 快进，无冲突） |
+| 中心节点容器 | `python-api` healthy、`frontend` healthy、`scheduler-worker` Up、`nginx -t` 通过；`postgres`/`pgbouncer`/`redis`/`mihomo`/`backend-admin` 未受影响 |
+| 中心节点迁移 | `schema_migrations` 28 → **29**；`system_config.history_backfill_delay_after_draw` 4 → **8** |
+| 前端节点 HEAD | `bffcb27`；`liuhecai-frontend` healthy、`nginx -t` 通过 |
+| 前端节点 env | 容器内 `HISTORY_UNLOCK_DELAY_MINUTES=8` |
+| 10 个站点 | `history?type=3`、`api/draw-history`、`api/latest-draw` 全部 HTTP 200 |
+| 开奖面板统一 | `vendor/shengshi8800/kj/local.html` 200 且含 `_shared/kj-runtime.js` 与轮序发布代码；`_shared/kj-runtime.js` 200；twsaimahui 旧副本 `vendor/twsaimahui/kj/local.html` **404**；`/vendor/twsaimahui/index.html` 中 shim 在第 300 行、`kj.js` 在第 301 行（顺序正确） |
+| 8 分钟闸门（容器内实测） | 默认 8 分钟、运行时配置读回 8.0；`draw_time + 7m59s` → False，`+8m00s` → True；旧站出口 `helpers._history_result_visible_after_delay` 边界一致 |
+| 假延迟审计 | 发布后 30 分钟内 `auto_open` 审计 0 条；最后一条仍是发布前的 13:34 |
+| 滞后邮件 | 发布后 15 分钟内 `Draw staleness` 告警 0 条 |
+
+#### 发布过程中的一次短暂故障（已自愈，记录备查）
+
+首次 `docker compose up -d` 后 `python-api` 崩溃重启 9 次，日志为
+`SchemaMigrationRequired: 数据库缺少 schema migration 版本 29`。原因即上面的
+`db-migrate` 镜像陈旧。处置：用新建的 `python-api` 镜像执行迁移
+（`docker compose run --rm --no-deps --entrypoint sh python-api -c 'cd /app/src && python -m database.versioned_migrations --db-path "$DATABASE_URL"'`
+→ `Applied schema migrations: 29`），随后 `docker compose build db-migrate` 并重新 `up -d`，全部 healthy。
+故障窗口约 4 分钟（19:12–19:16 UTC），期间 `postgres`/`pgbouncer`/数据卷未被改动，
+备份目录中的 `liuhecai.before.dump` 可随时回滚。
+
+#### 尚需在开奖窗口观察的验收项
+
+以下三项只能在真实开奖时观察，下一次香港彩/澳门彩开奖为 **2026-09-22 21:30 / 21:32（北京时间）**：
+
+- 香港彩按号码逐个出现在开奖位（轮序发布）；
+- 慢周期不再出现 ~5 分钟抓取空窗（对比 `public_open_delay_seconds` 是否稳定 ≤200s）；
+- 计划开奖时间之后不再收到常规“开奖数据滞后”邮件。
+
+### 3.5 原验收清单
+
+- 澳门彩/香港彩计划开奖时间后 ≤20 秒内 `is_opened=1`（源站已发布的前提下）；
+- 慢周期不再出现 5 分钟抓取空窗；
+- `draw_audit_log.auto_open` 不再出现 `public_open_delay_seconds ≈ 86400`；
+- 香港彩按号码逐个出现在开奖位；
+- 历史开奖页在 `draw_time + 8 分钟`（且号码齐全）后出现最新一期；
+- 近 7 天不再收到常规“开奖数据滞后”邮件。
 
 ## 4. 十个站点开奖模块统一性（已彻底统一）
 
