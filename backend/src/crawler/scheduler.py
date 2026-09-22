@@ -1671,6 +1671,16 @@ class CrawlerScheduler:
                     self._reschedule_precise_checks()
                 except Exception:
                     pass
+                # 兜底开盘同样要排程“开奖后预测结果回填”。2026-09-22 台湾彩 265 期
+                # 就是被这里在第 60 秒兜底轮询里先开盘的，随后 taiwan_precise_open
+                # 任务拿到 opened_count=0 因而跳过了回填排程。
+                for lt_id in sorted({int(row["lottery_type_id"]) for row in pending}):
+                    try:
+                        _schedule_backfill_after_draw(self.db_path, lt_id)
+                    except Exception as exc:
+                        _crawler_logger.warning(
+                            "AutoOpen: backfill schedule failed lt=%s: %s", lt_id, exc
+                        )
         except Exception as e:
             _crawler_logger.error("AutoOpen error: %s", e)
 
@@ -1767,6 +1777,16 @@ class CrawlerScheduler:
             "Auto-crawl %s: opened=%d in the same cycle (public_open_delay_seconds=%s)",
             lt_name, opened, latency_s,
         )
+        if opened > 0:
+            # 开奖后的预测结果回填同样要覆盖“自动抓取开盘”这条路径：
+            # 2026-09-22 澳门彩 265 期就是由自动抓取开盘的，此前这条路径不排程回填，
+            # 导致该期预测的“对/错”要等到次日 12:00 的 daily_prediction 才补上。
+            try:
+                _schedule_backfill_after_draw(self.db_path, lottery_type_id)
+            except Exception as exc:
+                _crawler_logger.warning(
+                    "Auto-crawl %s: backfill schedule failed: %s", lt_name, exc
+                )
         return True
 
     def _is_newer_than_latest_opened(

@@ -2,9 +2,10 @@
 Description=Liuhecai: daily TLS certificate renew/sync/verify
 
 [Timer]
-# 每天 04:20（服务器本地时区，两台机器均为 Asia/Hong_Kong）执行，
-# 避开 21:30-22:40 的开奖窗口与 12:00 的每日预测任务。
-OnCalendar=*-*-* 04:20:00
+# 每天 04:20 北京时间执行。两台服务器的系统时区是 UTC，因此必须显式写时区，
+# 否则 04:20 会落在 12:20 北京时间，与 daily_prediction（12:00 北京）撞车。
+# 04:20 北京同时避开 21:30-22:40 的开奖窗口。
+OnCalendar=*-*-* 04:20:00 Asia/Hong_Kong
 # 机器维护/关机错过时开机后补跑一次。
 Persistent=true
 RandomizedDelaySec=300

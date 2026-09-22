@@ -524,3 +524,73 @@ def test_scheduled_draw_utc_converts_beijing_clock_to_utc(tmp_path, monkeypatch)
     assert _scheduled_draw_utc(str(tmp_path), MACAU, "2026-09-21") == datetime(
         2026, 9, 21, 13, 32, tzinfo=timezone.utc
     )
+
+
+# ── 7. 开奖后回填必须覆盖自动抓取与兜底开盘两条路径 ──────────────────
+
+def test_auto_crawl_open_also_schedules_the_post_draw_backfill(tmp_path, monkeypatch):
+    """自动抓取开盘的期（如澳门彩）也必须排程开奖后回填。"""
+    from crawler.scheduler import CrawlerScheduler
+    from db import connect
+
+    db_path = _setup(tmp_path)
+    with connect(db_path) as conn:
+        _insert_draw(conn, MACAU, 2026, 264, COMPLETE, "2026-09-21 21:32:32", 1)
+        conn.commit()
+
+    scheduler = CrawlerScheduler(db_path)
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _db, key, default: 1 if key == "history_backfill_delay_after_draw" else default,
+    )
+
+    scheduler._process_auto_crawl_batch(
+        MACAU,
+        "澳门彩",
+        [{
+            "issue": "2026265",
+            "open_time": "2026-09-22 21:32:32",
+            "result": "05,46,40,23,26,44,49",
+            "next_time": "",
+        }],
+    )
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_key, status FROM scheduler_tasks WHERE task_type='backfill_after_draw'"
+        ).fetchall()
+
+    assert [dict(row) for row in rows] == [
+        {"task_key": "backfill_after_draw:2:2026265", "status": "pending"}
+    ]
+
+
+def test_auto_open_fallback_also_schedules_the_post_draw_backfill(tmp_path, monkeypatch):
+    """兜底 AutoOpen 先开盘时，回填排程不能被 taiwan_precise_open 的空 opened_count 吞掉。"""
+    from crawler.scheduler import CrawlerScheduler
+    from db import connect
+
+    db_path = _setup(tmp_path)
+    past = (datetime.now(timezone.utc) + timedelta(hours=8) - timedelta(minutes=1)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    with connect(db_path) as conn:
+        _insert_draw(conn, TAIWAN, 2026, 265, COMPLETE, past, 0)
+        conn.commit()
+
+    scheduler = CrawlerScheduler(db_path)
+    monkeypatch.setattr(
+        "crawler.scheduler._cfg",
+        lambda _db, key, default: 1 if key == "history_backfill_delay_after_draw" else default,
+    )
+
+    scheduler._auto_open_draws()
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_key, status FROM scheduler_tasks WHERE task_type='backfill_after_draw'"
+        ).fetchall()
+
+    assert [dict(row) for row in rows] == [
+        {"task_key": "backfill_after_draw:3:2026265", "status": "pending"}
+    ]
