@@ -7,10 +7,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/root/Marksix
-# 按节点覆盖：中心节点用 docker-compose.yml，前端节点用 docker-compose.frontend-node.yml。
+# 注意：脚本只对 nginx 容器本身执行 stop/start/exec，不调用 docker compose。
+# 两台服务器的仓库目录同名（Marksix），compose 项目名都是 marksix；误用另一份 compose
+# 文件会让 compose 以同名容器替换掉本机真实服务（2026-09-22 前端节点即因此中断约 10 分钟）。
 Environment=LIUHECAI_REPO=/root/Marksix
-Environment=LIUHECAI_COMPOSE_FILE=docker-compose.yml
-Environment=LIUHECAI_NGINX_SERVICE=nginx
+Environment=LIUHECAI_NGINX_CONTAINER=liuhecai-nginx
 ExecStart=/root/Marksix/scripts/sync-nginx-certs.sh
-# 失败的可见性：systemd 记录非零退出，日志同时写入 /var/log/liuhecai-ssl-sync.log
 TimeoutStartSec=900
