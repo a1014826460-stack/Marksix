@@ -1,0 +1,14 @@
+[Unit]
+Description=Liuhecai: daily TLS certificate renew/sync/verify
+
+[Timer]
+# 每天 04:20（服务器本地时区，两台机器均为 Asia/Hong_Kong）执行，
+# 避开 21:30-22:40 的开奖窗口与 12:00 的每日预测任务。
+OnCalendar=*-*-* 04:20:00
+# 机器维护/关机错过时开机后补跑一次。
+Persistent=true
+RandomizedDelaySec=300
+Unit=liuhecai-ssl-sync.service
+
+[Install]
+WantedBy=timers.target
