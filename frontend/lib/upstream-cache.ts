@@ -28,9 +28,11 @@ const TTL_RULES: Array<{ prefix: string; ttlMs: number }> = [
   { prefix: "/public/next-draw-deadline", ttlMs: 1000 },
   { prefix: "/public/current-period", ttlMs: 1000 },
   // 站点资料聚合与旧站逐模块资料：与既有 60 秒预测资料缓存策略一致。
-  { prefix: "/public/site-page", ttlMs: 60000 },
-  { prefix: "/vendor/homepage-modules", ttlMs: 60000 },
-  { prefix: "/legacy/module-rows", ttlMs: 60000 },
+  // 预测资料：开奖后的"对/错"回填会改写载荷，且后台改资料随时可能发生，
+  // 因此这三档 TTL 收紧到 10～30 秒（python-api 侧是事件失效 + KV 读，重建很便宜）。
+  { prefix: "/public/site-page", ttlMs: 30000 },
+  { prefix: "/vendor/homepage-modules", ttlMs: 30000 },
+  { prefix: "/legacy/module-rows", ttlMs: 10000 },
   { prefix: "/legacy/current-term", ttlMs: 15000 },
   { prefix: "/public/site-links", ttlMs: 30000 },
   { prefix: "/public/forced-announcement", ttlMs: 5000 },

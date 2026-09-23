@@ -19,9 +19,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const ttlCases = [
   ["/public/latest-draw", 1000],
   ["/public/next-draw-deadline", 1000],
-  ["/public/site-page", 60000],
-  ["/vendor/homepage-modules", 60000],
-  ["/legacy/module-rows", 60000],
+  ["/public/site-page", 30000],
+  ["/vendor/homepage-modules", 30000],
+  ["/legacy/module-rows", 10000],
+  ["/legacy/current-term", 15000],
   ["/public/site-links", 30000],
   ["/public/forced-announcement", 5000],
   ["/api/unknown-endpoint", 0],

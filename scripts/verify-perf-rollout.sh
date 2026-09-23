@@ -187,5 +187,43 @@ echo "=== 8. 容器资源 ==="
 docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' | grep -E 'liuhecai-(frontend|python-api|nginx|scheduler-worker)' || true
 
 echo
+echo "=== 9. 更新时效（开奖必须尽快可见，不得提早或延误）==="
+draw_tier_1s=$(docker exec liuhecai-nginx sh -c "grep -c 'proxy_cache_valid 200 1s' /etc/nginx/conf.d/default.conf" 2>/dev/null | tr -d ' ')
+draw_tier_blocks=$(docker exec liuhecai-nginx sh -c "grep -c 'proxy_cache_valid 200 1s' /etc/nginx/conf.d/default.conf" 2>/dev/null | tr -d ' ')
+if [ "${draw_tier_1s:-0}" -ge 1 ]; then
+  pass "开奖 tier 微缓存 = 1 秒（$draw_tier_1s 个 server 块）"
+else
+  pending "开奖 tier 仍非 1 秒（未收紧）"
+fi
+stale_updating=$(docker exec liuhecai-nginx sh -c "grep -c 'proxy_cache_use_stale updating;' /etc/nginx/conf.d/default.conf" 2>/dev/null | tr -d ' ')
+if [ "${stale_updating:-0}" -ge 1 ]; then
+  pass "开奖 tier 仅在 updating 时用旧值（后端故障不再长期返回旧开奖）"
+else
+  fail "开奖 tier 仍允许 error/timeout 用旧值"
+fi
+panel_body_check=$(curl -sk -m 20 "https://127.0.0.1/vendor/shengshi8800/kj/local.html?lottery_type=3" -H "Host: $sample_domain")
+if printf '%s' "$panel_body_check" | grep -q 'DRAW_CACHE_FRESH_MS = 3000'; then
+  pass "面板开奖缓存窗口 = 3 秒"
+else
+  pending "面板开奖缓存窗口未收紧"
+fi
+if [ "$ROLE" = "backend" ]; then
+  if docker logs liuhecai-scheduler-worker --since 6h 2>&1 | grep -q "Publication loop started interval=1s" \
+     || grep -q "Publication loop started interval=1s" /root/Marksix/backend/data/logs/app.log 2>/dev/null; then
+    pass "Outbox 发布循环已独立运行（interval=1s）"
+  else
+    fail "未发现 1 秒发布循环日志（发布可能仍被 30 秒任务周期拖累）"
+  fi
+  pending_count=$(docker exec liuhecai-postgres psql -U postgres -d liuhecai -t -A -c "SELECT count(*) FROM publication_outbox WHERE status = 'pending';" 2>/dev/null | tr -d ' ')
+  if [ "${pending_count:-999}" -le 5 ]; then
+    pass "Outbox 无积压（pending=${pending_count:-0}）"
+  else
+    fail "Outbox 积压 pending=$pending_count"
+  fi
+  echo "         最近 5 次事件「产生→发布」延迟（秒）："
+  docker exec liuhecai-postgres psql -U postgres -d liuhecai -t -A -F' | ' -c "SELECT event_key, ROUND(EXTRACT(EPOCH FROM (published_at::timestamptz - created_at::timestamptz))::numeric, 2) FROM publication_outbox WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 5;" 2>/dev/null | sed 's/^/           /'
+fi
+
+echo
 echo "=== 汇总：PASS=$PASS PENDING=$PENDING SKIP=$SKIP FAIL=$FAIL ==="
 [ "$FAIL" -eq 0 ]
