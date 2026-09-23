@@ -125,7 +125,39 @@ miss n=3 avg_urt=2.708s  /api/kaijiang/getShaXiao
 前端节点：`/api/latest-draw` 回源耗时从"本地 Next → 公网中心 → 中心 Next →
 python-api"降到 **avg_urt=0.094s**（中心节点已缓存该接口）。
 
-## 6. 仍然建议的后续项（未做）
+## 6. 图片体积治理（2026-09-24 追加）
+
+目标：**不再返回 MB 级图片**，单张压到几百 KB。全部图片原来 43 MB（单张最大 3.3 MB）。
+注意很多文件的扩展名与实际格式不符（`.jpg` 里是动画 GIF、`.png` 里是照片），必须按实际
+格式判断。
+
+脚本与结果：
+
+1. `scripts/compress-vendor-images.py`（原地重压，不改文件名、不改容器格式）
+   - 静态 JPEG：质量 80、渐进式、去元数据；宽度 > 1280 时等比缩到 1280。
+   - 静态 PNG：无透明通道量化到 256 色（与仅 optimize 取更小者）；有透明通道仅 optimize。
+   - 静态 GIF：量化到 64 色。
+   - 仅当至少省 10% 才写回。
+   - 结果：**43 MB → 22.16 MB**，写入 87 个文件。
+2. `scripts/convert-vendor-images-to-webp.py`（>250 KB 转 WebP + 全仓改写引用）
+   - 动画：`ffmpeg(libwebp_anim)`，宽度 ≤ 800、帧率 ≤ 8、质量 50（不够小降到 40/6fps），
+     取最小结果。动画 GIF 换 GIF 容器几乎压不动，这是唯一能把 1 MB 横幅压进几百 KB 的路径。
+   - 静态：Pillow WebP 质量 80、宽度 ≤ 1280。
+   - 转换 16 个文件、改写 135 个文本文件的引用（逐字节替换扩展名），删除旧文件并校验
+     全仓无残留引用。
+   - 结果：**22.16 MB → 15.05 MB，292 张图片，单张最大 366 KB**（原最大 3367 KB）。
+     典型：`42ce9a…` 1181 KB → 221 KB；`986d68…` 762 KB → 291 KB；`3089.80` 710 KB → 274 KB；
+     `log2/log3` 569/613 KB → 284/216 KB；照片 PNG `kingsjpz_1051…` 3367 KB → 203 KB。
+
+契约：`frontend/test/vendor-image-weight-contract.mjs`（单张 ≤ 400 KB、总量 ≤ 18 MB、
+已转换素材不得残留旧扩展名引用）。
+
+运维注意：动画 WebP 需要 Chrome 32+/Firefox 65+/Safari 14+（2019 年以后均可）；
+图片与页面引用都在 `frontend/public` 下，nginx 静态直出后 `git pull` 即可生效，
+但 `frontend/components/twcaibawang/TwcaibawangHomeClient.tsx` 的引用改动需要重建
+`frontend` 镜像。
+
+## 7. 仍然建议的后续项（未做）
 
 1. **预测资料快照化**（第 3 层）：把 588 KB～703 KB 聚合按
    `(site, lottery_type, 期号)` 预生成为快照（Redis 或物化行），回源从"多模块
@@ -133,16 +165,23 @@ python-api"降到 **avg_urt=0.094s**（中心节点已缓存该接口）。
 2. 前端节点本地缓存/内网直连中心，去掉每个请求的公网往返。
 3. Next.js 多副本（现在十站共用一个单进程），或至少 2 vCPU 起步。
 4. nginx 之外再加 CDN 承担 `/vendor/**`（资源已是 immutable，改造成本低）。
-5. 图片体积治理（`twcaibawang` 23 MB 首次访问）与 `twsaimahui` 119 个 script 合并。
+5. `twsaimahui` 的 119 个 script 合并（图片体积治理已在第 6 节完成）。
 6. 继续减少 iframe 层数：把面板并入入口页，去掉 `kai.html` 中转。
 
-## 7. 复现与回滚
+## 8. 复现与回滚
 
 ```powershell
 # 补丁（幂等；--apply 才写回，默认 dry-run）
 python scripts/patch-nginx-edge-cache.py <conf>                  # dry-run
 python scripts/patch-nginx-edge-cache.py <conf> --apply --backup-dir <dir>
 python scripts/patch-nginx-edge-cache.py <conf> --add-access-log --apply --backup-dir <dir>
+
+# 图片（同样幂等，建议先 dry-run 看体积）
+python scripts/compress-vendor-images.py --report report-a.json
+python scripts/compress-vendor-images.py --apply
+python scripts/convert-vendor-images-to-webp.py --threshold-kb 250
+python scripts/convert-vendor-images-to-webp.py --threshold-kb 250 --apply
+
 # 校验与生效（在节点上）
 docker exec liuhecai-nginx nginx -t
 docker exec liuhecai-nginx nginx -s reload
