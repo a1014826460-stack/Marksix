@@ -124,11 +124,14 @@ for _el, _codes in _ELEMENT_BY_GROUP.items():
         _ELEMENT_MAP[_c] = _el
 
 
-def _compute_outcome_from_row(row: dict[str, Any]) -> str:
+def _compute_outcome_from_row(row: dict[str, Any], *, include_draw_zodiacs: bool = False) -> str:
     """从行数据计算所有可能的特码分类标签，供 hit_checker 使用。
 
     输出为 `|` 分隔的标签串，覆盖单双、大小、头、尾、波色、合数单双、
     合数大小、家禽野兽、特码生肖、号码、以及五行元素。
+
+    `include_draw_zodiacs=True` 时额外并入开奖 7 个号码的全部生肖，用于平特玩法
+    （平特一肖：任一开奖号码的生肖命中即算命中）。
     """
     codes = split_csv(row.get("res_code"))
     zodiacs = split_csv(row.get("res_sx"))
@@ -171,6 +174,9 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
         element,
         qqsh_label,
     ]
+    if include_draw_zodiacs:
+        # 平特口径：开奖 7 个号码对应的生肖都算命中目标。
+        outcomes.extend(zodiacs)
     return "|".join(o for o in outcomes if o)
 
 
@@ -189,10 +195,14 @@ def _check_correct_by_mechanism(
     special = extract_special_result(row)
     if not special["code"]:
         return None
-    outcome = _compute_outcome_from_row(row)
+    flat_zodiac = bool(getattr(config, "flat_zodiac", False))
+    outcome = _compute_outcome_from_row(row, include_draw_zodiacs=flat_zodiac)
     content_labels = config.content_parser(prediction_text)
     if not content_labels:
         return None
+    # 平特玩法：开奖 7 个号码的生肖集合与预测生肖集合取交集。
+    if flat_zodiac:
+        return bool(config.hit_checker(outcome, content_labels))
     # 标准命中检查：复合 outcome 中包含预测标签即为命中
     if config.hit_checker is _std_contains:
         return any(label in outcome for label in content_labels)

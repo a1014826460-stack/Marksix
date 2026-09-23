@@ -22,6 +22,16 @@ def _special_zodiac(truth: DrawTruth, _conn: Any) -> str:
     return str(truth.special_zodiac or "").strip()
 
 
+def _flat_zodiacs(truth: DrawTruth, _conn: Any) -> str:
+    """平特口径：开奖 7 个号码对应的生肖集合（逗号分隔）。
+
+    平特一肖只要任一开奖号码的生肖命中预测生肖即算命中，因此真实目标不是特码生肖。
+    """
+    return ",".join(
+        str(zodiac).strip() for zodiac in (getattr(truth, "draw_zodiacs", ()) or ()) if str(zodiac).strip()
+    )
+
+
 def _special_number(truth: DrawTruth, _conn: Any) -> str:
     return str(truth.special_code or "").strip()
 
@@ -132,12 +142,10 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     48: _rule("zodiac", _special_zodiac, prefix_width=2),
     49: _rule("zodiac", _special_zodiac, prefix_width=3),
     51: _rule("zodiac", _special_zodiac),
-    56: _rule("zodiac", _special_zodiac),
-    # mode 103 is the vendor's 三期平特1肖 (displayed as 平特一肖) and shares the
-    # same single-zodiac semantics as mode 56. Without this entry its future rows
-    # were generated without any rule-verified candidate, so the module only ever
-    # hit at the 1/12 chance rate.
-    103: _rule("zodiac", _special_zodiac),
+    # 平特一肖（mode 56）与厂商「三期平特1肖」（mode 103）按平特口径判定：
+    # 开奖 7 个号码的任一肖命中预测生肖即算命中。
+    56: _rule("zodiac_flat", _flat_zodiacs),
+    103: _rule("zodiac_flat", _flat_zodiacs),
     60: _rule("zodiac", _special_zodiac, prefix_width=3),
     69: _rule("zodiac", _special_zodiac),
     72: _rule("zodiac", _special_zodiac),

@@ -223,6 +223,16 @@ function resolveResult(row: LegacyModeRow | null | undefined): ParsedResult {
   }
 }
 
+/**
+ * 平特口径命中判定：开奖 7 个号码对应的生肖中任一命中预测生肖即算命中，
+ * 而不是只看特码生肖（平特一肖）。
+ */
+function flatZodiacHit(row: LegacyModeRow | null | undefined, prediction: unknown): boolean {
+  const label = cleanText(prediction)
+  if (!label) return false
+  return splitCsv(row?.res_sx).map((value) => cleanText(value)).includes(label)
+}
+
 function sortRowsByTermDesc<T extends { year?: string; term?: string }>(rows: T[]) {
   return [...rows].sort((left, right) => {
     const leftYear = Number.parseInt(String(left.year || ""), 10)
@@ -296,7 +306,7 @@ function renderFormulaPtx(rows: LegacyModeRow[]) {
       const isOpened = Boolean(row.draw_is_opened) && codes.length >= 7
       const specialCode = codes.at(-1) || ""
       const specialZodiac = zodiacs.at(-1) || ""
-      const isHit = Boolean(isOpened && prediction && prediction === specialZodiac)
+      const isHit = Boolean(isOpened && prediction && flatZodiacHit(row, prediction))
 
       if (!isOpened) {
         return `<p style="text-align: center;"><span style="font-size: 13pt;"><strong>${escapeHtml(row.term)}期&nbsp;&nbsp;${escapeHtml(prediction || "当前彩种缺少数据")}</strong></span></p>`
@@ -620,8 +630,14 @@ function renderPingteXiao(rows: LegacyModeRow[]) {
       const entry = parseLabelCodeEntries(row.content)[0]
       const result = resolveResult(row)
       const label = entry?.label || splitPredictionTokens(row.content).at(0) || ""
+      // 平特一肖：开奖 7 个号码的任一肖命中预测生肖即算命中，不看特码生肖。
       const isCorrect =
-        result.isOpened && Boolean(label) && (label === result.zodiac || (entry?.codes || []).includes(result.code))
+        result.isOpened &&
+        Boolean(label) &&
+        (flatZodiacHit(row, label) ||
+          splitCsv(row.res_code)
+            .map((value) => normalizeCode(value))
+            .some((code) => (entry?.codes || []).includes(code)))
       const displayLabel = isCorrect ? `<span style="background-color: #FFFF00">${escapeHtml(label.repeat(3))}</span>` : escapeHtml(label.repeat(3))
       return `
         <tr>
@@ -716,7 +732,7 @@ function renderPingteErma(rows: LegacyModeRow[]) {
       const label = splitPredictionTokens(row.content).at(0)
       if (!label) return ""
 
-      const isCorrect = result.isOpened && label === result.zodiac
+      const isCorrect = result.isOpened && flatZodiacHit(row, label)
       const displayLabel = isCorrect
         ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
         : escapeHtml(label)

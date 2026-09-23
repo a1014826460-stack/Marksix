@@ -100,19 +100,33 @@ predict()
 - 文本列：从 title/content/jiexi 字段提取生肖/尾数/波色
 - 文本历史映射：title 含"真言/玄机/幽默/谜语/欲钱"等标记
 
+### 平特口径（平特一肖）
+
+“平特一肖”的命中规则是**开奖 7 个号码对应的生肖中任一命中预测生肖即算命中**，
+不是只看特码生肖（特码口径的自然命中率只有 1/12，会让模块长期显示“错”）。
+
+- 配置标记：`PredictionConfig.flat_zodiac = True`；`outcome_loader = all_zodiacs_from_row`
+  （返回开奖 7 个号码的生肖集合），`hit_checker = flat_zodiac_hit`（集合求交集）。
+- 覆盖范围：手写机制 `pt1xiao`（mode 56），以及 title 命中 `平特X肖` 的动态机制
+  （例如 `三期平特1肖` → mode 103 / `title_103`）；`杀X肖`、`X肖中特` 仍按特码口径。
+- 公开 API：`public/api._check_correct_by_mechanism()` 对 `flat_zodiac` 配置会把
+  `_compute_outcome_from_row()` 的候选标签扩展为开奖 7 个生肖，再交给 `flat_zodiac_hit`。
+- 连期窗口表（含 `start`/`end` 列，如 mode 103）会经 `_make_window_config()` 包装；
+  包装必须用 `dataclasses.replace()` 保留 `flat_zodiac`，逐字段重建会静默丢失该标记。
+
 ### 动态 mode 的未来受控生成规则
 
 `domains/prediction/generation_rules.py` 的 `_RULE_BY_MODE_ID` 是台湾彩未来期受控生成的
 唯一准入清单：未列入的 mode 只生成展示内容，不做规则校验（`get_generation_rule()` 返回
-`blocked_pending_rule`）。`mode_payload_tables.title = 三期平特1肖` 的 **mode 103** 属于
-动态配置（key=`title_103`），其判定为“特码生肖等于所报生肖”（与 `pt1xiao`/mode 56 相同），
-因此已按 `zodiac` 规则登记：
+`blocked_pending_rule`）。平特一肖按 `zodiac_flat` 规则登记（mode 56 与 mode 103），
+真实目标取自 `DrawTruth.draw_zodiacs`（开奖 7 个号码的生肖集合）：
 
-- 单肖（如 56、103）的自然命中率是 1/12 ≈ 8%；若未登记规则，未来期只会按基础概率命中，
-  页面就会长期显示“错”。
+- 未登记规则的 mode，未来期不会生成规则校验候选，只能按基础概率命中。
 - 登记后，未来期会走 `_build_persisted_future_control()` 的规则校验候选与滚动窗口准确率
   （`prediction.simulation.target_hit_rate`），并在 `prediction_generation_controls` 记账。
 - 该规则只影响台湾彩（`lottery_type_id = 3`）的未来期生成，不改变历史回填与即时预测。
+- 注意：台湾彩未来期号码若在预测生成之后被后台改写（例如管理员编辑 `lottery_draws`），
+  生成时校验过的命中会失效，页面会重新显示“错”。
 
 ## 性能参数
 

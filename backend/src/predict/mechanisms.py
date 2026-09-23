@@ -1,4 +1,4 @@
-﻿import json
+import json
 import random
 import re
 import sqlite3
@@ -15,10 +15,12 @@ from predict.common import (
     ZODIAC_ORDER,
     PredictionConfig,
     build_element_number_map,
+    all_zodiacs_from_row,
     contains_hit,
     default_content_from_row,
     excludes_hit,
     fixed_label_for_value,
+    flat_zodiac_hit,
     load_fixed_labels,
     load_fixed_value_map,
     normalize_zodiac_label,
@@ -2029,14 +2031,16 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         default_modes_id=56,
         labels=tuple(ZODIAC_ORDER),
         label_count=1,
-        outcome_loader=special_zodiac_from_number_map,
+        outcome_loader=all_zodiacs_from_row,
         content_loader=default_content_from_row,
         content_parser=parse_zodiac_content,
         content_formatter=format_zodiac_csv,
-        hit_checker=contains_hit,
+        hit_checker=flat_zodiac_hit,
+        flat_zodiac=True,
         explanation=(
             "平特1肖选择 1 个生肖。",
-            "按统一预测口径，特码生肖与预测生肖一致则命中。",
+            "按平特口径，开奖 7 个号码中任一号码的生肖与预测生肖一致即算命中，"
+            "不是只看特码生肖。",
         ),
     ),
     "daxiao": PredictionConfig(
@@ -2326,12 +2330,30 @@ def _make_zodiac_config(
     modes_id: int,
     label_count: int,
     exclude: bool = False,
+    flat_zodiac: bool = False,
 ) -> PredictionConfig:
     """构建生肖类玩法。
 
     适用 title 示例：4肖中特、8肖中特、平特3肖、杀2肖。命中目标优先取
     res_sx 最后一项；缺失时通过 fixed_data 的“生肖”映射由特码号码推导。
+
+    `flat_zodiac=True` 时使用平特口径：开奖 7 个号码的任一肖命中预测生肖即算命中。
     """
+    if flat_zodiac and not exclude:
+        outcome_loader = all_zodiacs_from_row
+        hit_checker = flat_zodiac_hit
+        explanation = (
+            f"{title} 按平特生肖玩法处理，从 12 个生肖中选择 {label_count} 个生肖。",
+            "开奖 7 个号码中任一号码的生肖与预测生肖一致即算命中（平特口径）。",
+        )
+    else:
+        outcome_loader = special_zodiac_from_number_map
+        hit_checker = excludes_hit if exclude else contains_hit
+        explanation = (
+            f"{title} 按生肖类玩法处理，从 12 个生肖中选择 {label_count} 个生肖。",
+            "开奖结果 res_code 最后一位按特码处理，特码生肖优先取 res_sx 最后一项。",
+            "若 title 带有“杀”或“绝杀”语义，则反向计算：特码生肖没有落入预测生肖才算命中。",
+        )
     return PredictionConfig(
         key=key,
         title=title,
@@ -2339,16 +2361,13 @@ def _make_zodiac_config(
         default_modes_id=modes_id,
         labels=tuple(ZODIAC_ORDER),
         label_count=label_count,
-        outcome_loader=special_zodiac_from_number_map,
+        outcome_loader=outcome_loader,
         content_loader=default_content_from_row,
         content_parser=parse_zodiac_content,
         content_formatter=format_zodiac_csv,
-        hit_checker=excludes_hit if exclude else contains_hit,
-        explanation=(
-            f"{title} 按生肖类玩法处理，从 12 个生肖中选择 {label_count} 个生肖。",
-            "开奖结果 res_code 最后一位按特码处理，特码生肖优先取 res_sx 最后一项。",
-            "若 title 带有“杀”或“绝杀”语义，则反向计算：特码生肖没有落入预测生肖才算命中。",
-        ),
+        hit_checker=hit_checker,
+        flat_zodiac=bool(flat_zodiac and not exclude),
+        explanation=explanation,
     )
 
 
@@ -2832,26 +2851,20 @@ def _make_text_column_wave_config(
 def _make_window_config(
     base_config: PredictionConfig,
 ) -> PredictionConfig:
-    """把普通 content 玩法包装为连期表输出结构。"""
-    return PredictionConfig(
-        key=base_config.key,
-        title=base_config.title,
-        default_table=base_config.default_table,
-        default_modes_id=base_config.default_modes_id,
-        labels=base_config.labels,
-        label_count=base_config.label_count,
-        outcome_loader=base_config.outcome_loader,
-        content_loader=base_config.content_loader,
-        content_parser=base_config.content_parser,
+    """把普通 content 玩法包装为连期表输出结构。
+
+    使用 ``dataclasses.replace`` 保留基础配置的全部字段（包括平特口径标记
+    ``flat_zodiac``）；逐字段重建会静默丢失后续新增的字段。
+    """
+    from dataclasses import replace
+
+    return replace(
+        base_config,
         content_formatter=format_window_content(base_config.content_formatter, base_config.default_table),
-        hit_checker=base_config.hit_checker,
         explanation=(
             *base_config.explanation,
             "该表包含 start/end 连期窗口；历史数据已按窗口内期开奖行展开，回测按逐期开奖样本计算。",
         ),
-        labels_loader=base_config.labels_loader,
-        selection_groups=base_config.selection_groups,
-        selection_widths=base_config.selection_widths,
     )
 
 
@@ -3835,7 +3848,17 @@ def _classify_title_config(
         or _extract_count(r"绝杀([一二两三四五六七八九十\d]+)肖", title)
         or _extract_count(r"([一二两三四五六七八九十\d]+)肖$", title)
     ):
-        return _make_zodiac_config(key, title, table_name, modes_id, zodiac_count, exclude)
+        # 平特X肖按平特口径判定：开奖 7 个号码的任一肖命中即算命中。
+        flat_zodiac = not exclude and re.search(r"平特[一二两三四五六七八九十\d]*肖", title) is not None
+        return _make_zodiac_config(
+            key,
+            title,
+            table_name,
+            modes_id,
+            zodiac_count,
+            exclude,
+            flat_zodiac=flat_zodiac,
+        )
 
     if number_count := (
         _extract_count(r"杀([一二两三四五六七八九十\d]+)码", title)

@@ -29,7 +29,7 @@ This document is generated from the internal rule manifest. It documents candida
 | 52 | sizixuanji | 四字玄机 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 53 | 3hang | 3行中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 54 | pt1wei | 平特1尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 56 | pt1xiao | 平特1肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 56 | pt1xiao | 平特1肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 57 | daxiao | 大小中特 | size | special number size is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 58 | jueshabanbo | 绝杀半波（1个半波） | half_wave_exclusion | special half-wave is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 59 | dujiayoumo | 独家幽默 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
@@ -66,3 +66,14 @@ This document is generated from the internal rule manifest. It documents candida
 | 482 | sihangzhongte | 四行中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 483 | sitouzhongte | 四头中特 | head | special number head is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 484 | liuxiao18ma | 六肖十八码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 485 | wuzhong5ma | 内幕5不中 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 486 | daimingxiao | 代号生肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 487 | liuweichute | 六尾出特 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 488 | toudanshuang | 头数单双 | head_parity | head_parity | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 489 | liuxiaoliuma | 六肖六码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 490 | shaliangbanbo | 杀两半波 | half_wave_exclusion | special half-wave is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 491 | gongshi_siw | 公式四尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 492 | three_head_four_tail | 三头四尾 | head_tail | head_tail | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 493 | selected_22_codes | 精选22码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
+| 494 | steady_kill_7_codes | 稳杀7码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 495 | expert_publications | 精准台湾高手资料 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |

@@ -206,3 +206,19 @@
 - 该规则按卡片整体判定，不使用 `modes_id=151` 单条记录自身的 `is_correct`（旧实现只比一肖及其
   4 个号码，导致九肖/18码命中时仍显示“错”）。
 - 契约测试：`frontend/test/twjinniu-yixiao-yima-contract.mjs`。
+
+## 6. 首页「平特一肖」判定规则（平特口径）
+
+用户 2026-09-23 明确要求：平特一肖的命中规律是**开奖 7 个号码对应的生肖中任一命中预测生肖
+即为预测正确**，不是只看特码生肖。后端与前台都已按此口径调整：
+
+- 后端：`PredictionConfig.flat_zodiac` + `all_zodiacs_from_row` + `flat_zodiac_hit`
+  （`predict/common.py`）；`pt1xiao`（mode 56）与 title 命中 `平特X肖` 的动态机制
+  （含 mode 103 / `title_103`）都使用平特口径；未来期受控生成使用 `zodiac_flat` 规则
+  （`domains/prediction/generation_rules.py`）。
+- 前台 `frontend/lib/twjinniu-homepage.ts` 中自行判定的平特一肖模块同步改为平特口径，
+  统一走 `flatZodiacHit(row, prediction)`（按 `row.res_sx` 的 7 个生肖判断）：
+  - `renderFormulaPtx`（公式平特肖，mode 56）
+  - `renderPingteXiao`（平特一肖，mode 103，同时兼容原站号码列表命中）
+  - `renderPingteErma`（独胆/平特一肖，mode 79）
+- 前台其余模块（四肖八码、八肖十六码、前后24码、一肖三码等）仍按特码口径判定，未在本次范围内。

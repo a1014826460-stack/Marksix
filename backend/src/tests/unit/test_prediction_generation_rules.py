@@ -11,6 +11,8 @@ def _truth() -> DrawTruth:
         "27",
         "虎",
         "绿波",
+        # 平特口径使用开奖 7 个号码的全部生肖：蛇/龙/兔/牛/鼠 只出现在平码里。
+        ("蛇", "龙", "兔", "虎", "牛", "鼠", "虎"),
     )
 
 
@@ -71,19 +73,34 @@ def test_special_mode_108_is_blocked_until_its_row_builder_uses_controlled_candi
     assert rule.block_reason == "missing_verified_rule"
 
 
-def test_mode_103_flat_one_xiao_shares_the_mode_56_special_zodiac_rule():
-    """三期平特1肖 (mode 103) must be rule-verified like 平特1肖 (mode 56)."""
+def test_flat_one_xiao_rules_hit_any_drawn_zodiac_not_only_the_special():
+    """平特一肖（56）与三期平特1肖（103）都按平特口径判定。"""
     from dataclasses import replace
 
-    config = replace(PREDICTION_CONFIGS["pt1xiao"], key="title_103", default_modes_id=103)
-    rule = get_generation_rule(config)
+    flat_config = replace(PREDICTION_CONFIGS["pt1xiao"], key="title_103", default_modes_id=103)
+    rule = get_generation_rule(flat_config)
 
     assert rule.supported is True
-    assert rule.rule_id == "zodiac"
+    assert rule.rule_id == "zodiac_flat"
     assert rule.cross_site_prefix_width == 1
-    assert rule.verify_hit(config, ("虎",), _truth(), conn=None) is True
-    assert rule.verify_hit(config, ("鼠",), _truth(), conn=None) is False
+    # 蛇只出现在平码里（不是特码生肖“虎”），平特口径下依然算命中。
+    assert rule.verify_hit(flat_config, ("蛇",), _truth(), conn=None) is True
+    assert rule.verify_hit(flat_config, ("虎",), _truth(), conn=None) is True
+    assert rule.verify_hit(flat_config, ("马",), _truth(), conn=None) is False
+    # 平特一肖（56）使用同一条规则。
     assert get_generation_rule(PREDICTION_CONFIGS["pt1xiao"]).rule_id == rule.rule_id
+    assert PREDICTION_CONFIGS["pt1xiao"].flat_zodiac is True
+
+
+def test_non_flat_zodiac_rule_still_uses_the_special_zodiac():
+    """三肖中特等非平特玩法仍按特码生肖判定。"""
+    config = PREDICTION_CONFIGS["3zxt"]
+    rule = get_generation_rule(config)
+
+    assert rule.rule_id == "zodiac"
+    assert rule.verify_hit(config, ("蛇",), _truth(), conn=None) is False
+    assert rule.verify_hit(config, ("虎",), _truth(), conn=None) is True
+    assert config.flat_zodiac is False
 
 
 def test_image_and_text_modes_are_blocked_until_their_content_can_be_verified():

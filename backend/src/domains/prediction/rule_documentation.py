@@ -11,6 +11,7 @@ from .site_page_dependencies import generation_assurance_for_mode
 def _outcome_description(rule_id: str) -> str:
     descriptions = {
         "zodiac": "special zodiac is in any candidate",
+        "zodiac_flat": "any drawn number's zodiac is in any candidate",
         "zodiac_exclusion": "special zodiac is absent from every candidate",
         "number": "special number is in any candidate",
         "number_exclusion": "special number is absent from every candidate",

@@ -6,7 +6,8 @@
 - 前台标题：`平特一肖`；原始 mode_id：`103`。
 - 后端数据：动态机制 `title_103`（`mode_payload_tables.title = 三期平特1肖`，`modes_id = 103`），
   站点 `web_id = 8`，`public.mode_payload_103` 为供应商原始资料，`created.mode_payload_103` 为本站生成行。
-- 判定语义：**特码生肖等于所报生肖即命中**（与 `pt1xiao` / mode 56 相同），基础命中率 1/12 ≈ 8%。
+- 判定语义：**平特口径** —— 开奖 7 个号码对应的生肖中任一命中预测生肖即算命中
+  （2026-09-23 按用户要求由“特码生肖口径”改为平特口径，对所有站点的平特一肖同样生效）。
 
 ## 前台展示（2026-09-23 修正）
 
@@ -18,19 +19,20 @@
   `meta.modeId === 103` 分支（与 `buildModeSpecificPrediction()` 的同类分支保持一致）。
 - 契约测试：`frontend/test/twcf888-ptyx-display-contract.mjs`。
 
-## 后端生成：为什么该模块长期“全部未中”
+## 后端判定与生成
 
-1. **判定口径**：平特一肖按特码生肖判定，单肖自然命中率只有 1/12；即使资料完全正常，也会有
-   约 92% 的期数显示“错”。
-2. **缺少受控生成规则（本次修复）**：`domains/prediction/generation_rules.py` 的
-   `_RULE_BY_MODE_ID` 原先没有 `103`，`get_generation_rule()` 返回 `blocked_pending_rule`，
-   `_build_persisted_future_control()` 直接返回 `None`，因此该模块的台湾彩未来期不会生成
-   规则校验候选，只能按基础概率命中。现已按 `zodiac` 规则登记（与 mode 56 一致），并在
-   `backend/docs/prediction-mechanisms.md` 记录。
-3. **生产观测（2026-09-23，`/api/twcf888/site-page?lottery_type=3&mode_ids=103`）**：
-   近 19 期已开奖行命中 2 期（≈ 11%，符合 1/12 基线）；同一窗口内
-   mode 49 = 13/19、mode 66 = 10/19、mode 69 = 5/19、mode 54 = 3/19、mode 5 = 4/19、mode 51 = 4/19，
-   分别贴近日肖/尾/波各自的随机基线（75% / 50% / 25% / 10% / 50% / 33%），而 site-page 行均为
-   平台生成行（`source_record_id` 为空，每日 12:10 生成）。这说明**已登记规则**的模块在生产上
-   也没有呈现出受控命中率，需要进一步核对中心节点的 `prediction_generation_controls` 账本、
-   `prediction.simulation.*` 配置与每日批量生成路径（需要服务器授权后执行）。
+1. **判定口径（本次修正）**：平特一肖按平特口径判定。`PredictionConfig.flat_zodiac = True`、
+   `outcome_loader = all_zodiacs_from_row`、`hit_checker = flat_zodiac_hit`；
+   `public/api._check_correct_by_mechanism()` 会把开奖 7 个生肖并入候选标签。
+   覆盖 `pt1xiao`（mode 56）与所有 title 命中 `平特X肖` 的动态机制（含 mode 103 / `title_103`）。
+   注意连期窗口表经 `_make_window_config()` 包装时曾丢失该标记（已用 `dataclasses.replace` 修复）。
+2. **受控生成规则**：`_RULE_BY_MODE_ID` 原先没有 `103`，`get_generation_rule()` 返回
+   `blocked_pending_rule`，未来期不会生成规则校验候选，只能按基础概率命中。现 mode 56 与 103
+   都登记为 `zodiac_flat`，真实目标取 `DrawTruth.draw_zodiacs`（开奖 7 个生肖）。
+3. **实测效果**（同一批生产行，用新规则重算）：
+   - mode 103（twcf888 平特一肖）：旧口径 2/19 → 平特口径 **12/19**；265 期 `蛇`（特码 猪08）由“错”变为“对”。
+   - mode 56（twcf888 公式平特肖）：旧口径 3/19 → 平特口径 **12/19**。
+4. **仍未闭环的生成问题**：生产上台湾彩未来期号码可能在预测生成之后被改写。2026-09-23 19:17（北京时间）
+   管理员 `PUT /api/admin/draws/105948` 改写了 266 期号码（生成时间是当日 12:10），
+   而 mode 56 近 10 期里有 5 期的 `prediction_generation_controls.verified_hit` 与最终开奖号码不再一致。
+   建议：未来期号码在当日预测生成后不要再改（或在改写后触发该期重新生成），否则受控命中会被作废。

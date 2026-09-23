@@ -54,6 +54,13 @@ def truth_labels_for_request(request: PredictionRequest) -> tuple[str, ...]:
         ]
         return tuple(label for label in labels if label)
     if category == PredictionCategory.ZODIAC:
+        if getattr(request, "flat_zodiac", False):
+            # 平特口径：开奖 7 个号码的生肖任一命中即算命中。
+            draw_zodiacs = tuple(
+                str(value).strip() for value in (getattr(truth, "draw_zodiacs", ()) or ()) if str(value).strip()
+            )
+            if draw_zodiacs:
+                return draw_zodiacs
         return (zodiac,) if zodiac else ()
     if category == PredictionCategory.NUMBER:
         return (code,) if code else ()

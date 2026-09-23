@@ -134,6 +134,9 @@ def get_future_draw_truth(
         special_code=special_code,
         special_zodiac=str(zodiac_map.get(special_code) or ""),
         special_color=str(color_map.get(special_code) or ""),
+        draw_zodiacs=tuple(
+            zodiac for zodiac in (str(zodiac_map.get(code) or "").strip() for code in numbers) if zodiac
+        ),
     )
 
 

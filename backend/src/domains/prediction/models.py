@@ -83,6 +83,8 @@ class DrawTruth:
     special_code: str
     special_zodiac: str = ""
     special_color: str = ""
+    # 平特口径需要开奖 7 个号码的全部生肖；只在生成域内部使用，不下发到 HTTP/日志。
+    draw_zodiacs: tuple[str, ...] = ()
 
     def to_safe_dict(self) -> dict[str, bool]:
         return {"has_truth": bool(self.numbers)}
@@ -96,6 +98,7 @@ class PredictionRequest:
     candidate_labels: tuple[str, ...]
     truth: DrawTruth | None = None
     hit_checker: Callable[[str, tuple[str, ...]], bool] | None = None
+    flat_zodiac: bool = False
 
 
 @dataclass(frozen=True)

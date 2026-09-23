@@ -81,6 +81,9 @@ class PredictionConfig:
     labels_loader: Callable[[Any], tuple[str, ...]] | None = None
     selection_groups: tuple[tuple[str, ...], ...] | None = None
     selection_widths: tuple[int, ...] | None = None
+    # 平特口径（平特一肖等）：开奖 7 个号码对应的生肖中任一命中预测生肖即算命中，
+    # 而不是只看特码生肖。
+    flat_zodiac: bool = False
 
 def parse_res_code(res_code: str) -> list[str]:
     """解析逗号分隔的开奖结果，并统一补齐 01-09。
@@ -124,6 +127,37 @@ def special_zodiac_from_number_map(row: Any, conn: Any) -> str:
 
     special_code = special_code_from_res_code(row["res_code"] or "")
     return fixed_label_for_value(conn, "生肖", special_code)
+
+def all_zodiacs_from_row(row: Any, conn: Any) -> str:
+    """平特口径的真实命中目标：开奖 7 个号码对应的生肖集合（逗号分隔）。
+
+    平特一肖等玩法的规则是“开奖号码中任一号码的生肖与预测生肖一致即算命中”，
+    因此这里返回全部号码的生肖；`res_sx` 缺失时再用号码 -> 生肖映射补齐。
+    """
+    values = [
+        normalize_zodiac_label(value)
+        for value in str(row["res_sx"] or "").split(",")
+        if value.strip()
+    ]
+    if values:
+        return ",".join(values)
+
+    raw_codes = str(row["res_code"] or "").strip()
+    if not raw_codes or conn is None:
+        return ""
+    try:
+        codes = parse_res_code(raw_codes)
+    except ValueError:
+        return ""
+    return ",".join(
+        label for label in (fixed_label_for_value(conn, "生肖", code) for code in codes) if label
+    )
+
+def flat_zodiac_hit(outcome: str, labels: tuple[str, ...]) -> bool:
+    """平特命中：开奖生肖集合与预测生肖集合存在交集。"""
+    hit_values = {value.strip() for value in re.split(r"[,|]", str(outcome or "")) if value.strip()}
+    predicted = {str(label).strip() for label in labels if str(label).strip()}
+    return bool(hit_values & predicted)
 
 def get_table_title(conn: Any, table_name: str) -> tuple[int | None, str | None]:
     """通过拆表映射找回表对应的 modes_id 和中文标题。"""
