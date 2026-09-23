@@ -1213,3 +1213,47 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 待办：Redis 目前 `maxmemory=0`、`maxmemory-policy=noeviction`；快照键都有 TTL
   （≤301 秒），内存有界，但建议后续显式设置 `maxmemory` 与 `allkeys-lru` 兜底。
   P1（worker 预热与事件失效）尚未实施。
+
+### 跨节点缓存 / 脚本合并 / 快照失效触发上线结果（2026-09-24）
+
+- 上线提交：`ec17d6b`（Next 进程内短缓存 + 并发合并，并补齐真实热路径
+  `/api/legacy/module-rows` 快照）、`5b97953`（twsaimahui 59 个启用模块脚本 → 2 个 bundle）、
+  `59f1622`（快照失效触发：开奖事件 / 每日生成 / 管理台改写开奖号码三个钩子，代际计数）、
+  `6d658c0`、`fac6c5c`（十站真实浏览器工具与上线核查脚本）。`origin/main = fac6c5c`。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/perf-round5-20260923T201316Z`（`docker-compose.yml`、`.env`、
+  `deploy/nginx.conf.local`、`HEAD.txt`、`STATUS.txt`）；`git pull --ff-only`
+  （`e1968e2 → fac6c5c`）+ `docker compose build python-api scheduler-worker frontend`
+  + `up -d`；`liuhecai-frontend` `healthy`、`liuhecai-python-api` `healthy`、
+  `liuhecai-scheduler-worker` 运行中、`nginx` 未重启。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/perf-round5-20260923T201618Z`；同样 `git pull --ff-only`
+  （`e1968e2 → fac6c5c`）+ 重建 `frontend`，容器 `healthy`。
+- 上线核查（`scripts/verify-perf-rollout.sh`，两节点各跑一次）：
+  **中心节点 PASS=15 / PENDING=0 / SKIP=8 / FAIL=0**；
+  **前端节点 PASS=14 / PENDING=0 / SKIP=7 / FAIL=0**（部署前分别是 PENDING=1 与 PENDING=2）。
+- 快照与失效实测（中心节点，直连 python-api）：
+  - `/api/legacy/module-rows?modes_id=56&limit=8&web=9&type=3`
+    第一次 **49.7 ms**（未命中，日志 `build_ms=24`）、第二次 **2.4 ms**（命中）；
+  - 代际失效链路：容器内用已部署模块 `bump_lottery_type(3)` → Redis 出现
+    `public:prediction-snapshot:v1:generation:lottery:3 = 1`；随后同一接口第一次
+    **57 ms 重建**，第二、三次 **2.2 ms 命中**；
+  - 另观察到聚合类未命中构建耗时 `build_ms=1226`（`kind=homepage site=site5`），命中后消失。
+- 十站真实浏览器复测（`frontend/test/live-site-draw-smoke.py`，Playwright + 系统 Chrome）：
+
+  | 站点 | DCL 前→后 (ms) | 首球 前→后 (ms) | 备注 |
+  | --- | --- | --- | --- |
+  | www.twcaibawang.com | **7452 → 1094** | **8108 → 2438** | SSR 两次聚合并发的效果 |
+  | www.twsaimahui.com | 1061 → 905 | 2936 → 2875 | 合并后脚本请求 119 标签 → **28 个请求**（跨 frame 统计） |
+  | 其余八站 | 1655/969/952/921/1094/1108/1140/1000 → 890～1780 | 3641/2922/2812/2468/2406/2530/2858/2422 → 2140～3797 | 全部 7 个号码渲染、期号 266 一致 |
+
+  - `img[loading="lazy"]`（跨 frame 统计）：twcaibawang **30** 个、twssz 167 个、twsyw 5 个 → 懒加载已生效。
+  - 测量口径修正：原先只在主文档统计 `performance` 资源，iframe 内厂商页的资源会被漏掉；
+    图片"传输体积"还受页面推进速度影响（页面变快后同一观察窗内会加载更多图），
+    因此改用**模板引用体积 + `loading="lazy"` 计数 + 跨 frame 请求数**作为可比指标。
+- 本轮新发现的最后一个 MB 级来源（**未处理，需单独授权**）：管理后台上传图
+  `/uploads/image/20250322/1742580086567063.png` **1,085,663 B**、
+  `…130762983.jpg` 427,004 B、`…119746508.jpg` 268,281 B，合计 **1.74 MB**，
+  十个站点首页共用；实际文件在中心节点 `/root/Marksix/backend/data/Images/`
+  （容器内 `/app/data/Images`），与仓库内同名 vendor 副本 md5 不同（是独立文件），
+  `cache-control: public, max-age=86400`。

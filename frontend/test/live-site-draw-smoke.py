@@ -103,25 +103,54 @@ def inspect(page, domain: str, path: str) -> dict:
         }
     )
 
-    # 传输体积（performance entries）
+    # 传输体积：必须**跨所有 frame** 汇总，否则 iframe 里的厂商页资源统计不到。
     try:
         totals = page.evaluate(
             """() => {
-                const rows = performance.getEntriesByType('resource') || [];
-                let images = 0, scripts = 0, documents = 0;
-                let imageCount = 0, scriptCount = 0;
-                for (const row of rows) {
-                    const size = row.transferSize || 0;
-                    if (row.initiatorType === 'img') { images += size; imageCount += 1; }
-                    else if (row.initiatorType === 'script') { scripts += size; scriptCount += 1; }
-                    else if (row.initiatorType === 'iframe' || row.initiatorType === 'navigation') { documents += size; }
-                }
-                return { images, scripts, documents, imageCount, scriptCount };
+                const totals = { images: 0, scripts: 0, documents: 0, imageCount: 0, scriptCount: 0, frames: 0 };
+                const walk = (win) => {
+                    totals.frames += 1;
+                    let rows = [];
+                    try { rows = win.performance.getEntriesByType('resource') || []; } catch (error) { rows = []; }
+                    for (const row of rows) {
+                        const size = row.transferSize || 0;
+                        if (row.initiatorType === 'img') { totals.images += size; totals.imageCount += 1; }
+                        else if (row.initiatorType === 'script') { totals.scripts += size; totals.scriptCount += 1; }
+                        else if (row.initiatorType === 'iframe' || row.initiatorType === 'navigation') { totals.documents += size; }
+                    }
+                    let children = [];
+                    try { children = Array.from(win.frames || []); } catch (error) { children = []; }
+                    for (const child of children) walk(child);
+                };
+                walk(window);
+                return totals;
             }"""
         )
-        record["transfer"] = {key: (round(value / 1024, 1) if key in ("images", "scripts", "documents") else value) for key, value in totals.items()}
+        for key in ("images", "scripts", "documents"):
+            totals[key] = round(totals[key] / 1024, 1)
+        record["transfer"] = totals
     except Exception:  # noqa: BLE001
         record["transfer"] = None
+
+    # 懒加载部署证据：主文档与各 frame 里的 img[loading=lazy] 数量
+    try:
+        record["lazy_images"] = page.evaluate(
+            """() => {
+                let count = 0;
+                const walk = (doc) => {
+                    try { count += doc.querySelectorAll('img[loading="lazy"]').length; } catch (error) { /* noop */ }
+                    let frames = [];
+                    try { frames = Array.from(doc.querySelectorAll('iframe')); } catch (error) { frames = []; }
+                    for (const frame of frames) {
+                        try { if (frame.contentDocument) walk(frame.contentDocument); } catch (error) { /* noop */ }
+                    }
+                };
+                walk(document);
+                return count;
+            }"""
+        )
+    except Exception:  # noqa: BLE001
+        record["lazy_images"] = None
     record["ok"] = bool(record.get("balls_visible_ms")) or bool(record.get("countdown"))
     return record
 
