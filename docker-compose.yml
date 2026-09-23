@@ -249,6 +249,9 @@ services:
     volumes:
       - ${NGINX_CONF_SOURCE:-./deploy/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
       - ./deploy/ssl:/etc/nginx/ssl:ro
+      # /vendor 静态资源由 nginx 直接读取宿主仓库（与镜像内 /app/public 一致），
+      # 未命中时回落到 Next.js；因此部署必须先 git pull 再重建 frontend。
+      - ./frontend/public:/srv/public:ro
     networks:
       - liuhecai-network
 
