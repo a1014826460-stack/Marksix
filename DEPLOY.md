@@ -1143,3 +1143,37 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   两项都需要：`git push` → 两台节点 `git pull` → 重建 `frontend`
   （图片本身由 nginx 直出，但 `frontend/components/twcaibawang/TwcaibawangHomeClient.tsx`
   的引用改动与面板 JS 必须重建镜像后才一致）。
+
+### 图片压缩与前端加速上线结果（2026-09-24）
+
+- 上线提交：`a4871a5`（前端加速）、`b2f8ea1`（nginx 边缘缓存与静态直出）、
+  `4d9c806`（图片压缩）、`8bcefad`（文档）、`6823fc8`（compose 增加
+  `./frontend/public:/srv/public:ro` 只读挂载）。`origin/main = 6823fc8`。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/images-frontend-20260923T183113Z`（`docker-compose.yml`、
+  `.env`、`HEAD.txt`、`STATUS.txt`）；因为 nginx 挂载改动只改在节点上，先
+  `git checkout -- docker-compose.yml` 再 `git pull --ff-only`（`92b780f → 6823fc8`），
+  随后 `docker compose build frontend` + `up -d frontend`，`liuhecai-frontend` 状态 `healthy`。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/images-frontend-20260923T183419Z`；同样先还原
+  `docker-compose.frontend-node.yml` 再 `git pull --ff-only`（`df26b50 → 6823fc8`，
+  `df26b50` 是 `origin/main` 祖先，快进无冲突），之后
+  `docker compose -f docker-compose.frontend-node.yml build frontend` + `up -d frontend`，
+  容器 `healthy`。
+- 一致性校验（新挂载模型的关键）：中心节点宿主 `frontend/public` 与容器内 `/app/public`
+  **810 个文件、抽样 md5 全部一致**（面板 `kj/local.html`、`twssz/index.html`、
+  两个新 `.webp`）；因此"nginx 直出宿主仓库"不会串版本。
+- 公网校验（`-H "Accept-Encoding: identity"`，字节数即真实体积）：
+  - `twcaibawang` `42ce9a…webp` 226,058 B（原 1,181 KB）；`986d68…webp` 297,608 B（原 762 KB）；
+  - `twjinniu` `kingsjpz_1051…webp` 190,130 B（原 3,367 KB）；
+  - `twbst528` `3089.80.webp` 142,550 B（原 1,096 KB）；
+  - `twsaimahui` `log2.webp` 276,070 B（原 1,052 KB）；
+  - `twsyw` `banner.png` 174,031 B（原 1,783 KB）；
+  - `twssz` `index.html` 406,078 B（原 1,161,349 B）；
+  - `twcaibawang.com/index.html` 含 38 处 `.webp` 引用，已转换素材的旧扩展名引用为 **0**。
+- 面板校验：`www.twtongtian.com` / `www.twssz.com` / `www.twcaibawang.com` / `www.twsyw.com`
+  上 `kj/local.html` 均含 `loadLatestDrawPayload`（5 秒缓存 + 去重）、初始化改为
+  `load({ revealOnLoad: true })` 与 `fetchCountdownDeadline()` 并发，旧的串行模式已消失。
+- 十站 `/`、`/vendor/shengshi8800/kj/local.html`、`/api/latest-draw` 全部 `HTTP 200`；
+  `www.tw8800.com` 本机复查 `/`(8.3 KB)、`latest-draw`(520 B, 4.9 ms)、
+  `next-draw-deadline`(105 B)、`embed.html`(47 KB) 均 200，`X-Cache-Status: HIT`。
