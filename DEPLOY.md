@@ -1076,3 +1076,23 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 遗留问题（未处理）：生产上台湾彩未来期号码可能在当日 12:10 预测生成之后被后台改写
   （2026-09-23 19:17 管理员 `PUT /api/admin/draws/105948` 改写了 266 期号码），
   导致生成时校验过的受控命中失效；建议未来期号码在预测生成后不再改写，或在改写后触发该期重新生成。
+
+### 后台开奖改写确认提示部署结果（2026-09-23）
+
+- 发布代码提交：`92b780f`（`feat(admin): 修改未开奖期号码前给出“预测会失效”确认提示`）。
+- 中心节点 `207.56.3.82:29618`：部署前备份目录 `/root/Marksix/.deploy-backups/admin-draw-confirm-20260923T140937Z`；
+  `git pull` 至 `92b780f` 后仅重建 `backend-admin`（`Image marksix-backend-admin Built`），
+  `nginx`、TLS、PostgreSQL、PgBouncer 均未改动；`liuhecai-backend-admin` 状态 `healthy`，`redis` `healthy`。
+- 后台入口（本次核实）：生产后台由 nginx 挂在各站点的 `/fackyou` 路径下
+  （`map "" $be_admin { default "backend-admin:3002"; }` 配合 `location = /fackyou` 与 `location /fackyou/`
+  反代到 Next.js admin）；非 `www` 主机访问会 `301` 跳到 `https://www.<站点>/fackyou/...`，
+  因此 `https://<站点>/admin` 在公网并不存在（返回 `404`）。
+  - `https://www.twcf888.com/fackyou/login` → `200`；`https://www.twcf888.com/fackyou/draws` → `200`。
+- 公网产物校验：`https://www.twcf888.com/fackyou/_next/static/chunks/0da5uwjn25gbc.js` 内已含编译后的守卫
+  `if(a&&rU(n)!==rU(a.numbers||"")&&!confirm('第 ${u} 期尚未开奖，…确认继续保存吗？'))return;`，
+  即管理员未点确认时不会发出 `PUT /admin/draws/{id}`；SSR chunk
+  `backend_features_draws_DrawsPage_tsx_0t.9h~r._.js` 同步含该文案。
+- 遗留问题（未处理）：`draw_audit_log` 仍不记录管理员改写开奖号码的事件
+  （事件词表只有 `source_fetch`/`precise_upsert`/`precise_complete`/`auto_open`/`precise_open`/`precise_fetch`，
+  操作者只有 `crawler`/`scheduler`）；本次仅按用户选择加入 UI 确认提示，未加审计日志，
+  也未在改写后触发该期预测重新生成。
