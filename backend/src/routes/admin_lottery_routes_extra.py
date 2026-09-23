@@ -51,8 +51,23 @@ def legacy_images(ctx: RequestContext, default_pc: int, default_web: int, defaul
 
 def normalize(ctx: RequestContext) -> None:
     result = normalize_payload_tables(ctx.db_path)
+    _invalidate_prediction_snapshots(ctx)
     ctx.send_json({"normalized_tables": len(result), "tables": result})
 
 
 def text_mappings(ctx: RequestContext) -> None:
-    ctx.send_json(build_text_history_mappings(ctx.db_path, rebuild=True))
+    result = build_text_history_mappings(ctx.db_path, rebuild=True)
+    _invalidate_prediction_snapshots(ctx)
+    ctx.send_json(result)
+
+
+def _invalidate_prediction_snapshots(ctx: RequestContext) -> None:
+    """全量重建预测资料表后立即失效预测快照（尽力而为）。
+
+    ``/api/admin/normalize`` 会按 JSON 资料重建 ``mode_payload_*``，
+    ``/api/admin/text-mappings`` 会重建 ``text_history_mappings``；两者都会改变站点展示的预测资料，
+    但预测快照指针 TTL 是 300 秒，因此必须显式失效，否则管理员会看到最长 5 分钟的旧资料。
+    """
+    from cache.prediction_snapshots import invalidate_all_lottery_types
+
+    invalidate_all_lottery_types(ctx.state.get("cache_store"))

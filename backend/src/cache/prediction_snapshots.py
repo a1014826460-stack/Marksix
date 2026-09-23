@@ -160,6 +160,20 @@ def invalidate_lottery_type(cache: CacheStore | None, lottery_type_id: int) -> N
         )
 
 
+def invalidate_all_lottery_types(
+    cache: CacheStore | None,
+    lottery_type_ids: tuple[int, ...] = (1, 2, 3),
+) -> None:
+    """Best-effort generation bump for every lottery type.
+
+    管理台的全量改写入口（开奖号码增删改、payload 行增删改、``/api/admin/normalize``、
+    ``/api/admin/text-mappings``）无法预知被影响的行属于哪个彩种，而这些入口调用频率极低，
+    因此统一对三个彩种做粗粒度失效；缓存不可用只记录告警，绝不影响业务写入。
+    """
+    for lottery_type_id in lottery_type_ids:
+        invalidate_lottery_type(cache, lottery_type_id)
+
+
 def invalidate_site(cache: CacheStore | None, site_ref: str, lottery_type_id: int) -> None:
     """Best-effort generation bump for one site (后台改该站资料)。"""
     if cache is None:

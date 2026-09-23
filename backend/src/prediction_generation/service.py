@@ -2184,7 +2184,7 @@ def generate_prediction_batch(
     future_periods: int,
     future_only: bool,
     trigger: str,
-    allow_overwrite: bool = True,
+    allow_overwrite: bool = False,
     sync_site_modules: Any,
     resolve_prediction_table_for_mode: Any,
     build_generated_prediction_row_data: Any,
@@ -2200,7 +2200,8 @@ def generate_prediction_batch(
     - future_periods: 未来期号数量。
     - future_only: 是否只生成未来期。
     - trigger: 触发来源标识。
-    - allow_overwrite: 是否允许覆盖既有 created 预测正文。
+    - allow_overwrite: 是否允许覆盖既有 created 预测正文。缺省 False（只补缺失行）；
+      只有管理员手动生成路径才允许显式传 True。
     - sync_site_modules / resolve_prediction_table_for_mode /
       build_generated_prediction_row_data: 回调函数。
 

@@ -518,8 +518,11 @@ def bulk_generate_site_predictions(
     requested_keys = payload.get("mechanism_keys") or []
     if isinstance(requested_keys, str):
         requested_keys = [key.strip() for key in requested_keys.split(",") if key.strip()]
-    trigger = str(payload.get("trigger") or "admin_generate_all")
-    allow_overwrite = parse_bool(payload.get("allow_overwrite"), trigger.startswith("admin_"))
+    # 预测资料不可变：一旦生成，只有管理员手动操作才能改写。
+    # 覆盖既有正文必须由调用方显式传入 allow_overwrite=True；缺省一律只补缺失行。
+    # 自动路径（定时生成、开奖后缺口补跑）都显式传 False。
+    trigger = str(payload.get("trigger") or "unspecified")
+    allow_overwrite = parse_bool(payload.get("allow_overwrite"), False)
 
     return generate_prediction_batch(
         db_path,

@@ -314,6 +314,10 @@ def crawl_and_generate_for_type(db_path: str | Path, lottery_type_id: int) -> di
                         "start_issue": f"{latest_year}{max(1, latest_term):03d}",
                         "end_issue": f"{latest_year}{latest_term:03d}",
                         "mechanism_keys": [str(m["mechanism_key"]) for m in modules],
+                        # 抓取并生成只能由管理台手动任务触发（require_admin + 手动 job），
+                        # 因此这里显式声明管理员手动来源；缺省值不允许覆盖既有预测正文。
+                        "trigger": "admin_crawl_and_generate",
+                        "allow_overwrite": True,
                     },
                 )
                 generation_results.append({

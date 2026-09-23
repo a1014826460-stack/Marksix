@@ -2400,10 +2400,15 @@ def _backfill_draw_to_predictions(
     回填 res_code（开奖号码）、res_sx（生肖）、res_color（波色）。
 
     匹配条件：res_code / res_sx / res_color 任意一个为空或纯逗号即回填。
+    逐列只填空值：管理员手工填过的结果字段不会被自动流程覆盖，
+    预测正文（content/title/image_url 等）永远不被自动流程修改。
 
     :return: {total_updated, per_table: [{table, updated}]}
     """
     from helpers import load_fixed_data_maps
+    from domains.prediction.backfill_repository import (
+        fill_missing_created_prediction_result_fields,
+    )
     from domains.prediction.result_fields import compute_res_fields as _compute_res_fields
     from utils.created_prediction_store import (
         CREATED_SCHEMA_NAME, quote_qualified_identifier, schema_table_exists,
@@ -2422,20 +2427,19 @@ def _backfill_draw_to_predictions(
                     continue
                 qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
                 try:
-                    cur = conn.execute(
-                        f"UPDATE {qualified} SET res_code = ?, res_sx = ?, res_color = ? "
-                        "WHERE type = ? AND year = ? AND term = ? "
-                        "AND ("
-                        "  res_code IS NULL OR res_code = '' OR REPLACE(res_code, ',', '') = '' "
-                        "  OR res_sx IS NULL OR res_sx = '' OR REPLACE(res_sx, ',', '') = '' "
-                        "  OR res_color IS NULL OR res_color = '' OR REPLACE(res_color, ',', '') = '' "
-                        ")",
-                        (numbers_str, res_sx, res_color,
-                         str(lottery_type_id), str(year), str(term)),
+                    affected = fill_missing_created_prediction_result_fields(
+                        conn,
+                        qualified_table=qualified,
+                        lottery_type_id=lottery_type_id,
+                        year=year,
+                        term=term,
+                        numbers=numbers_str,
+                        res_sx=res_sx,
+                        res_color=res_color,
                     )
-                    if cur.rowcount > 0:
-                        total_updated += cur.rowcount
-                        per_table[table_name] = cur.rowcount
+                    if affected > 0:
+                        total_updated += affected
+                        per_table[table_name] = affected
                 except Exception:
                     continue
             conn.commit()
@@ -2456,9 +2460,10 @@ def _backfill_draw_to_predictions(
 def _run_auto_prediction(db_path: str | Path, lottery_type_id: int, *, trigger: str = "auto") -> None:
     """自动执行：回填开奖 + 生成下一期预测。
 
-    回填（_backfill_draw_to_predictions）不受覆盖保护限制——每次开奖后必须更新 res_sx/res_color。
+    回填（_backfill_draw_to_predictions）逐列只填空值——每次开奖后补齐 res_sx/res_color，
+    但不会覆盖已有的结果字段或预测正文，管理员手工填写过的资料保持不变。
     预测生成受覆盖保护：当 trigger="auto" 时，若目标期数已存在非空预测数据，跳过并记录警告。
-    手动触发（trigger="manual"）不限制覆盖。
+    手动触发（trigger="manual"，管理台）不限制覆盖。
     """
     if trigger == "auto" and not getattr(_run_auto_prediction, "_worker_mode", False):
         _run_daily_prediction_subprocess(db_path, lottery_type_id)

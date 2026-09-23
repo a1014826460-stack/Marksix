@@ -110,9 +110,7 @@ def _invalidate_prediction_snapshots(ctx: RequestContext) -> None:
     预测快照的指针 TTL 是 300 秒，只靠 TTL 会让站点在最长 5 分钟内继续显示旧资料。
     载荷行可能被任意彩种视图引用，且管理编辑频率很低，所以对 1/2/3 三个彩种做粗粒度失效。
     """
-    from cache.prediction_snapshots import invalidate_lottery_type
+    from cache.prediction_snapshots import invalidate_all_lottery_types
 
-    cache = ctx.state.get("cache_store")
-    for lottery_type_id in (1, 2, 3):
-        invalidate_lottery_type(cache, lottery_type_id)
+    invalidate_all_lottery_types(ctx.state.get("cache_store"))
 

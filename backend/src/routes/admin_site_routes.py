@@ -100,10 +100,15 @@ def site_detail(ctx: RequestContext) -> None:
             require_site_generation_access(ctx, site_id)
             body = ctx.read_json()
             validate_web_matches_site(current_site, extract_site_web_value(ctx.query, body))
+            # 覆盖既有预测正文属于"管理员手动更改"，必须在这里显式授权：
+            # 生成服务缺省 allow_overwrite=False，自动路径永远不覆盖。
+            options = dict(body)
+            options.setdefault("trigger", "admin_generate_all")
+            options.setdefault("allow_overwrite", True)
             job_id = enqueue_manual_job(
                 ctx.db_path,
                 job_type="site_prediction_generate_all",
-                payload={"site_id": site_id, "options": body},
+                payload={"site_id": site_id, "options": options},
                 metadata={
                     "site_id": current_site.site_id,
                     "web_id": current_site.web_id,
