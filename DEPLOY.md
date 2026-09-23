@@ -1177,3 +1177,39 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 十站 `/`、`/vendor/shengshi8800/kj/local.html`、`/api/latest-draw` 全部 `HTTP 200`；
   `www.tw8800.com` 本机复查 `/`(8.3 KB)、`latest-draw`(520 B, 4.9 ms)、
   `next-draw-deadline`(105 B)、`embed.html`(47 KB) 均 200，`X-Cache-Status: HIT`。
+
+### 预测资料快照化 P0 部署结果（2026-09-24）
+
+- 上线提交：`249ebe5`（设计方案）、`e1968e2`（P0 实现）。`origin/main = e1968e2`。
+- 变更内容（详见 `docs/2026-09-24-prediction-snapshot-design.md`）：
+  - 新增 `backend/src/cache/prediction_snapshots.py`：内容寻址版本 + 指针的公开载荷快照，
+    指针 TTL 300 秒，载荷递归拒绝内部标记（`_simulation_should_hit`/`should_hit`/
+    `truth_source`/`future_truth`），空结果不缓存；
+  - 读路径接入（命中即 KV 读，未命中查库并尽力回填，缓存异常一律回落数据库）：
+    `/api/kaijiang/*`、`/api/vendor/homepage-modules`、`/api/public/site-page`；
+  - 开关：`PREDICTION_SNAPSHOT_ENABLED`（默认开启）+ `system_config.prediction.snapshot.enabled`
+    覆盖（进程内 5 秒缓存，可即时关停）。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/prediction-snapshot-20260923T190022Z`；
+  `git pull --ff-only`（`b314ff4 → e1968e2`）+ `docker compose build python-api scheduler-worker`
+  + `up -d python-api scheduler-worker`；`liuhecai-python-api` `healthy`、`scheduler-worker` 运行中。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/prediction-snapshot-20260923T190257Z`；仅同步代码
+  （该节点没有 python-api，其 `/api/*` 由 Next.js 代理到中心的 `central-api`，
+  因此同样受益于中心 python-api 的快照）。
+- 验收（中心节点本机，直连 python-api:8000）：
+  - `getPingte/getTou/getShaXiao` 连续 3 次：**1.5～7 ms**；日志中一次真实 miss 的
+    `build_ms=55`；
+  - 旧站十个"冷"端点走完整链（nginx → Next.js → python-api）：
+    第 1 轮（快照未命中）**合计 0.819 s**，等 nginx 微缓存过期 25 秒后第 2 轮
+    （快照命中）**合计 0.061 s**，单请求 4.7～8.9 ms，**13 倍**提升；
+  - 公网 `https://www.twssz.com/api/kaijiang/getPingte?web=9&type=3&num=1`
+    连续三次 `MISS → HIT → HIT`，`X-Cache-Status` 可见；
+  - Redis 键：`public:prediction-snapshot:v1:*`（带 TTL），db0 仅此 2 个键。
+- 诊断修正（重要）：nginx 日志里旧站端点 2.7～2.8 秒的 `urt` 主要来自
+  "nginx → Next.js → python-api"链路在高并发爆发下的排队，而不是单次查询成本
+  （python-api 侧构建实测 `build_ms=55`）。因此旧站页面的剩余延迟要靠
+  "前端节点本地缓存/内网直连"来消除，而不是继续压快照构建时间。
+- 待办：Redis 目前 `maxmemory=0`、`maxmemory-policy=noeviction`；快照键都有 TTL
+  （≤301 秒），内存有界，但建议后续显式设置 `maxmemory` 与 `allkeys-lru` 兜底。
+  P1（worker 预热与事件失效）尚未实施。
