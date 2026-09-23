@@ -55,6 +55,11 @@ KIND_SITE = "site"
 KIND_HOMEPAGE = "homepage"
 SUPPORTED_KINDS = frozenset({KIND_LEGACY, KIND_LEGACY_ROWS, KIND_SITE, KIND_HOMEPAGE})
 
+# 代际计数：读路径把 "彩种代际.站点代际" 并入指针键，事件里把对应计数 +1 即可让
+# 该彩种（或该站+该彩种）的全部快照立刻失效，无需按前缀 SCAN（CacheStore 契约没有 SCAN）。
+GENERATION_TTL_SECONDS = 7 * 24 * 3600
+_GENERATION_PREFIX = f"public:prediction-snapshot:{_KEY_VERSION}:generation"
+
 
 @dataclass(frozen=True)
 class SnapshotKeys:
@@ -70,6 +75,7 @@ def snapshot_keys(
     lottery_type_id: int,
     selector: str,
     version: str,
+    generation: str = "0.0",
 ) -> SnapshotKeys:
     """Return stable keys for one prediction snapshot entry."""
     kind_value = _validate_token(kind, "kind")
@@ -79,14 +85,40 @@ def snapshot_keys(
     lottery_type = _validate_lottery_type(lottery_type_id)
     selector_token = _validate_token(selector, "selector")
     version_token = _validate_token(version, "version")
+    generation_token = _validate_token(generation, "generation")
     base = (
         f"public:prediction-snapshot:{_KEY_VERSION}:{kind_value}:{site_token}"
-        f":lottery:{lottery_type}:{selector_token}"
+        f":lottery:{lottery_type}:{selector_token}:g{generation_token}"
     )
     return SnapshotKeys(
         pointer_key=f"{base}:pointer",
         version_key=f"{base}:version:{version_token}",
     )
+
+
+def generation_key_for_lottery_type(lottery_type_id: int) -> str:
+    """Generation counter shared by every site for one lottery type."""
+    lottery_type = _validate_lottery_type(lottery_type_id)
+    return f"{_GENERATION_PREFIX}:lottery:{lottery_type}"
+
+
+def generation_keys(site_ref: str, lottery_type_id: int) -> tuple[str, str]:
+    """Return (per lottery type, per site+type) generation counter keys."""
+    site_token = _validate_token(site_ref, "site_ref")
+    return (
+        generation_key_for_lottery_type(lottery_type_id),
+        f"{_GENERATION_PREFIX}:{site_token}:lottery:{_validate_lottery_type(lottery_type_id)}",
+    )
+
+
+def _parse_generation(raw: bytes | None) -> int:
+    if raw is None:
+        return 0
+    try:
+        value = int(raw.decode("ascii").strip())
+    except (UnicodeDecodeError, ValueError):
+        return 0
+    return value if value >= 0 else 0
 
 
 def snapshot_version(payload: Mapping[str, Any]) -> str:
@@ -108,6 +140,39 @@ def payload_is_cacheable(kind: str, payload: Any) -> bool:
     if "data" not in payload:
         return True
     return bool(payload.get("data"))
+
+
+def invalidate_lottery_type(cache: CacheStore | None, lottery_type_id: int) -> None:
+    """Best-effort generation bump for callers that only hold a raw cache store.
+
+    管理台改写开奖号码、预测生成完成等场景调用它，让该彩种的预测资料快照立即失效；
+    缓存不可用只记录告警，绝不影响主流程。
+    """
+    if cache is None:
+        return
+    try:
+        PublicPredictionSnapshots(cache, ttl_seconds=300).bump_lottery_type(lottery_type_id)
+    except Exception as exc:  # noqa: BLE001 - 缓存问题不能影响业务写入
+        logger.warning(
+            "prediction snapshot invalidation failed lottery_type_id=%s error=%s",
+            lottery_type_id,
+            type(exc).__name__,
+        )
+
+
+def invalidate_site(cache: CacheStore | None, site_ref: str, lottery_type_id: int) -> None:
+    """Best-effort generation bump for one site (后台改该站资料)。"""
+    if cache is None:
+        return
+    try:
+        PublicPredictionSnapshots(cache, ttl_seconds=300).bump_site(site_ref, lottery_type_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "prediction snapshot site invalidation failed site=%s lottery_type_id=%s error=%s",
+            site_ref,
+            lottery_type_id,
+            type(exc).__name__,
+        )
 
 
 def read_through(
@@ -242,7 +307,8 @@ class PublicPredictionSnapshots:
             return False
         public_payload = _validate_payload(kind, payload, lottery_type_id)
         version = snapshot_version(public_payload)
-        keys = snapshot_keys(kind, site_ref, lottery_type_id, selector, version)
+        generation = self._read_generation(site_ref, lottery_type_id)
+        keys = snapshot_keys(kind, site_ref, lottery_type_id, selector, version, generation)
         envelope = {
             "schema_version": 1,
             "kind": kind,
@@ -269,7 +335,8 @@ class PublicPredictionSnapshots:
         selector: str,
     ) -> dict[str, Any] | None:
         """Return the published payload, or None for miss/invalid entry."""
-        probe = snapshot_keys(kind, site_ref, lottery_type_id, selector, "0")
+        generation = self._read_generation(site_ref, lottery_type_id)
+        probe = snapshot_keys(kind, site_ref, lottery_type_id, selector, "0", generation)
         pointer = self._cache.get(probe.pointer_key)
         if pointer is None:
             return None
@@ -316,8 +383,30 @@ class PublicPredictionSnapshots:
         selector: str,
     ) -> None:
         """Drop the pointer so the next request rebuilds (versions expire by TTL)."""
-        probe = snapshot_keys(kind, site_ref, lottery_type_id, selector, "0")
+        generation = self._read_generation(site_ref, lottery_type_id)
+        probe = snapshot_keys(kind, site_ref, lottery_type_id, selector, "0", generation)
         self._cache.delete(probe.pointer_key)
+
+    def bump_lottery_type(self, lottery_type_id: int) -> None:
+        """Invalidate every site's snapshots for one lottery type (开奖/生成事件)."""
+        self._bump(generation_key_for_lottery_type(lottery_type_id))
+
+    def bump_site(self, site_ref: str, lottery_type_id: int) -> None:
+        """Invalidate one site's snapshots for one lottery type (后台改资料)."""
+        _type_key, site_key = generation_keys(site_ref, lottery_type_id)
+        self._bump(site_key)
+
+    def _bump(self, key: str) -> int:
+        current = _parse_generation(self._cache.get(key))
+        updated = current + 1
+        self._cache.set(key, str(updated).encode("ascii"), ttl_seconds=GENERATION_TTL_SECONDS)
+        return updated
+
+    def _read_generation(self, site_ref: str, lottery_type_id: int) -> str:
+        type_key, site_key = generation_keys(site_ref, lottery_type_id)
+        type_generation = _parse_generation(self._cache.get(type_key))
+        site_generation = _parse_generation(self._cache.get(site_key))
+        return f"{type_generation}.{site_generation}"
 
 
 def _encode_payload(payload: Mapping[str, Any]) -> bytes:

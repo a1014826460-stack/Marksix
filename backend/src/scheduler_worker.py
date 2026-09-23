@@ -54,6 +54,7 @@ def create_publication_publisher(
                 "Outbox publisher disabled: cache unavailable (%s)", exc,
             )
             return None
+    from cache.prediction_snapshots import PublicPredictionSnapshots
     from cache.public_snapshots import PublicDrawSnapshots
     from outbox.publisher import DrawPublicationPublisher
 
@@ -61,6 +62,8 @@ def create_publication_publisher(
         db_path,
         snapshots=PublicDrawSnapshots(cache_store),
         owner=f"outbox:{holder_id}",
+        # 开奖事件同时让该彩种的预测资料快照失效（TTL 300 秒之外的额外保障）。
+        prediction_snapshots=PublicPredictionSnapshots(cache_store, ttl_seconds=300),
     )
 
 

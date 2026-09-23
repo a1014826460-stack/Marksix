@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 from pathlib import Path
 import re
 from typing import Any, Callable
@@ -29,6 +30,7 @@ class DrawPublicationPublisher:
         now: Callable[[], datetime] | None = None,
         lease_seconds: int = 30,
         retry_seconds: int = 5,
+        prediction_snapshots: Any | None = None,
     ) -> None:
         if not owner:
             raise ValueError("owner must not be empty")
@@ -38,6 +40,8 @@ class DrawPublicationPublisher:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._lease_seconds = lease_seconds
         self._retry_seconds = retry_seconds
+        # 预测快照：开奖事件后让该彩种的全部预测资料快照失效（下一轮请求重建）。
+        self._prediction_snapshots = prediction_snapshots
 
     def drain(self, *, limit: int = 20) -> dict[str, int]:
         """Claim and publish a bounded batch; every failure remains retryable."""
@@ -87,6 +91,21 @@ class DrawPublicationPublisher:
         self._snapshots.publish_current_period(
             lottery_type_id, current_period, version=version, is_opened=True, published_at=published_at,
         )
+        self._invalidate_prediction_snapshots(lottery_type_id)
+
+    def _invalidate_prediction_snapshots(self, lottery_type_id: int) -> None:
+        """开奖后预测资料判定会变，尽力让该彩种的预测快照失效；缓存故障不影响事件投递。"""
+        snapshots = self._prediction_snapshots
+        if snapshots is None:
+            return
+        try:
+            snapshots.bump_lottery_type(lottery_type_id)
+        except Exception as exc:  # noqa: BLE001 - 缓存不可用不能让事件重试
+            logging.getLogger("outbox.publisher").warning(
+                "prediction snapshot invalidation failed lottery_type_id=%s error=%s",
+                lottery_type_id,
+                type(exc).__name__,
+            )
 
     @staticmethod
     def _snapshot_version(event: dict[str, Any], *, year: int, term: int) -> str:

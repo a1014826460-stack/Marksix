@@ -139,6 +139,52 @@ def test_legacy_rows_shape_is_cacheable():
         )
 
 
+def test_generation_bump_invalidates_site_and_lottery_type():
+    """开奖/生成/后台改资料通过代际 +1 让整片快照失效（无需按前缀扫描）。"""
+    snapshots = _snapshots()
+    payload_a = {"data": [{"term": "266", "content": "蛇"}]}
+    payload_b = {"rows": [{"term": "266", "content": "虎"}]}
+    from cache.prediction_snapshots import KIND_LEGACY_ROWS
+
+    assert snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-aaa", payload_a) is True
+    assert snapshots.publish(KIND_LEGACY_ROWS, "web9", 3, "rows-56-8-bbb", payload_b) is True
+    assert snapshots.publish(KIND_LEGACY, "web8", 3, "getTou-aaa", payload_a) is True
+    assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-aaa") == payload_a
+
+    # 站点级 bump：只影响该站
+    snapshots.bump_site("web9", 3)
+    assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-aaa") is None
+    assert snapshots.get(KIND_LEGACY_ROWS, "web9", 3, "rows-56-8-bbb") is None
+    assert snapshots.get(KIND_LEGACY, "web8", 3, "getTou-aaa") == payload_a
+
+    # 彩种级 bump：影响所有站点
+    snapshots.bump_lottery_type(3)
+    assert snapshots.get(KIND_LEGACY, "web8", 3, "getTou-aaa") is None
+
+
+def test_generation_bump_is_monotonic_and_survives_corrupt_values():
+    from cache.prediction_snapshots import generation_key_for_lottery_type
+
+    cache = MemoryCacheStore()
+    snapshots = PublicPredictionSnapshots(cache, ttl_seconds=300)
+    snapshots.bump_lottery_type(3)
+    assert cache.get(generation_key_for_lottery_type(3)) == b"1"
+    snapshots.bump_lottery_type(3)
+    assert cache.get(generation_key_for_lottery_type(3)) == b"2"
+    # 脏值按 0 处理，不会让 bump 失败
+    cache.set(generation_key_for_lottery_type(3), b"not-a-number", ttl_seconds=60)
+    snapshots.bump_lottery_type(3)
+    assert cache.get(generation_key_for_lottery_type(3)) == b"1"
+
+
+def test_generation_token_changes_the_key():
+    first = snapshot_keys(KIND_LEGACY, "web9", 3, "getTou-abc", "abc", "0.0")
+    second = snapshot_keys(KIND_LEGACY, "web9", 3, "getTou-abc", "abc", "1.0")
+    assert first.pointer_key != second.pointer_key
+    with pytest.raises(ValueError):
+        snapshot_keys(KIND_LEGACY, "web9", 3, "getTou-abc", "abc", "bad gen")
+
+
 def test_missing_known_top_level_key_is_rejected():
     snapshots = _snapshots()
     with pytest.raises(ValueError):

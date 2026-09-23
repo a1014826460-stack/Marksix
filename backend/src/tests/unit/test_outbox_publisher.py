@@ -48,6 +48,60 @@ def _publisher(db_path, snapshots):
     )
 
 
+def test_publisher_invalidates_prediction_snapshots_after_open(tmp_path):
+    """开奖事件后必须让该彩种的预测资料快照失效（代际 +1），且缓存故障不影响投递。"""
+    from cache.memory import MemoryCacheStore
+    from cache.prediction_snapshots import PublicPredictionSnapshots, generation_key_for_lottery_type
+    from cache.public_snapshots import PublicDrawSnapshots
+
+    db_path = _setup(tmp_path)
+    _enqueue_opened_event(db_path)
+    cache = MemoryCacheStore()
+    snapshots = PublicDrawSnapshots(cache)
+    prediction_snapshots = PublicPredictionSnapshots(cache, ttl_seconds=300)
+    # 先写一份预测快照，确认开奖后会失效
+    assert prediction_snapshots.publish(
+        "legacy", "web9", 3, "getTou-abc", {"data": [{"term": "188", "content": "蛇"}]}
+    )
+    assert prediction_snapshots.get("legacy", "web9", 3, "getTou-abc") is not None
+
+    from outbox.publisher import DrawPublicationPublisher
+
+    publisher = DrawPublicationPublisher(
+        db_path,
+        snapshots=snapshots,
+        owner="scheduler-a",
+        now=lambda: datetime(2026, 8, 7, 14, 32, 5, tzinfo=timezone.utc),
+        prediction_snapshots=prediction_snapshots,
+    )
+    assert publisher.drain(limit=4) == {"published": 1, "retried": 0}
+    assert cache.get(generation_key_for_lottery_type(3)) == b"1"
+    assert prediction_snapshots.get("legacy", "web9", 3, "getTou-abc") is None
+
+
+def test_publisher_survives_prediction_snapshot_cache_failure(tmp_path):
+    from cache.contracts import CacheUnavailable
+    from cache.memory import MemoryCacheStore
+    from cache.public_snapshots import PublicDrawSnapshots
+
+    class BrokenSnapshots:
+        def bump_lottery_type(self, lottery_type_id: int) -> None:
+            raise CacheUnavailable("redis down")
+
+    db_path = _setup(tmp_path)
+    _enqueue_opened_event(db_path)
+    from outbox.publisher import DrawPublicationPublisher
+
+    publisher = DrawPublicationPublisher(
+        db_path,
+        snapshots=PublicDrawSnapshots(MemoryCacheStore()),
+        owner="scheduler-a",
+        now=lambda: datetime(2026, 8, 7, 14, 32, 5, tzinfo=timezone.utc),
+        prediction_snapshots=BrokenSnapshots(),
+    )
+    assert publisher.drain(limit=4) == {"published": 1, "retried": 0}
+
+
 def test_publisher_uses_authoritative_opened_draw_and_marks_event_published(tmp_path):
     from cache.memory import MemoryCacheStore
     from cache.public_snapshots import PublicDrawSnapshots

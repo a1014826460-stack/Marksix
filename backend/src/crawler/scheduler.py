@@ -272,6 +272,25 @@ def _run_daily_prediction_subprocess(db_path: str | Path, lottery_type_id: int) 
         raise RuntimeError(f"daily prediction subprocess failed: {detail}")
     if completed.stdout.strip():
         _crawler_logger.info("Daily prediction subprocess output: %s", completed.stdout.strip())
+    _invalidate_prediction_snapshots_for(lottery_type_id)
+
+
+def _invalidate_prediction_snapshots_for(lottery_type_id: int) -> None:
+    """每日预测生成完成后让该彩种的预测资料快照立即失效（尽力而为）。
+
+    生成会改写 created 行，站点若继续读 300 秒 TTL 内的旧快照就会显示过期的对/错。
+    """
+    try:
+        from cache.prediction_snapshots import invalidate_lottery_type
+        from cache.runtime import create_cache_store
+
+        invalidate_lottery_type(create_cache_store(), lottery_type_id)
+    except Exception as exc:  # noqa: BLE001 - 缓存/配置问题不能影响生成任务结果
+        _crawler_logger.warning(
+            "prediction snapshot invalidation after generation failed lottery_type_id=%s error=%s",
+            lottery_type_id,
+            type(exc).__name__,
+        )
 
 
 def _compute_taiwan_default_next_time_ms(db_path: str | Path) -> str:

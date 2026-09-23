@@ -62,7 +62,20 @@ def list_draw_routes(ctx: RequestContext) -> None:
 
 
 def create_draw(ctx: RequestContext) -> None:
-    ctx.send_json({"draw": save_draw(ctx.db_path, ctx.read_json())}, HTTPStatus.CREATED)
+    result = save_draw(ctx.db_path, ctx.read_json())
+    _invalidate_prediction_snapshots(ctx)
+    ctx.send_json({"draw": result}, HTTPStatus.CREATED)
+
+
+def _invalidate_prediction_snapshots(ctx: RequestContext) -> None:
+    """改写/新开奖号码后让该彩种的预测资料快照立即失效（尽力而为）。
+
+    管理台改写开奖号码会让已生成的预测命中判定失效；TTL 之外再补一次事件失效，
+    避免站点在最长 300 秒内仍按旧号码判定。
+    """
+    from cache.prediction_snapshots import invalidate_lottery_type
+
+    invalidate_lottery_type(ctx.state.get("cache_store"), 3)
 
 
 def _parse_autofill_count(value: object) -> int:
@@ -97,7 +110,9 @@ def save_autofill_future_settings(ctx: RequestContext) -> None:
 def draw_detail(ctx: RequestContext) -> None:
     draw_id = int(ctx.path.split("/")[-1])
     if ctx.method in {"PUT", "PATCH"}:
-        ctx.send_json({"draw": save_draw(ctx.db_path, ctx.read_json(), draw_id)})
+        result = save_draw(ctx.db_path, ctx.read_json(), draw_id)
+        _invalidate_prediction_snapshots(ctx)
+        ctx.send_json({"draw": result})
         return
     if ctx.method == "DELETE":
         delete_draw(ctx.db_path, draw_id)

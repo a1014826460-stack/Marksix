@@ -142,12 +142,34 @@ public:prediction-snapshot:v1:web:<web_id>:lottery:<type>:homepage:<modules_hash
 - 指针 TTL：**300 秒**；版本 = 载荷内容哈希（前 16 位十六进制），同一内容重复发布幂等。
 - 开关：`PREDICTION_SNAPSHOT_ENABLED` 环境变量（默认开启），并支持
   `system_config.prediction.snapshot.enabled` 覆盖（进程内 5 秒缓存，可即时关停）。
-- P0 范围：读路径 + 回填（`/api/kaijiang/*`、`/api/vendor/homepage-modules`、
-  `/api/public/site-page`）；worker 预热留到 P1。
+- P0 范围：读路径 + 回填（`/api/kaijiang/*`、`/api/legacy/module-rows`、
+  `/api/vendor/homepage-modules`、`/api/public/site-page`）；worker 预热留到 P1。
 - 载荷校验按实测形状放宽：`is_opened` 是公开历史行字段（实测 222 行全部 `is_opened=true`，
   未开奖行不进入公开载荷），不再禁止；仍禁止 `_simulation_should_hit`、`should_hit`、
   `truth_source`、`future_truth` 等内部标记。
-- 空结果（`{"data": []}`）不写缓存，避免把授权拒绝缓存 300 秒。
+- 空结果（`{"data": []}`、`{"rows": []}`）不写缓存，避免把授权拒绝缓存 300 秒。
+
+## 7.1 失效触发（代际计数，已实现）
+
+TTL 之外再补事件失效。因为 `CacheStore` 契约只有 `get/set/delete/publish_versioned`（没有
+SCAN），采用**代际计数**：
+
+- 键：`public:prediction-snapshot:v1:generation:lottery:<type>`（该彩种全站）与
+  `public:prediction-snapshot:v1:generation:<site_ref>:lottery:<type>`（该站+该彩种），
+  值为整数，TTL 7 天；
+- 读路径把 `"<彩种代际>.<站点代际>"` 并入 pointer 键（`…:g<gen>:pointer`），因此
+  计数 +1 即让对应的**全部选择器**（端点/limit/modules 组合）一次性失效，无需枚举键；
+- 触发点（全部尽力而为，缓存故障只记录告警、不影响主流程）：
+  1. **开奖事件**：`outbox/publisher.py` 在投递 `draw.published`/`draw.refresh` 后
+     `bump_lottery_type`（`scheduler_worker.create_publication_publisher` 注入）；
+  2. **每日预测生成完成**：`crawler/scheduler.py::_run_daily_prediction_subprocess`
+     子进程成功后 `bump_lottery_type`；
+  3. **管理台改写/新建开奖号码**：`routes/admin_draw_routes.py` 的
+     `create_draw`/`draw_detail(PUT|PATCH)` 保存成功后 `bump_lottery_type`
+     （即用户此前发现的"后台改写台湾彩未来期号码"场景）。
+- Redis 丢失代际键时计数回到 0，pointer 键随之变化 → 一律 miss 重建，不会读到旧值。
+- 尚未实现：worker **预热**（生成/开奖后主动构建快照，让首个访客也命中）。当前依赖
+  "首个请求回填 + 三层缓存（nginx 微缓存 / Next 进程内缓存 / 快照）"。
 
 ## 8. 待确认的三个决策
 
