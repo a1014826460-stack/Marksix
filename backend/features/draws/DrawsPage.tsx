@@ -81,6 +81,11 @@ function formatBeijingDateTime(value: string) {
   }).format(parsed)
 }
 
+// 号码在表单里可能带空格，比较前后差异时先归一化，避免无改动也弹确认。
+function normalizeDrawNumbers(value: string) {
+  return String(value || "").replace(/\s+/g, "")
+}
+
 function parseBeijingDateTime(value: string) {
   return new Date(value.replace(" ", "T") + "+08:00")
 }
@@ -316,6 +321,17 @@ export function DrawsPage() {
         alert("当前期开奖时间尚未到达，不能提前设置为已开奖。")
         return
       }
+    }
+
+    if (editing && normalizeDrawNumbers(numbers) !== normalizeDrawNumbers(editing.numbers || "")) {
+      // 未开奖期的号码会在当日预测生成时被用于受控命中校验；
+      // 生成之后再改号，会让该期已生成的预测命中判定失效（站点会重新显示为“错”）。
+      const confirmed = confirm(
+        `第 ${draftTerm} 期尚未开奖，该期预测资料通常已经生成。\n` +
+          `修改开奖号码会使已生成的预测命中判定失效（站点会重新显示为“错”）。\n` +
+          `确认继续保存吗？`,
+      )
+      if (!confirmed) return
     }
 
     let nextTime = ""
