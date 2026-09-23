@@ -44,3 +44,27 @@
 python frontend/test/live-site-draw-smoke.py                    # 十站
 python frontend/test/live-site-draw-smoke.py twcaibawang twssz  # 指定站点
 ```
+
+## 上线核查脚本（部署前后都用它）
+
+`scripts/verify-perf-rollout.sh` 把本轮所有改动的验收标准固化成一条命令，只读、幂等，
+每条打印 `PASS` / `PENDING`（未部署）/ `SKIP`（不在本节点服务范围）/ `FAIL`：
+
+```bash
+sh scripts/verify-perf-rollout.sh --role backend    # 中心节点：python-api 快照 + redis 代际键 + nginx 缓存
+sh scripts/verify-perf-rollout.sh --role frontend   # 前端节点：Next 缓存标记 + twsaimahui bundle + 图片长缓存
+```
+
+要点：脚本先用 `nginx -T` 取出**本节点真正服务的域名**再逐条检查——非本节点域名会命中
+default server 返回 `301`（169 字节重定向体），第一版因此误判了 5 站；现在归为 `SKIP`。
+
+2026-09-24 试跑结果（当时 `ec17d6b`/`5b97953`/`59f1622` 尚未部署）：
+
+| 节点 | PASS | PENDING | SKIP | FAIL |
+| --- | --- | --- | --- | --- |
+| 中心节点 | 14 | 1（代际计数键） | 8 | 0 |
+| 前端节点 | 12 | 2（Next 缓存标记、twsaimahui bundle） | 7 | 0 |
+
+即：**已上线的图片压缩、面板并发取数+缓存、nginx 边缘缓存、预测资料快照全部通过**，
+未部署的三项被准确标记为 PENDING —— 部署后复跑应全部转为 PASS、PENDING 归零。
+
