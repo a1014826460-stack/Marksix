@@ -1043,3 +1043,11 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 中心后端节点 `207.56.3.82:29618`：部署前备份目录为 `/root/Marksix/.deploy-backups/history-delay-4min-backend-20260819T083604Z`，包括 `liuhecai.before.dump` 与 SHA-256；`system_config.history_backfill_delay_after_draw` 已显式更新为 `4`；已重建 `python-api`、`scheduler-worker`、`frontend`，未重建 PostgreSQL、PgBouncer 或其数据卷；Nginx `nginx -t` 成功。
 - 十个站点的 `/history?type=3` 与 `/api/latest-draw?lottery_type=3` 均返回 HTTP `200`；历史 API 均返回 `Cache-Control: no-store`。
 - `/wy.json` 为站点按需端点：中心的 `www.twtongtian.com`、`www.twcf888.com`、`www.twcaibawang.com` 返回 HTTP `200`；其余站点返回 HTTP `404`，但十个站点的实时开奖统一接口 `/api/latest-draw?lottery_type=3` 全部返回 HTTP `200`，不受历史展示闸门影响。
+
+### twssz A级猛料 对/错与命中高亮修复部署结果（2026-09-23）
+
+- 发布代码提交：`bca515a`（`fix(twssz): 修正 A级猛料 的对/错判定与命中高亮`）。
+- 前端节点 `207.56.2.71:62594`：部署前备份目录为 `/root/Marksix/.deploy-backups/twssz-grade-a-20260923T065833Z`（含 `docker-compose.frontend-node.yml`、`.env`、`deploy/nginx.frontend-node.conf`、`HEAD.txt`）；仅重建 `frontend`，`nginx` 与 TLS 未改动。
+- 容器内校验：`grep -c markHitLeaf /app/public/vendor/twssz/site-data-adapter.js` 为 `6`，`setAttribute("bgcolor"` 为 `0`；`liuhecai-frontend` 状态 `healthy`。
+- 公网校验：`https://www.twssz.com/vendor/twssz/site-data-adapter.js` 返回 `HTTP 200`、`Cache-Control: public, max-age=0`，内容已含 `markHitLeaf`（浏览器下次加载即生效，无需强刷）。
+- 真实资料校验（`https://www.twssz.com/twssz`）：8 张 A级猛料 卡片中 `265期` 显示 `开：猪08对`，猪在七肖/四肖/二肖、08 在⑧码/⑤码上呈黄色背景；`266期` 为 `开：待开奖` 且无高亮；`260期` 为 `开：鼠31`（命中判定不成立）；全部卡片均未出现“错”。
