@@ -1291,3 +1291,41 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   `www.twsyw.com` 因本机链路三次打开失败未跑浏览器检查，但 curl 实测
   `https://www.twsyw.com/uploads/image/20250322/*` 返回 200 与新体积（249805/233233/84187），
   服务端路径已确认。
+
+### twsyw 开奖标签页内联（iframe 层数收敛第一步）部署结果（2026-09-24）
+
+- 变更内容（提交 `ad8b0b2`）：把 `kai.html` 的标签页/面板/样式/`KJTB` 脚本内联进
+  `twsyw/index.html`，删除 `<iframe src="kai.html">` 这一层；`kai.html` 文件保留以兼容直链
+  与旧契约。适配器随之改造：
+  - `knownDrawFrame`（`iframe[src='kai.html']`）→ 惰性 `drawPanelFrame()`
+    （`.KJ-TabBox .KJ-IFRAME`，该 iframe 由内联脚本在本页创建）；
+  - `renderDraw()` 改为写回**同文档**的 `[data-current-issue]`（原先写 kai 帧的文档）；
+  - 彩种切换由 `postMessage` 改为内联脚本直接调用
+    `window.TwsywSiteDataAdapter.selectLottery(type)`；消息监听保留但不再依赖中间帧。
+- 契约同步：`twsyw-adapter-contract.mjs`（断言内联结构 + 不再有 kai iframe + 适配器不依赖
+  中间帧；顺带修正两条与现状不符的陈旧断言 270→实际 280/内联、190px→200px），
+  `twsyw-live-mapping-contract.py`（帧查找改为厂商页同文档）；
+  新增 `twsyw-inlined-draw-contract.py`（本地静态服务器 + 桩 API 的端到端回归）。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/twsyw-inline-20260923T221219Z`；`git pull --ff-only`
+  （`772e12e → ad8b0b2`）+ 重建 `frontend`，容器 `healthy`。
+- 中心节点 `207.56.3.82:29618`：`git pull --ff-only` + 重建 `frontend`，容器 `healthy`
+  （该站不在中心节点服务，重建只为保持盘上/镜像一致）。
+- 验证：
+  - 本地端到端（`twsyw-inlined-draw-contract.py`，同源静态服务 + 拦截
+    `/api/sites/twsyw/**`）**15 项全 PASS**：无 kai 帧、无活动 kai iframe、
+    标签页默认加载台湾彩面板、点 2/1/3 后面板 src 正确切换、适配器被直接调用
+    （`[2,1,3]`，无 postMessage）、**期号写回同文档**（`2500`/`1500`/`3500`）、
+    539 行预测渲染、面板高度 ≥190 未裁切；
+  - 线上（`TWSYW_BASE_URL=https://www.twsyw.com` 跑 pytest）
+    `twsyw-live-mapping-contract.py`：**1 passed in 5.75s**，逐项断言真实执行，
+    含四个彩种切换、`[data-current-issue]` 期号、面板高度、25 个预测区、
+    资源图完整加载，且 `page_errors`/`console_errors` 均为空；
+  - 十站真实浏览器回归：**10/10 ok**，`www.twsyw.com` **frame 数 4 → 3**
+    （正是被移除的那一层），其余站点 frame 数与改动前一致；上传图压缩效果同时可见
+    （`tw8800` 图片 1740 → 555 KB、`twsaimahui` 2040 → 855 KB）。
+  - 前端静态契约：42/48 通过，失败项从 7 个降到 6 个（`twsyw-adapter-contract` 由预先失败
+    转为通过），剩余 6 个均为既有失败项。
+- 备注：`site-ui-browser-contract.py` 不含 twsyw，无需同步；本轮未动 `twssz`/`twwanli`/
+  `twbst528`/`twsaimahui`/`twjsz666`（各有不同的面板创建方式或 React 外壳），
+  按同一路径逐个推进。
