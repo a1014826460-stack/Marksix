@@ -32,6 +32,7 @@ from crawler.tasks import (  # noqa: F401 - 兼容导出
     TASK_TYPE_TAIWAN_PRECISE_OPEN,
     TASK_TYPE_TAIWAN_FUTURE_AUTOFILL,
     _task_lock_timeout_seconds,
+    _publication_poll_interval_seconds,
     _task_poll_interval_seconds,
     _task_retry_delay_seconds,
     acquire_due_scheduler_tasks,
@@ -884,6 +885,7 @@ class CrawlerScheduler:
         self._auto_crawl_running = False
         self._staged_alert_timer: threading.Timer | None = None
         self._task_timer: threading.Timer | None = None
+        self._publication_timer: threading.Timer | None = None
         self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
         self._precise_reschedule_active = False
         self._worker_id = f"crawler:{id(self)}"
@@ -1554,6 +1556,7 @@ class CrawlerScheduler:
         self._schedule_auto_crawl()
         self._schedule_staged_timeout_alerts()
         self._schedule_task_loop()
+        self._schedule_publication_loop()
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
         _ensure_postgres_backup_tasks(self.db_path)
@@ -1616,6 +1619,9 @@ class CrawlerScheduler:
         if hasattr(self, "_staged_alert_timer") and self._staged_alert_timer:
             self._staged_alert_timer.cancel()
             self._staged_alert_timer = None
+        if getattr(self, "_publication_timer", None):
+            self._publication_timer.cancel()
+            self._publication_timer = None
         if self._task_timer:
             self._task_timer.cancel()
             self._task_timer = None
@@ -1947,7 +1953,8 @@ class CrawlerScheduler:
             return
         try:
             _ensure_taiwan_future_autofill_task(self.db_path)
-            # Keep the cache publication latency independent of long durable work.
+            # 顺序契约：先发布 Outbox，再跑长任务（既有测试固定了这个顺序）。
+            # 高频发布已由 `_schedule_publication_loop` 承担，这里保留作为兜底。
             self.drain_publications_once()
             self._run_due_tasks()
         except Exception as exc:
@@ -1955,6 +1962,33 @@ class CrawlerScheduler:
         self._task_timer = threading.Timer(_task_poll_interval_seconds(self.db_path), self._schedule_task_loop)
         self._task_timer.daemon = True
         self._task_timer.start()
+
+    def _schedule_publication_loop(self) -> None:
+        """Outbox 发布使用独立的高频循环，不受 30 秒任务轮询周期拖累。
+
+        实测（2026-09-23 生产）：台湾彩 266 期 22:32:09 开盘、快照 22:32:39 才发布，
+        延迟 30.9 秒，期间公网 `/api/public/latest-draw` 仍返回上一期。原因是发布只挂在
+        `_task_poll_interval_seconds`（默认 30 秒）的任务循环里。
+        """
+        if not self._running:
+            return
+        try:
+            if self._publication_timer is None:
+                _crawler_logger.info(
+                    "Publication loop started interval=%ss",
+                    _publication_poll_interval_seconds(self.db_path),
+                )
+            result = self.drain_publications_once()
+            if result.get("published") or result.get("retried"):
+                # 发布审计：created_at(事件产生) 与 published_at(快照发布) 的差值就是时效。
+                _crawler_logger.info("Publication drain: %s", result)
+        except Exception as exc:  # drain_publications_once 已吞掉异常，这里仅兜底
+            _crawler_logger.error("Publication loop iteration failed: %s", exc)
+        self._publication_timer = threading.Timer(
+            _publication_poll_interval_seconds(self.db_path), self._schedule_publication_loop
+        )
+        self._publication_timer.daemon = True
+        self._publication_timer.start()
 
     def _run_due_tasks(self) -> None:
         def on_task_acquired(task: dict[str, Any]) -> None:

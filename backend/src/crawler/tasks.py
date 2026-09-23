@@ -20,6 +20,7 @@ from domains.scheduler.service import (
     _task_key,
     _task_lock_timeout_seconds,
     _task_poll_interval_seconds,
+    _publication_poll_interval_seconds,
     _task_retry_delay_seconds,
 )
 
@@ -170,6 +171,7 @@ __all__ = [
     "SCHEDULE_SCOPE_AUTO",
     "SCHEDULE_SCOPE_MANUAL",
     "_task_poll_interval_seconds",
+    "_publication_poll_interval_seconds",
     "_task_lock_timeout_seconds",
     "_task_retry_delay_seconds",
     "_json_dumps",

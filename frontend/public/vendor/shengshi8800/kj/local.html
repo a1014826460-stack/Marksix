@@ -779,7 +779,7 @@
       // 在 iframe 重建后依然有效）加上进行中请求去重，避免重复拉取同一期结果；
       // 手动点“刷新”时始终直连网络。
       var DRAW_CACHE_PREFIX = "liuhecai:kj-local:draw:v1:";
-      var DRAW_CACHE_FRESH_MS = 5000;
+      var DRAW_CACHE_FRESH_MS = 3000;
       var _latestDrawInFlight = null;
 
       function drawCacheKey() {

@@ -33,6 +33,16 @@ def _task_poll_interval_seconds(db_path: str | Path) -> int:
     return max(5, int(_cfg(db_path, "crawler.task_poll_interval_seconds", 30)))
 
 
+def _publication_poll_interval_seconds(db_path: str | Path) -> int:
+    """Outbox 发布周期（秒）。
+
+    开奖事件必须尽快变成公网快照：实测发布延迟曾达 30.9 秒（等于任务轮询周期），
+    所以发布单独走高频循环，默认 1 秒，且不超过任务轮询周期。
+    """
+    value = int(_cfg(db_path, "crawler.publication_poll_interval_seconds", 1))
+    return max(1, min(value, _task_poll_interval_seconds(db_path)))
+
+
 def _task_lock_timeout_seconds(db_path: str | Path) -> int:
     return max(30, int(_cfg(db_path, "crawler.task_lock_timeout_seconds", 300)))
 

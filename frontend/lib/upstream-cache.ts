@@ -23,10 +23,10 @@ const inflight = new Map<string, Promise<unknown>>()
 
 const DEFAULT_TTL_MS = 0
 const TTL_RULES: Array<{ prefix: string; ttlMs: number }> = [
-  // 开奖相关：与站点面板 5 秒新鲜窗口对齐，避免比浏览器缓存更旧。
-  { prefix: "/public/latest-draw", ttlMs: 3000 },
-  { prefix: "/public/next-draw-deadline", ttlMs: 3000 },
-  { prefix: "/public/current-period", ttlMs: 3000 },
+  // 开奖相关：1 秒微缓存——开奖必须尽快可见，只用于合并瞬时并发。
+  { prefix: "/public/latest-draw", ttlMs: 1000 },
+  { prefix: "/public/next-draw-deadline", ttlMs: 1000 },
+  { prefix: "/public/current-period", ttlMs: 1000 },
   // 站点资料聚合与旧站逐模块资料：与既有 60 秒预测资料缓存策略一致。
   { prefix: "/public/site-page", ttlMs: 60000 },
   { prefix: "/vendor/homepage-modules", ttlMs: 60000 },

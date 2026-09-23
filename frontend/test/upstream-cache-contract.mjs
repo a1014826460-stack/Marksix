@@ -17,8 +17,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // 1. 路径分档
 const ttlCases = [
-  ["/public/latest-draw", 3000],
-  ["/public/next-draw-deadline", 3000],
+  ["/public/latest-draw", 1000],
+  ["/public/next-draw-deadline", 1000],
   ["/public/site-page", 60000],
   ["/vendor/homepage-modules", 60000],
   ["/legacy/module-rows", 60000],

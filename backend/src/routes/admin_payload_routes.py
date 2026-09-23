@@ -80,6 +80,7 @@ def site_payload_detail(ctx: RequestContext) -> None:
                 source=query_source,
             )
         )
+        _invalidate_prediction_snapshots(ctx)
         return
 
     if len(parts) == 8 and ctx.method == "DELETE":
@@ -96,8 +97,22 @@ def site_payload_detail(ctx: RequestContext) -> None:
             parts[7],
             source=query_source,
         )
+        _invalidate_prediction_snapshots(ctx)
         ctx.send_json({"ok": True})
         return
 
     raise KeyError("site route not found")
+
+
+def _invalidate_prediction_snapshots(ctx: RequestContext) -> None:
+    """管理台改写/删除预测资料后立即失效预测快照（尽力而为）。
+
+    预测快照的指针 TTL 是 300 秒，只靠 TTL 会让站点在最长 5 分钟内继续显示旧资料。
+    载荷行可能被任意彩种视图引用，且管理编辑频率很低，所以对 1/2/3 三个彩种做粗粒度失效。
+    """
+    from cache.prediction_snapshots import invalidate_lottery_type
+
+    cache = ctx.state.get("cache_store")
+    for lottery_type_id in (1, 2, 3):
+        invalidate_lottery_type(cache, lottery_type_id)
 

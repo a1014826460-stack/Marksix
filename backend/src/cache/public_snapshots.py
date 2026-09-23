@@ -66,7 +66,8 @@ class PublicDrawSnapshots:
         self,
         cache: CacheStore,
         *,
-        ttl_seconds: int = 120,
+        # 30 秒兜底：开奖事件正常会立即改写指针；若事件丢失，公网最多陈旧 30 秒。
+        ttl_seconds: int = 30,
         clock: Callable[[], float] = time,
     ) -> None:
         if ttl_seconds <= 0:

@@ -29,7 +29,7 @@ if (/fetchCountdownDeadline\(\)\.then\(function \(\) \{[\s\S]*?\} else \{\s*load
 
 // 2. 短缓存 + 去重：读取层必须存在，且 load() 通过它取数。
 for (const token of [
-  "DRAW_CACHE_FRESH_MS = 5000",
+  "DRAW_CACHE_FRESH_MS = 3000",
   "sessionStorage",
   "_latestDrawInFlight",
   "function loadLatestDrawPayload(",
