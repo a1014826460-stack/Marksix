@@ -25,6 +25,7 @@
 
 import type { PublicSitePageData } from "@/lib/site-page"
 import type { VendorHomepageModulesResponse } from "@/lib/vendor-homepage"
+import { upstreamCacheTtlMs, withUpstreamCache } from "@/lib/upstream-cache"
 
 // 通用类型：URL 查询参数允许的原始值类型
 type PrimitiveQueryValue = string | number | boolean | null | undefined
@@ -139,8 +140,28 @@ async function parseErrorMessage(response: Response) {
  *   })
  */
 export async function backendFetchJson<T>(pathname: string, options: BackendFetchOptions = {}) {
-  const response = await fetch(buildBackendUrl(pathname, options.query), {
-    method: options.method || "GET",
+  const method = options.method || "GET"
+  const url = buildBackendUrl(pathname, options.query)
+
+  // 只对无副作用的 GET 做进程内短缓存 + 并发合并：前端节点每个请求都要跨公网
+  // 回中心节点，一个旧站页面会并发几十个预测资料请求（详见 lib/upstream-cache.ts）。
+  if (method === "GET" && options.body === undefined) {
+    const ttlMs = upstreamCacheTtlMs(pathname)
+    if (ttlMs > 0) {
+      return withUpstreamCache<T>(url.toString(), ttlMs, () => backendFetchJsonUncached<T>(url, method, options))
+    }
+  }
+
+  return backendFetchJsonUncached<T>(url, method, options)
+}
+
+async function backendFetchJsonUncached<T>(
+  url: URL,
+  method: string,
+  options: BackendFetchOptions,
+) {
+  const response = await fetch(url, {
+    method,
     headers: {
       // POST 请求自动添加 Content-Type: application/json
       ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),

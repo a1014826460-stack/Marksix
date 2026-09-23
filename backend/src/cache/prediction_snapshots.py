@@ -50,9 +50,10 @@ _FORBIDDEN_KEYS = frozenset(
 _MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 
 KIND_LEGACY = "legacy"
+KIND_LEGACY_ROWS = "legacy-rows"
 KIND_SITE = "site"
 KIND_HOMEPAGE = "homepage"
-SUPPORTED_KINDS = frozenset({KIND_LEGACY, KIND_SITE, KIND_HOMEPAGE})
+SUPPORTED_KINDS = frozenset({KIND_LEGACY, KIND_LEGACY_ROWS, KIND_SITE, KIND_HOMEPAGE})
 
 
 @dataclass(frozen=True)
@@ -95,15 +96,18 @@ def snapshot_version(payload: Mapping[str, Any]) -> str:
 
 
 def payload_is_cacheable(kind: str, payload: Any) -> bool:
-    """Reject empty results so authorization changes are never cached."""
+    """Reject empty results so authorization/生成 changes are never cached."""
     if not isinstance(payload, Mapping):
         return False
-    data = payload.get("data")
     if kind == KIND_LEGACY:
+        data = payload.get("data")
         return isinstance(data, (list, dict)) and len(data) > 0
+    if kind == KIND_LEGACY_ROWS:
+        rows = payload.get("rows")
+        return isinstance(rows, list) and len(rows) > 0
     if "data" not in payload:
         return True
-    return bool(data)
+    return bool(payload.get("data"))
 
 
 def read_through(
@@ -331,6 +335,10 @@ def _validate_payload(kind: str, payload: Any, lottery_type_id: int) -> dict[str
     # 站点资料聚合 {"site","draw","modules"}（没有 data 键）。
     if kind == KIND_LEGACY and "data" not in payload:
         raise ValueError("legacy prediction snapshot payload must contain data")
+    if kind == KIND_LEGACY_ROWS:
+        rows = payload.get("rows")
+        if not isinstance(rows, list):
+            raise ValueError("legacy rows snapshot payload must contain a rows list")
     if kind == KIND_HOMEPAGE and "data" not in payload:
         raise ValueError("homepage prediction snapshot payload must contain data")
     if kind == KIND_SITE and not {"data", "modules", "site"} & set(payload):

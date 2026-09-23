@@ -163,6 +163,8 @@ def _first_query_value(query: dict, key: str) -> str | None:
 
 
 def module_rows(ctx: RequestContext) -> None:
+    from cache.prediction_snapshots import KIND_LEGACY_ROWS, read_through
+
     modes_id = int(ctx.query_value("modes_id", "0") or 0)
     if modes_id <= 0:
         raise ValueError("modes_id 必须为正整数")
@@ -174,12 +176,46 @@ def module_rows(ctx: RequestContext) -> None:
         maximum=MAX_LEGACY_LIST_LIMIT,
         field_name="limit",
     )
-    ctx.send_json(
-        load_legacy_mode_rows(
+    web_id = int(web_value) if web_value not in (None, "") else None
+    type_value = int(type_raw) if type_raw not in (None, "") else None
+
+    # 这是旧站页面实际调用的热路径：前端 /api/kaijiang/<endpoint> 会转成
+    # /api/legacy/module-rows?modes_id=&limit=&web=&type=，一页几十次跨节点请求。
+    if web_id is None or type_value is None or web_id <= 0 or type_value <= 0:
+        ctx.send_json(
+            load_legacy_mode_rows(
+                ctx.db_path,
+                modes_id=modes_id,
+                limit=limit,
+                web=web_id,
+                type_value=type_value,
+            )
+        )
+        return
+
+    def build() -> dict:
+        return load_legacy_mode_rows(
             ctx.db_path,
             modes_id=modes_id,
             limit=limit,
-            web=int(web_value) if web_value not in (None, "") else None,
-            type_value=int(type_raw) if type_raw not in (None, "") else None,
+            web=web_id,
+            type_value=type_value,
+        )
+
+    selector = f"rows-{modes_id}-{limit}-{_stable_digest({'web': web_id, 'type': type_value})}"
+    ctx.send_json(
+        read_through(
+            ctx.state.get("prediction_snapshots"),
+            kind=KIND_LEGACY_ROWS,
+            site_ref=f"web{web_id}",
+            lottery_type_id=type_value,
+            selector=selector,
+            builder=build,
+            db_path=ctx.db_path,
         )
     )
+
+
+def _stable_digest(values: dict) -> str:
+    joined = "&".join(f"{key}={values[key]}" for key in sorted(values))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from routes.legacy_routes import _legacy_kaijiang_snapshot_target
+from routes.legacy_routes import _legacy_kaijiang_snapshot_target, _stable_digest
 from routes.public_routes import _site_page_selector
 from routes.vendor_routes import _modules_fingerprint
 
@@ -74,3 +74,13 @@ def test_modules_fingerprint_is_order_insensitive():
     assert _modules_fingerprint(["b", "a"]) == _modules_fingerprint(["a", "b"])
     assert _modules_fingerprint([]) == "all"
     assert _modules_fingerprint(["a"]) != _modules_fingerprint(["b"])
+
+
+def test_stable_digest_is_deterministic_and_order_insensitive():
+    """`/api/legacy/module-rows` 的热路径键：同一 (web,type) 必须稳定，不同则区分。"""
+    assert _stable_digest({"web": 9, "type": 3}) == _stable_digest({"type": 3, "web": 9})
+    assert _stable_digest({"web": 9, "type": 3}) != _stable_digest({"web": 9, "type": 2})
+    assert _stable_digest({"web": 9, "type": 3}) != _stable_digest({"web": 8, "type": 3})
+    digest = _stable_digest({"web": 9, "type": 3})
+    assert all(character.isalnum() or character in "._-" for character in digest)
+    assert len(digest) == 12

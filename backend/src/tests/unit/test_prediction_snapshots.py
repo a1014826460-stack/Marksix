@@ -111,6 +111,34 @@ def test_empty_legacy_payload_is_not_cacheable():
     assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-abc") is None
 
 
+def test_legacy_rows_shape_is_cacheable():
+    """`/api/legacy/module-rows` 的载荷是 {modes_id,title,table_name,rows}。"""
+    from cache.prediction_snapshots import KIND_LEGACY_ROWS
+
+    snapshots = _snapshots()
+    payload = {
+        "modes_id": 56,
+        "title": "平特一肖",
+        "table_name": "mode_payload_56",
+        "rows": [{"term": "266", "content": "蛇,猪,猴", "res_code": "", "res_sx": ""}],
+    }
+    assert payload_is_cacheable(KIND_LEGACY_ROWS, payload) is True
+    assert snapshots.publish(KIND_LEGACY_ROWS, "web9", 3, "rows-56-8-abc", payload) is True
+    assert snapshots.get(KIND_LEGACY_ROWS, "web9", 3, "rows-56-8-abc") == payload
+    assert payload_is_cacheable(KIND_LEGACY_ROWS, {"rows": []}) is False
+    # rows 不是列表时直接拒绝缓存（结构校验由可缓存性把关）。
+    assert snapshots.publish(KIND_LEGACY_ROWS, "web9", 3, "rows-56-8-abc", {"rows": "nope"}) is False
+    # 行内的内部标记仍然会被递归拒绝。
+    with pytest.raises(ValueError):
+        snapshots.publish(
+            KIND_LEGACY_ROWS,
+            "web9",
+            3,
+            "rows-56-8-abc",
+            {"rows": [{"term": "266", "_simulation_should_hit": 1}]},
+        )
+
+
 def test_missing_known_top_level_key_is_rejected():
     snapshots = _snapshots()
     with pytest.raises(ValueError):
