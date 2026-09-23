@@ -1257,3 +1257,37 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   十个站点首页共用；实际文件在中心节点 `/root/Marksix/backend/data/Images/`
   （容器内 `/app/data/Images`），与仓库内同名 vendor 副本 md5 不同（是独立文件），
   `cache-control: public, max-age=86400`。
+
+### 上传图（/uploads）压缩结果（2026-09-24，经用户单独授权）
+
+- 授权范围：只处理上述三张，不动 `backend/data/Images` 下其余 8262 个文件
+  （该目录含 `mode_478/source/` 数百张约 430 KB 的 JPEG，若按目录整体处理会误伤）。
+- 备份：`/root/Marksix/.deploy-backups/uploads-images-20260923T205550Z/`，含三张原件与
+  `MD5SUMS.txt`（`d299ad81…`/`c620ffb2…`/`dab21bf3…`）。
+- 流程：`scp` 取回原件到本机 → `python scripts/compress-vendor-images.py --root <stage>`
+  （dry-run 报 **1.70 MB → 0.54 MB**）→ `--apply` → `scp` 覆盖回节点
+  （python-api 的 `/app/data/Images` 是同一挂载，立即生效）。
+- 结果（节点与服务端实测一致）：
+
+  | 文件 | 压缩前 | 压缩后 | 处理 |
+  | --- | --- | --- | --- |
+  | `1742580086567063.png` | 1,085,663 B | **249,805 B** | PNG 量化 256 色，966×671 不变 |
+  | `1742580130762983.jpg` | 427,004 B | **233,233 B** | JPEG q80 渐进式，783×1280 不变 |
+  | `1742580119746508.jpg` | 268,281 B | **84,187 B** | 实为 PNG（扩展名 .jpg），量化 256 色，960×1280 不变 |
+  | 合计 | 1,780,948 B | **567,225 B（−68%）** | 尺寸与格式容器均未改变 |
+
+- 视觉核对（`read_image` 逐张看原件与压缩后）：密集色块"六合大全"表、红字黄底生肖表、
+  绿字黑字对照表均无可见劣化（这三张都是平面色块图，256 色足够）。
+- 浏览器复核（`frontend/test/live-uploads-images-check.py`，真实 Chrome，`fetch +
+  createImageBitmap` 强制解码，不受 `loading="lazy"` 影响）：
+
+  | 站点 | 三张图 | 结果 |
+  | --- | --- | --- |
+  | www.tw8800.com | 全部 | 200，249805/233233/84187 B，解码 966×671 / 783×1280 / 960×1280，DOM natural 一致 |
+  | www.twsaimahui.com | 全部 | 同上 |
+  | www.twssz.com | 全部 | 同上（DOM 中为 lazy 首屏外未加载，属正常） |
+  | www.twbst528.com | 全部 | 同上（**跨节点 `/uploads/` 代理路径**同样生效） |
+
+  `www.twsyw.com` 因本机链路三次打开失败未跑浏览器检查，但 curl 实测
+  `https://www.twsyw.com/uploads/image/20250322/*` 返回 200 与新体积（249805/233233/84187），
+  服务端路径已确认。
