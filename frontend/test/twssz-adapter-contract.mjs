@@ -7,7 +7,7 @@ for (const token of ["createElement", "appendChild", "replaceChildren", "innerHT
   if (adapter.includes(token)) throw new Error(`adapter must not mutate UI: ${token}`)
 }
 
-for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "TWSSZ_HISTORY_LIMIT = 16", "historyLimit: TWSSZ_HISTORY_LIMIT", "message", "lottery-change", "activeLottery", "titleRegionPrefix", "function resultCode", "setAttribute(\"bgcolor\", \"#FFFF00\")"]) {
+for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "TWSSZ_HISTORY_LIMIT = 16", "historyLimit: TWSSZ_HISTORY_LIMIT", "message", "lottery-change", "activeLottery", "titleRegionPrefix", "function resultCode", "function markHitLeaf", 'HIT_BACKGROUND = "background-color: #FFFF00"', "function markGradeHits", "function gradeResultText", "function gradeValueLeaves"]) {
   if (!adapter.includes(token)) throw new Error(`twssz adapter missing ${token}`)
 }
 
@@ -30,6 +30,14 @@ if (adapter.includes('sixiao_sima", title: "精准四肖", target: function () {
 }
 for (const prohibited of ["rotateNumbers", "style.backgroundColor"]) {
   if (adapter.includes(prohibited)) throw new Error(`twssz complex prediction modules must not use fabricated or generic rendering: ${prohibited}`)
+}
+// Chrome never paints `bgcolor` on the supplied `font` / `span` leaves, so a
+// bgcolor-based hit marker would be invisible on the live page.
+if (adapter.includes('setAttribute("bgcolor"')) {
+  throw new Error("twssz hit markers must not rely on the unpainted bgcolor attribute")
+}
+if (!adapter.includes("markHitLeaf(span, matched)") || !adapter.includes("markHitLeaf(leaf, matched)")) {
+  throw new Error("twssz hit markers must be cleared and re-applied through markHitLeaf on every render")
 }
 for (const required of [
   '{ key: "pt2xiao", title: "家野二肖", renderer: renderJiaYeErXiaoHistory }',

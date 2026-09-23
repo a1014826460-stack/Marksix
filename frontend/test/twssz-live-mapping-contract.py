@@ -66,8 +66,10 @@ def payload(lottery_type: str = "3"):
                         "isOpened": row_index != 0,
                         "isCorrect": row_index % 2 == 0,
                         # The leading issue proves hit formatting must use the
-                        # canonical code instead of the first text number.
+                        # canonical code instead of the first text number. The
+                        # special zodiac is the A级猛料 card's hit fixture.
                         "code": "02",
+                        "zodiac": "龙",
                         "text": f"{marker}第999期，开奖02" if row_index else "待开奖",
                     },
                 }
@@ -200,6 +202,41 @@ def main() -> None:
             assert grade_tables.count() == 8
             assert "200期" in grade_tables.nth(7).inner_text(), grade_tables.nth(7).inner_text()
 
+            # A级猛料 is judged as one card against the drawn special ball: any
+            # displayed zodiac or number that equals it keeps the supplier's
+            # yellow background and prints 对. A miss prints the drawn special
+            # only, and 错 must never be rendered. Supplier static markers, the
+            # 平特 triple and the ???? placeholders must not survive the render.
+            grade_section = frame.locator("[data-prediction-section='grade-a']")
+            grade_text = grade_section.inner_text()
+            assert "错" not in grade_text, grade_text[:600]
+            for stale in ("牛牛牛", "狗狗狗", "羊羊羊", "猪猪猪", "蛇蛇蛇", "????", "待加载期"):
+                assert stale not in grade_text, (stale, grade_text[:600])
+            for index in range(8):
+                grade_card = grade_tables.nth(index)
+                grade_card_text = grade_card.inner_text()
+                assert "『猴猴猴』" in grade_card_text, grade_card_text
+                highlighted = [
+                    value
+                    for value in grade_card.evaluate(
+                        """(table) => Array.from(table.querySelectorAll(
+                                "[data-site-slot='prediction'] font, [data-site-slot='prediction'] span"))
+                            .filter((leaf) => !leaf.children.length &&
+                                getComputedStyle(leaf).backgroundColor === "rgb(255, 255, 0)")
+                            .map((leaf) => leaf.textContent.trim())"""
+                    )
+                    if value
+                ]
+                grade_result = grade_card.locator("[data-site-slot='result']").inner_text().strip()
+                if index == 0:
+                    # The newest supplied row is still open: no result, no hit.
+                    assert grade_result == "开：待开奖", grade_result
+                    assert highlighted == [], highlighted
+                else:
+                    assert grade_result.endswith("对"), grade_result
+                    assert "龙" in highlighted, highlighted
+                    assert "02" in highlighted, highlighted
+
             lianxiao_rows = frame.locator("#top_14 + table + div tr")
             assert lianxiao_rows.count() == 32
             assert "192期" in lianxiao_rows.nth(30).inner_text(), "16 existing linked groups need 16 API rows"
@@ -245,14 +282,17 @@ def main() -> None:
             for forbidden in ("执笔先生", "gat566.cc", "205期必中三尾", "单车变宝马", "14.24.04.18.48"):
                 assert forbidden not in first_card_text, (forbidden, first_card_text)
 
-            # A hit must use the vendor's existing yellow background marker,
-            # rather than yellow foreground text that is not visually clear.
-            hit_number = cards.nth(1).locator("font[bgcolor='#FFFF00']")
-            assert hit_number.count() == 2 and all(
-                hit_number.nth(index).inner_text().strip(".") == "02"
-                for index in range(hit_number.count())
-            ), (
-                "命中号码必须使用供应商既有的黄色高亮节点"
+            # A hit must keep the supplier's yellow background on the matching
+            # number leaf. Chrome never paints `bgcolor` on `font`, so the
+            # contract asserts the painted background instead of the attribute.
+            highlighted_numbers = cards.nth(1).evaluate(
+                """(card) => Array.from(card.querySelectorAll("font"))
+                    .filter((leaf) => !leaf.children.length &&
+                        getComputedStyle(leaf).backgroundColor === "rgb(255, 255, 0)")
+                    .map((leaf) => leaf.textContent.trim().replace(/\\.$/, ""))"""
+            )
+            assert highlighted_numbers == ["02", "02"], (
+                "命中号码必须实际显示供应商既有的黄色高亮背景"
             )
 
             # AI心水 uses its supplied multi-line card layout. It must not be

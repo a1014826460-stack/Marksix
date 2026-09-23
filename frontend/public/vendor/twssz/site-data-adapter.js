@@ -372,6 +372,23 @@
     });
   }
 
+  // Chrome does not paint `bgcolor` on the supplied `font` / `span` leaves, so
+  // the supplier's yellow hit treatment is applied through the leaf's own
+  // inline style while every other declaration (for example its red number
+  // colour) is preserved. Misses, pending rows and lottery switches clear it
+  // again, so an obsolete hit can never survive a render pass.
+  var HIT_BACKGROUND = "background-color: #FFFF00";
+
+  function markHitLeaf(node, hit) {
+    if (!node) return;
+    var declarations = String(node.getAttribute("style") || "").split(";").filter(function (part) {
+      return String(part).trim() && !/^background(-color)?\s*:/i.test(String(part).trim());
+    });
+    if (hit) declarations.push(HIT_BACKGROUND);
+    if (declarations.length) node.setAttribute("style", declarations.join("; ") + ";");
+    else node.removeAttribute("style");
+  }
+
   function termSlot(cell) {
     return slot(cell, "term", function (root) {
       return Array.prototype.filter.call(root.querySelectorAll("span"), function (node) {
@@ -380,10 +397,37 @@
     });
   }
 
+  // The value span owns the cell's `font` leaves. A childless span inside the
+  // same cell is the supplier's static hit marker, so it must never be selected
+  // as the value slot.
+  function valueSpanWithLeaves(root) {
+    var spans = Array.prototype.filter.call(root.querySelectorAll("span"), function (node) {
+      return Array.prototype.some.call(node.querySelectorAll("font"), function (font) {
+        return !font.children.length;
+      });
+    });
+    return spans.length ? spans[spans.length - 1] : null;
+  }
+
   function gradeValueRoot(cell) {
-    return slot(cell, "prediction", function (root) {
-      var spans = root.querySelectorAll("span");
-      return spans.length ? spans[spans.length - 1] : null;
+    return slot(cell, "prediction", valueSpanWithLeaves);
+  }
+
+  // A grade-A value cell keeps one zodiac or number inside the supplier's own
+  // highlight span, so its value slots are every childless `font` / `span` node
+  // in document order. Writing all of them also erases the supplier's static
+  // hit markers before the current draw is judged.
+  function gradeValueLeaves(root) {
+    if (!root) return [];
+    return Array.prototype.filter.call(root.querySelectorAll("font, span"), function (node) {
+      return !node.children.length;
+    });
+  }
+
+  function writeGradeSlots(root, values) {
+    var valuesToWrite = values.length ? values : [""];
+    gradeValueLeaves(root).forEach(function (node, index) {
+      node.textContent = valuesToWrite[index] || "";
     });
   }
 
@@ -395,7 +439,7 @@
     var term = termSlot(cell);
     if (!term) {
       var label = Array.prototype.filter.call(cell.querySelectorAll("span"), function (node) {
-        return /^(?:七肖|四肖|三肖|二肖)/.test(String(node.textContent || "").trim());
+        return /^(?:\d+期\s*)?(?:七肖|四肖|三肖|二肖)/.test(String(node.textContent || "").trim());
       })[0];
       if (label) {
         label.setAttribute("data-site-slot", "term-label");
@@ -408,25 +452,119 @@
       if (leading) leading.nodeValue = termValue(row) + " " + String(leading.nodeValue || "").replace(/^\s*\d*期?\s*/, "");
       else term.textContent = termValue(row);
     }
-    writeSlots(gradeValueRoot(cell), kind === "number" ? numberValues(row) : zodiacValues(row));
+    writeGradeSlots(gradeValueRoot(cell), kind === "number" ? numberValues(row) : zodiacValues(row));
+  }
+
+  // The A级猛料 card is one vendor issue whose seven cells share a single drawn
+  // special ball, so its judgement is read from the zodiac and number values the
+  // card itself displays instead of the recommending mechanism's own flag. A
+  // value that equals the special zodiac or the special code keeps the
+  // supplier's yellow background and makes the card "对"; a miss prints the
+  // drawn special only and never prints "错".
+  function gradeDrawRow(referenceRow, recommendationRow, numberRow) {
+    var candidates = [referenceRow, recommendationRow, numberRow];
+    for (var index = 0; index < candidates.length; index += 1) {
+      var row = candidates[index];
+      if (row && row.result && row.result.isOpened) return row;
+    }
+    return referenceRow || recommendationRow || numberRow || null;
+  }
+
+  function gradeResultText(drawRow, hit) {
+    var result = drawRow && drawRow.result || {};
+    if (!result.isOpened) return "开：待开奖";
+    var drawn = drawValue(drawRow);
+    if (!drawn || drawn === "待开奖") return "开：待开奖";
+    return "开：" + drawn + (hit ? "对" : "");
+  }
+
+  var ZODIAC_CHARS = "鼠牛虎兔龙蛇马羊猴鸡狗猪";
+
+  // Compatibility payloads may only carry `result.text` (for example 猪08), so
+  // the drawn zodiac is read from the canonical field first and from the drawn
+  // text afterwards.
+  function gradeSpecialZodiac(drawRow) {
+    var result = drawRow && drawRow.result || {};
+    var zodiac = String(result.zodiac || "").trim();
+    if (zodiac) return zodiac;
+    var match = String(result.text || "").match(new RegExp("[" + ZODIAC_CHARS + "]"));
+    return match ? match[0] : "";
+  }
+
+  function markGradeHits(table, drawRow) {
+    var result = drawRow && drawRow.result || {};
+    var opened = Boolean(result.isOpened);
+    var zodiac = gradeSpecialZodiac(drawRow);
+    var code = opened ? resultCode(drawRow) : "";
+    var hit = false;
+    Array.prototype.forEach.call(table.querySelectorAll('[data-site-slot="prediction"]'), function (root) {
+      // Every value slot was just overwritten, so an obsolete supplier hit can
+      // never survive: only the current special ball keeps the yellow marker.
+      Array.prototype.forEach.call(gradeValueLeaves(root), function (leaf) {
+        var value = String(leaf.textContent || "").trim();
+        var matched = Boolean(value) && opened && ((zodiac && value === zodiac) || (code && value === code));
+        if (matched) hit = true;
+        markHitLeaf(leaf, matched);
+      });
+    });
+    var recommendationSlot = table.querySelector('[data-site-slot="special"]');
+    if (recommendationSlot) {
+      Array.prototype.forEach.call(recommendationSlot.querySelectorAll("span"), function (span) {
+        if (span.children.length) return;
+        var value = String(span.textContent || "").trim();
+        if (!value || value.indexOf("开") !== -1) return;
+        var matched = Boolean(opened && zodiac && value === zodiac + zodiac + zodiac);
+        if (matched) hit = true;
+        markHitLeaf(span, matched);
+      });
+    }
+    return hit;
   }
 
   function renderGradeResult(cell, row) {
     var recommendation = zodiacValues(row).slice(0, 1).join("");
     var recommendationSlot = slot(cell, "special", function (root) { return root.querySelector(".dbt9"); });
     var resultSlot = slot(cell, "result", function (root) {
-      return Array.prototype.filter.call(root.querySelectorAll("span"), function (node) {
+      // The 平特 slot wraps the result leaf, so the innermost match owns the
+      // "开：…" text and must keep the vendor's red result styling.
+      var matches = Array.prototype.filter.call(root.querySelectorAll("span"), function (node) {
         return String(node.textContent || "").indexOf("开：") !== -1;
-      })[0];
-    });
-    if (recommendationSlot) {
-      textNodes(recommendationSlot).filter(function (text) {
-        return String(text.nodeValue || "").indexOf("『") !== -1;
-      }).forEach(function (text, index) {
-        if (!index) text.nodeValue = "『" + recommendation + recommendation + recommendation + "』";
       });
+      return matches.length ? matches[matches.length - 1] : null;
+    });
+    if (recommendationSlot) writeGradeRecommendation(recommendationSlot, recommendation);
+    return resultSlot;
+  }
+
+  // The 平特 recommendation keeps the vendor's triple and reuses its existing
+  // highlight element when the supplied card has one; the plain cards write the
+  // triple into their existing text node.
+  function writeGradeRecommendation(recommendationSlot, zodiac) {
+    var triple = zodiac ? zodiac + zodiac + zodiac : "";
+    var marker = null;
+    Array.prototype.forEach.call(recommendationSlot.querySelectorAll("span"), function (span) {
+      if (String(span.textContent || "").indexOf("开") !== -1) return;
+      markHitLeaf(span, false);
+      if (span.children.length) return;
+      if (marker) {
+        span.textContent = "";
+        return;
+      }
+      marker = span;
+      span.textContent = triple;
+    });
+    if (marker) {
+      if (marker.previousSibling && marker.previousSibling.nodeType === 3) marker.previousSibling.nodeValue = "『";
+      if (marker.nextSibling && marker.nextSibling.nodeType === 3) marker.nextSibling.nodeValue = "』";
+      return;
     }
-    if (resultSlot) resultSlot.textContent = row ? "开：" + displayResult(row) : "";
+    textNodes(recommendationSlot).filter(function (text) {
+      return String(text.nodeValue || "").indexOf("『") !== -1;
+    }).forEach(function (text) {
+      // The 『』 anchor stays in place even without data so a later render can
+      // find the same vendor text node again.
+      text.nodeValue = "『" + triple + "』";
+    });
   }
 
   function gradeModules(moduleByKey) {
@@ -437,7 +575,10 @@
   }
 
   // A级猛料 has seven independently formatted cells. Keep its vendor labels
-  // and colours; only the term, value and result slots receive API data.
+  // and colours; only the term, value and result slots receive API data. The
+  // card is judged as a whole against the drawn special ball, so a hit keeps the
+  // supplier's yellow background and a miss prints the drawn special without any
+  // judgement suffix.
   function renderGradeHistory(moduleByKey) {
     var anchor = matchingAnchor("top_15", 0);
     if (!anchor || !anchor.parentElement) return;
@@ -450,19 +591,25 @@
       var rows = table.querySelectorAll("tr");
       if (rows.length < 5) return;
       setNodeText(slot(rows[0], "title", function (root) { return root.querySelector("span"); }), activeLottery.titleRegionPrefix + " A级猛料大公开");
-      var cells = rows[1].querySelectorAll("td");
       var referenceRow = moduleRow(modules[0], historyIndex);
+      var recommendationRow = moduleRowForTerm(modules[5], referenceRow, historyIndex);
+      var numberRow = moduleRowForTerm(modules[2], referenceRow, historyIndex);
+      var drawRow = gradeDrawRow(referenceRow, recommendationRow, numberRow);
+      var cells = rows[1].querySelectorAll("td");
       renderGradeValue(cells[0], referenceRow, "zodiac");
-      renderGradeResult(cells[1], moduleRowForTerm(modules[5], referenceRow, historyIndex));
+      var resultSlot = renderGradeResult(cells[1], recommendationRow);
       cells = rows[2].querySelectorAll("td");
       renderGradeValue(cells[0], moduleRowForTerm(modules[1], referenceRow, historyIndex), "zodiac");
-      writeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("span[style*='rgb(255']"); }), numberValues(moduleRowForTerm(modules[2], referenceRow, historyIndex)));
+      writeGradeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("span[style*='rgb(255']"); }), numberValues(numberRow));
       cells = rows[3].querySelectorAll("td");
       renderGradeValue(cells[0], moduleRowForTerm(modules[3], referenceRow, historyIndex), "zodiac");
-      writeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("font[color='#ff0000']"); }), numberValues(moduleRowForTerm(modules[4], referenceRow, historyIndex)));
+      writeGradeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("font[color='#ff0000']"); }), numberValues(moduleRowForTerm(modules[4], referenceRow, historyIndex)));
       cells = rows[4].querySelectorAll("td");
-      renderGradeValue(cells[0], moduleRowForTerm(modules[5], referenceRow, historyIndex), "zodiac");
-      writeSlots(gradeValueRoot(cells[1]), numberValues(moduleRowForTerm(modules[6], referenceRow, historyIndex)));
+      renderGradeValue(cells[0], recommendationRow, "zodiac");
+      writeGradeSlots(gradeValueRoot(cells[1]), numberValues(moduleRowForTerm(modules[6], referenceRow, historyIndex)));
+      // Every displayed value is written before the card is judged, so the
+      // result text and the yellow hit leaves always describe this card.
+      setNodeText(resultSlot, gradeResultText(drawRow, markGradeHits(table, drawRow)));
     });
   }
 
@@ -762,19 +909,19 @@
         leaves.forEach(function (leaf, leafIndex) {
           leaf.textContent = (codeValues[leafIndex] || "") + (leafIndex < codeValues.length - 1 ? "." : "");
           if (leafIndex < codeValues.length) leaf.setAttribute("color", "#FF0000");
-          // The `bgcolor` marker belongs to the supplied number node, so
-          // updating it preserves the vendor's own yellow hit treatment.
-          leaf.removeAttribute("bgcolor");
+          // Obsolete hits from the previous issue or lottery are cleared here;
+          // the current special number is marked after every value is written.
+          markHitLeaf(leaf, false);
         });
       });
       // The supplied line already contains nested number fonts. Reuse the
-      // matching existing one for a yellow special-number highlight.
+      // matching existing one for a visible yellow special-number highlight.
       var specialNumber = row && row.result && row.result.isOpened && resultCode(row);
       Array.prototype.forEach.call(lines, function (line) {
         var numberFont = Array.prototype.filter.call(line.querySelectorAll("font"), function (node) {
           return !node.children.length && String(node.textContent || "").replace(/\D/g, "") === specialNumber;
         })[0];
-        if (numberFont) numberFont.setAttribute("bgcolor", "#FFFF00");
+        if (numberFont) markHitLeaf(numberFont, true);
       });
       if (footer) {
         footer.setAttribute("data-site-slot", "fifteen-code-footer");
