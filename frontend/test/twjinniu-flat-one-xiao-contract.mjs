@@ -87,3 +87,16 @@ modules = await renderModule(79, "蛇")
 html = modules.pingte_erma.html
 assert(html.includes("08猪对"), `独胆/平特一肖平码命中必须显示“对”：${html.slice(0, 400)}`)
 assert(!html.includes("错</font>"), "独胆/平特一肖平码命中不得显示“错”")
+
+// 6) 平特一尾（mode 173）：尾数只出现在平码上也算命中
+modules = await renderModule(173, JSON.stringify(["1尾|01,11,21,31,41"]))
+html = modules.pingte_wei.html
+assert(html.includes("<span style=\"background-color: #FFFF00\">111</span>"), "平特一尾平码尾数命中必须高亮")
+assert(html.includes("08猪对"), `平特一尾平码命中必须显示“对”：${html.slice(0, 400)}`)
+assert(!html.includes("错</font>"), "平特一尾平码命中不得显示“错”")
+
+// 7) 平特一尾：尾数不在 7 个号码里 → 显示“错”
+modules = await renderModule(173, JSON.stringify(["3尾|03,13,23,33,43"]))
+html = modules.pingte_wei.html
+assert(html.includes("08猪<font color=\"#000\">错</font>"), `平特一尾未命中必须显示“错”：${html.slice(0, 400)}`)
+assert(!html.includes("#FFFF00\">333"), "平特一尾未命中时不得高亮")

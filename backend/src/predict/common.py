@@ -84,6 +84,8 @@ class PredictionConfig:
     # 平特口径（平特一肖等）：开奖 7 个号码对应的生肖中任一命中预测生肖即算命中，
     # 而不是只看特码生肖。
     flat_zodiac: bool = False
+    # 平特尾口径（平特一尾等）：开奖 7 个号码中任一号码的尾数命中预测尾数即算命中。
+    flat_tail: bool = False
 
 def parse_res_code(res_code: str) -> list[str]:
     """解析逗号分隔的开奖结果，并统一补齐 01-09。
@@ -158,6 +160,40 @@ def flat_zodiac_hit(outcome: str, labels: tuple[str, ...]) -> bool:
     hit_values = {value.strip() for value in re.split(r"[,|]", str(outcome or "")) if value.strip()}
     predicted = {str(label).strip() for label in labels if str(label).strip()}
     return bool(hit_values & predicted)
+
+def all_tails_from_row(row: Any, conn: Any) -> str:
+    """平特尾口径的真实命中目标：开奖 7 个号码对应的尾数集合（逗号分隔）。
+
+    平特一尾等玩法的规则是“开奖号码中任一号码的尾数与预测尾数一致即算命中”。
+    """
+    raw_codes = str(row["res_code"] or "").strip()
+    if not raw_codes:
+        return ""
+    try:
+        codes = parse_res_code(raw_codes)
+    except ValueError:
+        return ""
+    return ",".join(f"{int(code) % 10}尾" for code in codes)
+
+def _tail_digits(value: Any) -> set[str]:
+    """把 "1尾"、"1"、"13" 这类取值归一到尾数字（多位数取最后一位）。"""
+    if isinstance(value, (tuple, list, set, frozenset)):
+        tokens = [str(item) for item in value]
+    else:
+        tokens = re.split(r"[,|，、\s]+", str(value or ""))
+    digits: set[str] = set()
+    for token in tokens:
+        if "尾" in token:
+            match = re.search(r"(\d)\s*尾", token)
+        else:
+            match = re.search(r"(\d)(?!.*\d)", token)
+        if match:
+            digits.add(match.group(1))
+    return digits
+
+def flat_tail_hit(outcome: str, labels: tuple[str, ...]) -> bool:
+    """平特尾命中：开奖尾数集合与预测尾数集合存在交集。"""
+    return bool(_tail_digits(outcome) & _tail_digits(tuple(labels)))
 
 def get_table_title(conn: Any, table_name: str) -> tuple[int | None, str | None]:
     """通过拆表映射找回表对应的 modes_id 和中文标题。"""

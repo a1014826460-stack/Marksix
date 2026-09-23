@@ -21,10 +21,12 @@
 
 ## 后端判定与生成
 
-1. **判定口径（本次修正）**：平特一肖按平特口径判定。`PredictionConfig.flat_zodiac = True`、
-   `outcome_loader = all_zodiacs_from_row`、`hit_checker = flat_zodiac_hit`；
-   `public/api._check_correct_by_mechanism()` 会把开奖 7 个生肖并入候选标签。
-   覆盖 `pt1xiao`（mode 56）与所有 title 命中 `平特X肖` 的动态机制（含 mode 103 / `title_103`）。
+1. **判定口径（本次修正）**：平特系列按平特口径判定。生肖类用
+   `PredictionConfig.flat_zodiac + all_zodiacs_from_row + flat_zodiac_hit`，
+   尾数类用 `flat_tail + all_tails_from_row + flat_tail_hit`；
+   `public/api._check_correct_by_mechanism()` 直接用开奖 7 个号码的生肖/尾数集合判定。
+   覆盖 `pt1xiao`(56)、`pt2xiao`(43)、`pt3xiao`(470)、`pt1wei`(54) 与所有 title 命中
+   `平特X肖` / `平特X尾` 的动态机制（含 mode 103 / `title_103`、mode 173）。
    注意连期窗口表经 `_make_window_config()` 包装时曾丢失该标记（已用 `dataclasses.replace` 修复）。
 2. **受控生成规则**：`_RULE_BY_MODE_ID` 原先没有 `103`，`get_generation_rule()` 返回
    `blocked_pending_rule`，未来期不会生成规则校验候选，只能按基础概率命中。现 mode 56 与 103

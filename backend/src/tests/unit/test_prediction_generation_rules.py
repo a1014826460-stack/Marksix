@@ -13,17 +13,23 @@ def _truth() -> DrawTruth:
         "绿波",
         # 平特口径使用开奖 7 个号码的全部生肖：蛇/龙/兔/牛/鼠 只出现在平码里。
         ("蛇", "龙", "兔", "虎", "牛", "鼠", "虎"),
+        # 平特尾口径使用开奖 7 个号码的全部尾数：1/2/3/4/5/6/7 尾。
+        ("1尾", "2尾", "3尾", "4尾", "5尾", "6尾", "7尾"),
     )
 
 
-def test_mode_470_hits_when_any_of_its_three_zodiacs_matches_special_zodiac():
+def test_flat_three_xiao_hits_any_drawn_zodiac():
+    """平特3肖（mode 470）按平特口径判定。"""
     config = PREDICTION_CONFIGS["pt3xiao"]
     rule = get_generation_rule(config)
 
     assert rule.supported is True
+    assert rule.rule_id == "zodiac_flat"
     assert rule.cross_site_prefix_width == 1
     assert rule.verify_hit(config, ("鼠", "虎", "羊"), _truth(), conn=None) is True
-    assert rule.verify_hit(config, ("鼠", "猪", "羊"), _truth(), conn=None) is False
+    # 蛇只在平码里出现，平特口径下依然算命中。
+    assert rule.verify_hit(config, ("蛇", "猪", "羊"), _truth(), conn=None) is True
+    assert rule.verify_hit(config, ("马", "猪", "羊"), _truth(), conn=None) is False
     assert rule.signature(("鼠", "猪", "羊")) == ("鼠", "猪", "羊")
     assert rule.prefix_signature(("鼠", "猪", "羊")) == ("鼠",)
 
@@ -60,10 +66,23 @@ def test_number_tail_size_and_half_wave_rules_use_their_own_truth_outcomes():
     half_wave = get_generation_rule(PREDICTION_CONFIGS["jueshabanbo"])
 
     assert number.verify_hit(PREDICTION_CONFIGS["ma24"], ("27",), _truth(), conn=None) is True
+    # 平特1尾（mode 54）按平特尾口径：开奖 7 个号码的任一尾命中即算命中。
+    assert tail.rule_id == "tail_flat"
     assert tail.verify_hit(PREDICTION_CONFIGS["pt1wei"], ("7尾",), _truth(), conn=None) is True
+    assert tail.verify_hit(PREDICTION_CONFIGS["pt1wei"], ("3尾",), _truth(), conn=None) is True
+    assert tail.verify_hit(PREDICTION_CONFIGS["pt1wei"], ("9尾",), _truth(), conn=None) is False
+    assert PREDICTION_CONFIGS["pt1wei"].flat_tail is True
     assert size.verify_hit(PREDICTION_CONFIGS["daxiao"], ("大",), _truth(), conn=None) is True
     assert half_wave.verify_hit(PREDICTION_CONFIGS["jueshabanbo"], ("绿单",), _truth(), conn=None) is False
     assert half_wave.verify_hit(PREDICTION_CONFIGS["jueshabanbo"], ("红单",), _truth(), conn=None) is True
+
+
+def test_flat_two_wei_and_three_xiao_rules_cover_modes_173_and_43():
+    """平特1尾2码（173）与平特2肖（43）同样按平特口径。"""
+    dynamic_wei = type("DynamicConfig", (), {"key": "title_173", "default_modes_id": 173})()
+    assert get_generation_rule(dynamic_wei).rule_id == "tail_flat"
+    assert get_generation_rule(PREDICTION_CONFIGS["pt2xiao"]).rule_id == "zodiac_flat"
+    assert PREDICTION_CONFIGS["pt2xiao"].flat_zodiac is True
 
 
 def test_special_mode_108_is_blocked_until_its_row_builder_uses_controlled_candidates():

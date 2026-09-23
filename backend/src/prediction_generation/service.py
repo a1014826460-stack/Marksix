@@ -820,6 +820,7 @@ def _apply_simulation_to_prediction_result(
         truth=truth,
         hit_checker=getattr(config, "hit_checker", None),
         flat_zodiac=bool(getattr(config, "flat_zodiac", False)),
+        flat_tail=bool(getattr(config, "flat_tail", False)),
     )
     controlled = apply_simulation_control(
         request,

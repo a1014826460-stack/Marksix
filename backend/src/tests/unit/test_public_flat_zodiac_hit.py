@@ -50,3 +50,32 @@ def test_non_flat_zodiac_module_still_judges_by_the_special_zodiac():
     # 蛇在平码里、不是特码；三肖中特仍按特码生肖判定，因此不算命中。
     assert serialize_public_history_row(_row("蛇,马,羊"), config)["is_correct"] is False
     assert serialize_public_history_row(_row("猪,马,羊"), config)["is_correct"] is True
+
+
+def test_flat_two_xiao_and_three_xiao_use_the_flat_rule():
+    for key in ("pt2xiao", "pt3xiao"):
+        config = PREDICTION_CONFIGS[key]
+        assert config.flat_zodiac is True
+        assert serialize_public_history_row(_row("蛇,马"), config)["is_correct"] is True
+
+    config = PREDICTION_CONFIGS["pt3xiao"]
+    assert serialize_public_history_row(_row("马,羊,猴"), config)["is_correct"] is False
+
+
+def test_flat_one_wei_hits_when_any_drawn_number_shares_the_tail():
+    config = PREDICTION_CONFIGS["pt1wei"]
+    assert config.flat_tail is True
+
+    # 开奖号码 21/39/42/02/18/17/08：尾数 1/9/2/8/7；特码 08 尾数是 8。
+    assert serialize_public_history_row(_row("1尾|01,11,21,31,41"), config)["is_correct"] is True
+    assert serialize_public_history_row(_row("8尾|08,18,28,38,48"), config)["is_correct"] is True
+    assert serialize_public_history_row(_row("3尾|03,13,23,33,43"), config)["is_correct"] is False
+
+
+def test_non_flat_tail_module_still_judges_by_the_special_tail():
+    config = PREDICTION_CONFIGS["title_66"]
+    assert config.flat_tail is False
+
+    # 1 尾只出现在平码 21 上；5尾中特仍按特码尾数（8）判定。
+    assert serialize_public_history_row(_row('["1尾|01,11,21,31,41"]'), config)["is_correct"] is False
+    assert serialize_public_history_row(_row('["8尾|08,18,28,38,48"]'), config)["is_correct"] is True

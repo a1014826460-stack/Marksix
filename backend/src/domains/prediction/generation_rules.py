@@ -22,14 +22,42 @@ def _special_zodiac(truth: DrawTruth, _conn: Any) -> str:
     return str(truth.special_zodiac or "").strip()
 
 
-def _flat_zodiacs(truth: DrawTruth, _conn: Any) -> str:
+def _flat_zodiacs(truth: DrawTruth, conn: Any) -> str:
     """平特口径：开奖 7 个号码对应的生肖集合（逗号分隔）。
 
     平特一肖只要任一开奖号码的生肖命中预测生肖即算命中，因此真实目标不是特码生肖。
+    `draw_zodiacs` 缺失时用号码 -> 生肖映射补齐（受控生成必须能算出真实目标，
+    否则会把所有候选都判为“不中”）。
     """
-    return ",".join(
+    zodiacs = tuple(
         str(zodiac).strip() for zodiac in (getattr(truth, "draw_zodiacs", ()) or ()) if str(zodiac).strip()
     )
+    if not zodiacs and conn is not None:
+        try:
+            from predict.common import fixed_label_for_value
+
+            zodiacs = tuple(
+                label
+                for label in (
+                    fixed_label_for_value(conn, "生肖", str(code)) for code in truth.numbers
+                )
+                if label
+            )
+        except Exception:  # noqa: BLE001 - 缺失 fixed_data 时退化为特码口径
+            zodiacs = ()
+    if zodiacs:
+        return ",".join(zodiacs)
+    return str(truth.special_zodiac or "").strip()
+
+
+def _flat_tails(truth: DrawTruth, _conn: Any) -> str:
+    """平特尾口径：开奖 7 个号码对应的尾数集合（逗号分隔）。"""
+    tails = tuple(
+        str(tail).strip() for tail in (getattr(truth, "draw_tails", ()) or ()) if str(tail).strip()
+    )
+    if tails:
+        return ",".join(tails)
+    return ",".join(f"{int(code) % 10}尾" for code in truth.numbers if str(code).isdigit())
 
 
 def _special_number(truth: DrawTruth, _conn: Any) -> str:
@@ -134,7 +162,8 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     # Ordered zodiac candidates, including normal and exclusion variants.
     31: _rule("zodiac", _special_zodiac, prefix_width=2),
     42: _rule("zodiac_exclusion", _special_zodiac),
-    43: _rule("zodiac", _special_zodiac),
+    # 平特二肖
+    43: _rule("zodiac_flat", _flat_zodiacs),
     44: _rule("zodiac", _special_zodiac, prefix_width=2),
     45: _rule("zodiac", _special_zodiac, prefix_width=2),
     46: _rule("zodiac", _special_zodiac, prefix_width=2),
@@ -142,8 +171,9 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     48: _rule("zodiac", _special_zodiac, prefix_width=2),
     49: _rule("zodiac", _special_zodiac, prefix_width=3),
     51: _rule("zodiac", _special_zodiac),
-    # 平特一肖（mode 56）与厂商「三期平特1肖」（mode 103）按平特口径判定：
-    # 开奖 7 个号码的任一肖命中预测生肖即算命中。
+    # 平特一肖（mode 56）、厂商「三期平特1肖」（mode 103）、平特3肖（mode 470）
+    # 与「平特1尾2码」（mode 173）按平特口径判定：
+    # 开奖 7 个号码的任一肖/尾命中预测即算命中。
     56: _rule("zodiac_flat", _flat_zodiacs),
     103: _rule("zodiac_flat", _flat_zodiacs),
     60: _rule("zodiac", _special_zodiac, prefix_width=3),
@@ -153,7 +183,7 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     117: _rule("zodiac", _special_zodiac),
     197: _rule("zodiac", _special_zodiac),
     219: _rule("zodiac", _special_zodiac),
-    470: _rule("zodiac", _special_zodiac),
+    470: _rule("zodiac_flat", _flat_zodiacs),
     472: _rule("zodiac_exclusion", _special_zodiac),
     473: _rule("zodiac_exclusion", _special_zodiac),
     484: _rule("zodiac", _special_zodiac, prefix_width=2),
@@ -163,7 +193,9 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     28: _rule("parity", _special_parity),
     34: _rule("number", _special_number, prefix_width=3),
     38: _rule("wave", _special_wave),
-    54: _rule("tail", _special_tail),
+    # 平特1尾（mode 54）与「平特1尾2码」（mode 173）按平特尾口径判定。
+    54: _rule("tail_flat", _flat_tails),
+    173: _rule("tail_flat", _flat_tails),
     57: _rule("size", _special_size),
     58: _rule("half_wave_exclusion", _special_half_wave),
     66: _rule("tail", _special_tail),

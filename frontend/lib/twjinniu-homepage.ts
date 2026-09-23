@@ -233,6 +233,19 @@ function flatZodiacHit(row: LegacyModeRow | null | undefined, prediction: unknow
   return splitCsv(row?.res_sx).map((value) => cleanText(value)).includes(label)
 }
 
+/**
+ * 平特尾口径命中判定：开奖 7 个号码中任一号码的尾数命中预测尾数即算命中，
+ * 而不是只看特码尾数（平特一尾）。
+ */
+function flatTailHit(row: LegacyModeRow | null | undefined, prediction: unknown): boolean {
+  const digits = cleanText(prediction).replace(/[^0-9]/g, "")
+  const digit = digits.slice(-1)
+  if (!digit) return false
+  return splitCsv(row?.res_code)
+    .map((value) => normalizeCode(value))
+    .some((code) => code.endsWith(digit))
+}
+
 function sortRowsByTermDesc<T extends { year?: string; term?: string }>(rows: T[]) {
   return [...rows].sort((left, right) => {
     const leftYear = Number.parseInt(String(left.year || ""), 10)
@@ -681,7 +694,8 @@ function renderPingteWei(rows: LegacyModeRow[]) {
       const match = (entry?.label || "").match(/(\d)尾/)
       const digit = match?.[1] || cleanText(entry?.label)
       const triple = digit ? digit.repeat(3) : cleanText(entry?.label)
-      const isCorrect = result.isOpened && Boolean(digit) && result.code.endsWith(digit)
+      // 平特一尾：开奖 7 个号码中任一尾数命中即算命中。
+      const isCorrect = result.isOpened && Boolean(digit) && flatTailHit(row, digit)
       const displayLabel = isCorrect ? `<span style="background-color: #FFFF00">${escapeHtml(triple)}</span>` : escapeHtml(triple)
       return `
         <tr>

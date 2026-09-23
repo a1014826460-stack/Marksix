@@ -100,26 +100,34 @@ predict()
 - 文本列：从 title/content/jiexi 字段提取生肖/尾数/波色
 - 文本历史映射：title 含"真言/玄机/幽默/谜语/欲钱"等标记
 
-### 平特口径（平特一肖）
+### 平特口径（平特一肖 / 二肖 / 三肖 / 一尾）
 
-“平特一肖”的命中规则是**开奖 7 个号码对应的生肖中任一命中预测生肖即算命中**，
-不是只看特码生肖（特码口径的自然命中率只有 1/12，会让模块长期显示“错”）。
+“平特”系列玩法的命中规则是**开奖 7 个号码中任一号码命中预测即算命中**，
+不是只看特码（特码口径的自然命中率只有 1/12 或 1/10，会让模块长期显示“错”）：
 
-- 配置标记：`PredictionConfig.flat_zodiac = True`；`outcome_loader = all_zodiacs_from_row`
-  （返回开奖 7 个号码的生肖集合），`hit_checker = flat_zodiac_hit`（集合求交集）。
-- 覆盖范围：手写机制 `pt1xiao`（mode 56），以及 title 命中 `平特X肖` 的动态机制
-  （例如 `三期平特1肖` → mode 103 / `title_103`）；`杀X肖`、`X肖中特` 仍按特码口径。
-- 公开 API：`public/api._check_correct_by_mechanism()` 对 `flat_zodiac` 配置会把
-  `_compute_outcome_from_row()` 的候选标签扩展为开奖 7 个生肖，再交给 `flat_zodiac_hit`。
+- 生肖类（平特一肖/二肖/三肖）：`PredictionConfig.flat_zodiac = True`，
+  `outcome_loader = all_zodiacs_from_row`（开奖 7 个号码的生肖集合），
+  `hit_checker = flat_zodiac_hit`（集合求交集）。
+- 尾数类（平特一尾）：`PredictionConfig.flat_tail = True`，
+  `outcome_loader = all_tails_from_row`（开奖 7 个号码的尾数集合），
+  `hit_checker = flat_tail_hit`。
+- 覆盖范围：手写机制 `pt1xiao`(56)、`pt2xiao`(43)、`pt3xiao`(470)、`pt1wei`(54)，
+  以及 title 命中 `平特X肖` / `平特X尾` 的动态机制（例如 `三期平特1肖` → mode 103、
+  `平特1尾2码` → mode 173）；`杀X肖`、`杀X尾`、`X肖中特`、`X尾中特` 仍按特码口径。
+- 公开 API：`public/api._check_correct_by_mechanism()` 对平特配置直接用
+  `_flat_zodiac_outcome()` / `_flat_tail_outcome()` 构造开奖 7 个号码的生肖/尾数集合，
+  再交给对应 hit_checker（不再拼接单双/大小等其他维度标签，避免尾数误判）。
 - 连期窗口表（含 `start`/`end` 列，如 mode 103）会经 `_make_window_config()` 包装；
-  包装必须用 `dataclasses.replace()` 保留 `flat_zodiac`，逐字段重建会静默丢失该标记。
+  包装必须用 `dataclasses.replace()` 保留 `flat_zodiac` / `flat_tail`，
+  逐字段重建会静默丢失这些标记。
 
 ### 动态 mode 的未来受控生成规则
 
 `domains/prediction/generation_rules.py` 的 `_RULE_BY_MODE_ID` 是台湾彩未来期受控生成的
 唯一准入清单：未列入的 mode 只生成展示内容，不做规则校验（`get_generation_rule()` 返回
-`blocked_pending_rule`）。平特一肖按 `zodiac_flat` 规则登记（mode 56 与 mode 103），
-真实目标取自 `DrawTruth.draw_zodiacs`（开奖 7 个号码的生肖集合）：
+`blocked_pending_rule`）。平特系列按 `zodiac_flat`（mode 43/56/103/470）与
+`tail_flat`（mode 54/173）登记，真实目标分别取 `DrawTruth.draw_zodiacs`（开奖 7 个生肖）
+与 `DrawTruth.draw_tails`（开奖 7 个尾数）：
 
 - 未登记规则的 mode，未来期不会生成规则校验候选，只能按基础概率命中。
 - 登记后，未来期会走 `_build_persisted_future_control()` 的规则校验候选与滚动窗口准确率

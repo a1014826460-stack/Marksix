@@ -44,6 +44,14 @@ def truth_labels_for_request(request: PredictionRequest) -> tuple[str, ...]:
     zodiac = str(truth.special_zodiac or "").strip()
     color = str(truth.special_color or "").strip()
 
+    if getattr(request, "flat_tail", False):
+        # 平特尾口径：开奖 7 个号码的尾数任一命中即算命中。
+        draw_tails = tuple(
+            str(value).strip() for value in (getattr(truth, "draw_tails", ()) or ()) if str(value).strip()
+        )
+        if draw_tails:
+            return draw_tails
+
     if category == PredictionCategory.MIXED:
         labels = [
             f"zodiac:{zodiac}" if zodiac else "",

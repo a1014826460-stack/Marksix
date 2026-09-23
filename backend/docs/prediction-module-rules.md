@@ -17,7 +17,7 @@ This document is generated from the internal rule manifest. It documents candida
 | 34 | ma24 | 24码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
 | 38 | shuangbo | 双波中特 | wave | special number wave is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 42 | juesha3xiao | 绝杀3肖 | zodiac_exclusion | special zodiac is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 43 | pt2xiao | 平特2肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 43 | pt2xiao | 平特2肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 44 | 7xiao7ma | 7肖7码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
 | 45 | heibai3xiao | 黑白各3肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
 | 46 | 6xzt | 6肖中特 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
@@ -28,7 +28,7 @@ This document is generated from the internal rule manifest. It documents candida
 | 51 | 4xiao8ma | 4肖8码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 52 | sizixuanji | 四字玄机 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 53 | 3hang | 3行中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
-| 54 | pt1wei | 平特1尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 54 | pt1wei | 平特1尾 | tail_flat | any drawn number's tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 56 | pt1xiao | 平特1肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 57 | daxiao | 大小中特 | size | special number size is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 58 | jueshabanbo | 绝杀半波（1个半波） | half_wave_exclusion | special half-wave is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
@@ -52,7 +52,7 @@ This document is generated from the internal rule manifest. It documents candida
 | 198 | title_198 | 逢买必中 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 219 | qianhou_texiao | 前后特肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 279 | title_279 | 合数大小 | combined_size | special digit-sum size is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 470 | pt3xiao | 平特3肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 470 | pt3xiao | 平特3肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 471 | liangtouzxt | 两头中特 | head | special number head is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 472 | juesha1xiao | 绝杀1肖 | zodiac_exclusion | special zodiac is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 473 | juesha2xiao | 绝杀2肖 | zodiac_exclusion | special zodiac is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |

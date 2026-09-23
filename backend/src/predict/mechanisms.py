@@ -15,11 +15,13 @@ from predict.common import (
     ZODIAC_ORDER,
     PredictionConfig,
     build_element_number_map,
+    all_tails_from_row,
     all_zodiacs_from_row,
     contains_hit,
     default_content_from_row,
     excludes_hit,
     fixed_label_for_value,
+    flat_tail_hit,
     flat_zodiac_hit,
     load_fixed_labels,
     load_fixed_value_map,
@@ -1258,14 +1260,15 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         default_modes_id=43,
         labels=tuple(ZODIAC_ORDER),
         label_count=2,
-        outcome_loader=special_zodiac_from_number_map,
+        outcome_loader=all_zodiacs_from_row,
         content_loader=default_content_from_row,
         content_parser=parse_zodiac_content,
         content_formatter=format_zodiac_csv,
-        hit_checker=contains_hit,
+        hit_checker=flat_zodiac_hit,
+        flat_zodiac=True,
         explanation=(
             "平特2肖选择 2 个生肖。",
-            "按统一预测口径，特码生肖落入预测生肖则命中。",
+            "按平特口径，开奖 7 个号码中任一号码的生肖落入预测生肖即命中。",
         ),
     ),
     "siduanzhongte": PredictionConfig(
@@ -1595,14 +1598,15 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         default_modes_id=470,
         labels=tuple(ZODIAC_ORDER),
         label_count=3,
-        outcome_loader=special_zodiac_from_number_map,
+        outcome_loader=all_zodiacs_from_row,
         content_loader=default_content_from_row,
         content_parser=parse_zodiac_content,
         content_formatter=format_zodiac_csv,
-        hit_checker=contains_hit,
+        hit_checker=flat_zodiac_hit,
+        flat_zodiac=True,
         explanation=(
             "平特3肖选择 3 个生肖。",
-            "按统一预测口径，特码生肖落入预测生肖则命中。",
+            "按平特口径，开奖 7 个号码中任一号码的生肖落入预测生肖即命中。",
         ),
     ),
     "liangtouzxt": PredictionConfig(
@@ -1891,15 +1895,16 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         default_modes_id=54,
         labels=tuple(TAIL_NUMBER_MAP.keys()),
         label_count=1,
-        outcome_loader=special_tail_from_row,
+        outcome_loader=all_tails_from_row,
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_tail_groups,
-        hit_checker=contains_hit,
+        hit_checker=flat_tail_hit,
+        flat_tail=True,
         labels_loader=labels_from_fixed("尾", tuple(TAIL_NUMBER_MAP.keys())),
         explanation=(
             "平特1尾选择 1 个尾数。",
-            "特码尾数与预测尾数一致则命中。",
+            "按平特口径，开奖 7 个号码中任一号码的尾数与预测尾数一致即命中。",
         ),
     ),
     "title_66": PredictionConfig(
@@ -2378,12 +2383,30 @@ def _make_tail_config(
     modes_id: int,
     label_count: int,
     exclude: bool = False,
+    flat_tail: bool = False,
 ) -> PredictionConfig:
     """构建尾数类玩法。
 
     适用 title 示例：必中6尾、5尾中特、平特2尾、杀2尾。尾数标签和值列表统一
     从 fixed_data 的“尾”映射读取，输出沿用 `尾|号码列表` 结构。
+
+    `flat_tail=True` 时使用平特尾口径：开奖 7 个号码中任一号码的尾数命中即算命中。
     """
+    if flat_tail and not exclude:
+        outcome_loader = all_tails_from_row
+        hit_checker = flat_tail_hit
+        explanation = (
+            f"{title} 按平特尾玩法处理，从 0尾-9尾中选择 {label_count} 个尾数。",
+            "开奖 7 个号码中任一号码的尾数与预测尾数一致即算命中（平特口径）。",
+        )
+    else:
+        outcome_loader = special_tail_from_row
+        hit_checker = excludes_hit if exclude else contains_hit
+        explanation = (
+            f"{title} 按尾数类玩法处理，从 0尾-9尾中选择 {label_count} 个尾数。",
+            "开奖结果 res_code 最后一位按特码处理，特码号码个位数即为命中目标。",
+            "若 title 带有“杀”或“绝杀”语义，则反向计算：特码尾数没有落入预测尾数才算命中。",
+        )
     return PredictionConfig(
         key=key,
         title=title,
@@ -2391,17 +2414,14 @@ def _make_tail_config(
         default_modes_id=modes_id,
         labels=tuple(TAIL_NUMBER_MAP.keys()),
         label_count=label_count,
-        outcome_loader=special_tail_from_row,
+        outcome_loader=outcome_loader,
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_tail_groups,
-        hit_checker=excludes_hit if exclude else contains_hit,
+        hit_checker=hit_checker,
+        flat_tail=bool(flat_tail and not exclude),
         labels_loader=labels_from_fixed("尾", tuple(TAIL_NUMBER_MAP.keys())),
-        explanation=(
-            f"{title} 按尾数类玩法处理，从 0尾-9尾中选择 {label_count} 个尾数。",
-            "开奖结果 res_code 最后一位按特码处理，特码号码个位数即为命中目标。",
-            "若 title 带有“杀”或“绝杀”语义，则反向计算：特码尾数没有落入预测尾数才算命中。",
-        ),
+        explanation=explanation,
     )
 
 
@@ -3832,7 +3852,17 @@ def _classify_title_config(
         or _extract_count(r"杀([一二两三四五六七八九十\d]+)尾", title)
         or _extract_count(r"([一二两三四五六七八九十\d]+)尾$", title)
     ):
-        return _make_tail_config(key, title, table_name, modes_id, tail_count, exclude)
+        # 平特X尾按平特口径判定：开奖 7 个号码的任一尾数命中即算命中。
+        flat_tail = not exclude and re.search(r"平特[一二两三四五六七八九十\d]*尾", title) is not None
+        return _make_tail_config(
+            key,
+            title,
+            table_name,
+            modes_id,
+            tail_count,
+            exclude,
+            flat_tail=flat_tail,
+        )
 
     if head_count := (
         _extract_count(r"([一二两三四五六七八九十\d]+)头中特", title)

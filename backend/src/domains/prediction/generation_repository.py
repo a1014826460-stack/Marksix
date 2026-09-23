@@ -137,6 +137,7 @@ def get_future_draw_truth(
         draw_zodiacs=tuple(
             zodiac for zodiac in (str(zodiac_map.get(code) or "").strip() for code in numbers) if zodiac
         ),
+        draw_tails=tuple(f"{int(code) % 10}尾" for code in numbers if str(code).isdigit()),
     )
 
 
