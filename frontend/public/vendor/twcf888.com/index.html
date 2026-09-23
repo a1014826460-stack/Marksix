@@ -1135,6 +1135,16 @@
         var resultZodiac = getOpenedResultZodiac(row);
 
         // ── 特殊格式模块（非 pipe 结构）──
+        // 平特一肖（mode 103）按原站样式以三连生肖展示，命中特码时保留黄色高亮。
+        if (meta.modeId === 103) {
+            var flatZodiacPtyx = splitValues(raw.content || getPredictionSourceText(row))[0] || "";
+            var flatTriplePtyx = flatZodiacPtyx ? flatZodiacPtyx + flatZodiacPtyx + flatZodiacPtyx : "--";
+            if (row.is_opened && row.is_correct === true) {
+                return '<font color="#FF0000">【<span style="background-color:#FFFF00">' + escapeHtml(flatTriplePtyx) + '</span>】</font>';
+            }
+            return '<font color="#FF0000">【' + escapeHtml(flatTriplePtyx) + "】</font>";
+        }
+
         if (meta.modeId === 15) {
             var pipeParts15 = String(raw.content || getPredictionSourceText(row) || "").split("|");
             var typeLabel = (pipeParts15[0] || "").replace("生肖", "数");

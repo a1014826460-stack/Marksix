@@ -71,6 +71,21 @@ def test_special_mode_108_is_blocked_until_its_row_builder_uses_controlled_candi
     assert rule.block_reason == "missing_verified_rule"
 
 
+def test_mode_103_flat_one_xiao_shares_the_mode_56_special_zodiac_rule():
+    """三期平特1肖 (mode 103) must be rule-verified like 平特1肖 (mode 56)."""
+    from dataclasses import replace
+
+    config = replace(PREDICTION_CONFIGS["pt1xiao"], key="title_103", default_modes_id=103)
+    rule = get_generation_rule(config)
+
+    assert rule.supported is True
+    assert rule.rule_id == "zodiac"
+    assert rule.cross_site_prefix_width == 1
+    assert rule.verify_hit(config, ("虎",), _truth(), conn=None) is True
+    assert rule.verify_hit(config, ("鼠",), _truth(), conn=None) is False
+    assert get_generation_rule(PREDICTION_CONFIGS["pt1xiao"]).rule_id == rule.rule_id
+
+
 def test_image_and_text_modes_are_blocked_until_their_content_can_be_verified():
     for key in ("sxztu", "brainteaser", "pmtj_image", "tw_pmt_image", "yijuzhenyan"):
         rule = get_generation_rule(PREDICTION_CONFIGS[key])

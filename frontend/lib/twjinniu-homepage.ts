@@ -1054,9 +1054,13 @@ function buildYixiaoYimaRows(nineXiaoRows: LegacyModeRow[], oneXiaoRows: LegacyM
       const code14 = [...new Set(entries.flatMap((entry) => entry.codes))].slice(0, 18)
       const best = entries[0]
       const result = resolveResult(x1Row)
+      // 九肖18码：卡片上展示的任一肖（九肖/一肖）或任一码（18码）命中特码即算命中。
+      // 该玩法由用户明确要求“不中不显示对错”，因此这里只表达命中与否。
       const isCorrect = result.isOpened
-        ? Boolean(best?.label) &&
-          (best.label === result.zodiac || best.codes.includes(result.code))
+        ? Boolean(
+            (result.zodiac && (x9.includes(result.zodiac) || best?.label === result.zodiac)) ||
+              (result.code && code14.includes(result.code))
+          )
         : null
 
       return {
@@ -1084,30 +1088,21 @@ function renderYixiaoYima(rows: YixiaoYimaRow[]) {
     .map((row) => {
       const hitZodiac = row.result.isOpened ? row.result.zodiac : ""
       const hitCode = row.result.isOpened ? row.result.code : ""
+      // 九肖18码的判定：任一展示的生肖或号码命中特码即为“中”。
+      // 未命中时不显示“错”或“未中”，只保留开奖号码本身。
+      const hit = row.isCorrect === true
+      const highlight = (value: string) =>
+        `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(value)}</span>`
       const renderXiaoLine = (items: string[]) =>
         items
-          .map((item) =>
-            row.isCorrect && item === hitZodiac
-              ? `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(item)}</span>`
-              : `<font>${escapeHtml(item)}</font>`
-          )
+          .map((item) => (hitZodiac && item === hitZodiac ? highlight(item) : `<font>${escapeHtml(item)}</font>`))
           .join("")
       const renderCodeLine = () =>
         row.code14
-          .map((code) =>
-            row.isCorrect && code === hitCode
-              ? `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(code)}</span>`
-              : `<font>${escapeHtml(code)}</font>`
-          )
+          .map((code) => (hitCode && code === hitCode ? highlight(code) : `<font>${escapeHtml(code)}</font>`))
           .join(".<wbr>")
-      const bestXiao = row.isCorrect
-        ? `<span style="background-color: #ff0000; color: #FFFF00">${escapeHtml(row.bestXiao)}</span>`
-        : `<font>${escapeHtml(row.bestXiao)}</font>`
-      const statusText = row.result.isOpened
-        ? row.isCorrect
-          ? "【中】"
-          : "【错】"
-        : ""
+      const bestXiao = hitZodiac && row.bestXiao === hitZodiac ? highlight(row.bestXiao) : `<font>${escapeHtml(row.bestXiao)}</font>`
+      const statusText = hit ? "【中】" : ""
 
       return `
         <table style="border-collapse: collapse; width: 99.9412%;" border="1">
@@ -1140,7 +1135,7 @@ function renderYixiaoYima(rows: YixiaoYimaRow[]) {
               <td style="width: 82.51%; height: 24.2639px; text-align: left;"><span style="font-size: 13pt;"><strong><span style="color: #34495e;">${renderXiaoLine(row.xiao9)}</span></strong></span></td>
             </tr>
             <tr style="height: 50.9583px;">
-              <td style="height: 50.9583px; width: 99.9915%; text-align: center;" colspan="2"><p><span style="font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft Yahei', 'Hiragino Sans GB', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif; font-size: 12pt;"><strong><span style="color: #0000ff;">${escapeHtml(row.term)}期</span><span style="color: #ff0000;">一肖一码</span><span style="color: #000000;">开奖【www.twtongtian.com】${row.isCorrect ? "中奖" : row.result.isOpened ? "未中" : ""}</span></strong></span></p></td>
+              <td style="height: 50.9583px; width: 99.9915%; text-align: center;" colspan="2"><p><span style="font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft Yahei', 'Hiragino Sans GB', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif; font-size: 12pt;"><strong><span style="color: #0000ff;">${escapeHtml(row.term)}期</span><span style="color: #ff0000;">一肖一码</span><span style="color: #000000;">开奖【www.twtongtian.com】${hit ? "中奖" : ""}</span></strong></span></p></td>
             </tr>
           </tbody>
         </table>

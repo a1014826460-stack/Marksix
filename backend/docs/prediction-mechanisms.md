@@ -100,6 +100,20 @@ predict()
 - 文本列：从 title/content/jiexi 字段提取生肖/尾数/波色
 - 文本历史映射：title 含"真言/玄机/幽默/谜语/欲钱"等标记
 
+### 动态 mode 的未来受控生成规则
+
+`domains/prediction/generation_rules.py` 的 `_RULE_BY_MODE_ID` 是台湾彩未来期受控生成的
+唯一准入清单：未列入的 mode 只生成展示内容，不做规则校验（`get_generation_rule()` 返回
+`blocked_pending_rule`）。`mode_payload_tables.title = 三期平特1肖` 的 **mode 103** 属于
+动态配置（key=`title_103`），其判定为“特码生肖等于所报生肖”（与 `pt1xiao`/mode 56 相同），
+因此已按 `zodiac` 规则登记：
+
+- 单肖（如 56、103）的自然命中率是 1/12 ≈ 8%；若未登记规则，未来期只会按基础概率命中，
+  页面就会长期显示“错”。
+- 登记后，未来期会走 `_build_persisted_future_control()` 的规则校验候选与滚动窗口准确率
+  （`prediction.simulation.target_hit_rate`），并在 `prediction_generation_controls` 记账。
+- 该规则只影响台湾彩（`lottery_type_id = 3`）的未来期生成，不改变历史回填与即时预测。
+
 ## 性能参数
 
 | 参数 | 值 | 说明 |
