@@ -54,14 +54,15 @@ log_format kj_timing '$remote_addr "$request" $status $body_bytes_sent rt=$reque
 """
 
 
-def cache_location(regex: str, ttl: str, comment: str) -> str:
+def cache_location(regex: str, ttl: str, comment: str, use_stale: str | None = None) -> str:
+    listed = use_stale or "updating error timeout http_500 http_502 http_503 http_504"
     return f"""    # {comment}
     location ~ {regex} {{
         proxy_cache kj_api;
         proxy_cache_valid 200 {ttl};
         proxy_cache_lock on;
         proxy_cache_lock_timeout 5s;
-        proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
+        proxy_cache_use_stale {listed};
         proxy_cache_background_update on;
         proxy_ignore_headers Cache-Control Expires Set-Cookie;
         proxy_hide_header Set-Cookie;
@@ -74,7 +75,7 @@ def cache_location(regex: str, ttl: str, comment: str) -> str:
 
 
 SERVER_BLOCK = f"""    {MARKER}
-{cache_location(r"^/api/(latest-draw|next-draw-deadline|site-links)$", "3s", "开奖关键路径：3 秒微缓存 + 并发合并")}{cache_location(r"^/api/sites/[A-Za-z0-9_-]+/draw$", "5s", "站点开奖接口：5 秒微缓存")}{cache_location(r"^/api/(kaijiang/|public/forced-announcement$|index/notice$)", "20s", "旧站预测资料与公告：20 秒微缓存")}{cache_location(r"^/api/sites/[A-Za-z0-9_-]+/(prediction-modules|site-page)$", "20s", "站点预测资料聚合：20 秒微缓存")}{cache_location(r"^/api/(vendor|twjinniu|twcf888|twcaibawang|twsaimahui|shengshi8800|twssz|twbst528|twjsz666|twsyw|twwanli)/(homepage-modules|site-page|article-detail)$", "20s", "首页/文章聚合：20 秒微缓存")}    # /vendor 静态直出：不再占用单进程 Node；未命中时回落到 Next.js
+{cache_location(r"^/api/(latest-draw|next-draw-deadline|site-links)$", "1s", "开奖关键路径：1 秒微缓存 + 并发合并（只允许 updating 时用旧值，避免后端故障时长期陈旧）", use_stale="updating")}{cache_location(r"^/api/sites/[A-Za-z0-9_-]+/draw$", "5s", "站点开奖接口：5 秒微缓存")}{cache_location(r"^/api/(kaijiang/|public/forced-announcement$|index/notice$)", "20s", "旧站预测资料与公告：20 秒微缓存")}{cache_location(r"^/api/sites/[A-Za-z0-9_-]+/(prediction-modules|site-page)$", "20s", "站点预测资料聚合：20 秒微缓存")}{cache_location(r"^/api/(vendor|twjinniu|twcf888|twcaibawang|twsaimahui|shengshi8800|twssz|twbst528|twjsz666|twsyw|twwanli)/(homepage-modules|site-page|article-detail)$", "20s", "首页/文章聚合：20 秒微缓存")}    # /vendor 静态直出：不再占用单进程 Node；未命中时回落到 Next.js
     location ~ ^/vendor/[^/]+/(history|wylhc)\\.html$ {{
         # Next.js 会把这两个旧路径改写为 /history 页面，必须继续走应用。
         proxy_pass http://$be_frontend;
