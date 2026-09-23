@@ -1479,7 +1479,7 @@ function buildPageHtml(
     `<a name="fhdb"></a>`,
     `<div class="page-inner">`,
     `<div style="margin:0px;border:3px solid #CC0000">`,
-    `<img src="/vendor/twcaibawang.com/static/picture/2a9a358904487e3d801e2df8d85e4344.png" width="100%" alt="香港天下彩">`,
+    `<img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/2a9a358904487e3d801e2df8d85e4344.png" width="100%" alt="香港天下彩">`,
     `<div id="nav2" class="nav2" data-fixed="">
     <ul>
         <li><a href="#ayxym">一肖一码</a></li>
@@ -1492,7 +1492,7 @@ function buildPageHtml(
 </div>`,
     `<div class="box"></div>`,
     `<div class="white-box">
-            <p><img src="/vendor/twcaibawang.com/static/picture/1d607f54b7065f875c81355226df5c68.gif" alt="805.gif"></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/1d607f54b7065f875c81355226df5c68.gif" alt="805.gif"></p>
         </div>`,
     buildKjSection(defaultLotteryTypeId),
     `<div class="box news-box" style="font-size:16px; font-weight:bold">
@@ -1500,25 +1500,25 @@ function buildPageHtml(
     <div class="txtMarquee-left"><marquee scrollamount="3" scrolldelay="50" direction="left" onmouseover="this.stop();" onmouseout="this.start();" style="color:red">${escapeHtml(siteData.site.announcement || "台湾彩霸王紧急通知，广西省彩友如遇打不开本站，请使用联通和电信网络打开本站，其他省份彩友可正常访问。请各省彩友使用UC浏览器、QQ浏览器或其他浏览器进行访问！ 资料★永久网址:  taiwancaimawang.com  请收藏,以便再次访问！！！-台湾彩霸王永久网址【taiwancaimawang.com】")}</marquee></div>
 </div>`,
     `<div class="box">
-            <p><img src="/vendor/twcaibawang.com/static/picture/9dc46b1cf36b41503755bad0477ab6c5.gif" alt="2.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/9dc46b1cf36b41503755bad0477ab6c5.gif" alt="2.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p>
         </div>`,
     // `<div class="box amplIMG">
-    //         <img src="/vendor/twcaibawang.com/static/picture/chiahla_1086_125_1146.png" style="width: 100%" title="" alt="">
+    //         <img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/chiahla_1086_125_1146.png" style="width: 100%" title="" alt="">
     //     </div>`,
     renderImageModule(resolveModule(modules, "sxztu"), "sxztu", "四不像图"),
     renderWuxiaoWuma(findVendor("wuxiao_wuma"), defaultLotteryTypeId),
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt="2765121603ed96e8e483970e2ddb8b5a.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/986d680d994f83b45386956911f934fd.gif" alt="986d680d994f83b45386956911f934fd.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.jpg" alt="80.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/d0a4a366207f221cb3c04f0aae87b6ec.jpg" alt="tuhua32.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/5c04963e886993e13f526d1b81a96177.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/98edfdac8ec8f851bc12cc9c962bdd33.gif" alt=""></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt="2765121603ed96e8e483970e2ddb8b5a.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/986d680d994f83b45386956911f934fd.gif" alt="986d680d994f83b45386956911f934fd.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.jpg" alt="80.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/d0a4a366207f221cb3c04f0aae87b6ec.jpg" alt="tuhua32.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/5c04963e886993e13f526d1b81a96177.gif" alt=""></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/98edfdac8ec8f851bc12cc9c962bdd33.gif" alt=""></p>
         </div>`,
     renderPt1Xiao(resolveModule(modules, "pt1xiao"), defaultLotteryTypeId),
     renderPt1Wei(resolveModule(modules, "pt1wei"), defaultLotteryTypeId),
     // `<div class="box amplIMG">
-    //         <img src="/vendor/twcaibawang.com/static/picture/chiahla_1067_125_1105.jpg" style="width: 100%" title="" alt="">
+    //         <img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/chiahla_1067_125_1105.jpg" style="width: 100%" title="" alt="">
     //     </div>`,
     renderImageModule(resolveModule(modules, "brainteaser"), "brainteaser", "脑筋急转弯"),
     
     `<div class="box">
-            <p><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt="5.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt="6.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt="5.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt="6.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/1789fd79ba4c317a694919c97a6c79d1.gif" alt="3.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p>
         </div>`,
     renderShuangbo(resolveModule(modules, "shuangbo"), defaultLotteryTypeId),
     renderJiuxiao12ma(resolveModule(modules, "9xiao12ma"), defaultLotteryTypeId),
@@ -1530,31 +1530,31 @@ function buildPageHtml(
     renderLiuxiao18ma(resolveModule(modules, "liuxiao18ma"), defaultLotteryTypeId),
     renderJueshabanbo(resolveModule(modules, "jueshabanbo"), defaultLotteryTypeId),
     `<div class="box">
-            <p><img src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/8e4351209fcbaedf6de64212d5c079bf.gif" alt="7.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/2a1141c5b7e73b93c353596e0224e956.gif" alt="1.gif"></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/7d9fe06ba7056ee3cc989657e3e1968b.gif" alt="8.gif"></p>
         </div>`,
     // `<div class="box amplIMG">
-    //         <img src="/vendor/twcaibawang.com/static/picture/chiahla_1053_125_1127.png" style="width: 100%" title="" alt="">
+    //         <img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/chiahla_1053_125_1127.png" style="width: 100%" title="" alt="">
     //     </div>`,
     renderImageModule(resolveModule(modules, "pmtj_image"), "pmtj-image", "跑马图解"),
     
     renderTiandi2Xiao(findVendor("tiandi_2xiao"), defaultLotteryTypeId),
     // `<div class="box amplIMG">
-    //         <img src="/vendor/twcaibawang.com/static/picture/chiahla_1035_125_1104.png" style="width: 100%" title="" alt="">
+    //         <img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/chiahla_1035_125_1104.png" style="width: 100%" title="" alt="">
     //     </div>`,
     renderImageModule(resolveModule(modules, "tw_pmt_image"), "tw-pmt-image", "台湾跑马图"),
     
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/8d8e0c09a5cb36948161cb7c9ff72553.jpg" alt=""><img src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/8d45ce25e17db9940efc4ec9b26911c8.gif" alt=""></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/8d8e0c09a5cb36948161cb7c9ff72553.jpg" alt=""><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/2765121603ed96e8e483970e2ddb8b5a.gif" alt=""></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/8d45ce25e17db9940efc4ec9b26911c8.gif" alt=""></p>
         </div>`,
     renderDaxiao2Tou(findVendor("daxiao_2tou"), defaultLotteryTypeId),
     renderPublicYixiaoYima(findVendor("public_yixiao_yima"), defaultLotteryTypeId),
    `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/201c1ae2c49d4e2bf0debe240baad433.jpg" alt=""><img src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.gif" alt=""></p><p><img src="/vendor/twcaibawang.com/static/picture/17f9be2108da031fe3ad2d75ae33ede7.jpg" alt=""></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/201c1ae2c49d4e2bf0debe240baad433.jpg" alt=""><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/90bdc09a6a9709d8c50c9d56e0655ac4.gif" alt=""></p><p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/17f9be2108da031fe3ad2d75ae33ede7.jpg" alt=""></p>
         </div>`,
     renderShujinguang(findVendor("shujinguang"), defaultLotteryTypeId),
     renderJuesha1Xiao(resolveModule(modules, "juesha1xiao"), defaultLotteryTypeId),
     `<div class="box amplIMG">
-            <p><img src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt=""><img src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt=""></p>
+            <p><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/bdd6df8c288d350b2f8190262f8cdc4d.gif" alt=""><img loading="lazy" decoding="async" src="/vendor/twcaibawang.com/static/picture/9c0dc53ff1f382fae3a80e13236b4c4a.gif" alt=""></p>
         </div>`,
     renderShuangbo12Ma(findVendor("shuangbo_12ma"), defaultLotteryTypeId),
     renderMa24(resolveModule(modules, "ma24"), defaultLotteryTypeId),

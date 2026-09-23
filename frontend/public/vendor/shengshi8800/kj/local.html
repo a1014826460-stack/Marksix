@@ -773,6 +773,77 @@
         load({ manual: true, revealOnLoad: true });
       }
 
+      // ── /api/latest-draw 读取层（短缓存 + 进行中请求去重）────────────────
+      // 面板被跨两层以上的 iframe 引用，切换彩种或重建面板文档都会重新发起同样的
+      // 开奖请求。这里用一个 5 秒新鲜窗口的 sessionStorage 缓存（sessionStorage
+      // 在 iframe 重建后依然有效）加上进行中请求去重，避免重复拉取同一期结果；
+      // 手动点“刷新”时始终直连网络。
+      var DRAW_CACHE_PREFIX = "liuhecai:kj-local:draw:v1:";
+      var DRAW_CACHE_FRESH_MS = 5000;
+      var _latestDrawInFlight = null;
+
+      function drawCacheKey() {
+        return DRAW_CACHE_PREFIX + String(lotteryType);
+      }
+
+      function readDrawCache() {
+        try {
+          if (!window.sessionStorage) return null;
+          var raw = window.sessionStorage.getItem(drawCacheKey());
+          if (!raw) return null;
+          var cached = JSON.parse(raw);
+          if (!cached || typeof cached.cachedAt !== "number" || !cached.data) return null;
+          return cached;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function writeDrawCache(payload) {
+        try {
+          if (!window.sessionStorage || !payload) return;
+          window.sessionStorage.setItem(drawCacheKey(), JSON.stringify({
+            cachedAt: Date.now(),
+            data: payload
+          }));
+        } catch (_) {
+          // 隐私模式或配额不足时忽略缓存写入，不影响渲染。
+        }
+      }
+
+      function loadLatestDrawPayload(forceFresh) {
+        if (!forceFresh) {
+          var cached = readDrawCache();
+          if (cached && Date.now() - cached.cachedAt <= DRAW_CACHE_FRESH_MS) {
+            debugLog("latest-draw:cache-hit", {
+              ageMs: Date.now() - cached.cachedAt
+            });
+            return Promise.resolve(cached.data);
+          }
+        }
+        if (_latestDrawInFlight) return _latestDrawInFlight;
+
+        var query = new URLSearchParams({
+          lottery_type: String(lotteryType),
+          _ts: String(Date.now())
+        });
+        var latestDrawUrl = legacyKjRuntime().buildAppUrl("/api/latest-draw?" + query.toString());
+        _latestDrawInFlight = fetch(latestDrawUrl, {
+          cache: "no-store"
+        }).then(function (response) {
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          return response.json();
+        }).then(function (payload) {
+          writeDrawCache(payload);
+          return payload;
+        }).finally(function () {
+          _latestDrawInFlight = null;
+        });
+        return _latestDrawInFlight;
+      }
+
       async function load(options) {
         var isManual = options && options.manual;
         var useReveal = options && options.reveal;
@@ -787,18 +858,7 @@
         _loadingLatestDraw = true;
 
         try {
-          var query = new URLSearchParams({
-            lottery_type: String(lotteryType),
-            _ts: String(Date.now())
-          });
-          var latestDrawUrl = legacyKjRuntime().buildAppUrl("/api/latest-draw?" + query.toString());
-          var response = await fetch(latestDrawUrl, {
-            cache: "no-store"
-          });
-          if (!response.ok) {
-            throw new Error("HTTP " + response.status);
-          }
-          var payload = await response.json();
+          var payload = await loadLatestDrawPayload(!!isManual);
           notifyRevealGate(payload);
           var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
           var hasFullBalls = _hasFullBalls(payload);
@@ -934,17 +994,18 @@
       updateBeijingDate();
       setInterval(updateBeijingDate, 1000);
 
+      // 倒计时截止时间与开奖号码互不依赖：两者并发发起，开奖号码不再等
+      // /api/next-draw-deadline 返回后才开始加载（少一个串行往返）。
+      load({ revealOnLoad: true });
       fetchCountdownDeadline().then(function () {
         if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
           countdownExpired = true;
           beginRevealPolling();
-        } else {
-          load({ revealOnLoad: true });
         }
-        countdownTimerId = setInterval(function () {
-          updateCountdownDisplay();
-        }, 1000);
       });
+      countdownTimerId = setInterval(function () {
+        updateCountdownDisplay();
+      }, 1000);
     })();
   </script>
 </body>
