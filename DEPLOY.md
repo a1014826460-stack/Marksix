@@ -1051,3 +1051,28 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 容器内校验：`grep -c markHitLeaf /app/public/vendor/twssz/site-data-adapter.js` 为 `6`，`setAttribute("bgcolor"` 为 `0`；`liuhecai-frontend` 状态 `healthy`。
 - 公网校验：`https://www.twssz.com/vendor/twssz/site-data-adapter.js` 返回 `HTTP 200`、`Cache-Control: public, max-age=0`，内容已含 `markHitLeaf`（浏览器下次加载即生效，无需强刷）。
 - 真实资料校验（`https://www.twssz.com/twssz`）：8 张 A级猛料 卡片中 `265期` 显示 `开：猪08对`，猪在七肖/四肖/二肖、08 在⑧码/⑤码上呈黄色背景；`266期` 为 `开：待开奖` 且无高亮；`260期` 为 `开：鼠31`（命中判定不成立）；全部卡片均未出现“错”。
+
+### twtongtian/twcf888 命中规则与展示修复部署结果（2026-09-23）
+
+- 发布代码提交：`6f124c7`（九肖18码“任一命中即中”+ 平特一肖三连生肖展示）、
+  `3499391`（平特一肖按平特口径）、`5baa488`（平特二肖/三肖/一尾一并按平特口径）。
+- 中心节点 `207.56.3.82:29618`：
+  - `6f124c7` 备份目录 `/root/Marksix/.deploy-backups/twjinniu-twcf888-mode103-20260923T111923Z`；
+    重建 `frontend`、`python-api`、`scheduler-worker`，`nginx` 与 TLS 未改动。
+  - `3499391` + `5baa488` 备份目录 `/root/Marksix/.deploy-backups/flat-pingte-20260923T115550Z`；
+    重建 `frontend`、`python-api`、`scheduler-worker`。
+  - 两个备份目录均含 `docker-compose.yml`、`.env`、`deploy/nginx.conf`、`HEAD.txt`、`STATUS.txt`、`worktree.patch`。
+- 容器内校验：`domains/prediction/generation_rules.py` 含 `43/56/103/470 → zodiac_flat`、
+  `54/173 → tail_flat`；`predict/mechanisms.py` 有 6 处 `flat_zodiac=True|flat_tail=True`；
+  `liuhecai-frontend`/`liuhecai-python-api` 均为 `healthy`，`Schema migrations are already current`。
+- 公网校验（同一批近 19 期真实资料，`is_correct` 按新规则即时重算）：
+  - `www.twcf888.com`：mode 103 `平特一肖` 2/19 → **12/19**；mode 56 `平特1肖` 3/19 → **12/19**；
+    mode 54 `平特1尾` 3/19 → **12/19**；mode 470 `平特3肖` 4/19 → **19/19**；mode 43 `平特2肖` → **16/19**。
+  - `www.twssz.com`：mode 56 → 10/19、mode 54 → 12/19、mode 470 → 19/19、mode 43 → 15/19；
+    非平特模块保持原口径（如 mode 69 `三肖中特` 仍 4/19）。
+  - `www.twtongtian.com/api/twjinniu/homepage-modules`：`265期 平特一肖 〖蛇蛇蛇〗开：08猪对`
+    （旧为“错”），`平特一尾` 264/263 期显示“对”、265 期（无 5 尾）显示“错”，
+    `公式平特肖` 平码命中显示 √，未命中显示 ×。
+- 遗留问题（未处理）：生产上台湾彩未来期号码可能在当日 12:10 预测生成之后被后台改写
+  （2026-09-23 19:17 管理员 `PUT /api/admin/draws/105948` 改写了 266 期号码），
+  导致生成时校验过的受控命中失效；建议未来期号码在预测生成后不再改写，或在改写后触发该期重新生成。
