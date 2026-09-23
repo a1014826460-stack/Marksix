@@ -46,21 +46,25 @@ def test_twsyw_correct_template_renders_draw_and_predictions_for_all_lotteries()
         base_url = os.environ.get("TWSYW_BASE_URL", "http://127.0.0.1:3000")
         page.goto(f"{base_url}/twsyw", wait_until="domcontentloaded")
         deadline = time.monotonic() + 5
-        frame = draw_frame = None
-        while time.monotonic() < deadline and (frame is None or draw_frame is None):
-            frame = frame or next((item for item in page.frames if item.url.endswith("/vendor/twsyw/index.html")), None)
-            draw_frame = draw_frame or next((item for item in page.frames if item.url.endswith("/vendor/twsyw/kai.html")), None)
+        frame = None
+        while time.monotonic() < deadline and frame is None:
+            # 开奖标签页与面板已内联进厂商页 index.html（不再有 kai.html 中间帧）。
+            frame = next((item for item in page.frames if item.url.endswith("/vendor/twsyw/index.html")), None)
             page.wait_for_timeout(50)
-        assert frame is not None and draw_frame is not None
-        outer_draw = frame.locator("iframe[src='kai.html']").first
-        assert outer_draw.evaluate("element => element.getBoundingClientRect().height") >= draw_frame.locator("body").evaluate("element => element.scrollHeight")
+        assert frame is not None
+        # 内联后：标签页、面板 iframe 与期号目标都在厂商页同一文档里，
+        # 面板高度必须完整显示（移动端不被裁切）。
+        frame.locator(".KJ-TabBox").wait_for(state="attached", timeout=5000)
+        first_panel = frame.locator(".KJ-TabBox > div.cur .KJ-IFRAME")
+        first_panel.wait_for(state="attached", timeout=5000)
+        assert first_panel.evaluate("element => element.getBoundingClientRect().height") >= 190
 
         for lottery_type, title in ((3, "台湾彩"), (2, "澳门彩"), (1, "香港彩"), (3, "台湾彩")):
-            draw_frame.locator(f"[data-lottery-type='{lottery_type}']").click()
+            frame.locator(f"[data-lottery-type='{lottery_type}']").click()
             page.wait_for_timeout(150)
-            assert draw_frame.locator(".KJ-TabBox > div.cur .KJ-IFRAME").evaluate("element => element.getBoundingClientRect().height") >= 190
+            assert frame.locator(".KJ-TabBox > div.cur .KJ-IFRAME").evaluate("element => element.getBoundingClientRect().height") >= 190
             assert any(item[1] == lottery_type for item in requests)
-            assert draw_frame.locator("[data-current-issue]").inner_text() == f"{lottery_type}500"
+            assert frame.locator("[data-current-issue]").inner_text() == f"{lottery_type}500"
             for section_id in (
                 "top_xiao_code", "fslx", "m24", "daxiao", "jiaye", "qixiao", "jiaye4xiao", "gold6xiao",
                 "pt1wei", "winner12", "jiuxiao", "lianma", "nannv", "danshuang", "dssx", "hblvxiao",

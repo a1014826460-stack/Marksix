@@ -6,7 +6,11 @@
 
   var client = window.LotterySiteDataClient.create({ siteKey: siteConfig.siteKey });
   var activeLotteryType = 3;
-  var knownDrawFrame = document.querySelector("iframe[src='kai.html']");
+  // 开奖标签页与面板已内联进本页（原先在独立开奖页里），面板 iframe 由 KJTB 在本页创建，
+  // 因此这里惰性查找，不能在脚本加载时就抓那个中间 frame。
+  function drawPanelFrame() {
+    return document.querySelector(".KJ-TabBox .KJ-IFRAME");
+  }
 
   function modulesByKey(envelope) {
     var data = envelope && envelope.data && envelope.data.data || {};
@@ -176,14 +180,16 @@
     Array.prototype.forEach.call(document.querySelectorAll("[data-lottery-title]"), function (node) { node.textContent = lottery.label; });
     Array.prototype.forEach.call(document.querySelectorAll("[data-site-domain]"), function (node) { node.textContent = siteConfig.siteDomain; });
   }
-  function renderDraw(envelope) { var frame = knownDrawFrame && knownDrawFrame.contentDocument, target = frame && frame.querySelector("[data-current-issue]"), data = envelope && envelope.data && envelope.data.data || {}; if (target) target.textContent = String(data.issue || data.current_issue || ""); }
+  function renderDraw(envelope) { var target = document.querySelector("[data-current-issue]"), data = envelope && envelope.data && envelope.data.data || {}; if (target) target.textContent = String(data.issue || data.current_issue || ""); }
   function selectLottery(type) {
     type = Number(type); if (![1, 2, 3].includes(type)) return;
     activeLotteryType = type; updateTitles(type);
     client.loadDraw({lotteryType:type}).then(function (envelope) { if (activeLotteryType === type && envelope.data) renderDraw(envelope); });
     client.loadPredictions({lotteryType:type,historyLimit:20}).then(function (envelope) { if (activeLotteryType !== type || !envelope.data) return; renderPredictions(envelope); window.dispatchEvent(new window.CustomEvent("site-data:ready", { detail: { siteKey: siteConfig.siteKey, resource: "predictions", state: envelope.state } })); });
   }
-  window.addEventListener("message", function (event) { if (event.origin !== window.location.origin || !knownDrawFrame || event.source !== knownDrawFrame.contentWindow) return; var message = event.data || {}; if (message.type === "lottery-change" && message.siteKey === siteConfig.siteKey) selectLottery(message.lotteryType); });
+  // 彩种切换：标签页点击由内联脚本直接调用 selectLottery（原先靠 kai.html 的 postMessage）。
+  // 这里仍保留对面板自身消息的兼容处理，但不依赖任何中间 iframe。
+  window.addEventListener("message", function (event) { if (event.origin !== window.location.origin) return; var message = event.data || {}; if (message.type !== "lottery-change" || message.siteKey !== siteConfig.siteKey) return; var frame = drawPanelFrame(); if (frame && event.source !== frame.contentWindow) return; selectLottery(message.lotteryType); });
   window.TwsywSiteDataAdapter = { selectLottery: selectLottery, siteConfig: siteConfig };
   selectLottery(activeLotteryType);
 })(window, document);

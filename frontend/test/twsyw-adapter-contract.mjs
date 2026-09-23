@@ -8,8 +8,36 @@ const adapter = fs.readFileSync(`${root}/site-data-adapter.js`, "utf8")
 const manifest = fs.readFileSync("frontend/sites/twsyw/site.manifest.ts", "utf8")
 const dependencies = fs.readFileSync("backend/src/domains/prediction/site_page_dependencies.py", "utf8")
 
-if (!html.includes('<iframe width="100%" height="270" border="0" frameborder="0" scrolling="no" src="kai.html" target="_blank">')) {
-  throw new Error("outer draw frame must fit the complete draw tab page")
+// 开奖标签页与面板已从 kai.html 内联进 index.html：少一层同源 iframe。
+// 契约改为断言"内联后的结构存在"且"不再有指向 kai.html 的活动 iframe"。
+if (html.includes('src="kai.html"')) {
+  throw new Error("index.html must not keep the kai.html iframe after inlining the draw tabs")
+}
+for (const token of [
+  'class="KJ-TabBox"',
+  '<p data-current-issue aria-live="polite"></p>',
+  'KJTB.init(".KJ-TabBox")',
+  'class="KJ-IFRAME"',
+  "TwsywSiteDataAdapter.selectLottery",
+]) {
+  if (!html.includes(token)) throw new Error(`inlined draw tabs missing token: ${token}`)
+}
+for (const lotteryType of ["3", "2", "1"]) {
+  if (!html.includes(`data-lottery-type="${lotteryType}"`)) {
+    throw new Error(`inlined draw tabs missing lottery type ${lotteryType}`)
+  }
+}
+if (!html.includes("/vendor/shengshi8800/kj/local.html?lottery_type=3")) {
+  throw new Error("inlined draw tabs must keep using the unified local draw panel")
+}
+// 适配器不能再依赖被移除的中间 iframe 文档；期号写回同文档的 [data-current-issue]。
+// 只看代码、忽略行注释，避免注释里提到旧选择器就误判。
+const adapterCode = adapter.replace(/^\s*\/\/.*$/gm, "")
+if (adapterCode.includes("knownDrawFrame") || adapterCode.includes("iframe[src='kai.html']")) {
+  throw new Error("adapter must not depend on the removed kai.html frame")
+}
+if (!adapterCode.includes("drawPanelFrame") || !adapter.includes('document.querySelector("[data-current-issue]")')) {
+  throw new Error("adapter must look up the inlined panel target lazily in the same document")
 }
 
 for (const token of ['siteKey: "twsyw"', 'siteName: "台湾神预网"', 'siteDomain: "www.twsyw.com"', 'lotteryType: 3', 'lotteryType: 2', 'lotteryType: 1']) {
@@ -81,7 +109,11 @@ if (!html.includes('<div class="white-box" style="max-width:800px;margin-left:au
 for (const token of ['data-lottery-type="3"', 'data-lottery-type="2"', 'data-lottery-type="1"', 'data-current-issue', "postMessage", 'siteKey: "twsyw"']) {
   if (!draw.includes(token)) throw new Error(`draw tab contract is missing ${token}`)
 }
-if (!draw.includes('height:190px!important') || draw.includes('height:155px')) {
-  throw new Error("draw frame must preserve the shared panel's full 190px height on mobile")
+// kai.html 保留为兼容直链/旧页面的独立副本，其面板高度必须与共享面板一致（移动端不被裁切）。
+if (!draw.includes("height:200px!important") || draw.includes("height:155px")) {
+  throw new Error("draw frame must preserve the shared panel's full 200px height on mobile")
+}
+if (!html.includes("height:200px!important")) {
+  throw new Error("inlined draw tabs must keep the shared panel's 200px mobile height")
 }
 console.log("twsyw adapter contract passed")
