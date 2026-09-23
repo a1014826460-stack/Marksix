@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import hashlib
+import re
+
 from legacy.api import get_legacy_current_term, list_legacy_post_images, load_legacy_mode_rows
 
 from app_http.request_context import RequestContext
 from app_http.router import Router
 from app_http.security import MAX_LEGACY_LIST_LIMIT, parse_bounded_int
 from db import connect
+
+
+# 旧站每次页面加载会并发调用几十个 /api/kaijiang/* 端点，单个回源实测 2.7～2.8 秒。
+# 这些参数只影响缓存键，不影响业务语义。
+_LEGACY_SNAPSHOT_IGNORED_PARAMS = frozenset({"_", "_ts", "callback", "cb"})
+_LEGACY_SELECTOR_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
 def register(router: Router, *, default_pc: int, default_web: int, default_type: int) -> None:
@@ -36,9 +45,32 @@ def _register_frontend_compat_routes(
     )
 
     def _kaijiang_handler(ctx: RequestContext) -> None:
-        with connect(ctx.db_path) as conn:
-            result = handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
-        ctx.send_json(result)
+        from cache.prediction_snapshots import KIND_LEGACY, read_through
+
+        target = _legacy_kaijiang_snapshot_target(ctx)
+        if target is None:
+            with connect(ctx.db_path) as conn:
+                result = handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
+            ctx.send_json(result)
+            return
+
+        site_ref, lottery_type_id, selector = target
+
+        def build() -> dict:
+            with connect(ctx.db_path) as conn:
+                return handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
+
+        ctx.send_json(
+            read_through(
+                ctx.state.get("prediction_snapshots"),
+                kind=KIND_LEGACY,
+                site_ref=site_ref,
+                lottery_type_id=lottery_type_id,
+                selector=selector,
+                builder=build,
+                db_path=ctx.db_path,
+            )
+        )
 
     def _post_handler(ctx: RequestContext) -> None:
         with connect(ctx.db_path) as conn:
@@ -78,6 +110,56 @@ def post_list(ctx: RequestContext, *, default_pc: int, default_web: int, default
             )
         }
     )
+
+
+def _legacy_kaijiang_snapshot_target(ctx: RequestContext) -> tuple[str, int, str] | None:
+    """Derive (site_ref, lottery_type_id, selector) for a cacheable kaijiang call.
+
+    返回 ``None`` 表示这次请求不适合走快照（curTerm、缺少 web/type/num、参数非法），
+    调用方按原有路径直接查库。
+    """
+    endpoint = str(ctx.path).rsplit("/", 1)[-1].strip()
+    if not endpoint or endpoint.lower() == "curterm":
+        return None
+    token = _LEGACY_SELECTOR_TOKEN_RE.sub("", endpoint)
+    if not token:
+        return None
+
+    query = ctx.query if isinstance(ctx.query, dict) else {}
+    web_raw = _first_query_value(query, "web")
+    type_raw = _first_query_value(query, "type")
+    num_raw = _first_query_value(query, "num")
+    if web_raw in (None, "") or type_raw in (None, "") or num_raw in (None, ""):
+        return None
+    try:
+        web_id = int(str(web_raw).strip())
+        lottery_type = int(str(type_raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if web_id <= 0 or lottery_type <= 0:
+        return None
+
+    parts: list[str] = []
+    for key in sorted(query):
+        if key in _LEGACY_SNAPSHOT_IGNORED_PARAMS:
+            continue
+        values = query[key]
+        if isinstance(values, (list, tuple)):
+            text = ",".join(str(item) for item in values)
+        else:
+            text = str(values)
+        parts.append(f"{key}={text}")
+    digest = hashlib.sha256("&".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"web{web_id}", lottery_type, f"{token}-{digest}"
+
+
+def _first_query_value(query: dict, key: str) -> str | None:
+    values = query.get(key)
+    if isinstance(values, (list, tuple)):
+        return str(values[0]) if values else None
+    if values is None:
+        return None
+    return str(values)
 
 
 def module_rows(ctx: RequestContext) -> None:

@@ -14,6 +14,7 @@ from typing import Any
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from cache.prediction_snapshots import PublicPredictionSnapshots
 from cache.public_snapshots import PublicDrawSnapshots
 from cache.runtime import create_cache_store
 from core.errors import AppError, UnauthorizedError, ForbiddenError
@@ -209,6 +210,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             ctx.state["lottery_draw_health"] = get_lottery_draw_health
             ctx.state["dependency_health"] = collect_database_health
             ctx.state["public_draw_snapshots"] = self.server.public_draw_snapshots  # type: ignore[attr-defined]
+            ctx.state["prediction_snapshots"] = self.server.prediction_snapshots  # type: ignore[attr-defined]
             ctx.state["cache_store"] = self.server.cache_store  # type: ignore[attr-defined]
             if ctx.path.startswith("/api/admin/"):
                 require_authenticated(ctx)
@@ -233,6 +235,8 @@ def run_server(host: str, port: int, db_path: str | Path | DatabaseTargets) -> N
     # its shared cache because of a local-memory fallback.
     cache_store = create_cache_store()
     public_draw_snapshots = PublicDrawSnapshots(cache_store)
+    # 预测资料快照：命中即一次 KV 读（旧站 /api/kaijiang/* 单次回源实测 2.7～2.8 秒）。
+    prediction_snapshots = PublicPredictionSnapshots(cache_store, ttl_seconds=300)
     ensure_admin_tables(targets.write)
     ensure_prediction_configs_loaded(targets.write)
     init_logging(targets.write)
@@ -241,6 +245,7 @@ def run_server(host: str, port: int, db_path: str | Path | DatabaseTargets) -> N
     server.write_db_path = targets.write  # type: ignore[attr-defined]
     server.read_db_path = targets.read  # type: ignore[attr-defined]
     server.public_draw_snapshots = public_draw_snapshots  # type: ignore[attr-defined]
+    server.prediction_snapshots = prediction_snapshots  # type: ignore[attr-defined]
     server.cache_store = cache_store  # type: ignore[attr-defined]
     print(f"Backend API running at http://{host}:{port}")
     print(f"CMS admin page: http://{host}:{port}/admin")

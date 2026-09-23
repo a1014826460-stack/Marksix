@@ -137,7 +137,19 @@ public:prediction-snapshot:v1:web:<web_id>:lottery:<type>:homepage:<modules_hash
 | 版本键膨胀 | 版本键 TTL = 指针 TTL + 1 s（现有脚本行为），指针切换后旧版本自然过期；另有 `maxmemory`/`maxmemory-policy` 兜底（部署时确认） |
 | 预热把 worker 拖住 | `budget_ms` 预算 + 每轮 `limit`，超时即停；预热失败不影响开奖事件投递 |
 
-## 7. 待确认的三个决策
+## 7. 已确认的实现参数（2026-09-24）
+
+- 指针 TTL：**300 秒**；版本 = 载荷内容哈希（前 16 位十六进制），同一内容重复发布幂等。
+- 开关：`PREDICTION_SNAPSHOT_ENABLED` 环境变量（默认开启），并支持
+  `system_config.prediction.snapshot.enabled` 覆盖（进程内 5 秒缓存，可即时关停）。
+- P0 范围：读路径 + 回填（`/api/kaijiang/*`、`/api/vendor/homepage-modules`、
+  `/api/public/site-page`）；worker 预热留到 P1。
+- 载荷校验按实测形状放宽：`is_opened` 是公开历史行字段（实测 222 行全部 `is_opened=true`，
+  未开奖行不进入公开载荷），不再禁止；仍禁止 `_simulation_should_hit`、`should_hit`、
+  `truth_source`、`future_truth` 等内部标记。
+- 空结果（`{"data": []}`）不写缓存，避免把授权拒绝缓存 300 秒。
+
+## 8. 待确认的三个决策
 
 1. 指针 TTL：**300 s**（推荐，兼顾新鲜度与收益）／60 s（更保守）／900 s（收益最大）。
 2. 开关默认值：**默认关闭**，上线后手动打开（推荐）；或默认开启、发现异常再关。

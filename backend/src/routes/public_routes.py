@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any
 
 from cache.contracts import CacheUnavailable
+from cache.prediction_snapshots import KIND_SITE, read_through
 from public.api import (
     get_current_period,
     get_draw_history,
@@ -62,8 +64,8 @@ def site_page(ctx: RequestContext) -> None:
                 continue
             if parsed > 0:
                 mode_ids.append(parsed)
-    ctx.send_json(
-        get_public_site_page_data(
+    def build() -> dict:
+        return get_public_site_page_data(
             ctx.db_path,
             site_id=int(site_id) if site_id not in (None, "") else None,
             domain=ctx.query_value("domain"),
@@ -73,7 +75,61 @@ def site_page(ctx: RequestContext) -> None:
             history_web_start=history_web_start,
             history_web_end=history_web_end,
         )
+
+    # 站点资料聚合实测 588 KB / 7.5 秒；只有 site_id 与 lottery_type 都明确时才快照，
+    # 否则键无法稳定，直接按原路径构建。
+    if site_id in (None, "") or lottery_type in (None, ""):
+        ctx.send_json(build())
+        return
+    try:
+        site_token = int(site_id)
+        lottery_token = int(lottery_type)
+    except (TypeError, ValueError):
+        ctx.send_json(build())
+        return
+    if site_token <= 0 or lottery_token <= 0:
+        ctx.send_json(build())
+        return
+
+    selector = _site_page_selector(
+        lottery_token,
+        history_limit,
+        history_web_start,
+        history_web_end,
+        mode_ids,
+        ctx.query_value("domain"),
     )
+    ctx.send_json(
+        read_through(
+            ctx.state.get("prediction_snapshots"),
+            kind=KIND_SITE,
+            site_ref=f"site{site_token}",
+            lottery_type_id=lottery_token,
+            selector=selector,
+            builder=build,
+            db_path=ctx.db_path,
+        )
+    )
+
+
+def _site_page_selector(
+    lottery_type_id: int,
+    history_limit: int,
+    history_web_start: int | None,
+    history_web_end: int | None,
+    mode_ids: list[int],
+    domain: str | None,
+) -> str:
+    parts = [
+        f"lt={lottery_type_id}",
+        f"limit={history_limit}",
+        f"ws={history_web_start if history_web_start is not None else ''}",
+        f"we={history_web_end if history_web_end is not None else ''}",
+        f"modes={','.join(str(item) for item in mode_ids)}",
+        f"domain={(domain or '').strip().lower()}",
+    ]
+    digest = hashlib.sha256("&".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"page-{digest}"
 
 
 def _parse_optional_history_web_id(value: object, field_name: str) -> int | None:
