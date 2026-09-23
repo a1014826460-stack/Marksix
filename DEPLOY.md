@@ -1096,3 +1096,43 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   （事件词表只有 `source_fetch`/`precise_upsert`/`precise_complete`/`auto_open`/`precise_open`/`precise_fetch`，
   操作者只有 `crawler`/`scheduler`）；本次仅按用户选择加入 UI 确认提示，未加审计日志，
   也未在改写后触发该期预测重新生成。
+
+### 开奖模块提速：nginx 边缘缓存 + `/vendor` 静态直出部署结果（2026-09-24）
+
+- 变更内容：`scripts/patch-nginx-edge-cache.py`（幂等补丁）向两台节点实际生效的配置注入
+  ① http 层 `proxy_cache_path kj_api`、`gzip`、`log_format kj_timing`；
+  ② 每个对外 server 块的 3 秒（开奖）/5 秒（站点开奖）/20 秒（预测聚合、公告）代理缓存
+  location（`proxy_cache_lock` 并发合并、`proxy_cache_use_stale updating`、忽略上游
+  `Cache-Control` 以便缓存 `private` 聚合响应、剥离 `Set-Cookie`）；
+  ③ `/vendor/**` 由 nginx 直接读宿主仓库 `frontend/public`（挂载 `/srv/public`），
+  `try_files ... @vendor_frontend` 保证未命中回落 Next.js。
+  详细分析见 `docs/2026-09-24-vendor-draw-module-loading-and-edge-cache.md`。
+- 中心节点 `207.56.3.82:29618`：备份目录 `/root/Marksix/.deploy-backups/perf-edge-cache-20260923T171525Z`
+  （`nginx.conf.local`、`docker-compose.yml`、`.env`、`HEAD.txt`、`STATUS.txt`，以及
+  `.pre-edge-cache-*`、`.pre-mount`、`.pre-cache-log-*` 三份时间点副本）；
+  修改 `deploy/nginx.conf.local`（5 个对外 server 块）与 `docker-compose.yml`
+  （nginx 增加 `./frontend/public:/srv/public:ro`）；`nginx -t` 通过，`nginx -s reload` 后
+  `docker compose up -d nginx` 仅重建 nginx。
+- 前端节点 `207.56.2.71:62594`：备份目录 `/root/Marksix/.deploy-backups/perf-edge-cache-20260923T171938Z`
+  （`nginx.frontend-node.conf.local`、`docker-compose.frontend-node.yml`、`.env`、`HEAD.txt`、
+  `STATUS.txt` 及三份时间点副本）；同样 5 个 server 块，`docker compose -f
+  docker-compose.frontend-node.yml up -d nginx`。
+- 前置校验：两台节点 `frontend/public` 与容器内 `/app/public` **795 个文件、抽样 md5 全部一致**，
+  因此静态直出不会串版本。
+- 公网/容器内校验：
+  - `/vendor/twssz/index.html` 返回 `HTTP/2 200`、`server: nginx`、
+    `content-length` 与宿主文件一致、**不再有 `x-powered-by: Next.js`**；
+  - `/vendor/<site>/static/**` 返回 `cache-control: public, max-age=31536000, immutable`；
+  - `/vendor/<site>/history.html?type=3` 仍返回历史页 `200 text/html`（Next 重写未被绕过）；
+  - 十个站点 `/`、`/vendor/shengshi8800/kj/local.html`、`/api/latest-draw` 全部 200；
+  - `/api/latest-draw`、`/api/next-draw-deadline`、`/api/kaijiang/*` 连续请求为
+    `MISS → HIT → HIT`，`X-Cache-Status` 可见。
+- 真实日志（中心节点 `/var/log/nginx/kj_cache.log`）：
+  `HIT n=56 avg_rt=0.0804s`（不访问后端）、`STALE n=10 avg_rt=0.0148s`、
+  `MISS n=79 avg_rt=1.9671s avg_urt=1.9498s max_urt=6.2780s`；
+  回源最慢为 `/api/sites/twsaimahui/prediction-modules` **6.278 秒**、
+  旧站 `/api/kaijiang/*` 各约 **2.7～2.8 秒**；30 并发相同请求触发并发合并，
+  后端只被请求一次（29 HIT + 1 STALE）。
+- 运维注意：`/vendor/**` 现由宿主仓库直出，**部署必须先 `git pull` 再重建 `frontend`**。
+- 未部署：本轮第 1 层前端改动（提交 `a4871a5`）尚未推送/上线，需按上面的顺序
+  `git pull` + 重建 `frontend` 才会生效。
