@@ -7,17 +7,12 @@ from typing import Any
 from db import connect
 from helpers import load_fixed_data_maps
 from runtime_config import get_config_from_conn
-from utils.created_prediction_store import (
-    CREATED_SCHEMA_NAME,
-    quote_qualified_identifier,
-    schema_table_exists,
-    validate_mode_payload_table_name,
-)
+from utils.created_prediction_store import validate_mode_payload_table_name
 
 from .backfill_repository import (
+    backfill_created_result_fields,
     get_latest_opened_draw_issue,
     list_opened_draws,
-    update_created_prediction_result_fields,
 )
 from .result_fields import compute_res_fields
 
@@ -101,29 +96,23 @@ def backfill_single_draw(
 ) -> dict[str, Any]:
     res_sx, res_color = compute_res_fields(numbers, zodiac_map, color_map)
     tables = target_tables or conn.list_tables("mode_payload_")
-    updated_tables: list[dict[str, Any]] = []
-    total_affected = 0
-
-    for table_name in tables:
-        if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
-            continue
-        qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
-        try:
-            affected = update_created_prediction_result_fields(
-                conn,
-                qualified_table=qualified,
-                lottery_type_id=lottery_type_id,
-                year=year,
-                term=term,
-                numbers=numbers,
-                res_sx=res_sx,
-                res_color=res_color,
-            )
-            if affected > 0:
-                updated_tables.append({"table": table_name, "affected": affected})
-                total_affected += affected
-        except Exception:
-            continue
+    # 管理台手动回填允许整行覆盖（纠错），但逐表 SAVEPOINT 隔离：
+    # 缺 res_* 列或单表失败不会中止整次回填，也不会丢失其它表已写入的更新。
+    filled = backfill_created_result_fields(
+        conn,
+        table_names=tables,
+        lottery_type_id=lottery_type_id,
+        year=year,
+        term=term,
+        numbers=numbers,
+        res_sx=res_sx,
+        res_color=res_color,
+        overwrite=True,
+    )
+    updated_tables = [
+        {"table": table_name, "affected": affected} for table_name, affected in filled.items()
+    ]
+    total_affected = sum(filled.values())
 
     return {
         "year": year,

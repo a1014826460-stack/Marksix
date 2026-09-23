@@ -41,7 +41,10 @@
 | 近期缺口补跑 | `trigger="daily_prediction_recent_backfill"` | 只处理缺失模块 + `allow_overwrite=False` |
 | 管理员手动每日预测任务 | `trigger="manual"` | `allow_overwrite=False` |
 | `backfill_after_draw` 任务（开奖后延迟） | 调度器自动入队 | 只回填空白结果字段 + 缺口生成 `allow_overwrite=False` |
-| `_backfill_draw_to_predictions` | 每次开奖后 | `fill_missing_created_prediction_result_fields`：逐列只填空值 |
+| `_backfill_draw_to_predictions` | 每次开奖后 | `fill_missing_created_prediction_result_fields`：逐列只填空值，逐表 SAVEPOINT 隔离 |
+
+`created` 结果字段回填走 `backfill_repository.backfill_created_result_fields()`：逐表
+`SAVEPOINT` + 缺列跳过 + 异常回滚，保证单表问题不会中止整次回填。
 
 `crawler/` 目录下不存在针对 `mode_payload_*` / `created.*` 的 `UPDATE`（除结果字段回填）
 或 `DELETE` 语句；开奖相关写入只落在 `lottery_draws` / `lottery_types`。
@@ -62,6 +65,7 @@
 | 抓取并生成依赖隐式缺省 | `crawler/collectors.py` 不传覆盖参数 | 显式声明 `trigger="admin_crawl_and_generate"`、`allow_overwrite=True`（管理台手动任务） |
 | 自动结果回填会覆盖整行 | 任意一个结果字段为空即整行写入 `res_code`/`res_sx`/`res_color`，会覆盖管理员手工填写的列 | `fill_missing_created_prediction_result_fields` 逐列 `CASE WHEN 空值`，非空列保持原值 |
 | 管理员全量改写后快照未失效 | `/api/admin/normalize`、`/api/admin/text-mappings`、删开奖号码后，预测快照最长 300 秒仍是旧资料 | 统一调用 `invalidate_all_lottery_types`（1/2/3 彩种粗粒度失效） |
+| 结果字段回填被单表缺陷整次拖垮 | `created.mode_payload_273`/`335` 没有 `res_*` 列 → 该表 UPDATE 报错使 PostgreSQL 事务进入 aborted 状态 → 循环外的 `schema_table_exists` 探测抛 `current transaction is aborted` → 整次回填的更新全部丢失（线上 2026-09-23 13:47Z、14:40Z 各记录一次），已开奖期的结果字段长期为空 | 新增 `backfill_created_result_fields()`：逐表 `SAVEPOINT` + 缺 `res_*` 列直接跳过 + 异常 `ROLLBACK TO SAVEPOINT` 后继续；自动回填（`overwrite=False`）与管理台手动回填（`overwrite=True`）共用 |
 
 自动结果回填的 SQL 形状（只填空值）：
 
@@ -86,14 +90,17 @@ WHERE type = ? AND year = ? AND term = ?
 4. 抓取并生成必须显式声明管理员来源；
 5. 自动结果回填只填空白列，管理员手工填写的值不被覆盖，完整行零写入，其它期号/彩种不受影响；
 6. 管理员手动回填仍可纠错；
-7. `/api/admin/normalize` 与 `/api/admin/text-mappings` 必须失效 1/2/3 彩种快照。
+7. `/api/admin/normalize` 与 `/api/admin/text-mappings` 必须失效 1/2/3 彩种快照；
+8. 缺 `res_*` 列的表（线上 `mode_payload_273`/`335`）被跳过且不影响其它表；
+9. 单表 SQL 失败被 SAVEPOINT 圈住，后续表仍完成回填；
+10. 管理台手动回填（`overwrite=True`）仍可覆盖命中行。
 
 验证命令：
 
 ```powershell
 cd backend/src
-python -m pytest tests/unit/test_prediction_material_immutability.py -q
-python -m pytest -q      # 最近一次：893 passed, 17 skipped, 1 pre-existing failure
+python -m pytest tests/unit/test_prediction_material_immutability.py -q   # 13 passed
+python -m pytest -q      # 最近一次：896 passed, 17 skipped, 1 pre-existing failure
 ```
 
 ## 5. 与预测快照的关系

@@ -239,7 +239,121 @@ def test_admin_manual_backfill_keeps_the_right_to_correct_results(tmp_path):
     assert rows[4] == ("auto-content", "OLD", "OLD-SX", "OLD-COLOR")
 
 
-# ── 4. 管理员全量改写后必须立即失效快照 ────────────────────────────
+# ── 4. 自动回填必须逐表容错（PostgreSQL 事务中止不得拖垮整次回填） ────
+
+
+def test_result_backfill_skips_tables_without_result_columns(tmp_path, monkeypatch):
+    """缺 res_* 列的表（线上 mode_payload_273/335）必须跳过，且不影响其它表。"""
+    db_path = tmp_path / "prediction-result-backfill-columns.sqlite3"
+    columns_by_table = {
+        "mode_payload_273": ("id", "content"),
+        "mode_payload_43": ("id", "type", "year", "term", "content", "res_code", "res_sx", "res_color"),
+    }
+    monkeypatch.setattr(
+        backfill_repository,
+        "table_column_names",
+        lambda _conn, _schema, name: columns_by_table.get(name, ()),
+    )
+    # sqlite 里 `created`.`mode_payload_x` 会指向未 attach 的 schema，测试中退化为裸表名。
+    monkeypatch.setattr(
+        backfill_repository, "quote_qualified_identifier", lambda _schema, name: name
+    )
+    with connect(db_path) as conn:
+        conn.execute("CREATE TABLE mode_payload_273 (id INTEGER PRIMARY KEY, content TEXT)")
+        conn.execute("INSERT INTO mode_payload_273 (id, content) VALUES (1, 'no-result-columns')")
+        _create_result_table(conn)
+        filled = backfill_repository.backfill_created_result_fields(
+            conn,
+            table_names=["mode_payload_273", "mode_payload_43"],
+            lottery_type_id=3,
+            year=2026,
+            term=266,
+            numbers="01,02,03,04,05,06,07",
+            res_sx="鼠,牛,虎,兔,龙,蛇,马",
+            res_color="红,蓝,绿,红,蓝,绿,红",
+            overwrite=False,
+        )
+        rows = _select_result_rows(conn, 1)
+
+    assert sorted(filled) == ["mode_payload_43"]
+    assert rows[1] == ("auto-content", "01,02,03,04,05,06,07", "鼠,牛,虎,兔,龙,蛇,马", "红,蓝,绿,红,蓝,绿,红")
+
+
+def test_result_backfill_contains_per_table_failures(tmp_path, monkeypatch):
+    """单表 SQL 失败必须回滚到 SAVEPOINT 并继续，后续表仍然完成回填。"""
+    db_path = tmp_path / "prediction-result-backfill-savepoint.sqlite3"
+    monkeypatch.setattr(
+        backfill_repository,
+        "table_column_names",
+        lambda _conn, _schema, _name: ("id", "content", "res_code", "res_sx", "res_color"),
+    )
+    monkeypatch.setattr(
+        backfill_repository, "quote_qualified_identifier", lambda _schema, name: name
+    )
+    with connect(db_path) as conn:
+        # 缺 type/year/term 列 → 该表 UPDATE 必然失败
+        conn.execute("CREATE TABLE mode_payload_999 (id INTEGER PRIMARY KEY, content TEXT)")
+        conn.execute("INSERT INTO mode_payload_999 (id, content) VALUES (1, 'broken')")
+        _create_result_table(conn)
+        filled = backfill_repository.backfill_created_result_fields(
+            conn,
+            table_names=["mode_payload_999", "mode_payload_43"],
+            lottery_type_id=3,
+            year=2026,
+            term=266,
+            numbers="01,02,03,04,05,06,07",
+            res_sx="鼠,牛,虎,兔,龙,蛇,马",
+            res_color="红,蓝,绿,红,蓝,绿,红",
+            overwrite=False,
+        )
+        rows = _select_result_rows(conn, 1)
+        broken = conn.execute("SELECT content FROM mode_payload_999 WHERE id = 1").fetchone()
+
+    assert sorted(filled) == ["mode_payload_43"]
+    assert broken["content"] == "broken"
+    assert rows[1][1] == "01,02,03,04,05,06,07"
+
+
+def test_admin_result_backfill_loop_can_overwrite_and_isolates_failures(tmp_path, monkeypatch):
+    """管理台手动回填走同一个逐表循环：overwrite=True 时允许纠错并覆盖既有值。"""
+    db_path = tmp_path / "prediction-result-backfill-admin.sqlite3"
+    monkeypatch.setattr(
+        backfill_repository,
+        "table_column_names",
+        lambda _conn, _schema, _name: ("id", "content", "res_code", "res_sx", "res_color"),
+    )
+    monkeypatch.setattr(
+        backfill_repository, "quote_qualified_identifier", lambda _schema, name: name
+    )
+    with connect(db_path) as conn:
+        conn.execute("CREATE TABLE mode_payload_999 (id INTEGER PRIMARY KEY, content TEXT)")
+        _create_result_table(conn)
+        conn.execute(
+            "UPDATE mode_payload_43 SET res_code = ?, res_sx = ?, res_color = ? WHERE id = 4",
+            ("OLD", "OLD-SX", "OLD-COLOR"),
+        )
+        filled = backfill_repository.backfill_created_result_fields(
+            conn,
+            table_names=["mode_payload_999", "mode_payload_43"],
+            lottery_type_id=3,
+            year=2026,
+            term=266,
+            numbers="11,12",
+            res_sx="CORRECTED-SX",
+            res_color="CORRECTED-COLOR",
+            overwrite=True,
+        )
+        rows = _select_result_rows(conn, 1, 4)
+
+    assert sorted(filled) == ["mode_payload_43"]
+    # 管理台回填命中"至少一个结果字段为空"的行，整行改写为纠正值
+    assert filled["mode_payload_43"] == 3
+    assert rows[1] == ("auto-content", "11,12", "CORRECTED-SX", "CORRECTED-COLOR")
+    # 结果字段已完整的行不会被这条 SQL 命中（管理台要改这类行请用行编辑接口）
+    assert rows[4] == ("auto-content", "OLD", "OLD-SX", "OLD-COLOR")
+
+
+# ── 5. 管理员全量改写后必须立即失效快照 ────────────────────────────
 
 
 @pytest.mark.parametrize("builder_name", ["normalize_payload_tables", "build_text_history_mappings"])

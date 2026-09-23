@@ -2402,17 +2402,13 @@ def _backfill_draw_to_predictions(
     匹配条件：res_code / res_sx / res_color 任意一个为空或纯逗号即回填。
     逐列只填空值：管理员手工填过的结果字段不会被自动流程覆盖，
     预测正文（content/title/image_url 等）永远不被自动流程修改。
+    逐表 SAVEPOINT 隔离：缺 res_* 列的表（如 mode_payload_273/335）跳过，不再中止整次回填。
 
     :return: {total_updated, per_table: [{table, updated}]}
     """
     from helpers import load_fixed_data_maps
-    from domains.prediction.backfill_repository import (
-        fill_missing_created_prediction_result_fields,
-    )
+    from domains.prediction.backfill_repository import backfill_created_result_fields
     from domains.prediction.result_fields import compute_res_fields as _compute_res_fields
-    from utils.created_prediction_store import (
-        CREATED_SCHEMA_NAME, quote_qualified_identifier, schema_table_exists,
-    )
 
     total_updated = 0
     per_table: dict[str, int] = {}
@@ -2420,28 +2416,18 @@ def _backfill_draw_to_predictions(
         with db_connect(db_path) as conn:
             zodiac_map, color_map = load_fixed_data_maps(conn)
             res_sx, res_color = _compute_res_fields(numbers_str, zodiac_map, color_map)
-
-            tables = conn.list_tables("mode_payload_")
-            for table_name in tables:
-                if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
-                    continue
-                qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
-                try:
-                    affected = fill_missing_created_prediction_result_fields(
-                        conn,
-                        qualified_table=qualified,
-                        lottery_type_id=lottery_type_id,
-                        year=year,
-                        term=term,
-                        numbers=numbers_str,
-                        res_sx=res_sx,
-                        res_color=res_color,
-                    )
-                    if affected > 0:
-                        total_updated += affected
-                        per_table[table_name] = affected
-                except Exception:
-                    continue
+            per_table = backfill_created_result_fields(
+                conn,
+                table_names=conn.list_tables("mode_payload_"),
+                lottery_type_id=lottery_type_id,
+                year=year,
+                term=term,
+                numbers=numbers_str,
+                res_sx=res_sx,
+                res_color=res_color,
+                overwrite=False,
+            )
+            total_updated = sum(per_table.values())
             conn.commit()
 
         if per_table:
