@@ -1134,5 +1134,12 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   旧站 `/api/kaijiang/*` 各约 **2.7～2.8 秒**；30 并发相同请求触发并发合并，
   后端只被请求一次（29 HIT + 1 STALE）。
 - 运维注意：`/vendor/**` 现由宿主仓库直出，**部署必须先 `git pull` 再重建 `frontend`**。
-- 未部署：本轮第 1 层前端改动（提交 `a4871a5`）尚未推送/上线，需按上面的顺序
-  `git pull` + 重建 `frontend` 才会生效。
+- 未部署（本地已提交，等待上线）：
+  - `a4871a5`：第 1 层前端改动（开奖面板并发取数 + 5 秒缓存去重、twjsz666 单面板按需创建、
+    twssz 内联图片外置、twcaibawang 图片懒加载与 SSR 并发）；
+  - `4d9c806`：图片全面压缩（原地重压 + 大图转 WebP 并改写引用），
+    vendor 图片 **43.03 MB → 15.05 MB（−65%）**，单张最大 **3367 KB → 366 KB**；
+    `twcaibawang` 23.09 → 7.01 MB、`twjinniu` 7.94 → 2.50 MB、`twsaimahui` 2.66 → 0.97 MB。
+  两项都需要：`git push` → 两台节点 `git pull` → 重建 `frontend`
+  （图片本身由 nginx 直出，但 `frontend/components/twcaibawang/TwcaibawangHomeClient.tsx`
+  的引用改动与面板 JS 必须重建镜像后才一致）。
