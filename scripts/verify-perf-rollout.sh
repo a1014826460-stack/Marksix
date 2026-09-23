@@ -164,16 +164,22 @@ if [ "$ROLE" = "frontend" ]; then
     pending "构建产物无 upstream cache 标记（未部署）"
   fi
   echo
-  echo "=== 7. twsaimahui 脚本合并（前端节点）==="
-  index=$(curl -sk -m 30 "https://127.0.0.1/vendor/twsaimahui/index.html" -H "Host: www.twsaimahui.com")
-  bundles=$(printf '%s' "$index" | grep -o 'static/js/bundle-[0-9a-f]\{16\}\.js' | sort -u | wc -l | tr -d ' ')
-  modules=$(printf '%s' "$index" | grep -o "static/js/0[0-9][0-9][A-Za-z0-9_]*\.js" | wc -l | tr -d ' ')
-  if [ "$bundles" -ge 2 ]; then
-    pass "index.html 含 $bundles 个 bundle 标签"
+  echo "=== 7. twsaimahui 脚本合并（仓库/服务端副本）==="
+  if is_served www.twsaimahui.com; then
+    index=$(curl -sk -m 30 "https://127.0.0.1/vendor/twsaimahui/index.html" -H "Host: www.twsaimahui.com")
+    source_label="服务端返回"
   else
-    pending "index.html 无 bundle 标签（未部署）"
+    index=$(cat frontend/public/vendor/twsaimahui/index.html 2>/dev/null)
+    source_label="本节点仓库文件（twsaimahui 由中心节点服务）"
   fi
-  echo "         （供参考）仍出现模块脚本引用 $modules 处，部署后应全部位于注释中"
+  bundles=$(printf '%s' "$index" | grep -o 'static/js/bundle-[0-9a-f]\{16\}\.js' | sort -u | wc -l | tr -d ' ')
+  modules=$(printf '%s' "$index" | grep -o 'static/js/0[0-9][0-9][A-Za-z0-9_]*\.js' | wc -l | tr -d ' ')
+  if [ "$bundles" -ge 2 ]; then
+    pass "$source_label 含 $bundles 个 bundle 标签"
+  else
+    pending "$source_label 无 bundle 标签（未部署）"
+  fi
+  echo "         （供参考）仍出现模块脚本引用 $modules 处；合并后这些应全部位于注释中"
 fi
 
 echo
