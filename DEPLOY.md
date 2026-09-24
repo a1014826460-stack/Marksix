@@ -1329,3 +1329,53 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 备注：`site-ui-browser-contract.py` 不含 twsyw，无需同步；本轮未动 `twssz`/`twwanli`/
   `twbst528`/`twsaimahui`/`twjsz666`（各有不同的面板创建方式或 React 外壳），
   按同一路径逐个推进。
+
+### 预测资料不可变 + 结果字段回填容错上线结果（2026-09-24）
+
+- 业务硬约束（用户口径）：**准时开奖、不能泄露、预测资料准时更新、更新后不得修改**。
+- 上线提交：`22289d4`（预测资料不可变）、`9fb4db7`（结果字段回填容错）。`origin/main = 9fb4db7`。
+- 自动化核查（两节点各一次）：中心节点 **PASS=20 / PENDING=0 / SKIP=8 / FAIL=0**；
+  前端节点 **PASS=17 / PENDING=0 / SKIP=7 / FAIL=0**。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/prediction-immutability-20260923T233600Z`；
+  `git pull --ff-only`（`310a6fd → 22289d4 → 9fb4db7`）
+  + `docker compose build python-api scheduler-worker` + `up -d`；
+  `liuhecai-python-api` `healthy`、`liuhecai-scheduler-worker` 运行中、
+  日志出现新的 `Publication loop started interval=1s`（`23:55:53Z`）。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/prediction-immutability-20260923T235755Z`；
+  仅 `git pull --ff-only`（本轮无前端文件变更，`liuhecai-frontend` 保持 `healthy` 不重建）。
+- 未变的部分：`nginx` 未重启（本轮无 nginx 配置改动），5 个 server 块的开奖 tier 仍为 1 秒。
+- 四原则实测证据（中心节点）：
+  1. **准时开奖**：`is_opened=0` 且已过开奖时间的期数 = **0**（三个彩种），
+     未到开奖时间却已开奖 = **0**；timer 正常重排（`Precise check 澳门彩 → 2026-09-24T13:31:59Z`、
+     香港彩 → `2026-09-26T13:29:59Z`），待执行任务含 `taiwan_precise_open`（`14:32:00Z`）与
+     `daily_prediction`（`04:00:00Z`）。
+  2. **不能泄露**：121 张启用模块 created 表中"未开奖期却写入真实结果"的行 = **0**；
+     公开载荷（`/api/latest-draw`、`/api/kaijiang/getPingte`）对未开奖期真值的命中次数 = **0**；
+     返回体期号为已开奖的 `2026266`；`prediction_generation_controls` 只存
+     `signature_hash`/`prefix_hash`，明文号码命中 = **0**。
+  3. **预测资料准时更新**：Outbox `pending=0`（114 条全 published）、发布循环 1 秒；
+     Redis 指针 TTL 符合预算（开奖快照 ≤30 秒、预测快照 199～204 秒剩余 / 300 秒、代际键存在）；
+     三个彩种最新已开奖期（香港 103、澳门 266、台湾 266）结果字段补全后剩余空值 = **0**；
+     部署后 `AutoPred backfill error` = **0** 条；公开出口三站均返回 `term=266`
+     且 `res_code`/`res_sx` 正常（如 `res_code":"01,27,37,20,43,02,10"`）。
+  4. **更新后不得修改**：容器内实测 `allow_overwrite = parse_bool(payload.get("allow_overwrite"), False)`、
+     `generate_prediction_batch` 运行时缺省 `allow_overwrite=False`；结果回填代码为
+     `CASE WHEN <空值>` 逐列只填 + 逐表 `SAVEPOINT`（缺失 `res_*` 列的表直接跳过）。
+- 本轮发现并修复的生产缺陷（`9fb4db7`）：`created.mode_payload_273`/`335` 没有
+  `res_code`/`res_sx`/`res_color` 列。原先的循环内 `try/except + continue` 无法阻止
+  PostgreSQL 事务进入 aborted 状态，循环外的 `schema_table_exists` 随即抛
+  `current transaction is aborted`，导致**每次开奖后的结果字段回填整体丢失**
+  （日志证据：`2026-09-22T13:46:11Z`、`2026-09-23T13:47:06Z`、`2026-09-23T14:40:10Z`）。
+  修复后实测：单次调用扫描 363 张 created 表，**121 张被回填、541 行写入、无异常**。
+- 历史缺口（**待授权**）：截至上线，仍有 **63,560** 行历史已开奖期记录缺结果字段
+  （121 张表；补全当前三期已用 1,623 行）。公开页面显示不受影响——读路径
+  `apply_lottery_draw_overlay()` 会以 `public.lottery_draws` 覆盖开奖结果，
+  但后台资料列表与命中统计读的是库内 `res_*`。建议单独授权一次
+  `backfill_created_result_fields(..., overwrite=False)` 的历史补齐（只填空值，不改正文），
+  预计耗时数分钟。
+- 备注：预测生成节奏仍是既有设计——`TASK_TYPE_AUTO_PREDICTION` 已废弃，
+  预测生成严格限定为 `daily_prediction`（`daily_prediction_cron_time` = 北京时间 12:00）
+  与管理台手动触发；因此下一期（澳门/台湾 267）将在北京时间 12:00 生成，
+  早于当日 21:32/22:32 开奖约 10 小时。若要改成"开奖后立即生成"，属于设计变更，需另行决定。
