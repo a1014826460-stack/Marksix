@@ -1379,3 +1379,56 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   预测生成严格限定为 `daily_prediction`（`daily_prediction_cron_time` = 北京时间 12:00）
   与管理台手动触发；因此下一期（澳门/台湾 267）将在北京时间 12:00 生成，
   早于当日 21:32/22:32 开奖约 10 小时。若要改成"开奖后立即生成"，属于设计变更，需另行决定。
+
+### 港澳彩准时开奖 P1 修复上线结果（2026-09-25）
+
+- 上线提交：`713168f`（港澳准时开奖：有限自驱追赶窗口）、`4ba27ef`（台湾彩开奖逻辑零改动护栏）。
+- 触发原因（实测）：2026-09-25 澳门彩 268 期，源站 `open_time=21:32:32`，我方
+  `created_at=21:38:39.695`、推送 `21:38:40.764` → **延迟 367.7 秒**。
+  根因四处（详见 `docs/2026-09-25-hk-macau-draw-punctuality.md`）：
+  ① 旧期 267 刷新把 `next_time` 从 09-25 前滚到 09-26；② 动态抓取间隔因此掉到 `far=300s`；
+  ③ 旧期刷新关闭追单（`_process_auto_crawl_batch`）；④ 分级告警又因"`next_time` 在未来"
+  第二次关闭追单；形成 21:33:26–21:38:39 的 **5 分 04 秒盲区**。
+- 代码修复（仅 P1，未改线上配置值、未改 nginx）：
+  - `crawler/collectors.py::_upsert_draw`：仅"新期首次入库"或"该期 0→1 开盘"才推进并同步
+    `next_time`；已开奖期刷新不再前滚排期；
+  - `crawler/scheduler.py`：旧期刷新不再关闭追单；到点后进入固定追赶窗口（独立定时器每 5 秒
+    **并发探测主源 + 全部备用源**，命中即跑完整开盘管线）；窗口 `chase_max_seconds=900`、
+    最多续期 `chase_max_windows=3` 后对该期望期抑制并回落常规排程；分级告警不再用未来
+    `next_time` 关追单且窗口内不重复抓取；`stop()` 清理追赶定时器；
+  - **台湾彩零改动**：`_chase_is_active`/`_set_lottery_chase_mode` 对 lt=3 保持改造前语义
+    （标记为真即追赶、无截止时间、不启动独立定时器、不做并发探测），
+    分级告警在 `next_time` 已处未来时照旧关闭台湾追单标记。
+- 传输方式说明（重要）：本次操作机到 GitHub 的 TLS 被中断
+  （`schannel: failed to receive handshake` 与 openssl `unexpected eof while reading`），
+  `git push` / `git ls-remote` 均失败；两台节点可正常读取 GitHub 但无推送凭据。
+  因此改用 **`git bundle`（`33c0a66..main`，含 `713168f`、`4ba27ef`，SHA 一致）**
+  + `scp` 传至节点后 `git fetch <bundle> main && git merge --ff-only`，
+  节点历史与本地完全一致；**origin/main 仍停在 `33c0a66`，待操作机网络恢复后补推**。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/p1-chase-window-20260925T193727Z`；
+  合并到 `4ba27ef` + `docker compose build python-api scheduler-worker` + `up -d`；
+  `liuhecai-python-api` `healthy`、`scheduler-worker` 运行中，日志出现新的
+  `Publication loop started interval=1s`（`19:45:04Z`）；精准检查按预期重排
+  （香港 `2026-09-26T13:29:59Z`、澳门 `2026-09-26T13:31:59Z`）。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/p1-chase-window-20260925T194754Z`；同样方式合并到
+  `4ba27ef`（本轮无前端文件变更，未重建，`liuhecai-frontend` `healthy`）。
+- 上线核查（`scripts/verify-perf-rollout.sh`）：
+  **中心节点 PASS=20 / PENDING=0 / SKIP=8 / FAIL=0**；
+  **前端节点 PASS=17 / PENDING=0 / SKIP=7 / FAIL=0**。
+- 部署产物级冒烟（在 `liuhecai-scheduler-worker` 容器内、临时 sqlite 库上执行，未触碰生产数据）：
+  1. 旧期 267 刷新带入被前滚的 09-26 `next_time` → `lottery_draws` / `lottery_types` /
+     `system_config` 三者均保持 09-25 原值（**未前滚**）；
+  2. 新期 268 首次入库 → 三者正常推进到 09-26（真实排期推进未被误伤）；
+  3. 追赶窗口武装独立定时器、`window#1` 计数正确；
+  4. 台湾彩：标记为真即追赶、无截止时间、无独立定时器（保持旧语义）；
+  5. 并发探测：慢主源（3s）+ 快备用源 → **0.03s** 返回期望期。
+- 单测：`backend/src/tests/unit/test_draw_open_chase_window.py` 11 项全通过；
+  全量后端 **910 passed / 13 skipped / 1 failed**（唯一失败是既有的 nginx health 契约；
+  另一个 Postgres 锁定集成测试为套件内偶发抖动，单跑与其中一次全量均通过，
+  且不导入本次改动的任何模块）。
+- 待验收（真实开奖）：香港 `2026-09-26 21:30`、澳门 `2026-09-26 21:32`（北京）观察
+  `public_open_delay_seconds ≤ 60`、`lottery.{hk,macau}_next_time` 不再被前滚到次日、
+  日志出现 `Chase mode enabled … window#1` → `running open pipeline` → `opened=1`
+  且无 `windows exhausted`。
