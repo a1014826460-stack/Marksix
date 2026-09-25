@@ -1082,6 +1082,11 @@ class CrawlerScheduler:
     def _chase_is_active(self, lottery_type_id: int) -> bool:
         if not bool(self._chase_modes.get(lottery_type_id)):
             return False
+        if int(lottery_type_id) not in (1, 2):
+            # 台湾彩不走内存追赶（开奖由持久化 taiwan_precise_open 任务负责）：
+            # 这里刻意保持改造前的语义——标记为真即视为追赶、不设截止时间，
+            # 确保台湾彩开奖逻辑与改造前完全一致。
+            return True
         deadline = self._chase_deadlines.get(lottery_type_id)
         if deadline is None:
             return False
@@ -1100,6 +1105,14 @@ class CrawlerScheduler:
         """
         was_chasing = self._chase_is_active(lottery_type_id)
         if chase:
+            if int(lottery_type_id) not in (1, 2):
+                # 台湾彩：完全保留改造前的追单语义（只置标记 + 重排 auto-crawl，
+                # 不设追赶窗口、不启动独立追赶定时器、不做多源并发探测）。
+                self._chase_modes[lottery_type_id] = True
+                if not was_chasing:
+                    _crawler_logger.warning("Chase mode enabled for lt=%s", lottery_type_id)
+                    self._rearm_auto_crawl_for_chase()
+                return
             expected_period = _format_period(self._precise_expected.get(lottery_type_id))
             if expected_period and self._chase_suppressed.get(lottery_type_id) == expected_period:
                 # 该期望期的追赶窗口已用尽：不再续期，交由常规排程（near/far）继续轮询。
@@ -1690,10 +1703,13 @@ class CrawlerScheduler:
                 continue
 
             if target_dt > now_dt:
-                # 不能用"next_time 还在未来"来关闭追赶：源站旧期刷新会把旧期的
+                # 不能用"next_time 还在未来"来关闭港澳追赶：源站旧期刷新会把旧期的
                 # next_time 前滚到下一期（例如把 09-25 21:32 写成 09-26 21:32），
                 # 旧实现会在这里把追赶关掉并掉回 far(300s)，形成最长 5 分钟开奖盲区。
-                # 追赶只由"期望期已到达"（见下）或追赶窗口到期（_chase_is_active）收敛。
+                # 港澳追赶只由"期望期已到达"（见下）或追赶窗口到期（_chase_is_active）收敛。
+                # 台湾彩保持改造前语义：next_time 已在未来即关闭追赶标记。
+                if lt_id == 3:
+                    self._set_lottery_chase_mode(lt_id, False)
                 continue
 
             seconds_past = int((now_dt - target_dt).total_seconds())

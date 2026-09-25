@@ -324,3 +324,44 @@ def test_stop_cancels_chase_timers(tmp_path):
     assert scheduler._chase_timers == {}
     assert scheduler._chase_modes == {}
     assert scheduler._chase_deadlines == {}
+
+
+# ── 5. 台湾彩开奖逻辑零改动护栏 ─────────────────────────────────────
+
+
+def test_taiwan_chase_keeps_legacy_semantics(tmp_path, monkeypatch):
+    """台湾彩必须保持改造前的追单语义：只置标记 + 重排 auto-crawl，不设窗口/定时器。"""
+    db_path = _setup_db(tmp_path, "taiwan-legacy-chase")
+    scheduler = _scheduler(db_path)
+    rearmed: list[int] = []
+    monkeypatch.setattr(scheduler, "_rearm_auto_crawl_for_chase", lambda: rearmed.append(3))
+
+    scheduler._set_lottery_chase_mode(3, True)
+
+    assert scheduler._chase_is_active(3) is True          # 标记为真即追赶（无截止时间）
+    assert 3 not in scheduler._chase_timers                # 不启动独立追赶定时器
+    assert 3 not in scheduler._chase_deadlines             # 不设追赶窗口
+    assert rearmed == [3]                                  # 仍然重排 auto-crawl（旧行为）
+
+    # 分级告警里"next_time 已在未来"必须照旧关闭台湾追单标记
+    future = _ms(datetime.now(timezone.utc) + timedelta(hours=24))
+    _set_config(db_path, "lottery.taiwan_next_time", future)
+    scheduler._check_staged_timeout_alerts()
+
+    assert scheduler._chase_is_active(3) is False
+
+
+def test_taiwan_never_enters_parallel_probe(tmp_path, monkeypatch):
+    """台湾彩不得进入港澳的并发多源探测/追赶心跳路径。"""
+    db_path = _setup_db(tmp_path, "taiwan-no-probe")
+    scheduler = _scheduler(db_path)
+    scheduler._set_lottery_chase_mode(3, True)
+
+    probed: list[int] = []
+    monkeypatch.setattr(
+        "crawler.scheduler._probe_sources_parallel",
+        lambda lt, *_a, **_k: probed.append(int(lt)) or None,
+    )
+
+    assert scheduler._chase_timers.get(3) is None
+    assert probed == []
