@@ -103,6 +103,19 @@ def _upsert_draw(
         """,
         (lottery_type_id, year, term),
     ).fetchone()
+
+    # 只有"新期首次入库"或"该期由未开奖变为已开奖"才是真实排期推进事件。
+    # 已开奖期的重复刷新（源站在自己切换期号后会把旧期的 next_time 前滚到下一期）
+    # 绝不能写回 next_time，也不能触发 lottery_types/system_config 的排期同步：
+    # 2026-09-25 澳门彩 268 期就是因为旧期 267 刷新把 next_time 从 09-25 改成 09-26，
+    # 导致精确检查/追单把目标排到次日，产生 5 分钟开奖盲区（延迟 367 秒）。
+    previous_is_opened = int(previous["is_opened"] or 0) if previous else 0
+    advance_next_time = previous is None or (
+        effective_is_opened == 1 and previous_is_opened == 0
+    )
+    if not advance_next_time:
+        next_time = ""
+
     if next_time:
         conn.execute(
             """
@@ -153,12 +166,18 @@ def _upsert_draw(
     ).fetchone()
     if current:
         enqueue_draw_publication(conn, previous=previous, current=current, now=now)
-    sync_lottery_type_next_time_from_latest_draw(
-        conn,
-        lottery_type_id,
-        updated_at=now,
-        source="crawler.upsert_draw",
-    )
+    if advance_next_time:
+        sync_lottery_type_next_time_from_latest_draw(
+            conn,
+            lottery_type_id,
+            updated_at=now,
+            source="crawler.upsert_draw",
+        )
+    else:
+        _collector_logger.info(
+            "Skip next_time sync for lt=%s %s%03d: refresh of an already-opened period",
+            lottery_type_id, year, term,
+        )
 
 
 def run_hk_crawler(db_path: str | Path) -> dict[str, Any]:

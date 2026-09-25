@@ -539,6 +539,129 @@ def _fetch_current_draw_period(
         return None, str(e)
 
 
+def _format_period(year_term: tuple[int, int] | None) -> str:
+    """把 ``(year, term)`` 还原成完整期号 ``YYYY###``。"""
+    if not year_term:
+        return ""
+    try:
+        year, term = int(year_term[0]), int(year_term[1])
+    except (TypeError, ValueError):
+        return ""
+    if year <= 0 or term <= 0:
+        return ""
+    return f"{year}{term:03d}"
+
+
+def _all_collect_urls(db_path: str | Path, lottery_type_id: int) -> list[str]:
+    """返回该彩种的**全部**采集源（主源 + 所有备用源），去重并保持优先级顺序。
+
+    备用源来自 system_config ``draw.{hk,macau}_backup_collect_url`` / ``..._backup2_...``
+    或环境变量 ``DRAW_{HK,MACAU}_BACKUP*_COLLECT_URL``。这里直接枚举主源与全部备用源，
+    不受"连续失败后把备用提升为主源"的切换逻辑影响——追赶窗口必须每个源都探。
+    """
+    meta_map = _get_lottery_meta(db_path)
+    lt_name = {1: "香港彩", 2: "澳门彩"}.get(lottery_type_id, "")
+    lt_meta = meta_map.get(lt_name or "")
+    primary = str(lt_meta.get("collect_url", "") or "") if lt_meta else ""
+    if not primary:
+        primary = _PRECISE_DRAW_COLLECT_URLS.get(lottery_type_id, "")
+
+    backup_cfg_key = "draw.hk_backup_collect_url" if lottery_type_id == 1 else "draw.macau_backup_collect_url"
+    backup_env_key = "DRAW_HK_BACKUP_COLLECT_URL" if lottery_type_id == 1 else "DRAW_MACAU_BACKUP_COLLECT_URL"
+    backup2_cfg_key = "draw.hk_backup2_collect_url" if lottery_type_id == 1 else "draw.macau_backup2_collect_url"
+    backup2_env_key = "DRAW_HK_BACKUP2_COLLECT_URL" if lottery_type_id == 1 else "DRAW_MACAU_BACKUP2_COLLECT_URL"
+
+    candidates = [
+        primary,
+        str(_cfg(db_path, backup_cfg_key, "") or os.environ.get(backup_env_key, "")).strip(),
+        str(_cfg(db_path, backup2_cfg_key, "") or os.environ.get(backup2_env_key, "")).strip(),
+    ]
+    urls: list[str] = []
+    for item in candidates:
+        candidate = str(item or "").strip()
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
+
+
+def _probe_sources_parallel(
+    lottery_type_id: int,
+    db_path: str | Path,
+    *,
+    expected_period: str | None,
+) -> str | None:
+    """并发探测全部采集源，返回**最快**给出期望期的期号；都不匹配时返回已知最大期号。
+
+    串行尝试三个源的单轮耗时约 9～12 秒（还要叠加 2 秒退避与 4 次重试），
+    而追赶间隔默认 5 秒——串行会让追赶密度被单轮耗时吞掉。并发探测把单轮压缩到
+    最慢源的耗时可接受水平：任意源一旦返回期望期立即返回，不再等待其它源。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from crawler.result_crawler import fetch_current_term_data, transform_standard_list
+
+    urls = _all_collect_urls(db_path, lottery_type_id)
+    if not urls:
+        return None
+    crawler_type = 1 if lottery_type_id == 1 else 2
+    probe_timeout = max(3, int(_cfg(db_path, "crawler.chase_probe_timeout_seconds", 8)))
+
+    def _one(url: str) -> str | None:
+        try:
+            raw, status_code = fetch_current_term_data(
+                type=crawler_type,
+                collect_url=url,
+                backup_url="",
+                retry_count=0,
+                retry_delay=0.5,
+                timeout=probe_timeout,
+                expected_period=expected_period,
+                on_attempt=_build_source_audit_logger(
+                    db_path,
+                    lottery_type_id,
+                    expected_period=expected_period,
+                    context="chase_probe",
+                ),
+            )
+            if status_code != 200 or not raw:
+                return None
+            import json as _json
+
+            parsed = _json.loads(raw) if isinstance(raw, str) else raw
+            records = transform_standard_list(parsed, crawler_type=crawler_type)
+            if not records:
+                return None
+            issue = str(records[0].get("issue") or "").strip()
+            year_text = str(records[0].get("open_time") or "")[:4]
+            try:
+                term_num = int(issue)
+            except ValueError:
+                return issue or None
+            if term_num < 1000 and year_text:
+                return f"{year_text}{term_num:03d}"
+            return str(term_num)
+        except Exception:
+            return None
+
+    best: str | None = None
+    pool = ThreadPoolExecutor(max_workers=min(4, len(urls)))
+    try:
+        futures = [pool.submit(_one, url) for url in urls]
+        for future in as_completed(futures):
+            period = future.result()
+            if not period:
+                continue
+            if expected_period and period == expected_period:
+                # 任一源先给出期望期就立刻返回，不等慢源（追赶间隔默认 5 秒，
+                # 等待慢源会把单轮探测拖到 10 秒以上）。
+                return period
+            if best is None or period > best:
+                best = period
+        return best
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def _compute_next_period(current_period: str) -> str:
     """根据当前期号计算下一期期号。
 
@@ -888,6 +1011,16 @@ class CrawlerScheduler:
         self._publication_timer: threading.Timer | None = None
         self._precise_timers: dict[int, threading.Timer] = {}  # lottery_type_id → Timer
         self._precise_reschedule_active = False
+        # 追赶（chase）状态：模式标记 + 固定窗口截止时间 + 独立追赶定时器 + 期望期号。
+        # 独立定时器是关键：旧实现只把追单标记转发给 auto-crawl 定时器，一旦当轮抓取
+        # 正在运行或下一轮按 far(300s) 重排，追赶就会静默停摆（2026-09-25 澳门彩 268 期）。
+        self._chase_modes: dict[int, bool] = {}
+        self._chase_deadlines: dict[int, datetime] = {}
+        self._chase_timers: dict[int, threading.Timer] = {}
+        self._precise_expected: dict[int, tuple[int, int]] = {}
+        self._chase_started_at: dict[int, datetime] = {}
+        self._chase_windows: dict[int, int] = {}
+        self._chase_suppressed: dict[int, str] = {}
         self._worker_id = f"crawler:{id(self)}"
         # The standalone lease-holder wires this explicitly; legacy callers keep
         # their existing no-cache behaviour without requiring a Redis client.
@@ -932,20 +1065,216 @@ class CrawlerScheduler:
 
     # ── 改进方法：精确开奖完整管线（期号验证 + 数据抓取 + 开盘 + 回填） ──
 
+    def _chase_interval_seconds(self) -> int:
+        return max(3, int(_cfg(self.db_path, "crawler.crawl_interval_chase", 5)))
+
+    def _chase_max_seconds(self) -> int:
+        """单个追赶窗口的最大时长，避免无上限高频抓取。"""
+        return max(60, int(_cfg(self.db_path, "crawler.chase_max_seconds", 900)))
+
+    def _chase_max_windows(self) -> int:
+        """同一期望期最多连续续期几个追赶窗口（默认 3 个 ≈ 45 分钟）。"""
+        return max(1, int(_cfg(self.db_path, "crawler.chase_max_windows", 3)))
+
+    def _open_delay_warn_seconds(self) -> int:
+        return max(30, int(_cfg(self.db_path, "crawler.open_delay_warn_seconds", 90)))
+
+    def _chase_is_active(self, lottery_type_id: int) -> bool:
+        if not bool(self._chase_modes.get(lottery_type_id)):
+            return False
+        deadline = self._chase_deadlines.get(lottery_type_id)
+        if deadline is None:
+            return False
+        return datetime.now(timezone.utc) < deadline
+
+    def _any_chase_active(self) -> bool:
+        return any(self._chase_is_active(lt) for lt in list(self._chase_modes.keys()))
+
     def _set_lottery_chase_mode(self, lottery_type_id: int, chase: bool) -> None:
         """启用或禁用指定彩种的加速追赶模式。
 
-        进入追赶时必须立即把 auto-crawl 定时器切到追赶间隔。否则该标记只能在
-        上一轮排程到期后才生效：如果上一轮恰好排成 far（默认 300s），系统会在
-        “计划开奖时间已过、新数据未到”时整段失明最长 5 分钟。
+        追赶窗口有固定上限（``crawler.chase_max_seconds``，默认 900 秒）：到点后即使
+        源站一直没给出新期，也不会无限高频抓取；窗口内由**独立追赶定时器**每
+        ``crawler.crawl_interval_chase``（默认 5 秒）重试一次，不再依赖 auto-crawl 定时器，
+        也不再依赖可能被源站旧期刷新污染的 ``next_time``。
         """
-        if not hasattr(self, "_chase_modes"):
-            self._chase_modes: dict[int, bool] = {}
-        was_chasing = bool(self._chase_modes.get(lottery_type_id))
-        self._chase_modes[lottery_type_id] = chase
-        if chase and not was_chasing:
-            _crawler_logger.warning("Chase mode enabled for lt=%s", lottery_type_id)
-            self._rearm_auto_crawl_for_chase()
+        was_chasing = self._chase_is_active(lottery_type_id)
+        if chase:
+            expected_period = _format_period(self._precise_expected.get(lottery_type_id))
+            if expected_period and self._chase_suppressed.get(lottery_type_id) == expected_period:
+                # 该期望期的追赶窗口已用尽：不再续期，交由常规排程（near/far）继续轮询。
+                return
+            self._chase_modes[lottery_type_id] = True
+            if not was_chasing:
+                now_dt = datetime.now(timezone.utc)
+                self._chase_deadlines[lottery_type_id] = now_dt + timedelta(
+                    seconds=self._chase_max_seconds()
+                )
+                self._chase_started_at.setdefault(lottery_type_id, now_dt)
+                self._chase_windows[lottery_type_id] = (
+                    self._chase_windows.get(lottery_type_id, 0) + 1
+                )
+                _crawler_logger.warning(
+                    "Chase mode enabled for lt=%s (window=%ds, interval=%ds, window#%d, expected=%s)",
+                    lottery_type_id,
+                    self._chase_max_seconds(),
+                    self._chase_interval_seconds(),
+                    self._chase_windows[lottery_type_id],
+                    expected_period or "N/A",
+                )
+                self._rearm_auto_crawl_for_chase()
+                self._arm_chase_timer(lottery_type_id)
+            return
+        if was_chasing or self._chase_modes.get(lottery_type_id):
+            _crawler_logger.info("Chase mode disabled for lt=%s", lottery_type_id)
+        self._clear_chase(lottery_type_id)
+
+    def _clear_chase(self, lottery_type_id: int, *, reset_windows: bool = True) -> None:
+        """关闭追赶：清标记、截止时间与独立定时器。"""
+        self._chase_modes[lottery_type_id] = False
+        self._chase_deadlines.pop(lottery_type_id, None)
+        self._chase_started_at.pop(lottery_type_id, None)
+        if reset_windows:
+            self._chase_windows.pop(lottery_type_id, None)
+        timer = self._chase_timers.pop(lottery_type_id, None)
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
+    def _arm_chase_timer(self, lottery_type_id: int) -> None:
+        """（重新）武装该彩种的独立追赶定时器。"""
+        if not self._running:
+            return
+        existing = self._chase_timers.pop(lottery_type_id, None)
+        if existing is not None:
+            try:
+                existing.cancel()
+            except Exception:
+                pass
+        timer = threading.Timer(
+            self._chase_interval_seconds(),
+            lambda lt=lottery_type_id: self._chase_tick(int(lt)),
+        )
+        timer.daemon = True
+        timer.start()
+        self._chase_timers[lottery_type_id] = timer
+
+    def _expected_period_opened(
+        self, lottery_type_id: int, expected: tuple[int, int] | None
+    ) -> bool:
+        """期望的新期是否已经入库并开盘（可发布号码）。"""
+        if expected is None:
+            cfg_prefix = _LT_CFG_PREFIX.get(lottery_type_id)
+            if not cfg_prefix:
+                return False
+            return not self._draw_is_overdue_and_unfilled(lottery_type_id, cfg_prefix)
+        year, term = expected
+        try:
+            with db_connect(self.db_path) as conn:
+                row = conn.execute(
+                    "SELECT numbers, is_opened FROM lottery_draws "
+                    "WHERE lottery_type_id = ? AND year = ? AND term = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (int(lottery_type_id), int(year), int(term)),
+                ).fetchone()
+        except Exception:
+            return False
+        if row is None or not int(row["is_opened"] or 0):
+            return False
+        return bool(draw_numbers_are_publishable(lottery_type_id, row["numbers"]))
+
+    def _remember_expected_period(self, lottery_type_id: int, cfg_prefix: str) -> None:
+        """记录当前期望的新期号，供追赶窗口判定"是否已到达"。"""
+        try:
+            current_period = str(_cfg(self.db_path, f"{cfg_prefix}_current_period", ""))
+        except Exception:
+            return
+        parsed = _period_to_year_term(_compute_next_period(current_period))
+        if parsed:
+            self._precise_expected[int(lottery_type_id)] = parsed
+
+    def _chase_tick(self, lottery_type_id: int) -> None:
+        """追赶心跳：每 N 秒并发探测全部采集源，命中新期就跑完整开盘管线。
+
+        收敛路径只有三条：①期望期已开盘 → 关闭追赶并恢复正常排程；
+        ②窗口到期 → 在预算内续期，预算用尽后对该期望期停用追赶（回落常规 near/far 轮询）；
+        ③进程停止 → 不再续期。
+        """
+        window_expired = False
+        try:
+            if not self._running:
+                return
+            if not self._chase_is_active(lottery_type_id):
+                # 窗口已到期：交给 finally 的续期/收敛逻辑处理（此处不得清计数）。
+                window_expired = True
+                return
+            expected = self._precise_expected.get(lottery_type_id)
+            if self._expected_period_opened(lottery_type_id, expected):
+                _crawler_logger.info(
+                    "Chase lt=%s: expected period already opened; chase window closed",
+                    lottery_type_id,
+                )
+                self._clear_chase(lottery_type_id)
+                self._reschedule_precise_checks()
+                return
+
+            started = self._chase_started_at.get(lottery_type_id)
+            if started is not None:
+                waited = (datetime.now(timezone.utc) - started).total_seconds()
+                if waited >= self._open_delay_warn_seconds():
+                    _crawler_logger.warning(
+                        "Chase lt=%s: draw result still missing after %.0fs "
+                        "(expected=%s, windows_used=%d)",
+                        lottery_type_id, waited,
+                        _format_period(expected) or "N/A",
+                        self._chase_windows.get(lottery_type_id, 0),
+                    )
+
+            expected_period = _format_period(expected)
+            matched = _probe_sources_parallel(
+                lottery_type_id, self.db_path, expected_period=expected_period
+            )
+            if expected_period and matched == expected_period:
+                _crawler_logger.info(
+                    "Chase lt=%s: new period %s found by parallel probe; running open pipeline",
+                    lottery_type_id, expected_period,
+                )
+                self._do_precise_draw_fetch_and_open(lottery_type_id)
+            else:
+                _crawler_logger.info(
+                    "Chase lt=%s: sources still at %s (expected=%s)",
+                    lottery_type_id, matched or "N/A", expected_period or "N/A",
+                )
+        except Exception as exc:  # noqa: BLE001 - 追赶失败必须自愈，不能拖垮调度线程
+            _crawler_logger.warning("Chase tick lt=%s error: %s", lottery_type_id, exc)
+        finally:
+            if not self._running:
+                return
+            if not window_expired and self._chase_is_active(lottery_type_id):
+                self._arm_chase_timer(lottery_type_id)
+            elif window_expired:
+                # 窗口到期仍未拿到新期：在预算内续期，用尽后对该期望期停用追赶并回落常规排程。
+                used = self._chase_windows.get(lottery_type_id, 0)
+                expected_period = _format_period(self._precise_expected.get(lottery_type_id))
+                self._clear_chase(lottery_type_id, reset_windows=False)
+                if used < self._chase_max_windows():
+                    _crawler_logger.warning(
+                        "Chase lt=%s: window #%d expired without the expected period %s; renewing",
+                        lottery_type_id, used, expected_period or "N/A",
+                    )
+                    self._set_lottery_chase_mode(lottery_type_id, True)
+                else:
+                    if expected_period:
+                        self._chase_suppressed[lottery_type_id] = expected_period
+                    _crawler_logger.error(
+                        "Chase lt=%s: %d chase windows exhausted for expected=%s; "
+                        "falling back to the regular schedule",
+                        lottery_type_id, used, expected_period or "N/A",
+                    )
+                    self._chase_windows.pop(lottery_type_id, None)
+                    self._reschedule_precise_checks()
 
     def _rearm_auto_crawl_for_chase(self) -> None:
         """把已在运行的 auto-crawl 定时器立刻切换到当前动态间隔。"""
@@ -1267,8 +1596,8 @@ class CrawlerScheduler:
         下一期（通常是 24 小时之后），仅靠 ±5 分钟窗口会把“开奖时间已过、结果还没
         到”误判成 far（300s），从而产生最长 5 分钟的抓取盲区。
         """
-        if hasattr(self, "_chase_modes") and any(self._chase_modes.values()):
-            return max(5, int(_cfg(self.db_path, "crawler.crawl_interval_chase", 5)))
+        if self._any_chase_active():
+            return max(3, int(_cfg(self.db_path, "crawler.crawl_interval_chase", 5)))
 
         near_interval = max(5, int(_cfg(self.db_path, "crawler.crawl_interval_near_draw", 10)))
         # 平时（非开奖窗口、非追赶）只需低频巡检，避免无效高频请求。
@@ -1361,7 +1690,10 @@ class CrawlerScheduler:
                 continue
 
             if target_dt > now_dt:
-                self._set_lottery_chase_mode(lt_id, False)
+                # 不能用"next_time 还在未来"来关闭追赶：源站旧期刷新会把旧期的
+                # next_time 前滚到下一期（例如把 09-25 21:32 写成 09-26 21:32），
+                # 旧实现会在这里把追赶关掉并掉回 far(300s)，形成最长 5 分钟开奖盲区。
+                # 追赶只由"期望期已到达"（见下）或追赶窗口到期（_chase_is_active）收敛。
                 continue
 
             seconds_past = int((now_dt - target_dt).total_seconds())
@@ -1370,9 +1702,14 @@ class CrawlerScheduler:
             # 检查数据是否已到达
             current_period = str(_cfg(self.db_path, f"{cfg_prefix}_current_period", ""))
             expected_period = _compute_next_period(current_period) if current_period else ""
-            actual_period, _ = _fetch_current_draw_period(
-                lt_id, self.db_path, expected_period=expected_period or None,
-            )
+            if self._chase_is_active(lt_id):
+                # 追赶窗口已在每 crawl_interval_chase 秒并发探测全部采集源，
+                # 这里不再重复请求源站（避免窗口内请求量翻倍）；到达判定交给追赶心跳。
+                actual_period = None
+            else:
+                actual_period, _ = _fetch_current_draw_period(
+                    lt_id, self.db_path, expected_period=expected_period or None,
+                )
 
             if actual_period and expected_period and actual_period == expected_period:
                 self._set_lottery_chase_mode(lt_id, False)
@@ -1431,6 +1768,14 @@ class CrawlerScheduler:
                 self._precise_timers[lt_id].cancel()
                 del self._precise_timers[lt_id]
 
+            # 追赶窗口内不再排普通精确检查：该彩种由独立追赶定时器每 5 秒重试，
+            # 直到新期开盘或窗口到期（到期时 _chase_tick 会重新调用本函数排下一次）。
+            if self._chase_is_active(lt_id):
+                _crawler_logger.debug(
+                    "Precise check lt=%s: chase window active, skipping normal schedule", lt_id
+                )
+                continue
+
             cfg_prefix = _LT_CFG_PREFIX.get(lt_id)
             if not cfg_prefix:
                 continue
@@ -1473,6 +1818,7 @@ class CrawlerScheduler:
                             "Precise check lt=%s: fire time passed, triggering immediate sync",
                             lt_id,
                         )
+                        self._remember_expected_period(lt_id, cfg_prefix)
                         try:
                             if lt_id == 3:
                                 opened_count = self._open_taiwan_draws_and_update_next_time()
@@ -1484,8 +1830,22 @@ class CrawlerScheduler:
                             _crawler_logger.error(
                                 "Precise check lt=%s immediate fire error: %s", lt_id, exc
                             )
-                        # 触发后重新同步 next_time 并调度下一次
+                        # 触发后重新同步 next_time；到点后改由"固定追赶窗口"接管：
+                        # 每 crawl_interval_chase 秒重试（独立定时器），直到新期开盘或窗口到期，
+                        # 不再依赖可能被旧期刷新前滚的 next_time 重算（旧实现只重试一次 60 秒，
+                        # 一旦 next_time 被写成次日就永久停摆）。
                         sync_all_lottery_type_next_times(self.db_path, source="crawler.precise_passed")
+                        if lt_id in (1, 2):
+                            self._set_lottery_chase_mode(lt_id, True)
+                            _crawler_logger.warning(
+                                "Precise check lt=%s: chase window armed (%ds, every %ds); "
+                                "expected=%s",
+                                lt_id,
+                                self._chase_max_seconds(),
+                                self._chase_interval_seconds(),
+                                _format_period(self._precise_expected.get(lt_id)) or "N/A",
+                            )
+                            continue
                         timer = threading.Timer(
                             _PRECISE_PASSED_RETRY_SECONDS,
                             self._reschedule_precise_checks,
@@ -1522,6 +1882,7 @@ class CrawlerScheduler:
                 timer.daemon = True
                 timer.start()
                 self._precise_timers[lt_id] = timer
+                self._remember_expected_period(lt_id, cfg_prefix)
 
                 lt_name = _LT_NAME_MAP.get(lt_id, str(lt_id))
                 _crawler_logger.info(
@@ -1628,6 +1989,12 @@ class CrawlerScheduler:
         for lt_id, timer in list(self._precise_timers.items()):
             timer.cancel()
         self._precise_timers.clear()
+        for lt_id, timer in list(self._chase_timers.items()):
+            timer.cancel()
+        self._chase_timers.clear()
+        self._chase_modes.clear()
+        self._chase_deadlines.clear()
+        self._chase_started_at.clear()
 
     def _auto_open_draws(self) -> None:
         """检查所有未开奖记录，若开奖时间已过则自动标记 is_opened=1。
@@ -1779,13 +2146,16 @@ class CrawlerScheduler:
         reset_crawler_fail_count(self.db_path, lottery_type_id)
         latest_draw = result.get("latest_draw") or {}
         if not self._is_newer_than_latest_opened(lottery_type_id, latest_draw):
-            self._set_lottery_chase_mode(lottery_type_id, False)
+            # 旧期刷新（源站重复改写已开奖期）不能关闭追赶：源站在自己切换期号后
+            # 仍会先回旧期，若这里关掉追赶，就会掉回 far(300s) 排程形成开奖盲区。
+            # 追赶只由"新期开盘"（下方）或追赶窗口到期收敛。
             _crawler_logger.info(
                 "Auto-crawl %s: refreshed an already-published draw (%s%s), no "
-                "re-open and no auto_open audit",
+                "re-open and no auto_open audit (chase kept=%s)",
                 lt_name,
                 latest_draw.get("year", ""),
                 latest_draw.get("term", ""),
+                self._chase_is_active(lottery_type_id),
             )
             return True
         self._set_lottery_chase_mode(lottery_type_id, False)
