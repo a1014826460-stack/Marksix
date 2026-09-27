@@ -55,7 +55,7 @@ $.ajax({
 		
 	<tr style='background: #FFFF00;'>
 	    <td style='background-color: #CCFFCC; text-align: left'>
-	        <span class='zl'><font color='#000000'>${data[i].term}期独家幽默：開:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</font></span>
+	        <span class='zl'><font color='#000000'>${data[i].term}期独家幽默：開:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</font></span>
 	    </td>
     </tr>
     <tr>
@@ -63,6 +63,7 @@ $.ajax({
         <span class='zl'><font color='#000000'>推荐特尾：：</font>${c1.join('')}</span></td>
     </tr>
             `}
+	            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(59, data[i])) : '';
         }
 
         htmlBox = `

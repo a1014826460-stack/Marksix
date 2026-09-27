@@ -47,10 +47,11 @@ $.ajax({
             <font color='#000000'>${data[i].term}期:</font>
             <font color='#0000FF'>绝杀半波→
                 <span class='zl'>[${c1[0]}]</span> 
-            </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准
+            </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}
         </td>
     </tr>
             `}
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(58, d)) : '';
         }
 
         htmlBox = `

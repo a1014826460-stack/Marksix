@@ -1,4 +1,44 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+
+/*
+ * 大小中特（mode 57）正确性判定。
+ * 厂商原逻辑：高亮条件为「特码号码落在该池内」，而大/小两池合起来恰好覆盖
+ * 01..49，条件恒为真；模板又写死「准」，因此每期都显示为正确。
+ * 现改为按「预测的 大/小 == 特码实际 大/小」判定，未开奖不显示「准」。
+ */
+window.__sizeVerdict = function (contentItems, specialCode) {
+    function actualSize(code) {
+        var raw = String(code == null ? '' : code).trim();
+        if (!/^\d{1,2}$/.test(raw)) return '';
+        var number = parseInt(raw, 10);
+        if (!(number >= 1 && number <= 49)) return '';
+        return number >= 25 ? '大' : '小';
+    }
+
+    var items = [];
+    if (Object.prototype.toString.call(contentItems) === '[object Array]') {
+        items = contentItems;
+    } else if (contentItems != null && String(contentItems) !== '') {
+        try {
+            items = JSON.parse(contentItems);
+        } catch (error) {
+            items = String(contentItems).indexOf('|') !== -1 ? [String(contentItems)] : [];
+        }
+    }
+    if (Object.prototype.toString.call(items) !== '[object Array]') return 'unknown';
+
+    var labels = [];
+    for (var index = 0; index < items.length; index++) {
+        var label = String(items[index]).split('|')[0].trim();
+        if (label.indexOf('大') === 0) labels.push('大');
+        else if (label.indexOf('小') === 0) labels.push('小');
+    }
+    if (labels.length !== 1) return 'unknown';
+
+    var size = actualSize(specialCode);
+    if (!size) return 'pending';
+    return labels[0] === size ? 'ok' : 'miss';
+};
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getDxzt?web=${web}&type=${type}&num=1`,
@@ -38,6 +78,13 @@ $.ajax({
                     }
                 }
 
+                // 命中判定：按 大/小 与特码实际大小比较，而不是“特码落在本池内”
+                let verdict = window.__sizeVerdict(content, code);
+                let verdictTxt = verdict === 'ok' ? '准' : (verdict === 'miss' ? '错' : '');
+                let resTxt = (code && resSx[resSx.length-1])
+                    ? `${resSx[resSx.length-1]}${code}`
+                    : '？00';
+
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 		
@@ -45,7 +92,7 @@ $.ajax({
 	    <td>
             <font color='#0000FF'>${data[i].term}期:</font><font color='#000000'>精准大小</font>
             <span class='zl'><font color='#000000'>〔〔</font>${c.join('')}<font color='#000000'>〕〕</font></span>
-            <font color='#000000'>开</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准
+            <font color='#000000'>开</font>${resTxt}<font color='#000000'>${verdictTxt}</font>
         </td>
     </tr>
             `}

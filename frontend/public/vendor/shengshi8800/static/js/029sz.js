@@ -49,10 +49,11 @@ $.ajax({
     </tr>
     <tr>
         <td style='text-align: left'><font color='#008000'>可解得：：${c.join('')}。</font><br>
-        <span class='zl'><font>开奖结果：：</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</span></td>
+        <span class='zl'><font>开奖结果：：</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</span></td>
     </tr>
     
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(52, d)) : '';
         }
 
         htmlBox = `

@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 // document.writeln("<table class=\"ptyx\" width=\"100%\" border=\"1\">");
 // document.writeln("  <tr>");
@@ -130,10 +130,11 @@ $.ajax({
                 }
             
             
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(3, el)) : '';
                 crcHtml +=  `
                 		<tr>
                 			<td class="td">
-                				<p align="center">${el.term}期:<font color="#0000FF">肉菜草肖</font><font color="#FF0000">【`+rc_hrml+`】</font>开${getResultNoTxt(el.res_code,el.res_sx)}准
+                				<p align="center">${el.term}期:<font color="#0000FF">肉菜草肖</font><font color="#FF0000">【`+rc_hrml+`】</font>开${getResultNoTxt(el.res_code,el.res_sx)}${__verdictTxt}
                 			</td>
                 		</tr>
                 `

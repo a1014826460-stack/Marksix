@@ -46,10 +46,11 @@ $.ajax({
                 htmlBoxList = htmlBoxList + ` 
     
      <tr>
-        <td><font color='#000000'>${d.term}期:</font><font color='2e88d4'>红蓝绿肖→<span class='zl'>[${c1.join('')}肖]</span> </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</td>
+        <td><font color='#000000'>${d.term}期:</font><font color='2e88d4'>红蓝绿肖→<span class='zl'>[${c1.join('')}肖]</span> </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
     
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(8, d)) : '';
         }
 
         htmlBox = `

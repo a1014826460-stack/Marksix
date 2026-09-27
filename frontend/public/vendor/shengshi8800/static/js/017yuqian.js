@@ -21,11 +21,12 @@ $.ajax({
 		
 	<tr>
         <td>
-        <span class='zl'><font color='#000000'>${d.term}期:</font><font color='#FF00FF'>欲钱解特诗</font><font color='#000000'>&nbsp; 开${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</font><font color='#000099'><br>
+        <span class='zl'><font color='#000000'>${d.term}期:</font><font color='#FF00FF'>欲钱解特诗</font><font color='#000000'>&nbsp; 开${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</font><font color='#000099'><br>
         </font><font color='#0000FF'>${d.title}</font></span>
         </td>
     </tr>
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(62, d)) : '';
         }
 
         htmlBox = `

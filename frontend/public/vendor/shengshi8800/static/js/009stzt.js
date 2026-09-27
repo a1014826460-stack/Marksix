@@ -48,10 +48,11 @@ $.ajax({
       <td>
         <font color='#0000FF'>${data[i].term}期:</font>
         <font color='#000000'>台湾三头<span class='zl'>&laquo;</span></font><span class='zl'>${c1}<font color='#000000'>&raquo;</font></span>
-        <font color='#000000'>开</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准
+        <font color='#000000'>开</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}
       </td>
     </tr>
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(12, d)) : '';
         }
 
         htmlBox = `

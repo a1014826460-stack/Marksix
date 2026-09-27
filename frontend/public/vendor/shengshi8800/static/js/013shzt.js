@@ -49,13 +49,14 @@ $.ajax({
         <font color='#000000'>灭庄三行<span class='zl'>&laquo;</span></font><span class='zl'>${c.join('')}<font color='#000000'>&raquo;</font>
         </span>
         <font color='#000000'>开:</font>
-            ${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准
+            ${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}
             <font color='#000000'></span>
         </font>
     </td>
     </tr>
     
             `}
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(53, d)) : '';
         }
 
         htmlBox = `

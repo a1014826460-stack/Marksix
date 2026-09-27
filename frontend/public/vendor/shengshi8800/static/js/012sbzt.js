@@ -44,10 +44,11 @@ $.ajax({
           <span class='zl'>&laquo;</span></font>
         <span class='zl'>${c1.join('')}
           <font color='#000000'>&raquo;</font></span>
-        <font color='#000000'>开:</font>${sx||'？'}${code||'00'}准</td>
+        <font color='#000000'>开:</font>${sx||'？'}${code||'00'}${__verdictTxt}</td>
     </tr>
     
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(38, d)) : '';
         }
         
         htmlBox = `

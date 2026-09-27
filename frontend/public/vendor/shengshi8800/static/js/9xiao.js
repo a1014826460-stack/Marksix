@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/jxzt?web=${web}&type=${type}`, 
@@ -18,6 +18,8 @@ $.ajax({
                 let result = '00'
                 
                 //console.log(ma)
+                
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(49, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 
   <tr>
@@ -27,7 +29,7 @@ $.ajax({
         <font color='#008000' style='font-size: 13pt'>【${selNumBcMa22(data[i].content,data[i].res_sx)}】</font>
         <font color='#000000' style='font-size: 13pt'>开</font>
         <font color='#FF0000' style='font-size: 13pt'>${getResultNoTxt(data[i].res_code,data[i].res_sx)}</font>
-        <font color='#000000' style='font-size: 13pt'>准</font></b>
+        <font color='#000000' style='font-size: 13pt'>${__verdictTxt}</font></b>
     </td>
   </tr>
   

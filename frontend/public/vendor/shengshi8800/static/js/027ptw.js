@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getPingte?web=${web}&type=${type}&num=2`,
@@ -28,11 +28,12 @@ $.ajax({
                     }
                 }
 
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(43, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
                 <tr>
                     <td>
                         <font color='#000000'>${d.term}期:</font><font color='#3b9aeb'>平特王→<span class='zl'>[${c.join('')}]</span> </font>
-                        开:${sx || '？'}${code || '00'}准
+                        开:${sx || '？'}${code || '00'}${__verdictTxt}
                     </td>
                 </tr>`;
             }

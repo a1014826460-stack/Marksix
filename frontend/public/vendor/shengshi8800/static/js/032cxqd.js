@@ -94,9 +94,10 @@ $.ajax({
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
-	    <td><font color='#000000'>${d.term}期:</font><font color='#0000FF'>春夏秋冬→${c1.join('')}</span> </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</td>
+	    <td><font color='#000000'>${d.term}期:</font><font color='#0000FF'>春夏秋冬→${c1.join('')}</span> </font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
+	        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(61, d)) : '';
         }
 
         htmlBox = `

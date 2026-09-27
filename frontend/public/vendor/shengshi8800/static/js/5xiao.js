@@ -1,5 +1,8 @@
 var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
+// 该模块后端为「8肖中特」(mode 48)：content 是 8 组 `生肖|配码`。
+// 原实现只取前 5 肖渲染，导致判定用 8 肖、页面只显示 5 肖，用户看不出命中原因。
+// 现改为完整显示 8 肖（配码不展示，判定只按生肖）。
 function normalizeWxztContent(content) {
     if (Array.isArray(content)) {
         content = content.join(',');
@@ -31,7 +34,7 @@ function normalizeWxztContent(content) {
 
     return items.map(function(item) {
         return item.split('|')[0].trim();
-    }).filter(Boolean).slice(0, 5).join(',');
+    }).filter(Boolean).join(',');
 }
 
 function renderWxztContent(content, resSx) {
@@ -54,6 +57,7 @@ $.ajax({
                 let result = '00';
                 let displayContent = renderWxztContent(data[i].content, data[i].res_sx);
 
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(48, data[i])) : '';
                 htmlBoxList = htmlBoxList + `
 
   <tr>
@@ -61,16 +65,16 @@ $.ajax({
       <p align="center">
         <font face="微软雅黑" size="4">
           <b>${data[i].term}期:
-            <font color='#008080' size="4">五肖中特</font>
+            <font color='#008080' size="4">八肖中特</font>
             <font color="#FF00FF">╠${displayContent}╣</font>开
-            <font color="#0000FF">${getResultNoTxt(data[i].res_code, data[i].res_sx)}</font>准</b></td>
+            <font color="#0000FF">${getResultNoTxt(data[i].res_code, data[i].res_sx)}</font>${__verdictTxt}</b></td>
   </tr>
 
             `;
             }
         }
 
-        htmlBox = `<div class="list-title">台湾五肖中特</div>
+        htmlBox = `<div class="list-title">台湾八肖中特</div>
 <table class="ptyx11" width="100%" border="1">
 
         ` + htmlBoxList + `

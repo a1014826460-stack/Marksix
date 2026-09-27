@@ -43,10 +43,11 @@ $.ajax({
       <td class="td">
         <p align="center">${d.term}期:
           <font color="#0000FF">四季生肖</font>
-          <font color="#FF0000">【${c1.join('')}】</font>开${sx||'？'}${code||'00'}准</td>
+          <font color="#FF0000">【${c1.join('')}】</font>开${sx||'？'}${code||'00'}${__verdictTxt}</td>
   </tr>
   
             `}
+              let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(61, d)) : '';
         }
         
         htmlBox = `<div class="list-title">台湾四季生肖</div>

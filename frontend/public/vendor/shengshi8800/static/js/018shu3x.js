@@ -35,9 +35,10 @@ $.ajax({
 	<tr>
 	    <td width='20%'><font color='#000080'>${d.term}期</font></td>
 	    <td><span class=\'zl\'>今期买${c.join('')}输尽光</span></td>
-	    <td width=\'23%\'><font color=\'#000080\'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</td>
+	    <td width=\'23%\'><font color=\'#000080\'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
+	        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(42, d)) : '';
   }
 
   htmlBox = `

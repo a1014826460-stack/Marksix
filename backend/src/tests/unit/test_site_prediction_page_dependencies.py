@@ -75,6 +75,8 @@ def test_shengshi8800_manifest_source_paths_match_live_prediction_scripts():
         "static/js/djck.js",
         "static/js/kj.js",
         "static/js/tu1.js",
+        # 共享判定工具：不是数据源，只提供「准/错」判定口径
+        "static/js/legacy-prediction-verdict.js",
             "/vendor/_shared/managed-site-links.js",
             "/vendor/_shared/forced-announcement.js",
     }

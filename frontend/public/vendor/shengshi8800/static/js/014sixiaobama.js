@@ -51,7 +51,7 @@ $.ajax({
                 htmlBoxList = htmlBoxList + ` 
     <tr>
       <td>
-        <font color='#000000'>${data[i].term}期【四肖八码】${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准
+        <font color='#000000'>${data[i].term}期【四肖八码】${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}
           <br></font>
         <span class='zl'>
             ${c[0]}【${c1.slice(0,2).join('.')}】${c[1]}【${c1.slice(2,4).join('.')}】
@@ -61,6 +61,7 @@ $.ajax({
     
     
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(51, data[i])) : '';
         }
         
         htmlBox = `

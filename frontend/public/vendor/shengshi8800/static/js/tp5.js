@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getPmxjcz?web=${web}&type=${type}&num=6`,
@@ -51,13 +51,14 @@ $.ajax({
                         c2.push(`${ma[i]}`)
                     }
                 }
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(331, d)) : '';
                 htmlBoxList += ` 
 <table  border=1 width=100% bgcolor=#ffffff style='font-weight:bold'>
  <td style='margin: 0px; padding: 3px 2px;  word-break: break-all; text-align: center; line-height: 26px;'>
 <p style='font-size: 12pt; margin-bottom: 8px; text-align: left;'>
 <font face='楷体' size='4'>
 <b>
-<font color='#800000'><span style='background-color: #C0C0C0'>${d.year}-${d.term}期跑马玄机测字</span></font><font color='#FF0000'>开${sx||'？'}${code||'00'}准</font></b>
+<font color='#800000'><span style='background-color: #C0C0C0'>${d.year}-${d.term}期跑马玄机测字</span></font><font color='#FF0000'>开${sx||'？'}${code||'00'}${__verdictTxt}</font></b>
 </font>
 <b>
 <font color='#0000FF' face='微软雅黑' size='4'><br>

@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getJyzt?web=${web}&type=${type}&num=2`,
@@ -41,13 +41,15 @@ $.ajax({
 
 
                 //console.log(ma)
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(63, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
         <td><font color='#0000FF'>${d.term}期:</font><font color='#000000'>火爆家野<span class='zl'>〈〈</span></font><span class='zl'>${c1[0]}<font color='#000000'>〉〉</font></span>
-        <font color='#000000'>准</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}准</td>
+        <font color='#000000'>${__verdictTxt}</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}</td>
     </tr>
             `}
+            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(63, d)) : '';
         }
 
         htmlBox = `
