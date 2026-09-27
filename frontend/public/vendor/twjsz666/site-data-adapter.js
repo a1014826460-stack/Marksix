@@ -407,7 +407,9 @@
       if (cells.length >= 3) {
         setText(cells[0], normalizedIssue(row));
         var numberCell = cells[1], numbers = tokenValues(row).slice(0, count);
-        var slots = numberCell.querySelectorAll("font[color='#FF0000'] > font");
+        // 供应商快照把命中位置写成了 <span>（有的还带黄底）。它们同样是号码槽位，
+        // 漏掉会让本期号码错位并残留供应商那一期的旧号码。
+        var slots = numberCell.querySelectorAll("font[color='#FF0000'] > font, font[color='#FF0000'] > span");
         Array.prototype.forEach.call(slots, function (slot, slotIndex) {
           setText(slot, numbers[slotIndex] || "");
         });
@@ -484,6 +486,10 @@
   function resetHitHighlights() {
     dropRenderedHitMarkers(window.document);
     stripSupplierHitBackgrounds(window.document);
+    // 本期渲染开始前清空上一轮的期次绑定：没有重新绑定到本期的行一律不许上色。
+    Array.prototype.forEach.call(window.document.querySelectorAll("[data-prediction-row]"), function (element) {
+      element.__twjsz666PredictionRow = null;
+    });
   }
 
   function markPredictionRow(element, row, index) {
@@ -595,15 +601,18 @@
       var xiao = groupValues(row, "xiao_5").slice(0, 5);
       var codes = groupValues(row, "code_5").slice(0, 5);
       var result = row && row.result || {};
-      var hitXiao = result.isOpened ? resultToken(result.zodiac, false) : "";
-      var hitCode = result.isOpened ? resultToken(result.code, true) : "";
+      var opened = !!(row && result.isOpened);
+      var hitXiao = opened ? resultToken(result.zodiac, false) : "";
+      var hitCode = opened ? resultToken(result.code, true) : "";
+      // 本期判定：「五码中」才允许黄色高亮；「五码错」的当期不得残留任何黄底。
+      var isHit = opened && codes.indexOf(hitCode) !== -1;
       var firstCells = rowCells(rows[0]);
-      writeExistingTokens(firstCells[0] && firstCells[0].querySelector(".xz2"), xiao, hitXiao);
-      writeExistingTokens(firstCells[1] && firstCells[1].querySelector(".xz2"), codes, hitCode);
+      writeExistingTokens(firstCells[0] && firstCells[0].querySelector(".xz2"), xiao, isHit ? hitXiao : "");
+      writeExistingTokens(firstCells[1] && firstCells[1].querySelector(".xz2"), codes, isHit ? hitCode : "");
       var statusFonts = rows[1] && rows[1].querySelectorAll("font");
       if (statusFonts && statusFonts[0]) writeLeaf(statusFonts[0], row ? displayIssue(row) + "：内幕大公开-" : "");
       var marker = rows[1] && rows[1].querySelector(".xz3 > span");
-      if (marker) writeLeaf(marker, !row || !result.isOpened ? "待开奖" : codes.indexOf(hitCode) !== -1 ? "五码中" : "五码错");
+      if (marker) writeLeaf(marker, !row || !opened ? "待开奖" : isHit ? "五码中" : "五码错");
       if (row) card.setAttribute("data-prediction-row", String(index));
     });
   }
@@ -625,6 +634,7 @@
         setText(cells[0], row ? displayIssue(row) + ":" + spec[0] : "");
         setText(cells[1], values.join(""));
         setText(cells[2], row ? resultText(row).replace(/^开:/, "") : "");
+        markPredictionRow(rows[specIndex], row, specIndex);
       });
     });
   }
@@ -763,6 +773,9 @@
   function renderPredictions(result, lotteryType) {
     var modules = moduleMap(result);
     var lottery = lotteryForType(lotteryType);
+    // 先清掉供应商快照里的黄底（它是按供应商自己的期号写死的），
+    // 渲染完再由本期数据重新判定并上色，保证「错」的当期不带黄底。
+    resetHitHighlights();
     Array.prototype.forEach.call(window.document.querySelectorAll(".box.pad"), function (section) {
       if (!section.querySelector(".list-title")) return;
       updateTitle(section, lottery);
@@ -770,6 +783,7 @@
     });
     renderOneHeadOneCode(window.document, modules.sitouzhongte, modules);
     renderBeforeBetCards(modules.wuxiao_wuma);
+    applyPredictionHighlights();
     clearSupplierIssueSnapshots();
   }
 

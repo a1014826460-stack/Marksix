@@ -389,6 +389,62 @@
     else node.removeAttribute("style");
   }
 
+  // Every supplier history row was authored with its own sample hit marker:
+  // either an inline `background-color: #FFFF00` or the legacy `color="#FFFF00"`
+  // attribute. Those markers belong to the sample draw, not to the issue the row
+  // currently displays, so the row's own judgement decides whether one may stay.
+  var YELLOW_MARK = /#ffff00|rgb\(\s*255\s*,\s*255\s*,\s*0\s*\)/i;
+
+  // A row is only a hit when the current draw actually matched its own
+  // recommendation; pending and missed rows must never keep a yellow marker.
+  function isHitRow(row) {
+    var result = row && row.result || {};
+    return Boolean(result.isOpened && result.isCorrect);
+  }
+
+  // The deferred clear pass renders every mapping with an empty module while it
+  // blanks the supplied payload. Such a pass holds no judgement and therefore
+  // must leave the supplier's markers untouched, otherwise the later pass that
+  // really carries the rows could no longer show a hit.
+  function moduleHasRows(module) {
+    return Boolean(module && Array.isArray(module.rows) && module.rows.length);
+  }
+
+  // Removes the yellow hit treatment from one element while preserving every
+  // other declaration, so unrelated vendor styling (backgrounds, colours,
+  // borders) survives untouched.
+  function clearYellowMark(node) {
+    if (!node || node.nodeType !== 1) return;
+    var style = String(node.getAttribute("style") || "");
+    if (style && YELLOW_MARK.test(style)) {
+      var kept = style.split(";").filter(function (part) {
+        var declaration = String(part).trim();
+        return declaration && !YELLOW_MARK.test(declaration);
+      });
+      if (kept.length) node.setAttribute("style", kept.join("; ") + ";");
+      else node.removeAttribute("style");
+    }
+    ["color", "bgcolor", "background"].forEach(function (name) {
+      var value = node.getAttribute(name);
+      if (value && YELLOW_MARK.test(value)) node.removeAttribute(name);
+    });
+  }
+
+  // Scrubs every yellow marker inside one vendor row container.
+  function clearRowHighlight(root) {
+    if (!root) return;
+    clearYellowMark(root);
+    Array.prototype.forEach.call(root.querySelectorAll("*"), clearYellowMark);
+  }
+
+  // Applies the module display rule to one rendered vendor row: a miss (or a row
+  // that carries no API row at all) is scrubbed of every yellow marker, while a
+  // hit keeps the marker the supplier's template already provides.
+  function applyRowHighlight(root, row, module) {
+    if (!root || !moduleHasRows(module) || isHitRow(row)) return;
+    clearRowHighlight(root);
+  }
+
   function termSlot(cell) {
     return slot(cell, "term", function (root) {
       return Array.prototype.filter.call(root.querySelectorAll("span"), function (node) {
@@ -608,14 +664,22 @@
       renderGradeValue(cells[0], recommendationRow, "zodiac");
       writeGradeSlots(gradeValueRoot(cells[1]), numberValues(moduleRowForTerm(modules[6], referenceRow, historyIndex)));
       // Every displayed value is written before the card is judged, so the
-      // result text and the yellow hit leaves always describe this card.
-      setNodeText(resultSlot, gradeResultText(drawRow, markGradeHits(table, drawRow)));
+      // result text and the yellow hit leaves always describe this card. A card
+      // is a hit only when one of its own values is the drawn special, so a miss
+      // keeps no supplier marker anywhere inside it.
+      var gradeHit = markGradeHits(table, drawRow);
+      if (!gradeHit && drawRow) clearRowHighlight(table);
+      setNodeText(resultSlot, gradeResultText(drawRow, gradeHit));
     });
   }
 
   function rowSummary(row, title) {
     if (!row) return "";
-    return termValue(row) + " " + title + "：" + predictionTokens(row).map(firstValue).join("·") + " 开：" + drawValue(row) + resultLabel(row);
+    var result = row.result || {};
+    // A pending issue prints the vendor's placeholder once and carries no
+    // judgement at all; only an opened row combines the drawn value with 对/错.
+    var outcome = result.isOpened ? drawValue(row) + resultLabel(row) : "待开奖";
+    return termValue(row) + " " + title + "：" + predictionTokens(row).map(firstValue).join("·") + " 开：" + outcome;
   }
 
   function clearOtherLeafText(root, retained) {
@@ -645,10 +709,16 @@
           return !candidate.children.length && String(candidate.textContent || "").trim();
         })[0];
       });
+      var apiRow = apiRows[index];
       clearOtherLeafText(node, valueSlot);
       // Extra vendor rows are deliberately blank: reusing a previous API row
       // would falsely display the same issue multiple times.
-      if (valueSlot) valueSlot.textContent = apiRows[index] ? rowSummary(apiRows[index], mapping.title) : "";
+      if (valueSlot) valueSlot.textContent = apiRow ? rowSummary(apiRow, mapping.title) : "";
+      // The summary leaf is this row's own value slot, so it carries the hit
+      // marker: a hit keeps the yellow background the supplier used for it and
+      // every other row is scrubbed below.
+      if (moduleHasRows(module) && isHitRow(apiRow) && valueSlot) markHitLeaf(valueSlot, true);
+      applyRowHighlight(node, apiRow, module);
     });
   }
 
@@ -696,12 +766,17 @@
         if (headerText.length > 1) headerText[headerText.length - 1].nodeValue = "开 ";
       }
       if (resultFont) resultFont.textContent = xiaoRow ? displayResult(xiaoRow) : "";
+      applyRowHighlight(header, xiaoRow, xiao);
       if (detail) {
         var detailFont = slot(detail, "linked-groups", function (root) { return root.querySelector("font"); });
         if (detailFont) detailFont.textContent = tailPairValues(weiRow).map(function (value) { return "【" + value + "尾】"; }).join("") + "\n" + pairValues(xiaoRow).map(function (value) { return "【" + value + "】"; }).join("");
+        applyRowHighlight(detail, weiRow, wei);
       }
     }
-    for (var remainder = maxGroups * 2; remainder < rows.length; remainder += 1) replaceExistingText(rows[remainder], "");
+    for (var remainder = maxGroups * 2; remainder < rows.length; remainder += 1) {
+      replaceExistingText(rows[remainder], "");
+      applyRowHighlight(rows[remainder], null, xiao || wei);
+    }
   }
 
   // 精选24码 is a fixed vendor grid: update its existing 24 cells in order.
@@ -727,12 +802,14 @@
         headingRow.setAttribute("data-site-slot", "ma24-heading");
         var headingSlot = headingRow.querySelector("td span[style*='color: #000000']") || headingRow.querySelector("td");
         if (headingSlot) setExistingText(headingSlot, row ? termValue(row) + " 精选24码;准确率绝对100%;大胆下注!" : "");
+        applyRowHighlight(headingRow, row, module);
       }
       Array.prototype.slice.call(rows[index].querySelectorAll("td")).concat(
         rows[index + 1] ? Array.prototype.slice.call(rows[index + 1].querySelectorAll("td")) : []
       ).forEach(function (cell, cellIndex) {
         cell.setAttribute("data-prediction-row", String(historyIndex));
         setNodeText(cell, values[cellIndex] || "");
+        applyRowHighlight(cell, row, module);
       });
       historyIndex += 1;
     }
@@ -778,6 +855,7 @@
       if (term) term.textContent = row ? termValue(row) : "";
       if (value) value.textContent = row ? "【" + category + "+" + zodiacs.join("") + "】" : "";
       if (result) result.textContent = row ? openedResult(row) : "";
+      applyRowHighlight(cell, row, module);
     });
   }
 
@@ -803,6 +881,7 @@
       if (issue) issue.textContent = row ? termValue(row).replace("期", "") : "";
       if (value) value.textContent = row ? predictionTokens(row).map(firstValue).join("·") : "";
       if (status) status.textContent = row ? (row.result && row.result.isOpened ? openedResult(row) : "待开奖") : "";
+      applyRowHighlight(cell, row, module);
     });
   }
 
@@ -816,6 +895,7 @@
       var values = predictionTokens(row).map(firstValue);
       var label = values.join("") || "";
       replaceExistingText(line, row ? termValue(row) + "《" + label + "》" + openedResult(row, "√") : "");
+      applyRowHighlight(line, row, module);
     });
   }
 
@@ -916,17 +996,22 @@
       });
       // The supplied line already contains nested number fonts. Reuse the
       // matching existing one for a visible yellow special-number highlight.
-      var specialNumber = row && row.result && row.result.isOpened && resultCode(row);
-      Array.prototype.forEach.call(lines, function (line) {
-        var numberFont = Array.prototype.filter.call(line.querySelectorAll("font"), function (node) {
-          return !node.children.length && String(node.textContent || "").replace(/\D/g, "") === specialNumber;
-        })[0];
-        if (numberFont) markHitLeaf(numberFont, true);
-      });
+      // Only an issue that actually hit may carry that marker, so a miss row
+      // never keeps a stale one.
+      var specialNumber = isHitRow(row) ? resultCode(row) : "";
+      if (specialNumber) {
+        Array.prototype.forEach.call(lines, function (line) {
+          var numberFont = Array.prototype.filter.call(line.querySelectorAll("font"), function (node) {
+            return !node.children.length && String(node.textContent || "").replace(/\D/g, "") === specialNumber;
+          })[0];
+          if (numberFont) markHitLeaf(numberFont, true);
+        });
+      }
       if (footer) {
         footer.setAttribute("data-site-slot", "fifteen-code-footer");
         replaceExistingText(footer, row ? term + "一尾一码：（" + oneCode + "）" : "");
       }
+      applyRowHighlight(card, row, module);
     });
   }
 
@@ -1020,6 +1105,7 @@
       if (waveSlot) replaceExistingText(waveSlot, "波色:" + (row ? waves : ""));
       if (sizeSlot) replaceExistingText(sizeSlot, "大小:" + (row ? (largeCount >= 5 ? "大" : "小") : ""));
       if (tailSlot) replaceExistingText(tailSlot, "尾数:" + (row ? tails : ""));
+      applyRowHighlight(cell, row, module);
     });
   }
   function killSummary(row, label) {
@@ -1066,6 +1152,7 @@
           if (resultNode && resultNode.nodeType === 1 && resultNode.tagName === "FONT") {
             setExistingText(resultNode, row && row.result && row.result.isOpened ? displayResult(row) : "");
             resultNode.setAttribute("data-prediction-row", blocks[blockIndex].key + "-" + rowIndex);
+            applyRowHighlight(resultNode, row, moduleByKey[blocks[blockIndex].key]);
           }
         });
       }
@@ -1095,6 +1182,7 @@
       setExistingText(issue, row ? termValue(row) + " " : "");
       setExistingText(content, row ? "绝杀二肖: 【" + zodiacValues(row).slice(0, 2).join("") + "】开:" : "");
       setExistingText(result, row ? displayResult(row) : "");
+      applyRowHighlight(paragraph, row, module);
       if (result) {
         if (row && row.result && row.result.isCorrect) result.setAttribute("color", "#FF0000");
         else result.removeAttribute("color");
@@ -1121,6 +1209,9 @@
       rows[index].setAttribute("data-prediction-row", String(index / 2));
       rows[index + 1].setAttribute("data-prediction-row", String(index / 2));
       renderPair(rows[index], rows[index + 1], row, index / 2);
+      // Both vendor rows carry one issue, so both follow that issue's judgement.
+      applyRowHighlight(rows[index], row, module);
+      applyRowHighlight(rows[index + 1], row, module);
     }
   }
 
@@ -1137,6 +1228,7 @@
       tr.setAttribute("data-prediction-row", String(index));
       var size = firstValue(predictionTokens(row)[0] || "");
       replaceExistingText(cell, row ? termValue(row) + ": 特码大小 【" + size + size + size + "】 开:" + openedResult(row) : "");
+      applyRowHighlight(tr, row, module);
     });
   }
 
@@ -1152,6 +1244,7 @@
       var nature = firstValue(predictionTokens(row)[0] || "");
       var pair = row && row.raw && row.raw.xiao ? String(row.raw.xiao).split(/[,，]/).join("") : zodiacValues(row).slice(1, 3).join("");
       replaceExistingText(cell, row ? termValue(row) + ": 天地 【" + nature + "+" + pair + "】 开:" + openedResult(row) : "");
+      applyRowHighlight(tr, row, module);
     });
   }
 
@@ -1316,11 +1409,16 @@
       if (title) replaceExistingText(title, "一头一码（" + siteConfig.siteDomain + "）");
       Array.prototype.forEach.call(left, function (line, lineIndex) {
         replaceExistingText(line, row ? termValue(row) + "必中" + ["一", "二", "三", "四"][lineIndex] + "头：" + groups.slice(0, lineIndex + 1).map(function (group) { return group.label; }).join(",") : "");
+        applyRowHighlight(line, row, module);
       });
       Array.prototype.forEach.call(right, function (line, lineIndex) {
         replaceExistingText(line, row ? ["①", "②", "③", "④"][lineIndex] + (groups[lineIndex] ? groups[lineIndex].numbers.join(".") : "") : "");
+        applyRowHighlight(line, row, module);
       });
-      if (foot) replaceExistingText(foot, row ? "本期推荐一头：（" + (groups[0] ? groups[0].label : "") + "头）" : "");
+      if (foot) {
+        replaceExistingText(foot, row ? "本期推荐一头：（" + (groups[0] ? groups[0].label : "") + "头）" : "");
+        applyRowHighlight(foot, row, module);
+      }
     });
   }
 
@@ -1380,6 +1478,7 @@
           setExistingText(valueSlot, row ? aaaZodiacs(row)[valueIndex] || "" : "");
         });
       });
+      applyRowHighlight(table, row, module);
     });
   }
 
