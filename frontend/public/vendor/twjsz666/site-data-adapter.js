@@ -250,7 +250,7 @@
         setText(group, options.wrap ? options.wrap(value) : value);
         if (options.writeResult) setText(fonts[fonts.length - 1], resultText(row));
       }
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
 
@@ -357,7 +357,7 @@
       setText(groups[0], "【" + single.join("") + "】");
       setText(fonts[1], "双肖");
       setText(groups[1], "【" + doubled.join("") + "】");
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
 
@@ -371,7 +371,7 @@
       setText(groups[0], poultry.join(""));
       setText(groups[1], beast.join(""));
       setText(cells[2], resultText(row));
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
 
@@ -396,7 +396,7 @@
       if (leaves.length) leaves[0].nodeValue = "合肖（" + zodiac.join("") + "）";
       if (leaves.length > 1) leaves[1].nodeValue = codes.join(".");
       clearLeaves(detail, leaves.slice(0, 2));
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
 
@@ -418,7 +418,7 @@
         setText(fonts[2], " " + resultText(row));
         setText(detail, "【" + tokenValues(row).slice(0, count).join(separator) + "】");
       }
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
@@ -445,6 +445,123 @@
       });
       setText(card.querySelector(".bizhong1-foot"), heads.length ? "本期推荐一头：（" + heads[0] + "）" : "");
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 命中高亮 MUST be derived from the live verdict of the displayed issue.
+  //
+  // The supplier's static HTML carries its own hit marker
+  // (`<span style="background-color: #FFFF00">`) at the position that matched
+  // *its* historical issue. The re-renderers only blank text nodes, so those
+  // wrappers survive with a yellow background and make a row whose live
+  // verdict is 错/输/不中 look highlighted. Every yellow background is therefore
+  // stripped before rendering and re-applied afterwards, per issue, only when
+  // that issue actually hit.
+  // ---------------------------------------------------------------------------
+  var HIT_BACKGROUND = "#FFFF00";
+  var SUPPLIER_HIT_STYLE = /background(?:-color)?\s*:\s*(?:#ffff00|#ff0\b|yellow|rgb\(\s*255\s*,\s*255\s*,\s*0\s*\))/i;
+  var SUPPLIER_HIT_DECL = /(?:^|;)\s*background(?:-color)?\s*:\s*(?:#ffff00|#ff0\b|yellow|rgb\(\s*255\s*,\s*255\s*,\s*0\s*\))\s*(?=;|$)/gi;
+
+  function stripSupplierHitBackgrounds(scope) {
+    var root = scope && scope.querySelectorAll ? scope : window.document;
+    Array.prototype.forEach.call(root.querySelectorAll("[style]"), function (element) {
+      var style = element.getAttribute("style");
+      if (!style || !SUPPLIER_HIT_STYLE.test(style)) return;
+      var cleaned = String(style).replace(SUPPLIER_HIT_DECL, "").replace(/^[\s;]+|[\s;]+$/g, "");
+      // Defensive: never leave the supplier hit colour behind on a miss row.
+      if (!cleaned || SUPPLIER_HIT_STYLE.test(cleaned)) element.removeAttribute("style");
+      else element.setAttribute("style", cleaned);
+    });
+  }
+
+  function dropRenderedHitMarkers(scope) {
+    var root = scope && scope.querySelectorAll ? scope : window.document;
+    Array.prototype.forEach.call(root.querySelectorAll("[data-prediction-hit]"), function (element) {
+      if (element.parentNode) element.parentNode.removeChild(element);
+    });
+  }
+
+  function resetHitHighlights() {
+    dropRenderedHitMarkers(window.document);
+    stripSupplierHitBackgrounds(window.document);
+  }
+
+  function markPredictionRow(element, row, index) {
+    if (!element || !element.setAttribute) return;
+    if (index !== undefined) element.setAttribute("data-prediction-row", String(index));
+    element.__twjsz666PredictionRow = row || null;
+  }
+
+  // 命中值按优先级分组：先整颗（生肖/号码），再带「头」「尾」的位，最后才退化到裸数字，
+  // 这样 "45" 命中不会去点亮 22 码里的 "4"，而「三头四尾」仍能同时点亮命中的头与尾。
+  function hitTokenGroups(row) {
+    var result = row && row.result || {};
+    if (!result || result.isOpened !== true || result.isCorrect !== true) return [];
+    var zodiac = resultToken(result.zodiac, false);
+    var code = resultToken(result.code, true);
+    var primary = [];
+    var secondary = [];
+    var tertiary = [];
+    if (zodiac) primary.push(zodiac);
+    if (code) {
+      primary.push(code);
+      var digits = String(code).replace(/\D/g, "");
+      if (digits.length === 2) {
+        secondary.push(digits.charAt(0) + "头");
+        secondary.push(digits.charAt(0) + "頭");
+        secondary.push(digits.charAt(1) + "尾");
+        tertiary.push(digits.charAt(0));
+        tertiary.push(digits.charAt(1));
+      }
+    }
+    return [primary, secondary, tertiary];
+  }
+
+  function digitSidedBoundary(value, index, token) {
+    if (!/^\d+$/.test(token)) return true;
+    var before = index > 0 ? value.charAt(index - 1) : "";
+    var after = value.charAt(index + token.length);
+    return !/\d/.test(before) && !/\d/.test(after);
+  }
+
+  function highlightToken(root, token) {
+    if (!root || !token) return false;
+    var nodes = textNodes(root);
+    for (var index = 0; index < nodes.length; index += 1) {
+      var node = nodes[index];
+      var parent = node.parentNode;
+      if (!parent) continue;
+      if (parent.closest && parent.closest("[data-prediction-hit]")) continue;
+      var value = String(node.nodeValue || "");
+      var at = value.indexOf(token);
+      while (at !== -1 && !digitSidedBoundary(value, at, token)) at = value.indexOf(token, at + 1);
+      if (at === -1) continue;
+      node.splitText(at + token.length);
+      var tokenNode = node.splitText(at);
+      var marker = window.document.createElement("span");
+      marker.setAttribute("data-prediction-hit", "");
+      marker.setAttribute("style", "background-color: " + HIT_BACKGROUND);
+      tokenNode.parentNode.insertBefore(marker, tokenNode);
+      marker.appendChild(tokenNode);
+      return true;
+    }
+    return false;
+  }
+
+  function highlightPredictionRow(element) {
+    var row = element && element.__twjsz666PredictionRow;
+    var groups = hitTokenGroups(row);
+    for (var index = 0; index < groups.length; index += 1) {
+      var matched = false;
+      groups[index].forEach(function (token) {
+        if (highlightToken(element, token)) matched = true;
+      });
+      if (matched) return;
+    }
+  }
+
+  function applyPredictionHighlights() {
+    Array.prototype.forEach.call(window.document.querySelectorAll("[data-prediction-row]"), highlightPredictionRow);
   }
 
   function writeExistingTokens(root, values, hitValue) {
@@ -537,7 +654,7 @@
         setText(tr.querySelector(".zl") || cells[1], value);
         if (cells[2]) setText(cells[2], resultText(row));
       }
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
@@ -548,7 +665,7 @@
       setText(cells[0], normalizedIssue(row));
       setText(group, "【" + formatLabels(row, "").slice(0, 16) + "】");
       setText(cells[2], resultText(row));
-      tr.setAttribute("data-prediction-row", String(index));
+      markPredictionRow(tr, row, index);
     });
   }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }

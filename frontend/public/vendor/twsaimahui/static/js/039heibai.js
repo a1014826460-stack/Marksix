@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getHbx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -32,17 +32,24 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
 
+                // 供应商原样式每期只渲染一个分组标签（`黑白生肖:白肖 开:虎27准`）。
+                // 之前把内容里的两组标签一起拼出来，页面会出现「黑肖白肖」。
                 let c1 = [];
                 let zj = false;
+                let hitXiao = '';
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiaoV[i].indexOf(sx) !== -1) {
+                    if (sx && xiaoV[i] && xiaoV[i].indexOf(sx) !== -1) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}肖</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}肖`)
+                        hitXiao = xiao[i];
+                        break;
                     }
                 }
-                // if (!zj) continue;
+                let shownXiao = hitXiao || xiao[0] || '';
+                if (shownXiao) {
+                    c1.push(zj
+                        ? `<span style="background-color: #FFFF00">${shownXiao}肖</span>`
+                        : `${shownXiao}肖`);
+                }
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>

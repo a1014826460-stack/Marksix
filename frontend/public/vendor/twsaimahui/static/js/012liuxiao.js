@@ -29,8 +29,10 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
             }
 
             var c1 = [];
+            var zjXiao = false;
             for (var k = 0; k < xiao.length; k += 2) {
                 if (sx && xiao[k + 1] && xiao[k + 1].indexOf(sx) !== -1) {
+                    zjXiao = true;
                     c1.push('<span style="background-color: #FFFF00">' + xiao[k] + '</span>');
                 } else {
                     c1.push(xiao[k]);
@@ -38,13 +40,19 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
             }
 
             var c2 = [];
+            var zjCode = false;
             for (var m = 0; m < ma.length; m++) {
                 if (code && ma[m].indexOf(code) !== -1) {
+                    if (m < 3) { zjCode = true; }
                     c2.push('<span style="background-color: #FFFF00">' + ma[m] + '</span>');
                 } else {
                     c2.push(ma[m]);
                 }
             }
+
+            // 判定口径：特肖命中六肖 或 特码命中前三码 → 准；未开奖不显示判定。
+            var resTxt = sx ? ('\u5f00:' + sx + code) : '\u5f00:\uff1f00';
+            var verdictTxt = sx ? ((zjXiao || zjCode) ? '\u51c6' : '\u9519') : '';
 
             var ma12 = '<p style="font-size:13pt;margin-bottom:8px;text-align:left"><span style="text-indent:28px;color:#000;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-size:12pt">\u7cbe\u900912\u7801\uff1a' + c2.join('.') + '</span></p>';
             var ma6 = '<p style="font-size:13pt;margin-bottom:8px;text-align:left"><span style="text-indent:28px;color:#000;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-size:12pt">\u7cbe\u9009\u516d\u7801\uff1a' + c2.slice(0, 6).join('.') + '</span></p>';
@@ -53,7 +61,7 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
             var x3 = '<p style="font-size:13pt;margin-bottom:8px;text-align:left"><span style="text-indent:28px;color:#000;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-size:12pt">\u5fc5\u4e2d\u4e09\u8096\uff1a' + c1.slice(0, 3).join('.') + '</span></p>';
             var x1 = '<p style="font-size:13pt;margin-bottom:8px;text-align:left"><span style="text-indent:28px;color:#000;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-size:12pt">\u5fc5\u4e2d\u4e00\u8096\uff1a' + c1.slice(0, 1).join('.') + '</span></p>';
 
-            htmlBoxList += '<table border="1" width="100%" cellpadding="0" height="100" cellspacing="0" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" bgcolor="#FFFFFF" style="border-collapse:collapse;border-spacing:0;color:#444;font-family:tahoma,\\5fae\\8f6f\\96c5\\9ed1,\\5b8b\\4f53,arial,georgia,verdana,helvetica,sans-serif;font-size:14px;font-style:normal;font-variant-ligatures:normal;font-weight:normal;letter-spacing:normal;line-height:21px;text-align:start;text-indent:0;text-transform:none;white-space:normal;widows:1;word-spacing:0;-webkit-text-stroke-width:0;background-color:#fff"><tbody><tr class="firstRowxx"><td height="35" style="background:#FF0000;margin:0;border-color:green;word-break:break-all;text-align:center;font-size:13pt;line-height:26px;color:#333;padding-left:2px;padding-right:2px;padding-top:3px;padding-bottom:3px"><span style="color:#FFF;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-weight:700;line-height:normal;font-size:12pt">' + d.term + '\u671f\uff1a\u516d\u8096\u4e09\u7801</span></td></tr><tr><td style="margin:0;padding:3px 2px;border-color:#e5e5e5;word-break:break-all;text-align:center;line-height:26px">' + x6 + x3 + x1 + ma12 + ma6 + ma1 + '</td></tr></tbody></table>';
+            htmlBoxList += '<table border="1" width="100%" cellpadding="0" height="100" cellspacing="0" bordercolorlight="#FFFFFF" bordercolordark="#FFFFFF" bgcolor="#FFFFFF" style="border-collapse:collapse;border-spacing:0;color:#444;font-family:tahoma,\\5fae\\8f6f\\96c5\\9ed1,\\5b8b\\4f53,arial,georgia,verdana,helvetica,sans-serif;font-size:14px;font-style:normal;font-variant-ligatures:normal;font-weight:normal;letter-spacing:normal;line-height:21px;text-align:start;text-indent:0;text-transform:none;white-space:normal;widows:1;word-spacing:0;-webkit-text-stroke-width:0;background-color:#fff"><tbody><tr class="firstRowxx"><td height="35" style="background:#FF0000;margin:0;border-color:green;word-break:break-all;text-align:center;font-size:13pt;line-height:26px;color:#333;padding-left:2px;padding-right:2px;padding-top:3px;padding-bottom:3px"><span style="color:#FFF;font-family:\\5fae\\8f6f\\96c5\\9ed1;font-weight:700;line-height:normal;font-size:12pt">' + d.term + '\u671f\uff1a\u516d\u8096\u4e09\u7801 ' + resTxt + verdictTxt + '</span></td></tr><tr><td style="margin:0;padding:3px 2px;border-color:#e5e5e5;word-break:break-all;text-align:center;line-height:26px">' + x6 + x3 + x1 + ma12 + ma6 + ma1 + '</td></tr></tbody></table>';
         }
 
         if (!htmlBoxList) {

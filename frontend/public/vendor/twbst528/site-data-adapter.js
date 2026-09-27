@@ -50,6 +50,86 @@
     });
   }
 
+  // A supplier template may pack several issues into one element and bake its
+  // own yellow hit markers into that markup. Multi-issue lines must be judged
+  // per issue (S3/S4), so every rewritten line gets its own element and every
+  // stale #FFFF00 marker on the way to it is cleared before the line is written.
+  var YELLOW_MARKER = /#ffff00|rgb\(\s*255\s*,\s*255\s*,\s*0\s*\)/i;
+  var LINE_HOST_ATTRIBUTE = "data-prediction-line";
+
+  function hasYellowMarker(node) {
+    if (!node || node.nodeType !== 1 || !node.getAttribute) return false;
+    if (YELLOW_MARKER.test(String(node.getAttribute("color") || ""))) return true;
+    if (YELLOW_MARKER.test(String(node.getAttribute("bgcolor") || ""))) return true;
+    var style = node.style;
+    if (!style) return false;
+    return YELLOW_MARKER.test(String(style.backgroundColor || "")) || YELLOW_MARKER.test(String(style.color || ""));
+  }
+
+  function clearYellowMarker(node) {
+    if (YELLOW_MARKER.test(String(node.getAttribute("color") || ""))) node.removeAttribute("color");
+    if (YELLOW_MARKER.test(String(node.getAttribute("bgcolor") || ""))) node.removeAttribute("bgcolor");
+    if (node.style) {
+      if (YELLOW_MARKER.test(String(node.style.backgroundColor || ""))) node.style.backgroundColor = "";
+      if (YELLOW_MARKER.test(String(node.style.color || ""))) node.style.color = "";
+    }
+  }
+
+  function commonAncestor(leaves) {
+    var node = leaves[0].parentNode;
+    while (node && !leaves.every(function (leaf) { return node.contains(leaf); })) node = node.parentNode;
+    return node;
+  }
+
+  function clearLineMarkers(group) {
+    var container = commonAncestor(group);
+    if (!container) return;
+    group.forEach(function (leaf) {
+      var node = leaf.parentNode;
+      while (node) {
+        if (hasYellowMarker(node)) clearYellowMarker(node);
+        if (node === container) break;
+        node = node.parentNode;
+      }
+    });
+  }
+
+  function lineHost(leaf) {
+    var parent = leaf && leaf.parentNode;
+    if (!parent || parent.nodeType !== 1) return null;
+    if (parent.getAttribute(LINE_HOST_ATTRIBUTE) !== null) return parent;
+    var host = leaf.ownerDocument.createElement("span");
+    host.setAttribute(LINE_HOST_ATTRIBUTE, "");
+    parent.insertBefore(host, leaf);
+    return host;
+  }
+
+  // Only a hit issue carries a mark: the matched token inside the 【candidate】
+  // bracket is wrapped in the supplier's hit background (#FFFF00).
+  function markLineHit(host, text, hitTokens) {
+    if (!host || !hitTokens || !hitTokens.length) return;
+    var bracket = /【([^】]*)】/.exec(text);
+    var start = bracket ? bracket.index + 1 : 0;
+    var end = bracket ? start + bracket[1].length : text.length;
+    var token = "";
+    var index = -1;
+    hitTokens.forEach(function (value) {
+      if (index !== -1 || !value) return;
+      var found = text.indexOf(value, start);
+      if (found === -1 || found + String(value).length > end) return;
+      token = String(value);
+      index = found;
+    });
+    if (index === -1) return;
+    var doc = host.ownerDocument;
+    var marker = doc.createElement("span");
+    marker.style.backgroundColor = "#FFFF00";
+    marker.appendChild(doc.createTextNode(token));
+    host.textContent = text.slice(0, index);
+    host.appendChild(marker);
+    if (index + token.length < text.length) host.appendChild(doc.createTextNode(text.slice(index + token.length)));
+  }
+
   function writeCell(cell, value, hitValues) {
     var leaves = textNodes(cell);
     var marker = cell.querySelector("span[style*='background-color']");
@@ -229,10 +309,18 @@
     });
   }
 
-  function writeLineGroup(group, value) {
+  function writeLineGroup(group, value, hitTokens) {
     if (!group || !group.length) return;
-    group[0].nodeValue = String(value || "");
+    clearLineMarkers(group);
+    var text = String(value || "");
+    var host = lineHost(group[0]);
     group.slice(1).forEach(function (leaf) { leaf.nodeValue = ""; });
+    if (!host) {
+      group[0].nodeValue = text;
+      return;
+    }
+    host.textContent = text;
+    markLineHit(host, text, hitTokens);
   }
 
   function writeLineValues(root, values) {
@@ -793,7 +881,7 @@
       if (!/\d+(?:-\d+)?期/.test(current)) return;
       var rows = distinctRows(moduleList[Math.min(Math.max(moduleIndex, 0), moduleList.length - 1)]);
       var row = rows[rowIndex];
-      writeLineGroup(group, row ? formatter(row, moduleIndex) : "暂无后端资料");
+      writeLineGroup(group, row ? formatter(row, moduleIndex) : "暂无后端资料", row ? hitValues(row) : []);
       rowIndex += 1;
     });
   }
