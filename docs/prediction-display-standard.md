@@ -50,6 +50,28 @@ python scripts\audit-prediction-display.py twsaimahui --base-url http://127.0.0.
 | R5 | `repeat_run` | warn | 连续 ≥3 期展示值相同（S7） |
 | R6 | `empty_legend` | error | 分组说明后面为空（S6） |
 | R7 | `verdict_missing` | warn | 已开奖但缺判定文字（S1） |
+| R8 | `verdict_all_same` | warn | 某模块 ≥5 期已开奖行判定全同（整列全对/全错） |
+
+**行的切分口径（2026-09-28 起加固）**：供应商经常把「一期」拆到多个元素里，例如
+
+```html
+<tr><td>270期【绝杀二肖】开 马37错</td><td>鸡,马</td></tr>          <!-- 高亮在第二个 <td> -->
+<tr><td>268期:平特一肖〖羊羊羊〗</td></tr><tr><td>开：<b bgcolor=#FFFF00>11猴</b>错</td></tr>
+```
+
+旧版只取「叶子行」，永远看不到 `开:` 与那块高亮，**R3（error 级）会整类漏报**。现在会在叶子的
+祖先链（最多 4 层）上把「本节点之后、不含期号的同辈」和「相邻的不含期号的 `<tr>`」合并成一行，
+遇到下一个期号立刻停止。合并后第一次自动抓到 twcf888 `#pred-jsb-*` 绝杀类、twjinniu
+`#sxbm`/`#pmzq`、shengshi8800 `#yxym`/`#dxzt` 等 30+ 处真实违规。
+
+> 副作用：合并可能把旁边的装饰性黄底（模块标题栏红底黄字、静态公告、图片素材）带进来造成**假阳性**。
+> 处置办法是先看 `--dump-rows` 明细或写一个容器级只读探针确认「这块黄底是否属于本期的这一行」；
+> 确属装饰的不要改代码，把它记录为脚本待收敛项。
+
+**判定文字的取法（2026-09-28 起加固）**：① 只看「最后一个 `开/開`」之后的部分（模块名里也有「中」）；
+② 取**最靠右**的判定字（模块名里也有判定字，如 twcaibawang 的「输尽光」含「输」）；
+③ 行内没有 `开/開` 时，只有判定字出现在**行尾**才认账，否则「270期七肖中特：www.xxx.com长期跟踪」
+这类标题行里的「中」会被误判成判定。
 
 **高亮识别口径（2026-09-27 起加固）**：同时用两种口径判定「这一行有没有黄色高亮」——
 
@@ -111,6 +133,16 @@ python scripts\audit-verdict-truth.py --site <site> --json .codex-temp\verdict-t
 
 对每一行重新计算「候选项是否命中真实开奖」，与行内 `is_correct` 比对。出现
 `is_correct=1` 但实际没命中（虚报）或反之，**必须修判定逻辑，不能靠前端补丁掩盖**。
+
+同一条命令还能报「已开奖但 `res_code` 为空」的缺口（页面会显示 `??` 占位，那是数据缺口不是渲染 bug）：
+
+```powershell
+python scripts\audit-verdict-truth.py --check-missing-res-code
+# 补齐（默认 dry-run，加 --apply 才写库；逐列只填空值，绝不触碰预测正文）
+cd backend/src; python ..\scripts\backfill_created_result_catchup.py --db-path $env:DATABASE_URL
+cd backend/src; python ..\scripts\backfill_created_result_catchup.py --db-path $env:DATABASE_URL --apply
+```
+
 
 ### 4. 判定语义抽查（页面显示 vs 真实开奖）
 
@@ -206,7 +238,7 @@ R8 统一性告警）：
 | --- | ---: | ---: | ---: | --- |
 | shengshi8800 | 440 | 0 | 3 | R5×2 + R8×1（八肖中特 6 期全准，8/12 命中率下属正常波动） |
 | twcaibawang | 292 | 0 | 2 | R5×2 |
-| twsaimahui | 652 | 0 | 22 | R5×15 + R8×7；R8 中 `.box.l23`（10码中特全错）、`#hao012`（六肖三码全错）是**待查实缺陷** |
+| twsaimahui | 652 | 0 | 22 | R5×15 + R8×7；R8 中 `.box.l23`（10码中特全错）仍是**待查实缺陷**；`#hao012`（六肖三码全错）已于 2026-09-28 修复，见本表下方「#hao012 修复记录」 |
 | twjinniu | 469 | 0 | 2 | R5×1 + R8×1 |
 | twcf888 | 451 | 0 | 3 | R8×3（均需人工判定真伪） |
 | twssz | 289 | 0 | 98 | R4 较多，属基线 |
@@ -220,7 +252,41 @@ R8 统一性告警）：
 不要复活它）、`shengshi8800` 25 处裸 `JSON.parse(d.content)`（content 为中文串时会抛错导致整块模块空白）、
 `twsaimahui/001sb.js:16` 直接上屏 `d.content.split(',')`。
 
+## 五之二·补、#hao012（twsaimahui 六肖三码）修复记录（2026-09-28）
+
+现象：`012liuxiao.js` 渲染的 `#hao012` 最近 6 期全部显示「错」，用户投诉「为什么全部都是错的」。
+
+根因（与首轮推测不同，已实测确认）：
+
+1. **候选并没有缺失**。该模块的候选来自 `getXiaoma2?num=6` → mode 27（`mode_payload_tables` 标题「6肖12码」，
+   正文形如 `["狗|09,21,33,45", …]` 六肖 × 每肖候选码），本地页面在修复前就能渲染出
+   `必中六肖：…`、`精选12码：…`。
+2. **判定取错了字段**。commit `7f98c78` 给该模块加判定时，把候选塞进了一个「肖名 + 码串交替」的数组，
+   却用 `xiao[k + 1]`（也就是**码串**）去 `indexOf(特肖)` 判命中——生肖不可能出现在号码串里，
+   于是 `zjXiao` 恒为 `false`；再加上码组全部拼成一个数组后用 `m < 3` 当「前三码」，
+   两个分支恒不成立，判定恒为「错」。`#hao012` 因此永远是「错」。
+
+修复：
+
+- `frontend/public/vendor/twsaimahui/static/js/012liuxiao.js`：分别保存「肖名」与「该肖码组」
+  （`xiao` / `codesByXiao`），特肖用肖名匹配、特码用严格相等匹配；三码 = 首个候选肖码组的前三码。
+  **判定口径未改**（特肖 ∈ 六肖 或 特码 ∈ 前三码 → 准）。
+- `backend/src/legacy/frontend_compat.py::_ENDPOINT_MODE_IDS`：登记
+  `("getxiaoma2","6")→27`、`("getxiaoma2","4")→51`、`("getxiaoma2","7")→22`。
+  属于**映射加固**：`num` 的 6/4/7 恰好也是 `mode_payload_6/4/7` 的表号，
+  兼容层的「直表名优先」解析会把 `num=6` 解析成 `mode_payload_6`（三国中特）而不是 mode 27；
+  新前台 Next 路由当前硬编码 27 所以不受影响，但这是随时会复发的隐患。
+- 重建 vendor bundle（`scripts/bundle-twsaimahui-modules.py --rebuild --apply`），bundle 文件名变化必须同步 `index.html`。
+
+验证：`#hao012` 6 期页面文本 vs 本地 DB 独立复算 **0 不一致**（190 准 / 189 错 / 188 准 / 187 错 / 186 错 / 191 未开奖无判定）；
+`audit-prediction-display.py twsaimahui --base-url http://127.0.0.1:3000` → `rows=655, error=0, js_errors=0, warn=24`；
+`#hao012` 的 R8 告警（6 期全同）已消失，残留的 R5 是该模块正文以标签「六肖三码」开头的抽取噪声，非真实缺陷。
+
+契约测试：`frontend/test/twsaimahui-012-liuxiao-display-contract.mjs`（路由映射 + 映射函数 + 渲染器真跑）、
+`backend/src/tests/unit/test_legacy_frontend_compat_xiaoma2.py`（endpoint→mode 解析 + 响应字段合同）。
+
 ## 五之三、R8 告警的正确用法
+
 
 R8（某模块 ≥5 期已开奖行判定全同）**只是提示**，必须人工判定属于哪一类：
 
