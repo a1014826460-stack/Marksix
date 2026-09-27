@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core.time_utils import beijing_now
@@ -241,6 +241,132 @@ def _resolve_taiwan_next_issue_payload(conn: Any, latest_opened: dict[str, Any])
     }
 
 
+_HK_MACAU_DRAW_CLOCK_CFG: dict[int, tuple[str, tuple[int, int]]] = {
+    1: ("draw.hk_default_draw_time", (21, 30)),
+    2: ("draw.macau_default_draw_time", (21, 32)),
+}
+# 香港六合彩每周二/四/六开奖；澳门每日开奖。可用 system_config 覆盖。
+# 星期编号与 Python ``datetime.weekday()`` 一致：周一=0 … 周日=6（周二=1/周四=3/周六=5）。
+_HK_DRAW_WEEKDAYS_DEFAULT = "1,3,5"
+
+
+def _conn_config(conn: Any, key: str, default: Any) -> Any:
+    """从系统配置读取值（失败时返回默认值，绝不抛错）。"""
+    try:
+        from runtime_config import get_config_from_conn
+
+        return get_config_from_conn(conn, key, default)
+    except Exception:
+        return default
+
+
+def _as_utc_naive(value: datetime | None) -> datetime:
+    now = value or datetime.now(timezone.utc)
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
+    return now
+
+
+def _configured_draw_weekdays(conn: Any, lottery_type_id: int) -> set[int]:
+    """香港开奖星期集合（Python ``weekday()``：周一=0 … 周日=6）；澳门每日开奖返回空集合。"""
+    if int(lottery_type_id) != 1:
+        return set()
+    raw = str(_conn_config(conn, "draw.hk_draw_weekdays", _HK_DRAW_WEEKDAYS_DEFAULT) or "")
+    days: set[int] = set()
+    for item in raw.replace("，", ",").split(","):
+        text = item.strip()
+        if not text:
+            continue
+        try:
+            value = int(text)
+        except ValueError:
+            continue
+        if 0 <= value <= 6:
+            days.add(value)
+    return days or {1, 3, 5}
+
+
+def compute_next_draw_time_ms(
+    conn: Any,
+    lottery_type_id: int,
+    *,
+    now_utc: datetime | None = None,
+) -> str:
+    """按开奖排期推算下一次开奖时间（毫秒时间戳字符串）；台湾彩返回空串。
+
+    为什么需要它：源站在开奖后的一段时间内可能不提供 ``next_time``，
+    而备用源（``macaumarksix.com`` / ``api.csjid.com``）的响应里**完全没有该字段**。
+    一旦新期是由备用源开盘的，``lottery_draws.next_time`` 就是空值，
+    于是 ``lottery_types.next_time`` 与 ``system_config.lottery.*_next_time`` 被清空，
+    ``/api/next-draw-deadline`` 返回 ``next_time: null``，
+    站点面板"下次开奖"倒计时变成 ``--:--:--``（2026-09-26 港澳两期即为此故障）。
+
+    香港按 ``draw.hk_draw_weekdays``（默认周二/四/六），澳门每日；
+    钟点取 ``draw.hk_default_draw_time`` / ``draw.macau_default_draw_time``。
+    """
+    lottery_type = int(lottery_type_id)
+    if lottery_type not in _HK_MACAU_DRAW_CLOCK_CFG:
+        return ""
+    cfg_key, fallback_clock = _HK_MACAU_DRAW_CLOCK_CFG[lottery_type]
+    raw_clock = str(_conn_config(conn, cfg_key, "") or "").strip()
+    hour, minute = fallback_clock
+    if raw_clock:
+        try:
+            parts = raw_clock.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, IndexError):
+            hour, minute = fallback_clock
+
+    beijing_now = _as_utc_naive(now_utc) + timedelta(hours=8)
+    weekdays = _configured_draw_weekdays(conn, lottery_type)
+    for offset in range(0, 8):
+        candidate = (beijing_now + timedelta(days=offset)).replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if weekdays and candidate.weekday() not in weekdays:
+            continue
+        if candidate <= beijing_now:
+            continue
+        candidate_utc = candidate - timedelta(hours=8)
+        return str(int(candidate_utc.replace(tzinfo=timezone.utc).timestamp() * 1000))
+    return ""
+
+
+def resolve_next_time_ms(
+    conn: Any,
+    lottery_type_id: int,
+    *,
+    source_next_time: Any = "",
+    stored_next_time: Any = "",
+    now_utc: datetime | None = None,
+) -> str:
+    """决定最终对外的"下一期开奖时间"（毫秒时间戳字符串），绝不把排期清空。
+
+    优先级：
+    1. 最新已开奖行记录的 ``next_time``（源站或开盘时的真实值）；
+    2. 已存配置值且仍在未来（保留，避免被空值覆盖）；
+    3. 按开奖排期推导（仅香港/澳门；台湾彩返回空串，保持其原有推导路径）。
+    """
+    source = str(source_next_time or "").strip()
+    if source:
+        return source
+
+    stored = str(stored_next_time or "").strip()
+    if stored:
+        try:
+            stored_dt = datetime.fromtimestamp(int(stored) / 1000, tz=timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            stored_dt = None
+        if stored_dt is not None and stored_dt > _as_utc_naive(now_utc).replace(tzinfo=timezone.utc):
+            return stored
+
+    derived = compute_next_draw_time_ms(conn, lottery_type_id, now_utc=now_utc)
+    if derived:
+        return derived
+    return stored
+
+
 def get_effective_next_draw_payload(conn: Any, lottery_type_id: int) -> dict[str, Any]:
     """返回该彩票类型的标准下一期抽奖的有效载荷。
 
@@ -316,7 +442,15 @@ def sync_lottery_type_next_time_from_latest_draw(
     ).fetchone()
     current_next_time = str(current_row["next_time"] or "") if current_row else ""
     payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
-    next_time = str(payload.get("next_time") or "")
+    # 关键：绝不用"空值"覆盖已有排期。源站（尤其是备用源 macaumarksix / api.csjid.com）
+    # 在新期开盘时可能不提供 next_time，直接用 payload 会把排期清空，
+    # 站点面板"下次开奖"倒计时随即变成 --:--:--。
+    next_time = resolve_next_time_ms(
+        conn,
+        int(lottery_type_id),
+        source_next_time=payload.get("next_time"),
+        stored_next_time=current_next_time,
+    )
     if current_next_time != next_time:
         logging.getLogger("next_time.sync").warning(
             "lottery_types.next_time mismatch detected: source=%s lottery_type_id=%s stored=%s effective=%s current_issue=%s next_issue=%s",

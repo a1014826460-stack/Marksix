@@ -12,7 +12,7 @@ from typing import Any
 from db import connect
 from helpers import (
     apply_lottery_draw_overlay, build_draw_result_payload, color_name_to_key,
-    get_effective_next_draw_payload,
+    get_effective_next_draw_payload, resolve_next_time_ms,
     load_fixed_data_maps, load_lottery_draw_map, load_mode_payload_rows_from_source,
     merge_preferred_mode_payload_rows, split_csv,
 )
@@ -602,13 +602,24 @@ def get_public_next_draw_deadline(
     db_path: str | Path,
     lottery_type_id: int = 3,
 ) -> dict[str, Any]:
-    """Return next draw time derived from the latest opened issue only."""
+    """Return next draw time derived from the latest opened issue only.
+
+    港澳彩的兜底：最新已开奖行可能没有 ``next_time``（新期由备用源开盘时该字段为空），
+    此时按开奖排期推导（香港周二/四/六、澳门每日），保证站点面板"下次开奖"倒计时
+    永远拿得到未来时间，而不是 ``null``（面板会退化成 ``--:--:--``）。
+    台湾彩（3）保持原样：其 next_time 由未来期行/持久化任务提供。
+    """
     with connect(db_path) as conn:
         payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
+        next_time = resolve_next_time_ms(
+            conn,
+            int(lottery_type_id),
+            source_next_time=payload.get("next_time"),
+        )
         return {
             "current_issue": payload.get("current_issue") or "",
             "next_issue": payload.get("next_issue") or "",
-            "next_time": payload.get("next_time"),
+            "next_time": next_time or None,
         }
 
 
