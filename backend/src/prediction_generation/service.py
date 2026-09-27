@@ -635,6 +635,23 @@ def _three_period_alternative_tokens(
             candidates.append(token)
 
     if not candidates:
+        # 「二选一」池标签模式：近期历史可能一直只有同一组（例如连续多期都是 左肖），
+        # 只用历史行会把候选集缩成一个标签，导致相邻期规则无解。
+        # 这里再读一次该模式自己的 public 表，枚举出全部出现过的展示值。
+        try:
+            payload_rows = generation_repository.load_mode_payload_content_rows(
+                conn,
+                table_name=f"mode_payload_{int(mode_id)}",
+                mode_id=int(mode_id),
+            )
+        except Exception:  # noqa: BLE001 - 读不到时退回历史行
+            payload_rows = []
+        for row in payload_rows:
+            for token in distinct_tokens_for_content(row.get("content")):
+                if token and token not in candidates:
+                    candidates.append(token)
+
+    if not candidates:
         for row in history_rows if history_rows is not None else ():
             for token in distinct_tokens_for_content(row.get("content")):
                 if token and token not in candidates:

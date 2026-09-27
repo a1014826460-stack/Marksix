@@ -250,6 +250,34 @@ def test_apply_uniqueness_requires_four_identical_periods_for_mode_62(monkeypatc
     assert result["title"] == row["title"]
 
 
+def test_alternative_tokens_read_payload_table_when_history_is_one_sided(monkeypatch):
+    """近期历史只有 左肖 时，必须从模式自己的表里补出 右肖 这个候选。
+
+    twsaimahui 的「二选一」分组（左右肖 / 阴阳肖 / 文武肖 / 有无肖 / 吉美凶丑 /
+    肥瘦肖 / 胆大胆小）常出现连续多期同一组；只用历史行会让候选集缩成一个标签，
+    相邻期规则因此无解。
+    """
+    config = _config(152, "title_152", ())
+    monkeypatch.setattr(
+        service.generation_repository,
+        "load_mode_payload_content_rows",
+        lambda conn, **kwargs: [
+            {"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'},
+            {"content": '["右肖|虎,兔,马,羊,狗,猪"]'},
+        ],
+    )
+
+    tokens = service._three_period_alternative_tokens(
+        mode_id=152,
+        config=config,
+        conn=object(),
+        current_tokens=("左肖",),
+        history_rows=[{"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'}],
+    )
+
+    assert tokens == ("左肖", "右肖")
+
+
 def test_generation_loop_switches_token_after_two_identical_periods(monkeypatch):
     """真实场景：库里最近两期都是同一展示值时，本期必须换一个。
 

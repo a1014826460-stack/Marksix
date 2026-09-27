@@ -197,6 +197,38 @@ def test_display_unique_window_defaults_to_three_periods():
     assert diversity.display_unique_window(108) == 3
 
 
+def test_two_label_group_modes_are_managed():
+    """twsaimahui 的「二选一」生肖分组必须纳入相邻期规则。
+
+    这些模块的 content 只含一个标签（如 `["左肖|牛,猴,…"]`），默认的“前二唯一”
+    策略对单元素 content 完全失效，此前会连续多期都抽到同一组。
+    """
+    for mode_id in (141, 144, 147, 152, 155, 157, 158):
+        assert mode_id in diversity.THREE_PERIOD_UNIQUE_MODE_IDS, mode_id
+        assert diversity.display_unique_window(mode_id) == 3
+
+
+def test_two_label_group_token_is_the_content_label():
+    assert diversity.display_token_for_row(152, {"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'}) == "左肖"
+    assert diversity.display_token_for_row(147, {"content": '["有肖|狗,猪,猴,蛇,鸡,龙"]'}) == "有肖"
+    assert diversity.display_token_for_row(158, {"content": '["胆小生肖|兔,羊,蛇,鸡,鼠,龙"]'}) == "胆小生肖"
+
+
+def test_two_label_group_rotates_after_two_identical_periods():
+    row = {"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=152,
+        row_data=row,
+        recent_rows=[
+            {"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'},
+            {"content": '["左肖|牛,猴,蛇,鸡,鼠,龙"]'},
+        ],
+        alternative_content_templates=['["右肖|虎,兔,马,羊,狗,猪"]'],
+    )
+    assert diversity.display_token_for_row(152, result) == "右肖"
+    assert json.loads(result["content"]) == ["右肖|虎,兔,马,羊,狗,猪"]
+
+
 def test_display_unique_window_is_five_for_text_pool_modes():
     """52 四字玄机与 62 欲钱解特候选池最大，要求相邻连续五期不得相同。"""
     assert diversity.display_unique_window(52) == 5

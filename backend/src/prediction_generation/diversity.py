@@ -20,7 +20,13 @@ CONTENT_DIVERSITY_EXEMPT_MODE_IDS = {197}
 # （如 28 单/双、57 与 108 大/小、63 家禽/野兽、62 欲钱解特诗）。
 # 默认的“前二唯一”策略对单元素 content 完全失效，因此这里单独强制：
 # 相邻连续 N 期的展示值不得全部相同（N 由 display_unique_window 决定）。
-THREE_PERIOD_UNIQUE_MODE_IDS = frozenset({28, 52, 57, 62, 63, 108})
+#
+# 141/144/147/152/155/157/158 是 twsaimahui 的「二选一」生肖分组
+# （阴阳肖 / 文武肖 / 有无肖 / 左右肖 / 吉美凶丑 / 肥瘦肖 / 胆大胆小）：
+# content 只有 `["左肖|…"]` 这类单个标签，生成器此前会连续多期都抽到同一组。
+THREE_PERIOD_UNIQUE_MODE_IDS = frozenset(
+    {28, 52, 57, 62, 63, 108, 141, 144, 147, 152, 155, 157, 158}
+)
 
 #: 展示值取自 `title`（而不是 content 首项标签）的模式。
 #: 前台直接渲染 title，因此唯一性也必须按 title 判定。

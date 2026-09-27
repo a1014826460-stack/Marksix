@@ -229,6 +229,39 @@ def load_mode_payload_title_rows(
     return [{column: str(row[column] or "") for column in selected} for row in rows]
 
 
+def load_mode_payload_content_rows(
+    conn: Any,
+    *,
+    table_name: str,
+    mode_id: int,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """读取某 mode 在 public 表里已有的非空 content（只读）。
+
+    用于枚举「二选一」池标签模式（左右肖 / 阴阳肖 / 文武肖 / 有无肖 / 吉美凶丑 /
+    肥瘦肖 / 胆大胆小）的全部候选标签：只靠最近几行历史时，如果近期一直抽到同一组，
+    候选集里就只有那一组，相邻期规则会无解。
+    """
+    if int(mode_id or 0) <= 0 or not conn.table_exists(table_name):
+        return []
+
+    columns = set(conn.table_columns(table_name))
+    if "content" not in columns:
+        return []
+
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT content
+        FROM {quote_identifier(table_name)}
+        WHERE COALESCE(content, '') <> ''
+        ORDER BY content
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    return [{"content": str(row["content"] or "")} for row in rows]
+
+
 def load_text_history_candidate_rows(
     conn: Any,
     *,
