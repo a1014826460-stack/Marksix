@@ -273,6 +273,24 @@ function renderResultJudge(result: ParsedResult, isCorrect: boolean | null, pend
   return `${openText}<font color="#000">错</font>`
 }
 
+/**
+ * 「开：」结果框。
+ *
+ * 展示规范 S2/S3：只有本期命中才允许黄色高亮，且高亮只落在开奖号码那一段文本上；
+ * 判定为「错」的期次整行不得出现任何 `#FFFF00`；未开奖只给占位、不给判定。
+ * 供应商静态样例里的固定黄底必须在这里被清掉，不能沿用。
+ */
+function renderResultJudgeBox(result: ParsedResult, isCorrect: boolean | null, pending = "?????") {
+  if (!result.isOpened) {
+    return `<span style="color: #F00;">${escapeHtml(pending)}</span>`
+  }
+  const openText = `${escapeHtml(result.code)}${escapeHtml(result.zodiac)}`
+  if (isCorrect === true) {
+    return `<span style="color: #F00; background-color: #FFFF00;">${openText}</span><font color="#FF0000">对</font>`
+  }
+  return `<span style="color: #F00;">${openText}</span><font color="#000">错</font>`
+}
+
 function renderResultPlain(result: ParsedResult, pending = "??????") {
   if (!result.isOpened) return pending
   return `${escapeHtml(result.code)}${escapeHtml(result.zodiac)}`
@@ -417,7 +435,7 @@ function renderSixiaoBama(rows: LegacyModeRow[]) {
         </tr>
         <tr>
           <td style="color:#000;font-family:微软雅黑;font-weight:700;border:1px solid #000" align="center" width="100%" height="50">
-            <p style="line-height:200%"><span style="font-size:13pt;font-family:微软雅黑;color: #ff0000">${predictionText}<br>开:<span style="color: #F00; background-color: #FFFF00;">${renderResultJudge(result, isCorrect, "?????")}</span></span></p>
+            <p style="line-height:200%"><span style="font-size:13pt;font-family:微软雅黑;color: #ff0000">${predictionText}<br>开:${renderResultJudgeBox(result, isCorrect, "?????")}</span></p>
           </td>
         </tr>
       `
@@ -655,7 +673,7 @@ function renderPingteXiao(rows: LegacyModeRow[]) {
       return `
         <tr>
           <td style="color:#000;font-family:微软雅黑;font-weight:700;border:2px solid #000" align="center" width="100%" height="50">
-            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一肖</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：<span style="background-color: #FFFF00; color: #F00;">${renderResultJudge(result, isCorrect)}</span></font>
+            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一肖</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudgeBox(result, isCorrect)}</font>
           </td>
         </tr>
       `
@@ -700,7 +718,7 @@ function renderPingteWei(rows: LegacyModeRow[]) {
       return `
         <tr>
           <td style="color:#000;font-family:微软雅黑;font-weight:700;border:2px solid #000" align="center" width="100%" height="50">
-            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一尾</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：<span style="background-color: #FFFF00; color: #F00;">${renderResultJudge(result, isCorrect)}</span></font>
+            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一尾</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudgeBox(result, isCorrect)}</font>
           </td>
         </tr>
       `
@@ -1267,7 +1285,7 @@ function renderShisiMazhong(rows: LegacyModeRow[]) {
         : escapeHtml(c)
     ).join(".")
     const resultDisplay = result.isOpened
-      ? escapeHtml(result.code) + escapeHtml(result.zodiac)
+      ? escapeHtml(result.code) + escapeHtml(result.zodiac) + (isCorrect ? "对" : "错")
       : '?????'
     return `<tr><td style="padding:8px 10px;border:1px solid #ccc;font-size:13pt;font-weight:700;line-height:2.2;">
       <p style="margin:2px 0;"><span style="color:#0000FF;">${escapeHtml(row.term)}期:</span>==14码中特==开${resultDisplay}</p>
@@ -1291,7 +1309,7 @@ function renderYijuhuaZhongtema(rows: LegacyModeRow[]) {
     const result = resolveResult(row)
     const resultDisplay = result.isOpened
       ? escapeHtml(result.code) + escapeHtml(result.zodiac)
-      : '?00'
+      : '待开奖'
     return `<tr><td style="padding:8px 10px;border:1px solid #ccc;font-size:13pt;font-weight:700;line-height:2.2;">
       <p style="margin:2px 0;"><span style="color:#0000FF;">${escapeHtml(row.term)}期一句真言：</span>${escapeHtml(content)}</p>
       <p style="margin:2px 0;">真言解释：${escapeHtml(jiexi)}</p>
@@ -1376,8 +1394,8 @@ function renderQianhou24ma(rows: LegacyModeRow[]) {
     const label = entry.label || ''
     const direction = label.includes('前') ? '前落码' : label.includes('后') ? '后落码' : label
     const resultDisplay = result.isOpened
-      ? `<font color="#FF0000">${escapeHtml(result.code)}${escapeHtml(result.zodiac)}</font><font color="${isCorrect ? '#FF0000' : '#000000'}">${isCorrect ? '准' : '错准'}</font>`
-      : '?????准'
+      ? `<font color="#FF0000">${escapeHtml(result.code)}${escapeHtml(result.zodiac)}</font><font color="${isCorrect ? '#FF0000' : '#000000'}">${isCorrect ? '准' : '错'}</font>`
+      : '?????'
     return `<tr><td style="padding:4px 10px;border:1px solid #ccc;font-size:13pt;font-weight:700;line-height:1.6;text-align:center;">
       <p style="margin:1px 0;"><span style="color:#0000FF;">${escapeHtml(row.term)}期：</span><span style="background-color:#0000FF;color:#FFFFFF;padding:2px 8px;">【前后落码→24码中特】</span>开${resultDisplay}</p>
       <p style="margin:1px 0;"><span style="background-color:#000000;color:#FFFF00;padding:1px 8px;">↑↑ 【${escapeHtml(direction)}】</span></p>

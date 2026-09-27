@@ -24,9 +24,13 @@ $.ajax({
                 let xiao = d.jiexi.split('');
                 let ma = [];
                 let maValue = [];
+                // 高亮必须与命中口径绑定：只有特肖确实出现在「真言解肖」候选里才高亮，
+                // 否则整行零黄底。逐字拼串后 indexOf 判断会跨字误命中，这里改成
+                // 「特肖出现在候选生肖集合里」的精确判断。
+                let __hitSx = (sx && String(d.jiexi || '').indexOf(sx) !== -1) ? sx : '';
                 let c = [];
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
+                    if (__hitSx && xiao[i] === __hitSx) {
                         c.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c.push(`${xiao[i]}`)
@@ -35,7 +39,7 @@ $.ajax({
 
 
                 htmlBoxList = htmlBoxList + ` 
-    <tr style='background: #FFFF00;'>
+    <tr>
         <td style='background-color: #CCFFCC; text-align: left'>
             <span class='zl'>
                 <font color='#000000'>${d.term}期一句真言：${d.title}</font>

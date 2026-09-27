@@ -247,6 +247,10 @@ R8 统一性告警）：
 | twwanli | 202 | 0 | 0 | 参考实现 |
 | twsyw | 545 | 0 | 0 | 参考实现 |
 
+补充（2026-09-28，标题行不再并入预测行之后重测）：最新期**未开奖**时本地预检 `rows=545 error=0 warn=15`、
+线上 `rows=545 error=0 warn=7`；两者 `js_errors=0`。表内 twsyw 的 `warn=0` 是更早一轮的记录，
+当前 R4（`#top_xiao_code` 命中行无高亮）与 R5（`#daxiao`/`#table7` 连续期同值）属基线，详见下方「五之四」。
+
 源码 lint 基线（`lint-prediction-renderers.py`，160 文件）：error 45 / warn 34。其中需要注意的真阳性：
 `shengshi8800/handleSelect.js:729/731` 的 `getResult()` 写死「准」（**当前无调用方，属死代码**，但
 不要复活它）、`shengshi8800` 25 处裸 `JSON.parse(d.content)`（content 为中文串时会抛错导致整块模块空白）、
@@ -284,6 +288,44 @@ R8 统一性告警）：
 
 契约测试：`frontend/test/twsaimahui-012-liuxiao-display-contract.mjs`（路由映射 + 映射函数 + 渲染器真跑）、
 `backend/src/tests/unit/test_legacy_frontend_compat_xiaoma2.py`（endpoint→mode 解析 + 响应字段合同）。
+
+## 五之四、twsyw 未开奖期「仍显示判定 + 仍有黄底」的复核结论（2026-09-28）
+
+现象：本地 dev 最新期 2026191 未开奖时，`audit-prediction-display.py twsyw --base-url http://127.0.0.1:3000`
+报 `error=11`（R2×10 + R3×1），样例形如 `2026191期 开:待开奖 台湾彩 (双波中特)` 判定「中」、
+`2026191期 开:待开奖 台湾彩 (平特5不中)` 判定「不中」且「未开奖行仍有黄色高亮」。
+
+复核结论：**页面本身没有缺陷，是审计工具的行合并把「面板标题行」当成了预测行的一部分。**
+
+- 页面上 31 条待开奖行的自身文本里**没有任何**判定字（`verdict_of` 全为空）、
+  `data-prediction-hit` 属性全为 `null`、行内黄色高亮计数全为 `0`；
+- 后端接口对 `draw_is_opened=false` 的行一律返回 `is_correct: null`（本地实测 41 条待开奖行全部为 null），
+  供应商静态 HTML 里的 `#FFFF00` 只存在于标题行；
+- twsyw 的表结构是「标题行 `<tr>` + 预测行 `<tr>` 交替」，标题行恰好是每个模块**首行预测行的前一个兄弟行**；
+  `ROW_SCRIPT` 的兄弟行合并（为兼容 `<td>270期…错</td><td>鸡,马</td>` 这类拆单元格写法）于是把标题并了进来：
+  标题里的模块名（大小中特 / 九肖中特 / 赢家12码 / 平特5不中）被 `verdict_of` 当成判定字，
+  标题的黄字（`color:#FFFF00`）被 `countYellow` 当成行内高亮。已开奖的「错」行会同样误报 R3
+  （线上 2026270 期 `#fslx/#m24/#table7` 共 6 条 R3 就是这么来的）。
+
+修复：`ROW_SCRIPT` 新增 `isTitleRow()`，遇到标题行不并入预测行也不计其高亮；识别口径为
+`data-prediction-title="true"`（页面可显式标记，twsyw 已给 24 个面板标题行 + 8 个顶部表头行打上）
+或行内含供应商标题占位 `[data-lottery-title]` / `[data-site-domain]`。9 个抽检站点
+（twcaibawang/twjinniu/twcf888/twssz/twbst528 等）实测**没有**被合并的标题行节点，规则不影响它们。
+
+验收数字（2026-09-28）：
+
+| 口径 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 本地预检（最新期**未开奖**） | `rows=545 error=11 warn=16 js_errors=0` | `rows=545 error=0 warn=15 js_errors=0` |
+| 线上（最新期**已开奖**） | `rows=545 error=6 warn=7 js_errors=0`（6 条全是 R3 假阳性） | `rows=545 error=0 warn=7 js_errors=0` |
+
+未开奖时的本地 11 条 = R2×10 + R3×1；线上已开奖时的 6 条全是 R3。
+两个口径的根因相同，都来自「标题行被并进预测行」：前者标题里的「中/赢/不中」被当成判定字（R2），
+后者标题的黄字被当成命中高亮（R3）。
+
+逐行对照确认**只有 24 行**发生变化（每个模块首行少掉了并进来的标题文本与 2 处标题黄色），
+其余 521 行的文本/高亮/判定完全一致：32 条待开奖行的自身文本判定字个数 `11→0`、
+带黄底的行数 `24→0`。
 
 ## 五之三、R8 告警的正确用法
 

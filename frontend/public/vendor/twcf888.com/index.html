@@ -1220,11 +1220,13 @@
         var isElement = ELEMENT_MODES.indexOf(meta.modeId) !== -1;
         var isZodiacConcat = ZODIAC_CONCAT_MODES.indexOf(meta.modeId) !== -1;
         var isLabelOnly = LABEL_ONLY_MODES.indexOf(meta.modeId) !== -1;
-        var isKill = KILL_MODES.indexOf(meta.modeId) !== -1;
         var usesDash = isHead || isTail || isElement;
-        var highlightOn = isKill
-            ? (row.is_opened && row.is_correct === false)
-            : (row.is_opened && row.is_correct === true);
+        // 展示规范 S2/S3：只有本期判定为「命中」才允许黄色高亮；
+        // 判定为「错」的期次整行不得出现任何 #FFFF00。
+        // 绝杀/排除类玩法原先反着来 —— 杀错时点亮「被杀中」的那一项，那是供应商
+        // 旧样式，会直接违反 S3；绝杀命中时开奖值本就不在候选里，没有可点亮的命中项，
+        // 因此这里统一收敛为「命中才高亮」。
+        var highlightOn = row.is_opened && row.is_correct === true;
         var matchedLabel = "";
         if (highlightOn) {
             if (isZodiacConcat && resultZodiac) {

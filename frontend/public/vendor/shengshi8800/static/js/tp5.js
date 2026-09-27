@@ -36,8 +36,17 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
                 let c1 = [];
+                // 高亮必须与本期判定绑定（mode 331：候选来自 x7m14 七肖14码）。
+                // 判定为「错」时整行零黄底；判定为「准」才标出命中的生肖/号码。
+                // 另外这里原先是 `xiao[i].indexOf(sx)` / `ma[i].indexOf(code)` 的
+                // 子串匹配（'1' 会命中 '01,11,21'），现在改成精确判断。
+                let __verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(331, d)
+                    : 'unknown';
+                let __hitZodiac331 = __verdict === 'ok' ? sx : '';
+                let __hitCode331 = __verdict === 'ok' ? String(code).padStart(2, '0') : '';
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
+                    if (__hitZodiac331 && xiao[i] === __hitZodiac331) {
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
@@ -45,13 +54,15 @@ $.ajax({
                 }
                 let c2 = [];
                 for (let i = 0; i < ma.length; i++) {
-                    if (code && ma[i].indexOf(code) !== -1) {
+                    if (__hitCode331 && String(ma[i]).trim().padStart(2, '0') === __hitCode331) {
                         c2.push(`<span style="background-color: #FFFF00">${ma[i]}</span>`);
                     }else {
                         c2.push(`${ma[i]}`)
                     }
                 }
-                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(331, d)) : '';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
+                // 测字本身是「开的什么字」的提示，不是命中项：底色只能用装饰性的灰底，
+                // 用 #FFFF00 会让「判定错」的期出现一处黄底（展示规范要求错期零黄底）。
                 htmlBoxList += ` 
 <table  border=1 width=100% bgcolor=#ffffff style='font-weight:bold'>
  <td style='margin: 0px; padding: 3px 2px;  word-break: break-all; text-align: center; line-height: 26px;'>
@@ -64,7 +75,7 @@ $.ajax({
 <font color='#0000FF' face='微软雅黑' size='4'><br>
 </font>
 <font face='微软雅黑'>
-<span style='background-color: #FFFF00'>
+<span style='background-color: #C0C0C0'>
 <font color='#FF0000' size='5'>${d.title}</font></span></font><font face='微软雅黑' size='4' color='#0000FF'><br>
 </font></b><font color='#0000FF'><font face='微软雅黑' size='3'>
 解：${d.content.replaceAll('\n',`<br>`)}<br>

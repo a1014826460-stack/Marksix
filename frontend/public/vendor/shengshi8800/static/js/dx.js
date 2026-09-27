@@ -50,7 +50,13 @@ $.ajax({
             response.data.forEach(el=>{
                 tm = code=dx=dx_=w=''
                 t= JSON.parse(el.tou)[0][0]
-                w = selTxtBcT2(t,el.res_code)
+                // 命中判定：按 大/小 与特码实际大小比较，而不是“特码落在本池内”
+                var verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(108, el)
+                    : 'unknown';
+                // 头数高亮同样必须与判定绑定：per-el 传入本轮判定为「准」时才高亮，
+                // 不能直接传 el.res_code（那样只会看「头数是否等于特码头」，与判定脱钩）。
+                w = selTxtBcT2(t, verdict === 'ok' ? el.res_code : '')
                 if(null != el.res_code && el.res_code.length>0){
                     code = el.res_code.split(',')
                     tm = code[code.length-1]
@@ -58,10 +64,6 @@ $.ajax({
                 var items = JSON.parse(el.content)
                 dx = items[0].split('|')
 
-                // 命中判定：按 大/小 与特码实际大小比较，而不是“特码落在本池内”
-                var verdict = window.legacyPredictionVerdict
-                    ? window.legacyPredictionVerdict.verdictOf(108, el)
-                    : 'unknown';
                 var verdictTxt = verdict === 'ok' ? '准' : (verdict === 'miss' ? '错' : '')
                 if(verdict === 'ok'){
                     dx_ = `<span style="background-color: #FFFF00">${dx[0]}数</span>`

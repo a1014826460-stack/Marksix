@@ -86,3 +86,33 @@ def test_rule_document_keeps_single_item_modes_flagged():
         if line.startswith("| 63 |") and "家野中特" in line
     )
     assert "adjacent 3 periods: display value differs" in row
+
+
+def test_rule_document_marks_unordered_number_set_modes():
+    """无序号码集合玩法必须标注“不做位置轮转 + 相邻期展示顺序不同”。"""
+    from types import SimpleNamespace
+
+    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+    assert "Unordered number-set modules (mode 9 / 65 / 88 / 116)" in document
+    assert "never use positional rotation" in document
+
+    configs = [
+        SimpleNamespace(
+            key=f"title_{mode_id}",
+            title=f"number-set-{mode_id}",
+            default_modes_id=mode_id,
+            labels=(),
+            label_count=10,
+        )
+        for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS)
+    ]
+    document = render_prediction_module_rules(configs)
+    for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS):
+        row = next(
+            line for line in document.splitlines()
+            if line.startswith(f"| {mode_id} |") and f"number-set-{mode_id}" in line
+        )
+        assert "unordered number set: no positional rotation; adjacent: display order differs" in row
+        assert "full ordered signature" not in row

@@ -36,7 +36,9 @@
     var value = row && row.prediction && row.prediction.tokens;
     return Array.isArray(value) ? value.map(String).filter(Boolean) : predictionText(row).split(/[|,，、\s]+/).filter(Boolean);
   }
-  function labels(row) { return tokens(row).map(function (value) { return value.split("|")[0].split(";").pop().trim(); }).filter(Boolean); }
+  // 候选集合可能以整串 `标签|号码` 的形式出现在 tokens 里（含 JSON 包装），
+  // 统一剥掉 `[` `]` `"` `'`，避免把原始 JSON 残留渲染到页面上（S5）。
+  function labels(row) { return tokens(row).map(function (value) { return String(value).split("|")[0].replace(/[\[\]"']/g, "").split(";").pop().trim(); }).filter(Boolean); }
   function numbers(row) {
     var list = [];
     tokens(row).forEach(function (value) { (String(value).match(/\d{1,2}/g) || []).forEach(function (number) { list.push(("0" + number).slice(-2)); }); });

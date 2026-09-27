@@ -40,10 +40,16 @@ $.ajax({
                 }
 
                 let c1 = [];
-                let b = false;
+                // 与判定口径一致：mode 59 的候选尾数写在 row.code 里，只有判定为「准」
+                // 才高亮命中的尾数；判定为「错」时整行零黄底。
+                let __verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(59, data[i])
+                    : 'unknown';
+                let __drawnCode = __verdict === 'ok' && code ? String(code).padStart(2, '0') : '';
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
-                        b = true;
+                    if (__drawnCode && String(xiaoV[i]).split(',').map(function (item) {
+                        return item.trim().padStart(2, '0');
+                    }).indexOf(__drawnCode) !== -1) {
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
@@ -51,10 +57,10 @@ $.ajax({
                 }
 
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(59, data[i])) : '';
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
-	<tr style='background: #FFFF00;'>
+	<tr style='background: #CCFFCC;'>
 	    <td style='background-color: #CCFFCC; text-align: left'>
 	        <span class='zl'><font color='#000000'>${data[i].term}期独家幽默：開:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</font></span>
 	    </td>

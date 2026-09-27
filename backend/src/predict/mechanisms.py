@@ -1230,7 +1230,11 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         label_count=2,
         outcome_loader=special_wave_from_row,
         content_loader=default_content_from_row,
-        content_parser=parse_zodiac_content,
+        # 历史正文形态为波色**标签**（`蓝波,绿波` / `["蓝波|03,04…","绿波|05,06…"]`）。
+        # 原先误用 parse_zodiac_content（只认生肖字），对波色标签恒解析为空 →
+        # _check_correct_by_mechanism 返回 None → 命中也不显示判定。
+        # 与 mode 143（一波中特）保持同一口径：按字面标签解析。
+        content_parser=parse_literal_label_content,
         content_formatter=format_wave_csv,
         hit_checker=contains_hit,
         labels_loader=labels_from_fixed("波色", ("红波", "蓝波", "绿波")),

@@ -502,6 +502,22 @@ function isXiongjiliuxiaoHit(label: string, hitSx: string) {
   return XIONGJI_ZODIACS[normalizedLabel].includes(hitSx)
 }
 
+/** 生肖顺序表（用于从自由文本里提取候选生肖）。 */
+const ZODIAC_ORDER = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]
+
+/**
+ * 从文本里提取生肖候选。
+ * 不能简单取「所有汉字」：`料` `先` 之类不是生肖，取全集会把特肖也算进候选，
+ * 从而让「错」的期也满足命中条件。只有真正的生肖字才算候选。
+ */
+function zodiacCandidatesInText(value: string) {
+  const found: string[] = []
+  for (const char of String(value || "")) {
+    if (ZODIAC_ORDER.includes(char) && !found.includes(char)) found.push(char)
+  }
+  return found
+}
+
 function renderWuxiaoWuma(
   module: Extract<VendorHomepageModule, { module_key: "wuxiao_wuma" }> | undefined,
   lotteryTypeId: 1 | 2 | 3
@@ -743,8 +759,14 @@ function renderTiandi2Xiao(
         </div>`
 }
 
+/**
+ * 大小+2头（后端 `daxiao_2tou`）：`is_correct` 来自后端 mode 57/108，
+ * 判定口径是「预测大/小与头数任一维度命中」。高亮必须与这条判定绑定：
+ * 只有 `isCorrect === true` 才允许出现黄底，`false` 时整行零黄底，
+ * 否则会出现「判定错却仍高亮大数」的展示违规。
+ */
 function highlightTouCode(touCode: string, resultCode: string, isCorrect: boolean | null) {
-  if (!isCorrect) return escapeHtml(touCode)
+  if (isCorrect !== true) return escapeHtml(touCode)
   const hitDigits = new Set(resultCode.split(""))
   return touCode
     .split("")
@@ -763,9 +785,8 @@ function renderDaxiao2Tou(
   if (!module?.history?.length) return ""
   const rows = module.history
     .map((row) => {
-      const hitIsBig = Number.parseInt(row.result.res_code || "0", 10) >= 25
-      const hitDx = hitIsBig ? "大" : "小"
-      const daxiao = row.daxiao === hitDx
+      // 高亮条件与本期判定绑定：判定为「错」时大/小与头数都不高亮。
+      const daxiao = row.is_correct === true
         ? `<span style="background-color: #FFFF00">${escapeHtml(row.daxiao)}数</span>`
         : `${escapeHtml(row.daxiao)}数`
       const touCode = highlightTouCode(row.tou_code, row.result.res_code, row.is_correct)
@@ -1084,15 +1105,26 @@ function renderYijuzhenyan(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
       const explanation = ensureSentence(String(row.raw?.content || row.prediction || ""))
       const jiexi = String(row.raw?.jiexi || "").trim()
       const hitSx = row.isOpened ? parseResultParts(row.result).sx : ""
-      return `<tr style="background: #FFFF00;">
-                    <td style="background-color: #CCFFCC; text-align: left">
+      // 高亮与判定绑定（mode 50：候选生肖取自 jiexi）：
+      //   特肖确实出现在 jiexi 的生肖候选里才算命中，才允许逐肖标黄；
+      //   否则整行零黄底。原先直接拿「解析文字里有这个汉字吗」判断，
+      //   `料` `先` 之类的描述字会把特肖带进来，导致「错」的期也标黄。
+      const jiexiZodiacs = zodiacCandidatesInText(jiexi)
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitSx ? jiexiZodiacs.includes(hitSx) : null
+      )
+      const highlightSx = isCorrect === true ? hitSx : ""
+      const titleStyle = "background-color: #CCFFCC; text-align: left"
+      return `<tr>
+                    <td style="${titleStyle}">
                         <span class="zl"><font color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期一句真言：${escapeHtml(title)}</font></span>
                     </td>
                 </tr>
                 <tr>
                     <td style="text-align: left; background-color: #FFFFFF">
                         <font color="#008000">真言解释：${escapeHtml(explanation)}</font><br>
-                        <span class="zl"><font color="#000000">真言解肖主前：</font>${highlightZodiacChars(jiexi, hitSx)} 開:${renderSxCodeResult(row.result, row.isOpened)}</span>
+                        <span class="zl"><font color="#000000">真言解肖主前：</font>${highlightZodiacChars(jiexi, highlightSx)} 開:${renderSxCodeResult(row.result, row.isOpened)}</span>
                     </td>
                 </tr>`
     })

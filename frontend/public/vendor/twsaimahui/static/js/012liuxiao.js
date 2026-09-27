@@ -19,19 +19,31 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
                 continue;
             }
 
+            // 候选 = 6 肖，每肖一组候选码（接口形如 "狗|09,21,33,45"）。
+            // 必须分别保存「肖名」与「该肖的码组」：肖名用于特肖匹配，
+            // 码组用于特码匹配与渲染。不要按写死的步长去取值，
+            // 否则会拿「码串」去匹配肖名，判定恒为「错」。
             var xiao = [];
+            var codesByXiao = [];
             var ma = [];
             for (var j = 0; j < content.length; j++) {
                 var c = String(content[j] || '').split('|');
-                xiao.push(c[0] || '');
-                xiao.push(c[1] || '');
-                ma.push.apply(ma, String(c[1] || '').split(','));
+                var name = String(c[0] || '').trim();
+                var group = String(c[1] || '').split(',');
+                var groupClean = [];
+                for (var n = 0; n < group.length; n++) {
+                    var v = String(group[n] || '').trim();
+                    if (v) { groupClean.push(v); }
+                }
+                xiao.push(name);
+                codesByXiao.push(groupClean);
+                ma.push.apply(ma, groupClean);
             }
 
             var c1 = [];
             var zjXiao = false;
-            for (var k = 0; k < xiao.length; k += 2) {
-                if (sx && xiao[k + 1] && xiao[k + 1].indexOf(sx) !== -1) {
+            for (var k = 0; k < xiao.length; k++) {
+                if (sx && xiao[k] && xiao[k].indexOf(sx) !== -1) {
                     zjXiao = true;
                     c1.push('<span style="background-color: #FFFF00">' + xiao[k] + '</span>');
                 } else {
@@ -39,11 +51,14 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
                 }
             }
 
+            // 三码 = 首个候选肖的码组前三码（对应展示序列「精选12码」的前三个码）。
+            var sanMa = codesByXiao.length ? codesByXiao[0].slice(0, 3) : [];
+
             var c2 = [];
             var zjCode = false;
             for (var m = 0; m < ma.length; m++) {
-                if (code && ma[m].indexOf(code) !== -1) {
-                    if (m < 3) { zjCode = true; }
+                if (code && ma[m] === code) {
+                    if (sanMa.indexOf(code) !== -1) { zjCode = true; }
                     c2.push('<span style="background-color: #FFFF00">' + ma[m] + '</span>');
                 } else {
                     c2.push(ma[m]);

@@ -2,6 +2,16 @@
 
 This document is generated from the internal rule manifest. It documents candidate semantics only and never contains future draw values.
 
+Unordered number-set modules (mode 9 / 65 / 88 / 116) never use positional rotation: their `content` is a set of 01-49 numbers, so the display order is a per-issue permutation of the same members and the adjacent-period contract is `display order differs` instead of `full ordered signature`.
+
+Wave-label modules (mode 38 双波中特 / mode 143 一波中特) store the candidate as the **wave label** itself
+(`蓝波,绿波`, or `["蓝波|03,04,…","绿波|05,06,…"]`), so their `content_parser` must be
+`parse_literal_label_content`; `parse_zodiac_content` only recognizes zodiac characters and returns an empty
+tuple for wave labels, which made `is_correct` permanently `null` for mode 38 before 2026-09-28.
+The special-number wave comes from `res_color` (last value → 红波/蓝波/绿波) with `fixed_data` sign `波色`
+as fallback (`predict.categories.size_parity.special_wave_from_row`) and is embedded in the composite outcome
+by `public.api._compute_outcome_from_row`.
+
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
 | 3 | rcca | 肉菜草肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |

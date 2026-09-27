@@ -80,6 +80,12 @@ _ENDPOINT_MODE_IDS: dict[tuple[str, str], int] = {
     ("getfsx", "2"): 157,
     ("getdxd", "2"): 158,
     ("getshabds", "1"): 159,
+    # getXiaoma2 按 num 复用多张正文表：num=6 精品六肖（六肖三码）、num=4 四肖八码、num=7 跑马图。
+    # 必须显式登记：`num` 恰好也是 6 / 4 / 7 的 mode_payload 表号，若不登记会被 `num` 直表解析劫持，
+    # 六肖三码会拿到 mode_payload_6（三国中特）的正文，前端渲染不出候选肖与候选码。
+    ("getxiaoma2", "6"): 27,
+    ("getxiaoma2", "4"): 51,
+    ("getxiaoma2", "7"): 22,
 }
 
 _PMXJCZ_ALLOWED_ZODIACS = ("鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪")

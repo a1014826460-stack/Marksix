@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import random
+import re
 from typing import Any
 
 # ---------- 多样性策略常量 ----------
@@ -10,10 +13,42 @@ DEFAULT_DIVERSITY_POLICY = "unique_first_two"
 WINDOW_SHARED_DIVERSITY_POLICY = "window_shared"
 # 完全自由策略，不做任何多样性限制
 FREE_DIVERSITY_POLICY = "free"
+# 无序号码集合策略：不做位置轮转，改为“按期号决定的一次性展示置换”
+UNORDERED_SET_DIVERSITY_POLICY = "unordered_set_display_order"
 
 # ---------- 豁免模式 ID ----------
 # 某些 mode_id 不需要执行默认的多样性限制，这里直接使用窗口共享策略
 CONTENT_DIVERSITY_EXEMPT_MODE_IDS = {197}
+
+# ---------- 无序号码集合玩法 ----------
+# 这些 mode 的 content 就是一组 01-49 号码（`01,17,40,...`），属于**集合语义**：
+#   1. 前台只按“特码是否落在集合内”高亮（`038ma10.js` 用 `indexOf` + `join('.')`），
+#      命中/不中与顺序完全无关；
+#   2. 生成侧 `predict.common.score_labels(strategy="hot")` 会按“热度”排序，热度最高的
+#      号码固定排在最前面；
+#   3. 热度窗口读的是跨站共享的 `public.mode_payload_*` 表，而该表每个 (year, term)
+#      有多行（每个站点一行，见下表），因此最近 5 条记录往往只覆盖 1~2 个真实期号，
+#      同一个号码的 counts 被重复累加，排名前 1~5 位在整批生成里几乎恒定。
+#
+# 线上实测（created.mode_payload_* web_id=6 最近 40 期）：
+#   mode 116（10码）位置 1 = `01` 出现 38/40，位置 2 = `17` 出现 25/40；
+#   mode 88（杀7码）位置 1/2 只在 {01,17} 之间互换（19/18），位置 3 = `14` 出现 23/40；
+#   mode 9（16码）位置 1~5 只在 {23,39,08,22,36} 之间轮转（前 5 位 distinct 仅 5~11 个）。
+# 根因就是上面的“热度排序 + 展示顺序 = 排名顺序”。
+#
+# 因此对这些 mode：
+#   1. 停用 `unique_first_two` 的位置轮转——集合语义下轮转没有意义，而且只会制造
+#      另一组固定的“旋转位”（交换前两位 / 前四位左移一位的循环）；
+#   2. 展示顺序改为“按 (mode, 年, 期, 站点) 决定的一次性置换”，保证每期位置都不同，
+#      同时**完全不改变号码成员**，命中/不中判定保持等价。
+#
+# 说明：mode 34（24码）同样是号码集合，但其在 `domains.prediction.generation_rules`
+# 中登记了 `cross-site prefix: 3` 的跨站前缀契约（受控未来期生成），先不改动它的
+# 展示顺序，避免让已落库/已预约的前缀签名与展示内容脱钩。
+UNORDERED_NUMBER_SET_MODE_IDS: frozenset[int] = frozenset({9, 65, 88, 116})
+
+#: `01`-`49` 的两位号码
+_NUMBER_SET_ITEM_RE = re.compile(r"^\d{2}$")
 
 # ---------- 相邻连续 N 期不得相同的模式 ----------
 # 这些模块前台只渲染一个“池标签”或一段文本，取值空间很小
@@ -56,15 +91,20 @@ def resolve_diversity_policy(mode_id: int, config: Any | None = None) -> str:
 
     优先级：
     1. 配置对象中的 ``diversity_policy`` 属性（非空字符串）
-    2. 如果 mode_id 在豁免列表中，返回 ``WINDOW_SHARED_DIVERSITY_POLICY``
-    3. 兜底返回 ``DEFAULT_DIVERSITY_POLICY``
+    2. 无序号码集合模式（``UNORDERED_NUMBER_SET_MODE_IDS``）→
+       ``UNORDERED_SET_DIVERSITY_POLICY``（不做位置轮转）
+    3. 如果 mode_id 在豁免列表中，返回 ``WINDOW_SHARED_DIVERSITY_POLICY``
+    4. 兜底返回 ``DEFAULT_DIVERSITY_POLICY``
     """
     # 尝试从 config 对象读取策略字段，转为字符串并去除首尾空格
     policy = str(getattr(config, "diversity_policy", "") or "").strip()
     if policy:
         return policy
-    # 三期规则托管模式不使用旧的“前二唯一”旋转策略
     resolved_mode_id = int(mode_id or 0)
+    # 集合语义的号码类玩法不做位置轮转，改用一次性展示置换
+    if resolved_mode_id in UNORDERED_NUMBER_SET_MODE_IDS:
+        return UNORDERED_SET_DIVERSITY_POLICY
+    # 三期规则托管模式不使用旧的“前二唯一”旋转策略
     if resolved_mode_id in _THREE_PERIOD_MANAGED_MODE_IDS:
         return WINDOW_SHARED_DIVERSITY_POLICY
     # 检查 mode_id 是否属于内容多样性豁免模式
@@ -131,6 +171,125 @@ def content_prefix_signature(content_value: Any, width: int = 2) -> tuple[str, .
     return tuple(str(item) for item in limited)
 
 
+# ── 无序号码集合：成员解析 + 一次性展示置换 ─────────────────
+
+
+def number_set_members(content_value: Any) -> list[str] | None:
+    """把 content 解析成“纯 01-49 号码集合”，不是号码集合时返回 None。
+
+    支持三种落库形态：
+    - list：``["01", "17", ...]``
+    - JSON 数组字符串：``'["01","17"]'``
+    - 普通逗号串：``"01,17,40"``（号码类玩法 `format_24_numbers` 的输出形态）
+
+    只要有任何一项不是 01-49 的两位号码，就返回 None：调用方据此确认“位置无意义”，
+    不会把 `1头|01,11` 这类有序标签序列误当成号码集合。
+    """
+    if isinstance(content_value, dict):
+        return None
+
+    if isinstance(content_value, list):
+        items = [str(item).strip() for item in content_value]
+    else:
+        text = str(content_value or "").strip()
+        if not text:
+            return None
+        if text.startswith("[") and text.endswith("]"):
+            parsed = parse_array_content(text)
+            if parsed is None:
+                return None
+            items = [str(item).strip() for item in parsed]
+        else:
+            items = [part.strip() for part in text.split(",")]
+
+    items = [item for item in items if item]
+    if len(items) < 2:
+        return None
+    for item in items:
+        if not _NUMBER_SET_ITEM_RE.match(item) or not 1 <= int(item) <= 49:
+            return None
+    return items
+
+
+def is_unordered_number_set_content(content_value: Any) -> bool:
+    """content 是否为“纯 01-49 号码集合”（集合语义，顺序无意义）。"""
+    return number_set_members(content_value) is not None
+
+
+def _dump_number_set(items: list[str], original_value: Any) -> Any:
+    """按原落库形态回写号码集合（list / JSON 数组串 / 逗号串）。"""
+    if isinstance(original_value, list):
+        return list(items)
+    text = str(original_value or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        return json.dumps(items, ensure_ascii=False)
+    return ",".join(items)
+
+
+def _number_set_shuffle_seed(mode_id: int, row_data: dict[str, Any], items: list[str]) -> int:
+    """展示置换种子：同一期稳定、不同期不同、不同站点不同。
+
+    种子主体是 ``(mode, year, term, web)``；同时混入成员集合，保证调用方漏传
+    ``year``/``term``/``web``（例如单元测试或未来的新调用点）时，不同号码集合也不会
+    退化成同一个固定置换——否则“位置固定”的缺陷会以另一种形式复现。
+    成员本身在同一期是确定的，因此不会破坏“同期稳定”。
+    """
+    raw = (
+        f"unordered-number-set:{int(mode_id or 0)}:"
+        f"{row_data.get('year')}:{row_data.get('term')}:{row_data.get('web')}:"
+        f"{','.join(items)}"
+    )
+    return int(hashlib.sha256(raw.encode("utf-8")).hexdigest(), 16) % (2**32)
+
+
+def unordered_number_set_display_order(
+    mode_id: int,
+    row_data: dict[str, Any],
+    recent_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """给无序号码集合生成“本期展示顺序”，成员一个都不改。
+
+    行为：
+    - mode 不在白名单，或 content 不是纯号码集合 → 原样返回（绝不误改有序标签序列）；
+    - 否则用 ``(mode, year, term, web)`` 派生的种子对成员做一次性置换；
+    - 若置换结果与最近一期**成员完全相同**的展示顺序仍然一致，则再错开一位，
+      保证相邻期展示顺序不同（“相邻期唯一性”在这里落到展示顺序上）。
+
+    只影响展示顺序，不影响集合本身，因此命中/不中判定保持等价。
+    """
+    row = dict(row_data)
+    if int(mode_id or 0) not in UNORDERED_NUMBER_SET_MODE_IDS:
+        return row
+
+    items = number_set_members(row.get("content"))
+    if not items:
+        return row
+
+    ordered = list(items)
+    random.Random(_number_set_shuffle_seed(mode_id, row, items)).shuffle(ordered)
+
+    previous = _previous_number_set_order(items, recent_rows)
+    if previous is not None and ordered == previous and len(ordered) > 1:
+        # 成员完全相同且顺序撞上上一期时，整体错开一位
+        ordered = ordered[1:] + ordered[:1]
+
+    row["content"] = _dump_number_set(ordered, row.get("content"))
+    return row
+
+
+def _previous_number_set_order(
+    items: list[str],
+    recent_rows: list[dict[str, Any]] | None,
+) -> list[str] | None:
+    """返回最近一期“成员与本期完全相同”的展示顺序（新→旧查找）。"""
+    target = sorted(items)
+    for recent_row in recent_rows or []:
+        previous = number_set_members((recent_row or {}).get("content"))
+        if previous and sorted(previous) == target:
+            return previous
+    return None
+
+
 def enforce_prediction_diversity(
     *,
     mode_id: int,
@@ -150,12 +309,18 @@ def enforce_prediction_diversity(
     返回：
         处理后的 row_data 字典。如果启用了多样性限制且当前内容与
         近期记录的前缀重复，则会尝试通过旋转元素顺序来修复。
+        无序号码集合玩法（``UNORDERED_NUMBER_SET_MODE_IDS``）不参与位置轮转，
+        只把展示顺序换成按期号决定的一次性置换（成员不变）。
         若 5 次尝试后仍无法解决冲突，会在结果中附加 ``_diversity_warning`` 键。
     """
     # 1. 解析多样性策略，若为窗口共享或自由策略则不做任何限制
     policy = resolve_diversity_policy(mode_id, config)
     if policy in {WINDOW_SHARED_DIVERSITY_POLICY, FREE_DIVERSITY_POLICY}:
         return dict(row_data)
+    if policy == UNORDERED_SET_DIVERSITY_POLICY:
+        # 无序号码集合：位置没有意义，不做“前二唯一”轮转，
+        # 只给本期生成一个稳定的展示顺序（成员完全不变）。
+        return unordered_number_set_display_order(mode_id, row_data, recent_rows=recent_rows)
 
     # 2. 提取当前行内容列表，若长度不足 2 则无需多样性检查
     content_value = row_data.get("content")

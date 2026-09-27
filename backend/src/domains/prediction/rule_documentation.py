@@ -22,6 +22,32 @@ def _display_uniqueness_note(mode_id: int) -> str:
     return f"adjacent {window} periods: display value differs"
 
 
+def _unordered_set_note(mode_id: int) -> str:
+    """标注“无序号码集合”模式：不做位置轮转，改为按期号的一次性展示置换。
+
+    这些 mode 的 content 是 01-49 号码集合，展示顺序没有语义；旧的“前二唯一”轮转
+    在纯号码串上本来就是空转，且会让同一批号码固定占住前几位。
+    """
+    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+
+    if int(mode_id or 0) not in UNORDERED_NUMBER_SET_MODE_IDS:
+        return ""
+    return "unordered number set: no positional rotation; adjacent: display order differs"
+
+
+def _unordered_set_legend() -> str:
+    """图例：说明无序号码集合模式的展示顺序契约（由白名单直接生成）。"""
+    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+
+    modes = " / ".join(str(mode_id) for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS))
+    return (
+        f"Unordered number-set modules (mode {modes}) never use positional rotation: their `content` "
+        "is a set of 01-49 numbers, so the display order is a per-issue permutation of the same "
+        "members and the adjacent-period contract is `display order differs` instead of "
+        "`full ordered signature`."
+    )
+
+
 def _outcome_description(rule_id: str) -> str:
     descriptions = {
         "zodiac": "special zodiac is in any candidate",
@@ -62,6 +88,8 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
         "",
         "This document is generated from the internal rule manifest. It documents candidate semantics only and never contains future draw values.",
         "",
+        _unordered_set_legend(),
+        "",
         "| mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |",
         "|---:|---|---|---|---|---|---|---|",
     ]
@@ -70,6 +98,9 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
         status = "supported" if rule.supported else f"blocked: {rule.block_reason}"
         assurance = generation_assurance_for_mode(mode_id)
         uniqueness = f"cross-site prefix: {rule.cross_site_prefix_width}; adjacent: full ordered signature"
+        unordered_note = _unordered_set_note(mode_id)
+        if unordered_note:
+            uniqueness = f"cross-site prefix: {rule.cross_site_prefix_width}; {unordered_note}"
         display_note = _display_uniqueness_note(mode_id)
         if display_note:
             uniqueness = f"{uniqueness}; {display_note}"

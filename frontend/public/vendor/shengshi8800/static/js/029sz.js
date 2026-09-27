@@ -25,9 +25,15 @@ $.ajax({
                 let xiao = d.jiexi.split('');
                 let ma = [];
                 let maValue = [];
+                // 高亮必须与本期判定绑定：只有判定为「准」才高亮解析文字里的特肖，
+                // 判定为「错」时整行零黄底（原先按「特肖出现在解析文字里」高亮，
+                // 与 mode 52 的判定口径不一致，会出现「错」却仍有黄底）。
+                let __verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(52, d)
+                    : 'unknown';
                 let c = [];
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
+                    if (__verdict === 'ok' && sx && xiao[i].indexOf(sx) !== -1) {
                         c.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c.push(`${xiao[i]}`)
@@ -35,13 +41,13 @@ $.ajax({
                 }
                 // let wei = parseInt()
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(52, d)) : '';
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
                 htmlBoxList = htmlBoxList + ` 
  
  
     
      
-    <tr style='background: #FFFF00;'>
+    <tr>
         <td style='background-color: #CCFFCC; text-align: left'>
             <span class='zl'>
                 <font color='#000000'>${d.term}期四字玄机：≤${d.title}≥</font>

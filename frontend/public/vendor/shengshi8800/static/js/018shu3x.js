@@ -20,9 +20,15 @@ $.ajax({
     let xiao = d.content.split(',');
     let ma = [];
     let maValue = [];
+    // 高亮必须与本期判定绑定：mode 42（绝杀三肖）判定为「准」才高亮对应生肖，
+    // 判定为「错」时整行零黄底（原先按「特肖出现在候选里」高亮，与判定口径相反，
+    // 会出现「错」却仍有黄底）。
+    let __verdict = window.legacyPredictionVerdict
+        ? window.legacyPredictionVerdict.verdictOf(42, d)
+        : 'unknown';
     let c = [];
     for (let i = 0; i < xiao.length; i++) {
-     if (sx && xiao[i].indexOf(sx) !== -1) {
+     if (__verdict === 'ok' && sx && xiao[i].indexOf(sx) !== -1) {
       c.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
      }else {
       c.push(`${xiao[i]}`)
@@ -30,7 +36,7 @@ $.ajax({
     }
 
     //console.log(ma)
-        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(42, d)) : '';
+        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
     htmlBoxList = htmlBoxList + ` 
 		
 	<tr>

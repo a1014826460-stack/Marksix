@@ -61,7 +61,11 @@
   }
 
   function labels(row) {
-    return tokenValues(row).map(function (value) { return value.split("|")[0].trim(); }).filter(Boolean);
+    // 候选集合可能以整串 `标签|号码` 的形式出现在 tokens 里（含 JSON 包装），
+    // 这里统一剥掉 `[` `]` `"` `'`，避免把原始 JSON 残留渲染到页面上（S5）。
+    return tokenValues(row).map(function (value) {
+      return String(value).split("|")[0].replace(/[\[\]"']/g, "").trim();
+    }).filter(Boolean);
   }
 
   function rawValue(row, key) {
@@ -91,7 +95,9 @@
     });
   }
 
-  function writeRow(row, issue, content, result, secondary, hit) {
+  // hitSlot 指定命中项落在哪一列：多分组模块（单双各四肖 / 天地生肖）必须高亮
+  // 真正命中的那一组，否则会出现「第二组命中却点亮第一组」的错位高亮。
+  function writeRow(row, issue, content, result, secondary, hit, hitSlot) {
     var issueSlot = row.querySelector("[data-prediction-issue]");
     var contentSlot = row.querySelector("[data-prediction-content]");
     var secondarySlot = row.querySelector("[data-prediction-content-secondary]");
@@ -101,7 +107,10 @@
     if (contentSlot) contentSlot.textContent = content || "";
     if (secondarySlot) secondarySlot.textContent = secondary || "";
     if (resultSlot) resultSlot.textContent = result || "";
-    if (hit && contentSlot) contentSlot.setAttribute("data-prediction-hit", "true");
+    if (!hit) return;
+    var target = hitSlot === "secondary" ? secondarySlot : contentSlot;
+    if (!target) target = contentSlot || secondarySlot;
+    if (target) target.setAttribute("data-prediction-hit", "true");
   }
 
   function renderUnavailableHistory(id) {
@@ -193,7 +202,15 @@
   function renderSelectedTwentyFour(modules) { renderThreeColumnHistory("jx24m", modules.ma24, function (row) { return codeValues(row).slice(0, 24).join("-") || "暂无后端资料"; }); }
   function renderFourSegments(modules) { renderThreeColumnHistory("sdzt", modules.siduanzhongte, function (row) { return labels(row).slice(0, 4).join("+") || "暂无后端资料"; }); }
   function renderOneWave(modules) { renderThreeColumnHistory("ybzt", modules.title_143, function (row) { return listValue(rawValue(row, "wave")).slice(0, 1).join("") || labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
-  function renderHeavenEarth(modules) { renderThreeColumnHistory("tdsx", modules.title_5, function (row) { return labels(row).slice(0, 3).join("+") || "暂无后端资料"; }); }
+  function renderHeavenEarth(modules) {
+    renderThreeColumnHistory("tdsx", modules.title_5, function (row) {
+      // 天地生肖 = 天地选1 + 生肖选2：既要显示本期落在天肖还是地肖，
+      // 也要显示本期的 2 个候选生肖（原先只渲染组名，生肖内容整列丢失）。
+      var sideLabel = labels(row).slice(0, 1).join("") || "天地肖";
+      var chosen = listValue(rawValue(row, "xiao"));
+      return "【" + sideLabel + (chosen.length ? "+" + chosen.join("") : "") + "】";
+    });
+  }
   function renderThreeHeads(modules) { renderThreeColumnHistory("3tzt", modules["3tou"], function (row) { return labels(row).slice(0, 3).join("-") || "暂无后端资料"; }); }
   function renderSumBigSmall(modules) { renderThreeColumnHistory("hsdx", modules.title_279, function (row) { return predictionText(row) || "暂无后端资料"; }); }
   function renderFlatOneXiao(modules) { renderThreeColumnHistory("pt1xiao", modules.pt1xiao, function (row) { return labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
@@ -203,14 +220,14 @@
     rows(section("qqsh")).forEach(function (node, index) {
       var source = sourceRows[index];
       if (!source) return writeRow(node, "", "暂无后端资料", "");
-      var parts = resultParts(source);
       var title = listValue(rawValue(source, "title")).join("") || "暂无后端资料";
       var reference = String(rawValue(source, "qinqi_reference") || "").trim();
       writeRow(
         node,
         index === 0 && reference ? reference + "\n" + issueOf(source) + "期:" : issueOf(source) + "期:",
         "琴棋书画→" + title,
-        "开:" + parts.zodiac + parts.code,
+        // 命中/未命中都要给判定：原先只渲染「开:生肖号码」，命中也没有「对」。
+        resultText(source),
         "",
         source.result && source.result.isCorrect === true
       );
@@ -223,13 +240,20 @@
     rows(section("dssx")).forEach(function (row, index) {
       var source = sourceRows[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", "");
+      var hit = Boolean(source.result && source.result.isCorrect === true);
+      var zodiac = resultParts(source).zodiac;
+      var xiao1 = String(rawValue(source, "xiao_1") || labels(source).slice(0, 4).join(""));
+      var xiao2 = String(rawValue(source, "xiao_2") || labels(source).slice(4, 8).join(""));
+      // 特肖落在第二组时把黄底打在第二组所在的单元格上。
+      var hitSlot = zodiac && xiao2.indexOf(zodiac) >= 0 && xiao1.indexOf(zodiac) < 0 ? "secondary" : "content";
       writeRow(
         row,
         issueOf(source) + "期",
-        String(rawValue(source, "xiao_1") || labels(source).slice(0, 4).join("")),
+        xiao1,
         resultText(source),
-        String(rawValue(source, "xiao_2") || labels(source).slice(4, 8).join("")),
-        source.result && source.result.isCorrect === true
+        xiao2,
+        hit,
+        hitSlot
       );
     });
   }

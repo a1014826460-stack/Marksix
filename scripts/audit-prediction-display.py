@@ -150,6 +150,15 @@ ROW_SCRIPT = r"""
     }
     return n;
   };
+  // 标题行 / 表头行绝不并入预测行：
+  //   - 标题文本里含模块名（大小中特 / 赢家12码 / 平特5不中），会被 verdict_of 当成判定字；
+  //   - 标题的黄色文字/底纹会被 countYellow 当成「本行命中高亮」。
+  // 识别方式：显式 data-prediction-title="true"（页面可加），或行内带供应商标题占位
+  // （data-lottery-title / data-site-domain 由页面自渲染脚本填充成「台湾彩 www.xxx.com」）。
+  // twsyw 每个模块的标题行正好是首行预测行的前一个兄弟行，未开奖期会被误报成
+  // 「未开奖却显示判定」+「未开奖行仍有黄底」，已开奖的「错」行会被误报成 R3。
+  const isTitleRow = (el) => String(el.getAttribute('data-prediction-title') || '') === 'true'
+    || Boolean(el.querySelector('[data-lottery-title],[data-site-domain]'));
   for (const item of leaves) {
     // 供应商常把一期的内容拆成多个单元格 / 相邻两个 <tr>：
     //   `<td>270期【绝杀二肖】开 马37错</td><td>鸡,马</td>`
@@ -167,6 +176,7 @@ ROW_SCRIPT = r"""
       for (const child of Array.from(holder.children)) {
         if (child === cursor || child.contains(cursor)) { collecting = true; continue; }
         if (!collecting) continue;
+        if (isTitleRow(child)) continue;
         const childText = (child.textContent || '').replace(/\s+/g, ' ').trim();
         if (!childText || childText.length > 260) continue;
         if (/\d{2,3}\s*期/.test(childText)) { collecting = false; break; }
@@ -181,8 +191,12 @@ ROW_SCRIPT = r"""
     }
     const host = item.el.closest('tr');
     if (host) {
-      for (const sib of [host.nextElementSibling, host.previousElementSibling]) {
+      // 只并入**下一个**兄弟行：供应商把「一期」拆成两行时，内容行写在标题行之后
+      // （四字玄机 / 独家幽默 / 一句真言都是「标题行 + 内容行」）。若回头并上一个兄弟行，
+      // 会把上一期的内容行算到本期头上，造成「错期却有黄底」的假阳性。
+      for (const sib of [host.nextElementSibling]) {
         if (!sib) continue;
+        if (isTitleRow(sib)) continue;
         const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
         if (!sibText || sibText.length > 260) continue;
         if (/\d{2,3}\s*期/.test(sibText)) continue;
@@ -254,26 +268,14 @@ def is_pending(text: str) -> bool:
 
 
 VERDICT_TAIL_RE = re.compile(r"(不中|[准对错赢输中])\s*[）)】\]》〉」\s。．.]*$")
+# 「中奖 / 不中奖」是站点自渲染的状态文案，不是对/错判定，读进来会造出大量假命中。
+VERDICT_NOISE_RE = re.compile(r"不?中奖")
+# 排除型（杀号）玩法：判定「准/对」= 杀掉的集合里没有开奖目标 = 本来就没有可高亮的命中项，
+# R4（命中却没高亮）对这类模块不适用。
+EXCLUDE_MODULE_RE = re.compile(r"绝杀|绝禁|绝版杀|输尽光|杀[一二三四五六七八九十\d]|必杀")
 
 
-def verdict_of(text: str) -> str:
-    """取该行的判定文字。
-
-    三步定位，避免三类误判：
-    1. 只看**开奖结果之后**的部分——模块名里也含「中」（单双中特 / 八肖中特 / 一波中特 …），
-       在整行里搜「中」会把模块名当成判定；
-    2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」，
-       行内没有「开」字时整行就是 tail），按固定 token 顺序取第一个会把它当成判定，
-       而真正的判定总在行尾。结束位置相同时优先更长的 token（「不中」优于「中」）；
-    3. 行内**没有**「开/開」时，只有当判定字出现在**行尾**（允许后面跟右括号/空白/句号）
-       才认账——否则「270期七肖中特：www.xxx.com长期跟踪」这类标题/文章行里的「中」
-       会被误判成判定（R2/R3/R4/R8 的主要误报来源）。
-    """
-    openings = list(re.finditer(r"开|開", text))
-    if not openings:
-        tail_match = VERDICT_TAIL_RE.search(text)
-        return tail_match.group(1) if tail_match else ""
-    tail = text[openings[-1].end():]
+def _rightmost_verdict(tail: str) -> str:
     best = ""
     best_end = -1
     for token in VERDICT_TOKENS:
@@ -285,6 +287,29 @@ def verdict_of(text: str) -> str:
             best = token
             best_end = end
     return best
+
+
+def verdict_of(text: str) -> str:
+    """取该行的判定文字。
+
+    四步定位，避免四类误判：
+    1. 只看**开奖结果之后**的部分——模块名里也含「中」（单双中特 / 八肖中特 / 一波中特 …），
+       在整行里搜「中」会把模块名当成判定；
+    2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」，
+       行内没有「开」字时整行就是 tail），按固定 token 顺序取第一个会把它当成判定，
+       而真正的判定总在行尾。结束位置相同时优先更长的 token（「不中」优于「中」）；
+    3. 行内**没有**「开/開」时，只有当判定字出现在**行尾**（允许后面跟右括号/空白/句号）
+       才认账——否则「270期七肖中特：www.xxx.com长期跟踪」这类标题/文章行里的「中」
+       会被误判成判定（R2/R3/R4/R8 的主要误报来源）；
+    4. 先把「中奖 / 不中奖」这类状态文案去掉——twjinniu 的 `开奖【www.xxx.com】中奖`
+       会被第 1、2 步读成命中。
+    """
+    cleaned = VERDICT_NOISE_RE.sub("", text)
+    openings = list(re.finditer(r"开|開", cleaned))
+    if not openings:
+        tail_match = VERDICT_TAIL_RE.search(cleaned)
+        return tail_match.group(1) if tail_match else ""
+    return _rightmost_verdict(cleaned[openings[-1].end():])
 
 
 def highlight_count(html: str) -> int:
@@ -366,6 +391,10 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
         if not any(row_highlights(row) > 0 for row in module_rows):
             continue
         for row in module_rows:
+            if is_pending(row["text"]):
+                continue
+            if EXCLUDE_MODULE_RE.search(row["text"]):
+                continue  # 杀号类「准」= 没有命中项可高亮
             if verdict_of(row["text"]) in ("准", "对", "赢", "中") and row_highlights(row) == 0:
                 findings.append(Finding(site_key, "R4 highlight_hit", "warn",
                                         f"{module} 该行判定为命中，但本行没有黄色高亮",
