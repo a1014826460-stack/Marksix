@@ -32,3 +32,41 @@ def test_rule_document_writer_preserves_renderer_output(tmp_path):
     write_prediction_module_rules(str(target), PREDICTION_CONFIGS.values())
 
     assert target.read_text(encoding="utf-8") == render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+
+def test_rule_document_marks_three_period_display_uniqueness_modes():
+    """28/57/62/63/108 必须标注“相邻连续三期展示值不得相同”。"""
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+    assert "adjacent three periods: display value differs" in document
+    for mode_id, key in ((28, "danshuangtema"), (57, "daxiao"), (62, "yqjs"), (108, "dxztt1")):
+        assert f"| {mode_id} | {key} |" in document
+        row = next(
+            line for line in document.splitlines()
+            if line.startswith(f"| {mode_id} | {key} |")
+        )
+        assert "adjacent three periods: display value differs" in row
+
+
+def test_rule_document_keeps_single_item_modes_flagged():
+    """mode 63（动态注册）在文档中也必须带三期约束标记。"""
+    from types import SimpleNamespace
+
+    from predict.mechanisms import PREDICTION_CONFIGS
+
+    dynamic_like = SimpleNamespace(
+        key="title_63",
+        title="家野中特",
+        default_modes_id=63,
+        labels=(),
+        label_count=1,
+    )
+    document = render_prediction_module_rules(
+        [*PREDICTION_CONFIGS.values(), dynamic_like]
+    )
+
+    row = next(
+        line for line in document.splitlines()
+        if line.startswith("| 63 |") and "家野中特" in line
+    )
+    assert "adjacent three periods: display value differs" in row

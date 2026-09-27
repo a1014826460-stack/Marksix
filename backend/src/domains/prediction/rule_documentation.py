@@ -8,6 +8,15 @@ from .generation_rules import get_generation_rule
 from .site_page_dependencies import generation_assurance_for_mode
 
 
+def _display_uniqueness_note(mode_id: int) -> str:
+    """标注“相邻连续三期展示值不得相同”模式，供规则文档审阅。"""
+    from prediction_generation.diversity import THREE_PERIOD_UNIQUE_MODE_IDS
+
+    if int(mode_id or 0) in THREE_PERIOD_UNIQUE_MODE_IDS:
+        return "adjacent three periods: display value differs"
+    return ""
+
+
 def _outcome_description(rule_id: str) -> str:
     descriptions = {
         "zodiac": "special zodiac is in any candidate",
@@ -56,6 +65,9 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
         status = "supported" if rule.supported else f"blocked: {rule.block_reason}"
         assurance = generation_assurance_for_mode(mode_id)
         uniqueness = f"cross-site prefix: {rule.cross_site_prefix_width}; adjacent: full ordered signature"
+        display_note = _display_uniqueness_note(mode_id)
+        if display_note:
+            uniqueness = f"{uniqueness}; {display_note}"
         lines.append(
             f"| {mode_id} | {key} | {title} | {rule.rule_id} | "
             f"{_outcome_description(rule.rule_id)} | {assurance} | {status} | {uniqueness} |"

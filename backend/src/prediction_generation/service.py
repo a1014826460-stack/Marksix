@@ -85,7 +85,14 @@ from prediction_generation.mode_478_image import (
     MODE_478_TITLE,
     render_mode_478_prediction_image,
 )
-from prediction_generation.diversity import enforce_prediction_diversity
+from prediction_generation.diversity import (
+    THREE_PERIOD_UNIQUE_MODE_IDS,
+    distinct_tokens_for_content,
+    display_token_for_row,
+    enforce_prediction_diversity,
+    enforce_three_period_uniqueness,
+    replace_text_placeholder,
+)
 from runtime_config import get_config_from_conn
 from utils.created_prediction_store import (
     CREATED_SCHEMA_NAME,
@@ -567,6 +574,201 @@ def _format_prediction_content_from_labels(
             prediction_labels = (str(override_labels),)
     return generated_content, prediction_labels
 
+
+# ── 相邻连续三期不得相同（28/57/62/63/108）──────────────
+
+
+#: 为候选展示值保留的最近历史行数（覆盖所有池标签，如 28 的“单/双”）。
+THREE_PERIOD_HISTORY_LIMIT = 8
+
+
+def _load_three_period_history_rows(
+    conn: Any,
+    table_name: str,
+    lottery_type: int,
+    site_web_id: int,
+    mode_id: int,
+    *,
+    limit: int = THREE_PERIOD_HISTORY_LIMIT,
+) -> list[dict[str, Any]]:
+    """加载足够多的历史行，用于枚举该模式的其他展示值（只读，不改写历史）。"""
+    return generation_repository.load_recent_created_rows(
+        conn,
+        table_name=table_name,
+        lottery_type=int(lottery_type),
+        site_web_id=int(site_web_id),
+        mode_id=int(mode_id),
+        limit=int(limit),
+    )
+
+
+def _three_period_alternative_tokens(
+    *,
+    mode_id: int,
+    config: PredictionConfig,
+    conn: Any,
+    current_tokens: tuple[str, ...] = (),
+    history_rows: list[dict[str, Any]] | None = None,
+) -> tuple[str, ...]:
+    """返回本模式可用的全部候选展示值（含当前取值，保持固定顺序便于轮转）。
+
+    `current_tokens` 仅用于把当前取值排到最前，不用于过滤——
+    过滤会丢掉库内唯一的其他取值（例如家野中特只剩“野兽”可用）。
+    """
+    candidates: list[str] = []
+
+    labels_loader = getattr(config, "labels_loader", None)
+    if callable(labels_loader):
+        try:
+            loaded = labels_loader(conn)
+        except Exception:  # noqa: BLE001 - 历史表缺失时退回其他来源
+            loaded = ()
+        for label in loaded or ():
+            token = str(label).split("|", 1)[0].strip()
+            if token and token not in candidates:
+                candidates.append(token)
+
+    for label in getattr(config, "labels", ()) or ():
+        token = str(label).split("|", 1)[0].strip()
+        if token and token not in candidates:
+            candidates.append(token)
+
+    if not candidates:
+        for row in history_rows if history_rows is not None else ():
+            for token in distinct_tokens_for_content(row.get("content")):
+                if token and token not in candidates:
+                    candidates.append(token)
+
+    # 当前取值优先，保证轮转顺序稳定（换到下一种展示值）
+    return tuple(token for token in current_tokens if token) + tuple(
+        token for token in candidates if token not in set(current_tokens)
+    )
+
+
+def _three_period_alternative_content_templates(
+    *,
+    mode_id: int,
+    config: PredictionConfig,
+    conn: Any,
+    alternative_tokens: tuple[str, ...],
+) -> list[Any]:
+    """用该模式自己的 formatter 生成候选展示值的完整 content（含真实号码池）。"""
+    formatter = getattr(config, "content_formatter", None)
+    if not callable(formatter) or not alternative_tokens:
+        return []
+    templates: list[Any] = []
+    try:
+        generated = formatter(tuple(alternative_tokens), conn)
+    except Exception:  # noqa: BLE001 - formatter 失败时不阻断生成
+        return []
+    if isinstance(generated, dict):
+        return [generated]
+    if isinstance(generated, (list, tuple)):
+        for item in generated:
+            if isinstance(item, str) and item not in templates:
+                templates.append(item)
+        return templates
+    if isinstance(generated, str):
+        return [generated]
+    return templates
+
+
+def _load_three_period_text_payloads(conn: Any, mode_id: int) -> list[dict[str, Any]]:
+    """文本类模式（62）的三期替代候选。
+
+    优先使用 text_history_mappings；该表缺少本 mode 行时，
+    回退读取 public.mode_payload_<mode_id> 已有的非空 title（只读）。
+    """
+    payloads = _load_text_history_candidate_payloads(conn, mode_id)
+    if payloads:
+        return payloads
+
+    try:
+        rows = generation_repository.load_mode_payload_title_rows(
+            conn,
+            table_name=f"mode_payload_{int(mode_id)}",
+            mode_id=int(mode_id),
+        )
+    except Exception:  # noqa: BLE001 - 读不到候选时保持原值
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        title = str((row or {}).get("title") or "").strip()
+        if not title:
+            continue
+        candidates.append({"title": title, "content": "", "jiexi": ""})
+    return candidates
+
+
+def _apply_three_period_uniqueness(
+    conn: Any,
+    *,
+    config: PredictionConfig,
+    mode_id: int,
+    row_data: dict[str, Any],
+    table_name: str,
+    lottery_type: int,
+    site_web_id: int,
+    recent_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """在写入前执行“相邻连续三期展示值不得相同”，不改动任何已存在的行。
+
+    `recent_rows` 是本次批量中刚生成的行（新→旧），历史行从库中读取；
+    两者一起构成“最近两期”的判定依据，也用于枚举该模块的其他展示值。
+    """
+    resolved_mode_id = int(mode_id or 0)
+    if resolved_mode_id not in THREE_PERIOD_UNIQUE_MODE_IDS:
+        return row_data
+
+    try:
+        history_rows = _load_three_period_history_rows(
+            conn,
+            table_name=table_name,
+            lottery_type=lottery_type,
+            site_web_id=site_web_id,
+            mode_id=resolved_mode_id,
+        )
+    except Exception:  # noqa: BLE001 - 读取失败时保持原值，不阻断生成
+        history_rows = []
+
+    # 判定“最近两期”时以库内历史为准，本次批量已写入的行排在更前面
+    observed_rows = list(recent_rows or []) + list(history_rows or [])
+
+    current_token = display_token_for_row(resolved_mode_id, row_data)
+    if not current_token:
+        return row_data
+
+    if resolved_mode_id == 62:
+        text_payloads = _load_three_period_text_payloads(conn, resolved_mode_id)
+        repaired = replace_text_placeholder(
+            resolved_mode_id, row_data, alternative_text_payloads=text_payloads
+        )
+        return enforce_three_period_uniqueness(
+            mode_id=resolved_mode_id,
+            row_data=repaired,
+            recent_rows=observed_rows,
+            alternative_text_payloads=text_payloads,
+        )
+
+    alternative_tokens = _three_period_alternative_tokens(
+        mode_id=resolved_mode_id,
+        config=config,
+        conn=conn,
+        current_tokens=(current_token,),
+        history_rows=observed_rows,
+    )
+    return enforce_three_period_uniqueness(
+        mode_id=resolved_mode_id,
+        row_data=row_data,
+        recent_rows=observed_rows,
+        alternative_content_templates=_three_period_alternative_content_templates(
+            mode_id=resolved_mode_id,
+            config=config,
+            conn=conn,
+            alternative_tokens=alternative_tokens,
+        ),
+    )
 
 class _PersistedFutureControl:
     """Internal plan data. It never enters a created row, report, or HTTP response."""
@@ -2084,6 +2286,16 @@ def _process_single_module(
                 row_data = enforce_prediction_diversity(
                     mode_id=mode_id, row_data=row_data,
                     recent_rows=recent_rows, config=config,
+                )
+                row_data = _apply_three_period_uniqueness(
+                    conn,
+                    config=config,
+                    mode_id=mode_id,
+                    row_data=row_data,
+                    table_name=table_name,
+                    lottery_type=lottery_type,
+                    site_web_id=site_web_id,
+                    recent_rows=recent_rows,
                 )
                 row_data = _repair_text_prediction_diversity(
                     conn,

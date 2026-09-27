@@ -168,6 +168,7 @@ def load_recent_created_rows(
     lottery_type: int,
     site_web_id: int,
     mode_id: int,
+    limit: int = 10,
 ) -> list[dict[str, Any]]:
     try:
         created_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
@@ -182,14 +183,46 @@ def load_recent_created_rows(
             FROM {table_ref}
             WHERE type = ? AND web = ? AND modes_id = ?
             ORDER BY year DESC, term DESC
-            LIMIT 10
+            LIMIT ?
             """,
-            (str(lottery_type), str(site_web_id), int(mode_id)),
+            (str(lottery_type), str(site_web_id), int(mode_id), int(limit)),
         ).fetchall()
         return [{column: row[column] for column in selected_columns} for row in rows]
     except Exception:
         conn.rollback()
         return []
+
+
+def load_mode_payload_title_rows(
+    conn: Any,
+    *,
+    table_name: str,
+    mode_id: int,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """读取某 mode 在 public 表里已有的非空 title（只读，供文本类模式补充候选）。
+
+    仅用于缺少 text_history_mappings 行时枚举历史文本候选，
+    不写入、不修改任何已生成的预测行。
+    """
+    if int(mode_id or 0) <= 0 or not conn.table_exists(table_name):
+        return []
+
+    columns = set(conn.table_columns(table_name))
+    if "title" not in columns:
+        return []
+
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT title
+        FROM {quote_identifier(table_name)}
+        WHERE COALESCE(title, '') <> ''
+        ORDER BY title
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    return [{"title": str(row["title"])} for row in rows]
 
 
 def load_text_history_candidate_rows(
