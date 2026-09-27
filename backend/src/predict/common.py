@@ -357,6 +357,28 @@ def excludes_hit(outcome: str, labels: tuple[str, ...]) -> bool:
     """绝杀玩法命中：真实结果没有落入预测标签。"""
     return outcome not in labels
 
+def exact_contains_hit(outcome: str, labels: tuple[str, ...]) -> bool:
+    """常规玩法命中（原子口径）：真实结果原子与预测标签取交集。
+
+    ``public/api.py::_check_correct_by_mechanism`` 对标准 contains/excludes 走的是
+    ``label in outcome`` 的**子串**判定，而 outcome 是 ``|`` 分隔的复合标签串。
+    当玩法标签本身不是 outcome 原子时，子串判定会虚报命中：
+
+    - 单双中特候选 ``单``，而 outcome 含 ``合单`` / ``3头单`` → 误判为命中
+    - 大小中特候选 ``大``，而 outcome 含 ``大数`` / ``合数大`` → 偶数码也被判命中
+    - 中头玩法候选 ``1头``，而 outcome 含 ``0头单`` 里的 ``头单`` 不会命中，
+      但 ``1头`` 会命中 ``1头双`` —— 只要真实特码是「1 头」，无论单双都算命中
+
+    这些玩法的候选标签与 outcome 原子同属一个取值空间，因此改用精确集合成员判定，
+    避免子串误匹配。
+    """
+    atoms = {value.strip() for value in str(outcome or "").split("|") if value.strip()}
+    return any(str(label).strip() in atoms for label in labels)
+
+def excludes_hit_exact(outcome: str, labels: tuple[str, ...]) -> bool:
+    """绝杀玩法命中（原子口径）：真实结果原子都不在预测标签里。"""
+    return not exact_contains_hit(outcome, labels)
+
 def build_element_number_map(conn: Any) -> dict[str, str]:
     """建立号码到五行的映射。
 

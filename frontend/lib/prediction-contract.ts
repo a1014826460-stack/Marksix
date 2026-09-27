@@ -209,6 +209,36 @@ function collectGroups(...values: unknown[]) {
   })
 }
 
+/**
+ * 判定专用的候选原子集合（**不参与 `prediction.tokens` 的构造**）。
+ *
+ * `prediction.tokens` 是对外契约，多个站点的 `site-data-adapter.js` 直接消费它
+ * 并逐项渲染，形状不能改。因此这里另建一份「判定用候选集合」：把 `标签|号码`
+ * 条目展开成号码 / 生肖原子，只用于「候选项是否命中真实开奖」的交叉校验。
+ */
+export function candidateAtomsForVerdict(input: {
+  tokens: unknown[]
+  groups?: CanonicalPredictionGroup[]
+  extra?: Record<string, unknown>
+}): unknown[] {
+  const items: unknown[] = [...input.tokens]
+  for (const group of input.groups || []) {
+    items.push(cleanText(group.label), ...group.tokens)
+  }
+  const extra = input.extra || {}
+  for (const value of Object.values(extra)) {
+    if (value === null || value === undefined) continue
+    if (typeof value === "string" || typeof value === "number") items.push(value)
+    else if (Array.isArray(value)) items.push(...value)
+    else if (typeof value === "object") {
+      for (const nested of Object.values(value as Record<string, unknown>)) {
+        if (typeof nested === "string" || typeof nested === "number") items.push(nested)
+      }
+    }
+  }
+  return items
+}
+
 function resultFromLegacyFields(input: {
   resultText?: unknown
   isOpened?: unknown
@@ -240,11 +270,139 @@ function resultFromLegacyFields(input: {
   }
 }
 
+/**
+ * 绝杀 / 排除类玩法：候选集合是「排除集」，开奖目标**不在**候选内才算命中。
+ * 这类玩法的 `is_correct` 与候选集合是反向关系，不能按「候选命中开奖」校验。
+ */
+const EXCLUDE_MECHANISM_HINTS = ["杀", "绝杀", "不中", "输尽", "排除", "kill", "exclude"]
+
+/**
+ * 平特类玩法（平特一肖 / 平特一尾 / 平特 N 肖…）：命中要看开奖**全部 7 个号码**的
+ * 生肖或尾数，而契约层拿到的是后端只按特码口径算出的 `isCandid`。
+ * 只拿特码去比对会误判成「候选没命中」，因此这类玩法不在这里做交叉校验。
+ */
+const FLAT_MECHANISM_HINTS = ["平特", "pt1", "pt2", "pt3", "flat"]
+
+export function isExcludePredictionMechanism(...hints: unknown[]) {
+  const haystack = hints.map((item) => cleanText(item)).join(" ")
+  if (!haystack) return false
+  return EXCLUDE_MECHANISM_HINTS.some((hint) => haystack.includes(hint))
+}
+
+export function isFlatPredictionMechanism(...hints: unknown[]) {
+  const haystack = hints.map((item) => cleanText(item)).join(" ").toLowerCase()
+  if (!haystack) return false
+  return FLAT_MECHANISM_HINTS.some((hint) => haystack.includes(hint))
+}
+
+/** 候选项里的号码原子（`大|25,26` → `25`、`26`；`37` → `37`）。 */
+export function candidateCodeAtoms(items: unknown[]) {
+  const atoms: string[] = []
+  for (const item of items) {
+    for (const part of cleanText(item).split(/[,，、|\s]+/)) {
+      const digits = part.replace(/[^\d]/g, "")
+      if (digits && digits.length <= 2) atoms.push(String(Number(digits)).padStart(2, "0"))
+    }
+  }
+  return [...new Set(atoms)]
+}
+
+/** 候选项里的生肖原子（`鸡|10,22` → `鸡`；`马37` → `马`）。 */
+export function candidateZodiacAtoms(items: unknown[]) {
+  const atoms: string[] = []
+  for (const item of items) {
+    for (const char of cleanText(item)) {
+      if ("鼠牛虎兔龙蛇马羊猴鸡狗猪".includes(char)) atoms.push(char)
+    }
+  }
+  return [...new Set(atoms)]
+}
+
+/**
+ * 用「候选集合是否命中真实开奖」交叉校验上游给的 `is_correct`。
+ *
+ * 上游（后端 `public/api.py` 的机制判定、vendor 聚合模块）在候选集合与判定口径
+ * 不一致时会虚报命中：典型是候选只有某个标签（`单` / `大`），或候选是一整串
+ * `标签|号码`（如绝杀七码的号码串），而特码/特肖并不在候选集合里，
+ * `is_correct` 仍然是 true。
+ *
+ * 只有「真实开奖目标确实出现在候选集合里」才认为上游的命中可信；否则判为矛盾。
+ * 绝杀/排除类与平特类玩法的候选口径与特码不同，返回 `excluded` / `flat`，
+ * 交由各自的展示层按自己的规则判定。
+ *
+ * 返回：
+ *   - `"verified"`：候选集合里能找到真实特码或特肖
+ *   - `"excluded"`：绝杀/排除类玩法，不做 contains 交叉校验
+ *   - `"flat"`：平特类玩法（需要全部 7 个开奖号码），不做特码交叉校验
+ *   - `"unverifiable"`：缺少开奖号码或候选项为空
+ *   - `"contradicted"`：上游 `is_correct === true`，但候选集合没有命中真实开奖
+ */
+export type VerdictVerification =
+  | "verified"
+  | "excluded"
+  | "flat"
+  | "unverifiable"
+  | "contradicted"
+
+export function verifyVerdictAgainstCandidates(input: {
+  isCorrect: boolean | null
+  isOpened: boolean
+  code?: string
+  zodiac?: string
+  tokens: unknown[]
+  groups?: CanonicalPredictionGroup[]
+  mechanismHints?: unknown[]
+}): VerdictVerification {
+  if (input.isCorrect !== true || !input.isOpened) return "verified"
+  const hints = input.mechanismHints || []
+  if (isExcludePredictionMechanism(...hints)) return "excluded"
+  if (isFlatPredictionMechanism(...hints)) return "flat"
+  const code = cleanText(input.code)
+  const zodiac = cleanText(input.zodiac)
+  if (!code && !zodiac) return "unverifiable"
+
+  const items = [
+    ...input.tokens,
+    ...(input.groups || []).flatMap((group) => [...group.tokens, cleanText(group.label)]),
+  ]
+  const codes = candidateCodeAtoms(items)
+  const zodiacs = candidateZodiacAtoms(items)
+  if (!codes.length && !zodiacs.length) return "unverifiable"
+
+  if (code && codes.includes(normalizeCode(code))) return "verified"
+  if (zodiac && zodiacs.includes(zodiac)) return "verified"
+  return "contradicted"
+}
+
 function statusFromResult(result: CanonicalPredictionResult): CanonicalPredictionStatus {
   if (!result.isOpened) return "pending"
   if (result.isCorrect === true) return "opened-hit"
   if (result.isCorrect === false) return "opened-miss"
   return "opened-unknown"
+}
+
+/**
+ * 把上游 `is_correct` 收敛成「与展示候选集合一致」的判定。
+ *
+ * 直接透传上游判定会让虚报命中（候选里根本没有真实开奖号码/生肖）继续显示「准」，
+ * 因此这里对非绝杀类玩法做交叉校验：候选集合没命中真实开奖时改判为未命中，
+ * 并把原始判定与校验结果留在 `raw` 里，便于审计脚本与页面调试追溯。
+ */
+function reconcileVerdict(input: {
+  result: CanonicalPredictionResult
+  candidateAtoms: unknown[]
+  mechanismHints: unknown[]
+}): CanonicalPredictionResult {
+  const verification = verifyVerdictAgainstCandidates({
+    isCorrect: input.result.isCorrect,
+    isOpened: input.result.isOpened,
+    code: input.result.code,
+    zodiac: input.result.zodiac,
+    tokens: input.candidateAtoms,
+    mechanismHints: input.mechanismHints,
+  })
+  if (verification !== "contradicted") return input.result
+  return { ...input.result, isCorrect: false }
 }
 
 function inferDisplayKind(row: CanonicalPredictionRow): CanonicalPredictionDisplayKind {
@@ -264,24 +422,31 @@ function mergeDisplayKind(kinds: CanonicalPredictionDisplayKind[]): CanonicalPre
   return "unknown"
 }
 
-function canonicalRowFromPublicHistory(row: PublicHistoryRow): CanonicalPredictionRow {
+function canonicalRowFromPublicHistory(row: PublicHistoryRow, mechanismHints: unknown[] = []): CanonicalPredictionRow {
   const raw = asRecord(row.raw)
   const text = cleanText(row.prediction_text || raw.content || raw.prediction)
   const groups = collectGroups(raw.groups, raw.xiao_groups, raw.code_groups, raw.wave_groups)
+  // `tokens` 保持 HEAD 的对外形状（多个站点的 site-data-adapter.js 直接逐项渲染它）。
+  const tokens = groups.length ? uniqueStrings(groups.flatMap((group) => group.tokens)) : splitPredictionTokens(text)
   const prediction: CanonicalPredictionValue = {
     text,
-    tokens: groups.length ? uniqueStrings(groups.flatMap((group) => group.tokens)) : splitPredictionTokens(text),
+    tokens,
     groups,
     imageUrl: cleanText(row.image_url) || undefined,
     extra: {
       content: raw.content,
     },
   }
-  const result = resultFromLegacyFields({
-    resultText: row.result_text,
-    isOpened: row.is_opened,
-    isCorrect: row.is_correct,
-    raw,
+  const result = reconcileVerdict({
+    result: resultFromLegacyFields({
+      resultText: row.result_text,
+      isOpened: row.is_opened,
+      isCorrect: row.is_correct,
+      raw,
+    }),
+    // 判定用候选集合另外构造，不进 `tokens`。
+    candidateAtoms: candidateAtomsForVerdict({ tokens, groups, extra: prediction.extra }),
+    mechanismHints,
   })
 
   return {
@@ -307,7 +472,15 @@ export function canonicalizePublicSitePageData(data: PublicSitePageData | null |
   if (!data?.modules?.length) return [] as CanonicalPredictionModule[]
 
   return data.modules.map((module) => {
-    const rows = (module.history || []).map(canonicalRowFromPublicHistory)
+    const mechanismHints = [
+      module.mechanism_key,
+      module.title,
+      module.cssClass,
+      module.default_table,
+    ]
+    const rows = (module.history || []).map((row) =>
+      canonicalRowFromPublicHistory(row, mechanismHints)
+    )
     return {
       moduleKey: module.mechanism_key,
       title: module.title,
@@ -340,7 +513,10 @@ function vendorResult(row: Record<string, unknown>) {
   })
 }
 
-function canonicalRowFromVendorHistory(row: Record<string, unknown>): CanonicalPredictionRow {
+function canonicalRowFromVendorHistory(
+  row: Record<string, unknown>,
+  mechanismHints: unknown[] = []
+): CanonicalPredictionRow {
   const groups = collectGroups(row.groups, row.xiao_groups, row.code_groups, row.wave_groups)
   const text =
     cleanText(row.display_text) ||
@@ -351,13 +527,38 @@ function canonicalRowFromVendorHistory(row: Record<string, unknown>): CanonicalP
       ...(Array.isArray(row.picks) ? row.picks : []),
       ...(Array.isArray(row.xiao_pair) ? row.xiao_pair : []),
     ]).join(" ")
+  // `tokens` 保持 HEAD 的对外形状（twwanli / twsyw / twssz / twjsz666 / twbst528
+  // 的 site-data-adapter.js 直接逐项渲染它）。
   const tokens = uniqueStrings([
     ...splitPredictionTokens(text),
     ...groups.flatMap((group) => group.tokens),
     ...(Array.isArray(row.picks) ? row.picks : []),
     ...(Array.isArray(row.xiao_pair) ? row.xiao_pair : []),
   ])
-  const result = vendorResult(row)
+  const vendorExtra = {
+    best_pick: row.best_pick,
+    daxiao: row.daxiao,
+    tou_code: row.tou_code,
+    tiandi: row.tiandi,
+    xiao_pair: row.xiao_pair,
+    picks: row.picks,
+    wave_groups: row.wave_groups,
+    xiao: row.xiao,
+    code: row.code,
+    hei: row.hei,
+    bai: row.bai,
+    formula: row.formula,
+    content: row.content,
+    heads: row.heads,
+    tails: row.tails,
+    publications: row.publications,
+  }
+  const result = reconcileVerdict({
+    result: vendorResult(row),
+    // 判定用候选集合另外构造（含 best_pick / picks 等展示字段），不进 `tokens`。
+    candidateAtoms: candidateAtomsForVerdict({ tokens, groups, extra: vendorExtra }),
+    mechanismHints,
+  })
 
   return {
     issue: cleanText(row.issue),
@@ -368,24 +569,7 @@ function canonicalRowFromVendorHistory(row: Record<string, unknown>): CanonicalP
       tokens,
       groups,
       imageUrl: cleanText(row.image_url) || undefined,
-      extra: {
-        best_pick: row.best_pick,
-        daxiao: row.daxiao,
-        tou_code: row.tou_code,
-        tiandi: row.tiandi,
-        xiao_pair: row.xiao_pair,
-        picks: row.picks,
-        wave_groups: row.wave_groups,
-        xiao: row.xiao,
-        code: row.code,
-        hei: row.hei,
-        bai: row.bai,
-        formula: row.formula,
-        content: row.content,
-        heads: row.heads,
-        tails: row.tails,
-        publications: row.publications,
-      },
+      extra: vendorExtra,
     },
     result,
     status: statusFromResult(result),
@@ -398,8 +582,13 @@ export function canonicalizeVendorHomepageModules(data: VendorHomepageModulesRes
 
   return data.data.map((module: VendorHomepageModule) => {
     const moduleRecord = module as unknown as Record<string, unknown>
+    const mechanismHints = [
+      moduleRecord.module_key,
+      moduleRecord.title,
+      moduleRecord.display_style,
+    ]
     const rows = (Array.isArray(moduleRecord.history) ? moduleRecord.history : []).map((row) =>
-      canonicalRowFromVendorHistory(asRecord(row))
+      canonicalRowFromVendorHistory(asRecord(row), mechanismHints)
     )
     return {
       moduleKey: cleanText(moduleRecord.module_key),

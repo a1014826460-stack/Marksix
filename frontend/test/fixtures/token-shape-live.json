@@ -1,0 +1,494 @@
+{
+ "twwanli": {
+  "title_5": {
+   "tokens": [
+    "地肖|蛇,羊,鸡,狗,鼠,虎"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 12,
+     "raw": {
+      "content": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]"
+     }
+    }
+   ]
+  },
+  "sixiao_sima": {
+   "tokens": [
+    "猪|08",
+    "龙|03",
+    "猴|11",
+    "马|01"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"猪|08\", \"龙|03\", \"猴|11\", \"马|01\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 12,
+     "raw": {
+      "content": "[\"猪|08\", \"龙|03\", \"猴|11\", \"马|01\"]"
+     }
+    }
+   ]
+  },
+  "9xzt": {
+   "tokens": [
+    "猴",
+    "蛇",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "虎",
+    "羊"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,蛇,猪,鼠,马,狗,龙,虎,羊",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 12,
+     "raw": {
+      "content": "猴,蛇,猪,鼠,马,狗,龙,虎,羊"
+     }
+    }
+   ]
+  },
+  "danshuang4xiao": {
+   "tokens": [
+    "猴",
+    "鸡",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "兔"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,鸡,猪,鼠 / 马,狗,龙,兔",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 12,
+     "raw": {
+      "xiao_1": "猴,鸡,猪,鼠",
+      "xiao_2": "马,狗,龙,兔"
+     }
+    }
+   ]
+  }
+ },
+ "twsyw": {
+  "title_5": {
+   "tokens": [
+    "地肖|蛇,羊,鸡,狗,鼠,虎"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 13,
+     "raw": {
+      "content": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]"
+     }
+    }
+   ]
+  },
+  "sixiao_sima": {
+   "tokens": [
+    "鸡|10",
+    "羊|12",
+    "狗|09",
+    "猴|11"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"鸡|10\", \"羊|12\", \"狗|09\", \"猴|11\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 13,
+     "raw": {
+      "content": "[\"鸡|10\", \"羊|12\", \"狗|09\", \"猴|11\"]"
+     }
+    }
+   ]
+  },
+  "9xzt": {
+   "tokens": [
+    "猴",
+    "蛇",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "虎",
+    "羊"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,蛇,猪,鼠,马,狗,龙,虎,羊",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 13,
+     "raw": {
+      "content": "猴,蛇,猪,鼠,马,狗,龙,虎,羊"
+     }
+    }
+   ]
+  },
+  "danshuang4xiao": {
+   "tokens": [
+    "猴",
+    "鸡",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "兔"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,鸡,猪,鼠 / 马,狗,龙,兔",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 13,
+     "raw": {
+      "xiao_1": "猴,鸡,猪,鼠",
+      "xiao_2": "马,狗,龙,兔"
+     }
+    }
+   ]
+  }
+ },
+ "twssz": {
+  "title_5": {
+   "tokens": [
+    "天肖|兔,马,猴,猪,牛,龙"
+   ],
+   "history": [
+    {
+     "issue": "2026270",
+     "year": "2026",
+     "term": "270",
+     "prediction_text": "[\"天肖|兔,马,猴,猪,牛,龙\"]",
+     "result_text": "马37",
+     "is_opened": true,
+     "is_correct": false,
+     "source_web_id": 5,
+     "raw": {
+      "content": "[\"天肖|兔,马,猴,猪,牛,龙\"]"
+     }
+    }
+   ]
+  },
+  "sixiao_sima": {
+   "tokens": [
+    "狗|09",
+    "马|01",
+    "羊|12",
+    "猴|11"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"狗|09\", \"马|01\", \"羊|12\", \"猴|11\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 9,
+     "raw": {
+      "content": "[\"狗|09\", \"马|01\", \"羊|12\", \"猴|11\"]"
+     }
+    }
+   ]
+  },
+  "9xzt": {
+   "tokens": [
+    "猴",
+    "鸡",
+    "鼠",
+    "牛",
+    "虎",
+    "马",
+    "兔",
+    "蛇",
+    "羊"
+   ],
+   "history": [
+    {
+     "issue": "2026270",
+     "year": "2026",
+     "term": "270",
+     "prediction_text": "猴,鸡,鼠,牛,虎,马,兔,蛇,羊",
+     "result_text": "马37",
+     "is_opened": true,
+     "is_correct": true,
+     "source_web_id": 5,
+     "raw": {
+      "content": "猴,鸡,鼠,牛,虎,马,兔,蛇,羊"
+     }
+    }
+   ]
+  },
+  "title_47": {
+   "tokens": [
+    "牛",
+    "猴",
+    "鸡",
+    "龙"
+   ],
+   "history": [
+    {
+     "issue": "2026270",
+     "year": "2026",
+     "term": "270",
+     "prediction_text": "牛,猴,鸡,龙",
+     "result_text": "马37",
+     "is_opened": true,
+     "is_correct": false,
+     "source_web_id": 5,
+     "raw": {
+      "content": "牛,猴,鸡,龙"
+     }
+    }
+   ]
+  }
+ },
+ "twjsz666": {
+  "9xzt": {
+   "tokens": [
+    "猴",
+    "蛇",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "虎",
+    "羊"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,蛇,猪,鼠,马,狗,龙,虎,羊",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 11,
+     "raw": {
+      "content": "猴,蛇,猪,鼠,马,狗,龙,虎,羊"
+     }
+    }
+   ]
+  },
+  "danshuang4xiao": {
+   "tokens": [
+    "猴",
+    "鸡",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "兔"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,鸡,猪,鼠 / 马,狗,龙,兔",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 11,
+     "raw": {
+      "xiao_1": "猴,鸡,猪,鼠",
+      "xiao_2": "马,狗,龙,兔"
+     }
+    }
+   ]
+  },
+  "pt1wei": {
+   "tokens": [
+    "3尾|03,13,23,33,43"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"3尾|03,13,23,33,43\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 11,
+     "raw": {
+      "content": "[\"3尾|03,13,23,33,43\"]"
+     }
+    }
+   ]
+  },
+  "title_47": {
+   "tokens": [
+    "鸡",
+    "狗",
+    "羊",
+    "马"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "鸡,狗,羊,马",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 11,
+     "raw": {
+      "content": "鸡,狗,羊,马"
+     }
+    }
+   ]
+  }
+ },
+ "twbst528": {
+  "title_5": {
+   "tokens": [
+    "地肖|蛇,羊,鸡,狗,鼠,虎"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 10,
+     "raw": {
+      "content": "[\"地肖|蛇,羊,鸡,狗,鼠,虎\"]"
+     }
+    }
+   ]
+  },
+  "9xzt": {
+   "tokens": [
+    "猴",
+    "蛇",
+    "猪",
+    "鼠",
+    "马",
+    "狗",
+    "龙",
+    "虎",
+    "羊"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "猴,蛇,猪,鼠,马,狗,龙,虎,羊",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 10,
+     "raw": {
+      "content": "猴,蛇,猪,鼠,马,狗,龙,虎,羊"
+     }
+    }
+   ]
+  },
+  "pt1wei": {
+   "tokens": [
+    "7尾|07,17,27,37,47"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "[\"7尾|07,17,27,37,47\"]",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 10,
+     "raw": {
+      "content": "[\"7尾|07,17,27,37,47\"]"
+     }
+    }
+   ]
+  },
+  "title_47": {
+   "tokens": [
+    "兔",
+    "猪",
+    "牛",
+    "狗"
+   ],
+   "history": [
+    {
+     "issue": "2026191",
+     "year": "2026",
+     "term": "191",
+     "prediction_text": "兔,猪,牛,狗",
+     "result_text": "待开奖",
+     "is_opened": false,
+     "is_correct": null,
+     "source_web_id": 10,
+     "raw": {
+      "content": "兔,猪,牛,狗"
+     }
+    }
+   ]
+  }
+ }
+}

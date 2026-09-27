@@ -19,7 +19,9 @@ from predict.common import (
     all_zodiacs_from_row,
     contains_hit,
     default_content_from_row,
+    exact_contains_hit,
     excludes_hit,
+    excludes_hit_exact,
     fixed_label_for_value,
     flat_tail_hit,
     flat_zodiac_hit,
@@ -966,7 +968,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_head_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("头", tuple(HEAD_NUMBER_MAP.keys())),
         explanation=(
             "3头中特将 01-49 按十位分为 0头、1头、2头、3头、4头。",
@@ -1094,7 +1096,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_parity_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("单双", ("单", "双")),
         explanation=(
             "单双中特按特码号码奇偶分为单、双。",
@@ -1475,7 +1477,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_head_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("头", tuple(HEAD_NUMBER_MAP.keys())),
         explanation=(
             "四头中特按特码十位分为 0头~4头，输出沿用头数号码列表结构。",
@@ -1621,7 +1623,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_head_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("头", tuple(HEAD_NUMBER_MAP.keys())),
         explanation=(
             "两头中特从 0头、1头、2头、3头、4头中选择 2 个头数。",
@@ -2060,7 +2062,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_size_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("大小", ("小", "大")),
         explanation=(
             "大小中特按特码号码大小分为小、大，01-24 为小，25-49 为大。",
@@ -2078,7 +2080,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_loader=default_content_from_row,
         content_parser=parse_pipe_label_content,
         content_formatter=format_size_groups,
-        hit_checker=contains_hit,
+        hit_checker=exact_contains_hit,
         labels_loader=labels_from_fixed("大小", ("小", "大")),
         explanation=(
             "大小中特带1头按特码号码大小分为小、大，01-24 为小，25-49 为大。",
