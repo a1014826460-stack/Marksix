@@ -11,8 +11,9 @@
 set -uo pipefail
 
 cd /root/Marksix
-STAMP="${1:?usage: deploy-frontend.sh <UTC timestamp e.g. 20260927T135458Z>}"
-B="/root/Marksix/.deploy-backups/tw8800-verdict-${STAMP}"
+STAMP="${1:?usage: deploy-frontend.sh <UTC timestamp e.g. 20260927T135458Z> [label]}"
+LABEL="${2:-deploy}"
+B="/root/Marksix/.deploy-backups/${LABEL}-${STAMP}"
 mkdir -p "$B"
 
 echo "=== 1. 备份到 $B"
@@ -45,8 +46,8 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t 2>&1 |
 echo "=== 5. 容器状态 ==="
 docker compose -f docker-compose.frontend-node.yml ps --format '{{.Name}} {{.Status}}'
 
-echo "=== 6. 五站自检 ==="
-for h in www.twbst528.com www.twjsz666.com www.twssz.com www.twsyw.com www.twwanli.com; do
+echo "=== 6. 站点自检 ==="
+for h in www.twbst528.com www.twjsz666.com www.twssz.com www.twsyw.com www.twwanli.com www.twcaibawang.com; do
   printf '%s %s\n' "$h" "$(curl -s -o /dev/null -w '%{http_code}' "https://$h/")"
 done
 echo "DEPLOY_FRONTEND_DONE $(git rev-parse --short HEAD)"

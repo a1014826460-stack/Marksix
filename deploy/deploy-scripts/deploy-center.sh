@@ -10,8 +10,9 @@
 set -uo pipefail
 
 cd /root/Marksix
-STAMP="${1:?usage: deploy-center.sh <UTC timestamp e.g. 20260927T134420Z>}"
-B="/root/Marksix/.deploy-backups/tw8800-verdict-${STAMP}"
+STAMP="${1:?usage: deploy-center.sh <UTC timestamp e.g. 20260927T134420Z> [label]}"
+LABEL="${2:-deploy}"
+B="/root/Marksix/.deploy-backups/${LABEL}-${STAMP}"
 mkdir -p "$B"
 
 echo "=== 1. 备份到 $B"
@@ -45,5 +46,7 @@ echo "=== 5. 容器状态 ==="
 docker compose ps --format '{{.Name}} {{.Status}}' | head -10
 
 echo "=== 6. 公网自检 ==="
-curl -s -o /dev/null -w 'health %{http_code}\n' https://www.tw8800.com/health || true
+for h in www.tw8800.com www.twcaibawang.com; do
+  printf '%s %s\n' "$h" "$(curl -s -o /dev/null -w '%{http_code}' "https://$h/health")"
+done
 echo "DEPLOY_CENTER_DONE $(git rev-parse --short HEAD)"
