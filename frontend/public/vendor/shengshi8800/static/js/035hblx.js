@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
  url: httpApi + `/api/kaijiang/getHbnx?web=${web}&type=${type}&num=3`,
@@ -60,10 +60,12 @@ $.ajax({
      }
     }
 
+    // 命中判定：特肖是否落在本期 黑组/白组（命中显示「准」）
+    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(45, d)) : '';
     //console.log(ma)
     htmlBoxList = `${htmlBoxList} 
     <tr>
-        <td><font color='#000000'>${d.term}期:</font><font color='#0000FF'>→黑:${c.join('')} 白:${c1.join('')}</span> </font>开:${reSx[reSx.length-1]||'?'}${resCode[resCode.length-1]||'00'}</td>
+        <td><font color='#000000'>${d.term}期:</font><font color='#0000FF'>→黑:${c.join('')} 白:${c1.join('')}</span> </font>开:${reSx[reSx.length-1]||'?'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
     
             `}

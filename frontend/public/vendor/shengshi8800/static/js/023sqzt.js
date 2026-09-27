@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getSanqiXiao4new?web=${web}&type=${type}`,
@@ -49,7 +49,6 @@ $.ajax({
                 }
                 let term = '中1期';
                 if (!sx) term = '中几期'
-
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 

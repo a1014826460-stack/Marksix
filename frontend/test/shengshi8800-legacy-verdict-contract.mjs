@@ -65,15 +65,58 @@ assert.equal(verdictOf(57, row('["大|25,26"]', "07", "x,x,x,x,x,x,鼠")), "miss
 assert.equal(verdictOf(108, row('["小|01,02"]', "20", "x,x,x,x,x,x,鼠")), "ok", "mode 108 -> ok")
 assert.equal(verdictOf(108, row('["小|01,02"]', "48", "x,x,x,x,x,x,鼠")), "miss", "mode 108 -> miss")
 
-// 双组生肖
-assert.equal(verdictOf(31, { xiao_1: "猴,鸡,狗,鼠", xiao_2: "虎,羊,龙,牛", res_code: "45", res_sx: "x,x,x,x,x,x,狗" }), "ok",
-  "mode 31: 特肖狗在 xiao_1 -> ok")
-assert.equal(verdictOf(31, { xiao_1: "猴,鸡,猪,蛇", xiao_2: "马,鼠,羊,龙", res_code: "23", res_sx: "x,x,x,x,x,x,虎" }), "miss",
-  "mode 31: 特肖虎不在两组 -> miss")
-assert.equal(verdictOf(45, { hei: "猪,狗,龙", bai: "鸡,羊,鼠", res_code: "45", res_sx: "x,x,x,x,x,x,狗" }), "ok",
-  "mode 45: 特肖狗在 hei -> ok")
-assert.equal(verdictOf(45, { hei: "猪,狗,龙", bai: "鸡,羊,鼠", res_code: "21", res_sx: "x,x,x,x,x,x,蛇" }), "miss",
-  "mode 45: 特肖蛇不在两组 -> miss")
+// 单双四肖（31）：两组是每期变化的 4+4 生肖拆分，按特肖落在哪组判定。
+// 260–268 期真实数据里「单组」并不等于号码奇偶，所以不能用奇偶判。
+assert.equal(verdictOf(31, { xiao_1: "猴,鸡,猪,鼠", xiao_2: "蛇,龙,马,牛", res_code: "01,27,37,20,43,02,10", res_sx: "马,龙,马,猪,鼠,蛇,鸡" }), "ok",
+  "mode 31 266期: 特肖鸡 在单组 -> ok")
+assert.equal(verdictOf(31, { xiao_1: "鸡,猴,猪,狗", xiao_2: "牛,蛇,龙,鼠", res_code: "32,36,39,05,33,37,09", res_sx: "猪,羊,龙,虎,狗,马,狗" }), "ok",
+  "mode 31 265期: 特肖狗 在单组 -> ok")
+assert.equal(verdictOf(31, { xiao_1: "虎,猴,猪,马", xiao_2: "牛,鼠,兔,狗", res_code: "02,49,04,38,22,27,24", res_sx: "蛇,马,兔,蛇,鸡,龙,羊" }), "miss",
+  "mode 31 267期(生产数据): 特肖羊 不在单组也不在双组 -> miss")
+assert.equal(verdictOf(31, { xiao_1: "猴,鸡,猪,虎", xiao_2: "羊,龙,蛇,狗", res_code: "07,29,25,15,32,43,11", res_sx: "鼠,虎,马,龙,猪,鼠,猴" }), "ok",
+  "mode 31 268期: 特肖猴 在单组 -> ok")
+// 真未命中：特肖既不在单组也不在双组
+assert.equal(verdictOf(31, { xiao_1: "猴,鸡,猪,鼠", xiao_2: "蛇,龙,马,牛", res_code: "01", res_sx: "x,x,x,x,x,x,兔" }), "miss",
+  "mode 31: 特肖兔 不在两组 -> miss")
+
+// 跑马玄机测字（331）：真实候选是 x7m14（七肖14码），不是正文解肖文字
+assert.equal(verdictOf(331, {
+  x7m14: '["羊|48,12","鼠|43,07","蛇|02,14","鸡|10,34","马|13,49","兔|04,40","龙|15,39"]',
+  content: "战：战争，通常指打仗。解战肖虎牛马狗，五行金解金肖猴鸡。",
+  res_code: "02,49,04,38,22,27,24",
+  res_sx: "蛇,马,兔,蛇,鸡,龙,羊",
+}), "ok", "mode 331 267期: 特肖羊 在 x7m14 -> ok")
+assert.equal(verdictOf(331, {
+  x7m14: '["羊|48,12","鼠|43,07","蛇|02,14","鸡|10,34","马|13,49","兔|04,40","龙|15,39"]',
+  content: "战：战争，通常指打仗。解战肖虎牛马狗，五行金解金肖猴鸡。",
+  res_code: "02,49,04,38,22,27,41",
+  res_sx: "蛇,马,兔,蛇,鸡,龙,虎",
+}), "miss", "mode 331: 特肖虎 不在 x7m14 -> miss")
+assert.equal(verdictOf(331, {
+  x7m14: '["羊|48,12","鼠|43,07"]',
+  content: "解战肖虎牛马狗",
+  res_code: "", res_sx: "",
+}), "pending", "mode 331: 未开奖 -> pending")
+
+// 黑白各三肖（45）：按 黑组/白组 生肖判定，命中显示准、未命中显示错
+assert.equal(verdictOf(45, { hei: "龙,猴,羊", bai: "猪,牛,兔", res_code: "04,15,26,24,47,10,42", res_sx: "兔,龙,蛇,羊,猴,鸡,牛" }), "ok",
+  "mode 45: 特肖牛 在 白组 -> ok")
+assert.equal(verdictOf(45, { hei: "龙,猴,羊", bai: "猪,牛,兔", res_code: "04,15,26,24,47,10,43", res_sx: "兔,龙,蛇,羊,猴,鸡,马" }), "miss",
+  "mode 45: 特肖马 不在黑白两组 -> miss")
+
+// 琴棋书画（26）：候选生肖在 content（每期 9 肖），命中显示准
+assert.equal(verdictOf(26, { title: "棋,琴,书", content: "鼠,牛,狗,兔,蛇,鸡,虎,龙,马", res_code: "01,27,37,20,43,02,10", res_sx: "马,龙,马,猪,鼠,蛇,鸡" }), "ok",
+  "mode 26 266期: 特肖鸡 在 9 肖候选里 -> ok")
+assert.equal(verdictOf(26, { title: "棋,琴,书", content: "鼠,牛,狗,兔,蛇,鸡,虎,龙,马", res_code: "01,27,37,20,43,02,11", res_sx: "马,龙,马,猪,鼠,蛇,羊" }), "miss",
+  "mode 26: 特肖羊 不在 9 肖候选里 -> miss")
+
+// 特码段（65）：页面展示段区间，特码落在段内=准，落在段外=错；模板不得输出字面占位符
+assert.equal(verdictOf(65, { content: "13,14,15,16,17,18,19,20,21,22,23,24", res_code: "01,27,37,20,43,02,16", res_sx: "x,x,x,x,x,x,虎" }), "ok",
+  "mode 65: 16 在 13-24 段内 -> ok")
+assert.equal(verdictOf(65, { content: "37,38,39,40,41,42,43,44,45,46,47,48,49", res_code: "02,49,04,38,22,27,24", res_sx: "蛇,马,兔,蛇,鸡,龙,羊" }), "miss",
+  "mode 65 267期形态: 段=37-49，特码24 在段外 -> miss")
+assert.equal(verdictOf(65, { content: "13,14,15,16,17,18,19,20,21,22,23,24", res_code: "", res_sx: "" }), "pending",
+  "mode 65: 未开奖 -> pending（不显示判定）")
 
 // 波色（与库内 res_color 一致：20 属蓝波，30 属红波）
 assert.equal(verdictOf(38, row("红波,蓝波", "20", "x,x,x,x,x,x,猪")), "ok", "mode 38: 20 属蓝波 在候选 -> ok")
@@ -144,5 +187,17 @@ assert.deepEqual(
   [],
   `以下位置仍把「准」写死在结果旁（应改为判定输出）：\n${offenders.flat().join("\n")}`,
 )
+
+// ── 3. 模板不得输出字面占位符 ─────────────────────────────────
+// 曾出现 `${hit ? '${__verdictTxt}' : ''}` 这种把模板表达式写进字符串的写法，
+// 页面上会直接打印 `${__verdictTxt}` 字样。
+const literalOffenders = []
+for (const name of scripts) {
+  const live = stripComments(fs.readFileSync(path.join(JS_DIR, name), "utf8"))
+  if (/\$\{hit \? '\$\{__verdictTxt\}'/.test(live) || /'\$\{__verdictTxt\}'/.test(live)) {
+    literalOffenders.push(`${name}: 模板里出现字面 \${__verdictTxt}`)
+  }
+}
+assert.deepEqual(literalOffenders, [], literalOffenders.join("\n"))
 
 console.log(`legacy verdict contract passed (${scripts.length} 个脚本已接入统一判定)`)

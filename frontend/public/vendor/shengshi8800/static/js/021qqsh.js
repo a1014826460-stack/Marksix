@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/qqsh?web=${web}&type=${type}`, 
@@ -40,12 +40,14 @@ $.ajax({
 
                 
                 //console.log(ma)
+                // 命中判定：特肖是否在本期 9 肖候选里（命中显示「准」）
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(26, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
       <td>
         <font color='#000000'>${data[i].term}期:</font>
-        <font color='#0000FF'>琴棋书画→${c1.join('')}</font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}</td>
+        <font color='#0000FF'>琴棋书画→${c1.join('')}</font>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
 
     

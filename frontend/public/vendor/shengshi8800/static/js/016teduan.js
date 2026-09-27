@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getCodeDuan?web=${web}&type=${type}&num=12`,
@@ -25,7 +25,7 @@ $.ajax({
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
-        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${hit ? '${__verdictTxt}' : ''}</td>
+        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
             let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(65, data[i])) : '';

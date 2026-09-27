@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 
 $.ajax({
@@ -17,10 +17,13 @@ $.ajax({
                 let result = '00'
                 
                 //console.log(ma)
+                // 命中判定：口径见 legacy-prediction-verdict.js（mode 244 为纯文本诗句，
+                // 接口未返回可核对的候选生肖/号码，因此当前不显示判定）
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(244, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 
 
-<font color="#008000">${data[i].term}期《一语破天机》开[${getResultNoTxt(data[i].res_code,data[i].res_sx)}]</font>
+<font color="#008000">${data[i].term}期《一语破天机》开[${getResultNoTxt(data[i].res_code,data[i].res_sx)}]${__verdictTxt}</font>
 <br>
 <font color="#0000FF">${data[i].content}</font>
 <br>

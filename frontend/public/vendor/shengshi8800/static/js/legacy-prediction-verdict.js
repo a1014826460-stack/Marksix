@@ -259,11 +259,24 @@
         var zodiac = specialZodiac(row, code);
         var content = row.content;
         var groupList = groups(content);
-        var needsDraw = modeId !== 331 && modeId !== 244 && modeId !== 62 && modeId !== 17;
+        // 需要开奖结果才能判定的模块：未开奖一律返回 pending（不显示判定）。
+        // 例外：纯文本类（59 段子 / 62 欲钱解特 / 244 诗句）没有可核对候选，直接走 unknown。
+        var needsDraw = modeId !== 59 && modeId !== 62 && modeId !== 244 && modeId !== 17;
 
         if (needsDraw && !code) return 'pending';
 
         switch (modeId) {
+            // ── 段位（65）：页面展示的是段区间，按「特码是否落在段内」判定 ──
+            case 65: {
+                var segments = csv(content);
+                if (!segments.length) return 'unknown';
+                if (!code) return 'pending';
+                var first = pad(segments[0]);
+                var last = pad(segments[segments.length - 1]);
+                if (!first || !last) return 'unknown';
+                var value = parseInt(code, 10);
+                return (value >= parseInt(first, 10) && value <= parseInt(last, 10)) ? 'ok' : 'miss';
+            }
             // ── 号码池 / 生肖池：按数据实际维度判定 ───────────────
             // 维度判定顺序很重要：
             //   1) 池里出现生肖 -> 以「特码生肖是否在候选生肖里」为准
@@ -351,8 +364,9 @@
                 if (!zodiac) return 'pending';
                 return (hei.indexOf(zodiac) !== -1 || bai.indexOf(zodiac) !== -1) ? 'ok' : 'miss';
             }
-            // ── 生肖落在文本里 ───────────────────────────────────
+            // ── 文本候选（生肖落在文本里）────────────────────────
             case 50: {
+                // 一句真言：候选生肖在 jiexi（正文里另含「解X肖」文字）
                 var jiexi = text(row.jiexi);
                 var pool50 = jiexi ? zodiacsOf(jiexi) : zodiacsOf(content);
                 if (!pool50.length) return 'unknown';
@@ -366,21 +380,17 @@
                 return chars.indexOf(zodiac) !== -1 ? 'ok' : 'miss';
             }
             case 331: {
-                var pool331 = zodiacsOf(row.jiexi || row.content);
+                // 跑马玄机测字：真实候选是 x7m14（七肖14码）；正文里的「解X肖」只是解字文字，
+                // 按它判会把命中判成错（267期 特肖羊 就在 x7m14 里）。
+                // 注意：switch 的 case 共享函数作用域，变量名必须与其他 case 不冲突。
+                var pool331 = groups(row.x7m14);
+                if (!pool331.length) pool331 = groups(content);
                 if (!pool331.length) return 'unknown';
-                if (!zodiac) return 'pending';
-                return pool331.indexOf(zodiac) !== -1 ? 'ok' : 'miss';
-            }
-            // ── 段位 ─────────────────────────────────────────────
-            case 65: {
-                var segments = csv(content);
-                if (!segments.length) return 'unknown';
-                if (!code) return 'pending';
-                var first = pad(segments[0]);
-                var last = pad(segments[segments.length - 1]);
-                if (!first || !last) return 'unknown';
-                var value = parseInt(code, 10);
-                return (value >= parseInt(first, 10) && value <= parseInt(last, 10)) ? 'ok' : 'miss';
+                var zodiacHit331 = zodiacInGroups(pool331, zodiac);
+                if (zodiacHit331 === true) return 'ok';
+                if (numberInGroups(pool331, code) === true) return 'ok';
+                if (zodiacHit331 === false) return 'miss';
+                return 'unknown';
             }
             // ── 文本类无法核对：不显示判定 ───────────────────────
             case 59:
