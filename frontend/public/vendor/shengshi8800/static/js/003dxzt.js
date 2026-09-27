@@ -4,41 +4,13 @@ var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { 
  * 大小中特（mode 57）正确性判定。
  * 厂商原逻辑：高亮条件为「特码号码落在该池内」，而大/小两池合起来恰好覆盖
  * 01..49，条件恒为真；模板又写死「准」，因此每期都显示为正确。
- * 现改为按「预测的 大/小 == 特码实际 大/小」判定，未开奖不显示「准」。
+ * 现统一走 legacy-prediction-verdict.js 的 mode 57 口径：
+ * 「预测的 大/小 == 特码实际 大/小」才算命中，未开奖不显示判定。
+ *
+ * 这里曾定义全局 `window.__sizeVerdict`，与 dx.js（大小中特带1头）的同名全局
+ * 互相覆盖；两者实现相同所以未暴露问题，现已移除并统一使用
+ * window.legacyPredictionVerdict，避免跨模块全局名冲突。
  */
-window.__sizeVerdict = function (contentItems, specialCode) {
-    function actualSize(code) {
-        var raw = String(code == null ? '' : code).trim();
-        if (!/^\d{1,2}$/.test(raw)) return '';
-        var number = parseInt(raw, 10);
-        if (!(number >= 1 && number <= 49)) return '';
-        return number >= 25 ? '大' : '小';
-    }
-
-    var items = [];
-    if (Object.prototype.toString.call(contentItems) === '[object Array]') {
-        items = contentItems;
-    } else if (contentItems != null && String(contentItems) !== '') {
-        try {
-            items = JSON.parse(contentItems);
-        } catch (error) {
-            items = String(contentItems).indexOf('|') !== -1 ? [String(contentItems)] : [];
-        }
-    }
-    if (Object.prototype.toString.call(items) !== '[object Array]') return 'unknown';
-
-    var labels = [];
-    for (var index = 0; index < items.length; index++) {
-        var label = String(items[index]).split('|')[0].trim();
-        if (label.indexOf('大') === 0) labels.push('大');
-        else if (label.indexOf('小') === 0) labels.push('小');
-    }
-    if (labels.length !== 1) return 'unknown';
-
-    var size = actualSize(specialCode);
-    if (!size) return 'pending';
-    return labels[0] === size ? 'ok' : 'miss';
-};
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getDxzt?web=${web}&type=${type}&num=1`,
@@ -70,17 +42,20 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
                 let c = [];
+                // 大/小两池合起来覆盖 01..49，按号码落池高亮恒为真，因此这里只输出标签，
+                // 高亮统一由命中判定决定。
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && maValue[i].indexOf(code) !== -1) {
-                        c.push(`<span style="background-color: #FFFF00">${xiao[i]}数</span>`);
-                    }else {
-                        c.push(`${xiao[i]}数`)
-                    }
+                    c.push(`${xiao[i]}数`)
                 }
 
                 // 命中判定：按 大/小 与特码实际大小比较，而不是“特码落在本池内”
-                let verdict = window.__sizeVerdict(content, code);
+                let verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(57, d)
+                    : 'unknown';
                 let verdictTxt = verdict === 'ok' ? '准' : (verdict === 'miss' ? '错' : '');
+                if (verdict === 'ok') {
+                    c[0] = `<span style="background-color: #FFFF00">${xiao[0]}数</span>`;
+                }
                 let resTxt = (code && resSx[resSx.length-1])
                     ? `${resSx[resSx.length-1]}${code}`
                     : '？00';

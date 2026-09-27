@@ -19,14 +19,19 @@ $.ajax({
                 let result = '00'
                 let content = d.content.split(',');
 
-                var hit = code && content.indexOf(code) !== -1;
+                // 特码段数（mode 65）：特码落在段区间内时给整段加黄底，并显示「准/错」
+                let __verdict = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictOf(65, d) : 'unknown';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
+                var segment = `${content[0]}-${content[content.length-1]}`;
+                if (__verdict === 'ok') {
+                    segment = `<span style="background-color: #FFFF00">${segment}</span>`;
+                }
 
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(65, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
-        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
+        <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${segment}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
         }

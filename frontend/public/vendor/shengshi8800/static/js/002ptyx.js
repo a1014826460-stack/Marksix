@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getPingte?web=${web}&type=${type}&num=1`,
@@ -40,7 +40,7 @@ $.ajax({
 	    <td>
             <font color='#0000FF'>${data[i].term}期:</font><font color='#000000'>平特一肖</font>
             <span class='zl'><font color='#000000'>&laquo;&laquo;</font>${c1}${c1}${c1}<font color='#000000'>&raquo;&raquo;</font></span>
-            <font color='#000000'>开</font>${resCode[index]||'00'}${__verdictTxt}
+            <font color='#000000'>开</font>${resCode[index] || resCode[resCode.length-1] || '00'}${__verdictTxt}
         </td>
     </tr>
             `}

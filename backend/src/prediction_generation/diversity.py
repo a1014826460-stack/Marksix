@@ -15,16 +15,33 @@ FREE_DIVERSITY_POLICY = "free"
 # 某些 mode_id 不需要执行默认的多样性限制，这里直接使用窗口共享策略
 CONTENT_DIVERSITY_EXEMPT_MODE_IDS = {197}
 
-# ---------- 相邻连续三期不得相同的模式 ----------
+# ---------- 相邻连续 N 期不得相同的模式 ----------
 # 这些模块前台只渲染一个“池标签”或一段文本，取值空间很小
 # （如 28 单/双、57 与 108 大/小、63 家禽/野兽、62 欲钱解特诗）。
 # 默认的“前二唯一”策略对单元素 content 完全失效，因此这里单独强制：
-# 相邻连续三期的展示值不得全部相同。
-THREE_PERIOD_UNIQUE_MODE_IDS = frozenset({28, 57, 62, 63, 108})
+# 相邻连续 N 期的展示值不得全部相同（N 由 display_unique_window 决定）。
+THREE_PERIOD_UNIQUE_MODE_IDS = frozenset({28, 52, 57, 62, 63, 108})
+
+#: 展示值取自 `title`（而不是 content 首项标签）的模式。
+#: 前台直接渲染 title，因此唯一性也必须按 title 判定。
+TITLE_UNIQUE_MODE_IDS = frozenset({52, 62})
+
+#: 连续不重复窗口：默认 3 期；62 欲钱解特诗句候选池最大，要求相邻 5 期不得相同。
+DISPLAY_UNIQUE_WINDOW_BY_MODE: dict[int, int] = {62: 5}
+
+#: 默认窗口（未在 DISPLAY_UNIQUE_WINDOW_BY_MODE 中单独指定的托管模式）。
+DEFAULT_DISPLAY_UNIQUE_WINDOW = 3
 
 # 这些模式改由三期规则统一处理，跳过旧的“前二唯一”旋转策略，
 # 避免两套规则互相抵消（旧策略对两项 content 会来回交换同一个值）。
 _THREE_PERIOD_MANAGED_MODE_IDS = frozenset({28})
+
+
+def display_unique_window(mode_id: int) -> int:
+    """返回该模式要求「相邻连续多少期展示值不得完全相同」。"""
+    resolved_mode_id = int(mode_id or 0)
+    window = DISPLAY_UNIQUE_WINDOW_BY_MODE.get(resolved_mode_id, DEFAULT_DISPLAY_UNIQUE_WINDOW)
+    return max(2, int(window))
 
 
 def resolve_diversity_policy(mode_id: int, config: Any | None = None) -> str:
@@ -208,14 +225,14 @@ def display_token_for_row(mode_id: int, row: Any) -> str | None:
 
     展示值定义与前台渲染器一致：
       - 28 / 57 / 63 / 108：content 数组首项 `标签|号码` 的标签部分
-      - 62：title（欲钱解特诗，前台直接渲染 title）
+      - 52 / 62：title（四字玄机 / 欲钱解特诗，前台直接渲染 title）
     取值与顺序无关，因此 `["小|..","大|.."]` 与 `["大|..","小|.."]` 视为同一展示值。
     """
     resolved_mode_id = int(mode_id or 0)
     if resolved_mode_id not in THREE_PERIOD_UNIQUE_MODE_IDS:
         return None
 
-    if resolved_mode_id == 62:
+    if resolved_mode_id in TITLE_UNIQUE_MODE_IDS:
         title = str(row.get("title") or "").strip()
         return title or None
 
@@ -365,7 +382,7 @@ def enforce_three_period_uniqueness(
     alternative_content_templates: list[Any] | None = None,
     alternative_text_payloads: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """禁止相邻连续三期的展示值完全相同。
+    """禁止相邻连续 N 期的展示值完全相同（N = display_unique_window(mode_id)）。
 
     参数：
         mode_id                      : 预测模式 ID，非托管模式直接返回原值
@@ -373,10 +390,10 @@ def enforce_three_period_uniqueness(
         recent_rows                  : 已存在/已生成的最近行（按新→旧排序）
         alternative_content_templates: 本模式其他展示值的完整 content
                                        （如 63 的 `["野兽|鼠,虎,兔,龙,蛇,猴"]`）
-        alternative_text_payloads    : 文本类模式（62）可选的替代 title/content/jiexi
+        alternative_text_payloads    : 文本类模式（52 / 62）可选的替代 title/content/jiexi
 
     行为：
-        当前展示值与最近两期都相同时，改用另一展示值（沿用其完整号码池）；
+        当前展示值与最近 N-1 期都相同时，改用另一展示值（沿用其完整号码池）；
         无法找到合法取值时保留原值并附加 ``_diversity_warning``；
         只影响尚未写入的行，绝不改写历史行。
     """
@@ -389,20 +406,23 @@ def enforce_three_period_uniqueness(
     if not current_token:
         return row
 
+    window = display_unique_window(resolved_mode_id)
+    required_recent = window - 1
+
     recent_tokens: list[str] = []
     for recent_row in recent_rows or []:
         token = display_token_for_row(resolved_mode_id, recent_row)
         if token:
             recent_tokens.append(token)
-        if len(recent_tokens) >= 2:
+        if len(recent_tokens) >= required_recent:
             break
-    if len(recent_tokens) < 2:
+    if len(recent_tokens) < required_recent:
         return row
-    # 只要最近两期中有一期与本期不同，就不构成“连续三期相同”
+    # 只要最近 N-1 期中有一期与本期不同，就不构成“连续 N 期相同”
     if any(token != current_token for token in recent_tokens):
         return row
 
-    if resolved_mode_id == 62:
+    if resolved_mode_id in TITLE_UNIQUE_MODE_IDS:
         for payload in alternative_text_payloads or []:
             candidate = dict(row)
             for key in ("title", "content", "jiexi"):
@@ -412,7 +432,7 @@ def enforce_three_period_uniqueness(
             if candidate_token and candidate_token not in recent_tokens:
                 return candidate
         row["_diversity_warning"] = (
-            f"mode_id={resolved_mode_id}: 连续三期展示值相同且无可用替代文本，保留本期取值"
+            f"mode_id={resolved_mode_id}: 连续{window}期展示值相同且无可用替代文本，保留本期取值"
         )
         return row
 
@@ -449,6 +469,6 @@ def enforce_three_period_uniqueness(
                 return row
 
     row["_diversity_warning"] = (
-        f"mode_id={resolved_mode_id}: 连续三期展示值 {current_token!r} 相同且无可用替代取值，保留本期取值"
+        f"mode_id={resolved_mode_id}: 连续{window}期展示值 {current_token!r} 相同且无可用替代取值，保留本期取值"
     )
     return row

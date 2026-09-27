@@ -9,12 +9,17 @@ from .site_page_dependencies import generation_assurance_for_mode
 
 
 def _display_uniqueness_note(mode_id: int) -> str:
-    """标注“相邻连续三期展示值不得相同”模式，供规则文档审阅。"""
-    from prediction_generation.diversity import THREE_PERIOD_UNIQUE_MODE_IDS
+    """标注“相邻连续 N 期展示值不得相同”模式，供规则文档审阅。"""
+    from prediction_generation.diversity import (
+        THREE_PERIOD_UNIQUE_MODE_IDS,
+        display_unique_window,
+    )
 
-    if int(mode_id or 0) in THREE_PERIOD_UNIQUE_MODE_IDS:
-        return "adjacent three periods: display value differs"
-    return ""
+    resolved_mode_id = int(mode_id or 0)
+    if resolved_mode_id not in THREE_PERIOD_UNIQUE_MODE_IDS:
+        return ""
+    window = display_unique_window(resolved_mode_id)
+    return f"adjacent {window} periods: display value differs"
 
 
 def _outcome_description(rule_id: str) -> str:

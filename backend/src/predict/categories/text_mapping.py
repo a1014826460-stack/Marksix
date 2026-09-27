@@ -135,4 +135,10 @@ def format_juzi_title(labels: tuple[str, ...], conn: Any) -> dict[str, Any]:
     mapped = random_text_history_mapping_row(conn, 62, (), "title")
     if mapped and "title" in mapped.keys():
         return {"title": str(mapped["title"] or ""), "_labels": list(labels)}
+    # text_history_mappings 没有 mode 62 的行时，退回读取 public.mode_payload_62
+    # 已有的真实诗句 title（只读），避免每期都写成占位串「欲钱解特诗」。
+    fallback = random_text_pool_row(conn, "欲钱解特")
+    title = str((fallback or {}).get("title") or "").strip()
+    if title:
+        return {"title": title, "_labels": list(labels)}
     return {"title": "欲钱解特诗", "_labels": list(labels)}

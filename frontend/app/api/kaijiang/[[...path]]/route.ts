@@ -476,6 +476,9 @@ function mapSanqi(rows: LegacyRow[]) {
 
       content: asString(row.content),
 
+      // 窗口内已开奖各期的特肖（按期中升序，逗号分隔）；前台据此显示「中N期」
+      period_zodiacs: asString(row.period_zodiacs),
+
     }),
 
   )
@@ -484,9 +487,47 @@ function mapSanqi(rows: LegacyRow[]) {
 
 
 
+function sanqiWindowZodiacs(rows: LegacyRow[]) {
+
+  const ordered = rows.slice().sort((left, right) => {
+
+    const leftTerm = Number(asString(left.term).trim() || "0")
+
+    const rightTerm = Number(asString(right.term).trim() || "0")
+
+    return leftTerm - rightTerm
+
+  })
+
+  const zodiacs: string[] = []
+
+  for (const row of ordered) {
+
+    const list = asString(row.res_sx)
+
+      .split(",")
+
+      .map((value) => value.trim())
+
+      .filter(Boolean)
+
+    if (list.length > 0) {
+
+      zodiacs.push(list[list.length - 1])
+
+    }
+
+  }
+
+  return zodiacs.join(",")
+
+}
+
+
+
 function filterSanqiDisplayRows(rows: LegacyRow[]) {
 
-  const grouped = new Map<string, LegacyRow>()
+  const grouped = new Map<string, LegacyRow[]>()
 
 
 
@@ -498,27 +539,15 @@ function filterSanqiDisplayRows(rows: LegacyRow[]) {
 
     const key = `${start}-${end}`
 
-    const current = grouped.get(key)
+    const bucket = grouped.get(key)
 
+    if (bucket) {
 
+      bucket.push(row)
 
-    if (!current) {
+    } else {
 
-      grouped.set(key, row)
-
-      continue
-
-    }
-
-
-
-    const rowTerm = Number(asString(row.term).trim() || "0")
-
-    const currentTerm = Number(asString(current.term).trim() || "0")
-
-    if (rowTerm > currentTerm) {
-
-      grouped.set(key, row)
+      grouped.set(key, [row])
 
     }
 
@@ -526,7 +555,57 @@ function filterSanqiDisplayRows(rows: LegacyRow[]) {
 
 
 
-  return Array.from(grouped.values()).sort((left, right) => {
+  const picked: LegacyRow[] = []
+
+  for (const bucket of grouped.values()) {
+
+    let latest: LegacyRow | null = null
+
+    let latestDrawn: LegacyRow | null = null
+
+    for (const row of bucket) {
+
+      const rowTerm = Number(asString(row.term).trim() || "0")
+
+      if (!latest || rowTerm > Number(asString(latest.term).trim() || "0")) {
+
+        latest = row
+
+      }
+
+      const drawn = asString(row.res_sx)
+
+        .split(",")
+
+        .map((value) => value.trim())
+
+        .filter(Boolean)
+
+        .length > 0
+
+      if (drawn && (!latestDrawn || rowTerm > Number(asString(latestDrawn.term).trim() || "0"))) {
+
+        latestDrawn = row
+
+      }
+
+    }
+
+    // 优先展示窗口内**已开奖**的最新一期（未开奖期没有开奖号可显示）；
+    // 全部未开奖时才回退到期号最大的一行。
+    const survivor = latestDrawn || latest
+
+    if (!survivor) continue
+
+    // 同一个三期窗口内的每一期共用同一组候选（库内已按窗口同步 content），
+    // 因此这里把窗口内已开奖每一期的特肖一并带出，供前台计算「中N期」。
+    picked.push({ ...survivor, period_zodiacs: sanqiWindowZodiacs(bucket) })
+
+  }
+
+
+
+  return picked.sort((left, right) => {
 
     const leftTerm = Number(asString(left.term).trim() || "0")
 

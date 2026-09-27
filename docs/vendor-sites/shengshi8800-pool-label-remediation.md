@@ -251,3 +251,91 @@ tw8800 前台是 legacy shell `frontend/public/vendor/shengshi8800/index.html`�
 （web_id=4、lottery_type_id=3、最多 10 行）。`created.mode_payload_*` 由本地 worker 持续生成，
 因此某个模块的具体重复次数会随后续期号变化；但**“展示值种类上限由渲染器决定”这一结论与数据快照无关**：
 例如 mode 63 永远只有 `家禽` / `野兽` 两种可能，mode 57 永远只有 `大` / `小` 两种可能。
+
+## 第二轮整改：判定口径、命中高亮与展示唯一性
+
+本轮针对“判定维度写错 / 命中不高亮 / 未命中仍显示命中标记 / 文本重复”四类问题。
+
+### 1. 判定口径修正：平特 / 绝杀此前判反
+
+`legacy-prediction-verdict.js` 原先把 mode 20、42、43、54、56、470 一律按“特码落在候选内”判定，
+与 `backend/docs/prediction-module-rules.md` 的实际口径不符：
+
+| mode | 模块 | 文档口径 | 修正后的判定 |
+| ---: | --- | --- | --- |
+| 43 / 56 / 470 | 平特 2 肖 / 1 肖 / 3 肖 | `zodiac_flat` | **本期任意一个开奖号码**的生肖落在候选里即命中（不是只看特肖） |
+| 54 | 平特 1 尾 | `tail_flat` | **本期任意一个开奖号码**的尾数落在候选尾里即命中 |
+| 20 | 绝杀一尾 | `tail_exclusion` | 特码尾数**不在**候选尾里才算杀中（此前判反） |
+| 42 / 472 / 473 | 绝杀三肖 / 1 肖 / 2 肖 | `zodiac_exclusion` | 特肖**不在**候选里才算杀中（此前判反） |
+| 2 | 必中六尾 | `tail` | 特码尾数落在候选 6 尾里 |
+| 59 | 独家幽默 | `tail` | 候选尾数写在 `code` 字段，按特码尾数判定（此前一律不判定） |
+
+效果（本地 182–191 期实测）：绝杀三肖 191 期由“无判定”变为“？00（未开奖）”，
+186 期显示 `准`（牛不在被杀 3 肖内）、其余期显示 `错`；平特 2 肖只在候选肖确实出现时高亮。
+
+### 2. 命中才显示 / 命中才高亮
+
+| 脚本 | 模块 | 调整 |
+| --- | --- | --- |
+| `027ptw.js` | 43 两肖平特王 | 命中的那个候选肖加黄底（原为无颜色 `<span>`） |
+| `019ma24.js` | 34 经典24码 | 命中显示「准」，并改为精确号码匹配（原 `indexOf` 子串匹配） |
+| `020ssx.js` | 42 绝杀三肖 | 杀中时整组候选加黄底并显示「准」，未杀中显示「错」（原为逐肖无颜色 `<span>`） |
+| `024jsyw.js` | 20 绝杀一尾 | 杀中时加黄底并显示「准」，未杀中显示「错」 |
+| `016teduan.js` | 65 特码段数 | 特码落在段内时给整段加黄底 |
+| `6w.js` | 2 必中六尾 | 结果列补上「准/错」 |
+| `ds4x.js` | 31 单双各四肖 | 只有命中才输出 `中:`（原为每期都输出） |
+| `008jxym.js` | 151 精选⑨肖（名震全坛） | ①/②/③/⑤/⑦/⑨肖 六档的 `中` 改为**特肖是否落在该档候选内**；原写法六档全部写死 `中`，未命中同样显示 |
+| `002ptyx.js` / `006ptyw.js` | 56 / 54 平特 | 未命中时回退显示特码，不再显示占位的 `00` |
+
+### 3. 三期中特（mode 197）「中N期」
+
+原渲染把 `中1期` 写死（未开奖时显示 `中几期`）。现由 compat 路由
+`frontend/app/api/kaijiang/[[...path]]/route.ts` 的 `sanqiWindowZodiacs()` 汇总
+**同一三期窗口内已开奖各期的特肖**（`period_zodiacs`），前台据此统计
+`中N期`；窗口内一期都没开奖时保持 `中几期`。同时展示行改为优先取窗口内**已开奖**的最新一期。
+
+### 4. 跨脚本全局名冲突（判定被静默覆盖）
+
+`015maishazs.js`（28）与 `031dssx.js`（31）都定义了 `window.__parityVerdict`，
+`003dxzt.js`（57）与 `dx.js`（108）都定义了 `window.__sizeVerdict`。
+由于 HTML 里的加载顺序，后加载的实现会覆盖前一个：
+
+- 单双四肖（31）实际按“号码单双”判定 → 188 期特肖蛇明明在单组却显示 `错`；
+- 大小系列两份实现恰好相同，所以没有暴露。
+
+现全部移除，统一走 `window.legacyPredictionVerdict`；并新增契约检查，
+禁止任何供应商脚本定义跨脚本重复的 `window.__*` 全局。
+
+### 5. 展示唯一性：mode 52 纳入规则、mode 62 改为相邻 5 期
+
+- `THREE_PERIOD_UNIQUE_MODE_IDS` 增加 **52 四字玄机**（展示值 = `title`），
+  避免 live 页面出现连续 6 期同一标题（`黯然無光`）。
+- 新增 `DISPLAY_UNIQUE_WINDOW_BY_MODE = {62: 5}` 与 `display_unique_window()`：
+  62 欲钱解特诗候选池最大（本地 41 条真实诗句），要求**相邻连续 5 期**不得相同；
+  其余托管模式仍为 3 期。
+- 62 的候选来源补充 `TEXT_POOL_SOURCES["欲钱解特"] = ("mode_payload_62", "title")`，
+  `format_juzi_title()` 在 `text_history_mappings` 缺 mode 62 行时回退读取
+  `public.mode_payload_62` 的真实诗句，生成端不再落 `欲钱解特诗` 占位串。
+
+### 6. 明确不判定（无候选可核对）
+
+`62 欲钱解特`、`244 一语破天机` 的接口只返回上一期正文（`content` / `title`），
+没有本期候选生肖或号码，**无法核对**，因此不显示「准/错」。
+若需要展示判定，需在数据侧补充候选字段（属后续改动，本轮未做）。
+
+### 7. 回归验证
+
+- 前端契约：`frontend/test/shengshi8800-legacy-verdict-contract.mjs`、
+  `frontend/test/shengshi8800-size-verdict-contract.mjs`、
+  `frontend/test/shengshi8800-eight-zodiac-display-contract.mjs`、
+  `frontend/test/shengshi8800-display-verdict-contract.mjs`
+  （最后一个含 compat 路由 `period_zodiacs` 的真实执行用例与全局名冲突检查）。
+- 后端：`backend/src/tests/unit/test_prediction_three_period_unique.py`、
+  `test_prediction_generation_three_period_service.py`、
+  `test_prediction_rule_documentation.py`、`test_predict_text_mapping_category.py`。
+- 端到端：本地 `next dev` + Python API 打开 `/vendor/shengshi8800/embed.html`，
+  对 6w / 绝杀一尾 / 单双四肖 / 单双各四肖 / 经典24码 / 绝杀三肖 / 两肖平特王 /
+  九肖中特 / 精选⑨肖 / 平特一尾 / 平特一肖 / 独家幽默 / 特码段数 / 三期中特 共 14 个模块，
+  用独立复算脚本逐期比对判定文字与黄底高亮（0 差异、0 JS 报错），
+  复算脚本见 `.codex-temp/crosscheck_verdicts.py`（临时脚本，未纳入版本库）。
+

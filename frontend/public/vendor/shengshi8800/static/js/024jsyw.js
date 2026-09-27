@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 
 $.ajax({
@@ -30,10 +30,14 @@ $.ajax({
                     maValue[i] = c[1];
                     ma.push(...c[1].split(','));
                 }
+                // 绝杀一尾（mode 20）是排除玩法：特码尾数不在候选尾数里才算杀中。
+                // 杀中时给候选尾加黄底并显示「准」，杀不中显示「错」。
+                let __verdict = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictOf(20, d) : 'unknown';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
                 let c = [];
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiao[i].split('')[0] !== code.split('')[1]) {
-                        c.push(`<span>${xiao[i]}</span>`);
+                    if (__verdict === 'ok') {
+                        c.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c.push(`${xiao[i]}`)
                     }
@@ -41,7 +45,6 @@ $.ajax({
 
                 // let wei = parseInt()
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(20, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
     
      

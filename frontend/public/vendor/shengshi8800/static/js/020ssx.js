@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=3`,
@@ -21,22 +21,26 @@ $.ajax({
                 let xiaoV = [];
                 let ma = [];
 
-                let c1 = [];
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}`)
-                    }
-                }
+                // 绝杀三肖（mode 42）是排除玩法：特肖不在候选 3 肖里才算杀中。
+                // 厂商原文在杀中时给整组候选加黄底，这里沿用同一表现，并补上「准/错」。
+                let verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(42, d)
+                    : 'unknown';
+                let verdictTxt = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictText(verdict)
+                    : '';
+                let pool = xiao.join('');
+                let c1 = verdict === 'ok'
+                    ? `<span style="background-color: #FFFF00">${pool}</span>`
+                    : pool;
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
         <td>
             <font color='#000000'>${d.term}期:</font>
-            <font color='#0000FF'>绝杀→<span class='zl'>[${c1.join('')}]</span> </font>
-            开:${sx||'？'}${code||'00'}
+            <font color='#0000FF'>绝杀→<span class='zl'>[${c1}]</span> </font>
+            开:${sx||'？'}${code||'00'}${verdictTxt}
         </td>
     </tr>
             `}

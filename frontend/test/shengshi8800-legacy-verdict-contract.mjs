@@ -52,10 +52,75 @@ assert.equal(verdictOf(151, row('["鼠|07,19,31,43", "羊|12,24,36,48"]', "43", 
   "mode 151: 43 在鼠池 -> ok")
 
 // 生肖集合类
-assert.equal(verdictOf(42, row("兔,虎,猪", "29", "x,x,x,x,x,x,虎")), "ok", "mode 42: 特肖虎在集合 -> ok")
-assert.equal(verdictOf(42, row("兔,虎,猪", "21", "x,x,x,x,x,x,鼠")), "miss", "mode 42: 特肖鼠不在集合 -> miss")
+// 42 绝杀三肖是**排除**玩法：特肖落在候选里说明「杀错」→ miss；不在候选里才是 ok
+assert.equal(verdictOf(42, row("兔,虎,猪", "29", "x,x,x,x,x,x,虎")), "miss", "mode 42: 特肖虎在集合 -> 杀不中 -> miss")
+assert.equal(verdictOf(42, row("兔,虎,猪", "21", "x,x,x,x,x,x,鼠")), "ok", "mode 42: 特肖鼠不在集合 -> 杀中 -> ok")
 assert.equal(verdictOf(46, row("猴,鼠,羊,猪,马,狗", "38", "x,x,x,x,x,x,蛇")), "miss", "mode 46 -> miss")
 assert.equal(verdictOf(46, row("猴,鼠,羊,猪,马,狗", "45", "x,x,x,x,x,x,狗")), "ok", "mode 46 -> ok")
+assert.equal(verdictOf(472, row("兔,虎,猪", "29", "x,x,x,x,x,x,虎")), "miss", "mode 472 绝杀1肖 -> miss")
+assert.equal(verdictOf(473, row("兔,虎,猪", "29", "x,x,x,x,x,x,鼠")), "ok", "mode 473 绝杀2肖 -> ok")
+
+// 平特（zodiac_flat）：本期任意一个开奖号码的生肖落在候选里即命中，
+// 不能只看特肖（43 平特2肖 / 56 平特1肖）。
+assert.equal(
+  verdictOf(43, { content: "龙,猴", res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
+  "ok",
+  "mode 43 270期(生产数据): 平码23=猴 落在候选 [龙,猴] -> ok",
+)
+assert.equal(
+  verdictOf(43, { content: "龙,狗", res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
+  "miss",
+  "mode 43 270期: 本期 7 个开奖生肖都不在 [龙,狗] -> miss",
+)
+assert.equal(
+  verdictOf(56, { content: "龙", res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
+  "miss",
+  "mode 56: 特肖马 不在候选，且其他开奖生肖也没有龙 -> miss",
+)
+assert.equal(verdictOf(43, { content: "龙,猴", res_code: "", res_sx: "" }), "pending",
+  "mode 43: 未开奖 -> pending")
+
+// 尾数玩法（必中六尾 2 / 独家幽默 59 的候选尾数写在 code 字段）
+assert.equal(
+  verdictOf(2, { content: '["4尾|04,14,24,34,44", "1尾|01,11,21,31,41"]', res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
+  "miss",
+  "mode 2 270期: 特码37 -> 尾7 不在候选 4尾/1尾 -> miss",
+)
+assert.equal(
+  verdictOf(2, { content: '["4尾|04,14,24,34,44", "7尾|07,17,27,37,47"]', res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
+  "ok",
+  "mode 2: 特码37 -> 尾7 在候选 -> ok",
+)
+assert.equal(
+  verdictOf(59, {
+    content: "独家幽默：段子",
+    code: '["5尾|05,15,25,35,45", "6尾|06,16,26,36,46"]',
+    res_code: "28,23,26,17,30,04,37",
+    res_sx: "兔,猴,蛇,虎,牛,兔,马",
+  }),
+  "miss",
+  "mode 59 270期: 特码37 尾7 不在候选尾 -> miss",
+)
+assert.equal(
+  verdictOf(59, {
+    content: "独家幽默：段子",
+    code: '["7尾|07,17,27,37,47", "6尾|06,16,26,36,46"]',
+    res_code: "28,23,26,17,30,04,37",
+    res_sx: "兔,猴,蛇,虎,牛,兔,马",
+  }),
+  "ok",
+  "mode 59: 特码37 尾7 在候选尾 -> ok",
+)
+
+// 绝杀一尾（20）是排除玩法：特码尾数不在候选里才是 ok
+assert.equal(verdictOf(20, row('["7尾|07,17,27,37,47"]', "28,23,26,17,30,04,37", "兔,猴,蛇,虎,牛,兔,马")), "miss",
+  "mode 20 270期: 特码37 -> 尾7 正好是被杀尾 -> miss")
+assert.equal(verdictOf(20, row('["6尾|06,16,26,36,46"]', "28,23,26,17,30,04,37", "兔,猴,蛇,虎,牛,兔,马")), "ok",
+  "mode 20: 特码37 -> 尾7 不在被杀尾 -> ok")
+
+// 特码段（65）命中时前台要高亮整段
+assert.equal(verdictOf(65, { content: "13,14,15,16,17,18,19,20,21,22,23,24", res_code: "13,14,15,16,17,18,19,20,21,22,23,24", res_sx: "x,x,x,x,x,x,虎" }), "ok",
+  "mode 65: 段内 -> ok")
 
 // 单双 / 大小
 assert.equal(verdictOf(28, row('["单|01,03"]', "07", "x,x,x,x,x,x,鼠")), "ok", "mode 28: 单对07 -> ok")

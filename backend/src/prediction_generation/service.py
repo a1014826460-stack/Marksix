@@ -87,6 +87,7 @@ from prediction_generation.mode_478_image import (
 )
 from prediction_generation.diversity import (
     THREE_PERIOD_UNIQUE_MODE_IDS,
+    TITLE_UNIQUE_MODE_IDS,
     distinct_tokens_for_content,
     display_token_for_row,
     enforce_prediction_diversity,
@@ -739,7 +740,7 @@ def _apply_three_period_uniqueness(
     if not current_token:
         return row_data
 
-    if resolved_mode_id == 62:
+    if resolved_mode_id in TITLE_UNIQUE_MODE_IDS:
         text_payloads = _load_three_period_text_payloads(conn, resolved_mode_id)
         repaired = replace_text_placeholder(
             resolved_mode_id, row_data, alternative_text_payloads=text_payloads

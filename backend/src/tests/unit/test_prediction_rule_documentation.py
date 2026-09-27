@@ -35,17 +35,33 @@ def test_rule_document_writer_preserves_renderer_output(tmp_path):
 
 
 def test_rule_document_marks_three_period_display_uniqueness_modes():
-    """28/57/62/63/108 必须标注“相邻连续三期展示值不得相同”。"""
+    """28/52/57/63/108 必须标注“相邻连续三期展示值不得相同”。"""
     document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
 
-    assert "adjacent three periods: display value differs" in document
-    for mode_id, key in ((28, "danshuangtema"), (57, "daxiao"), (62, "yqjs"), (108, "dxztt1")):
+    assert "adjacent 3 periods: display value differs" in document
+    for mode_id, key in (
+        (28, "danshuangtema"),
+        (52, "sizixuanji"),
+        (57, "daxiao"),
+        (108, "dxztt1"),
+    ):
         assert f"| {mode_id} | {key} |" in document
         row = next(
             line for line in document.splitlines()
             if line.startswith(f"| {mode_id} | {key} |")
         )
-        assert "adjacent three periods: display value differs" in row
+        assert "adjacent 3 periods: display value differs" in row
+
+
+def test_rule_document_marks_five_period_display_uniqueness_for_mode_62():
+    """62 欲钱解特诗候选池最大，要求相邻连续五期展示值不得相同。"""
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+    row = next(
+        line for line in document.splitlines()
+        if line.startswith("| 62 | yqjs |")
+    )
+    assert "adjacent 5 periods: display value differs" in row
 
 
 def test_rule_document_keeps_single_item_modes_flagged():
@@ -69,4 +85,4 @@ def test_rule_document_keeps_single_item_modes_flagged():
         line for line in document.splitlines()
         if line.startswith("| 63 |") and "家野中特" in line
     )
-    assert "adjacent three periods: display value differs" in row
+    assert "adjacent 3 periods: display value differs" in row

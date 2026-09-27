@@ -18,11 +18,17 @@ $.ajax({
                 let sx = sxSplit[sxSplit.length - 1] || '';
                 let xiao = d.content.split(",");
 
+                // 平特（zodiac_flat）：本期任意一个开奖号码的生肖落在候选 2 肖里即命中，
+                // 因此命中要高亮命中的那一个候选，而不是只看特肖。
+                let drawnZodiacs = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.drawnZodiacs(d)
+                    : sxSplit.filter(function (value) { return value; });
+
                 let c = [];
                 for (let j = 0; j < xiao.length; j++) {
                     let index = getZjIndex(xiao[j], sxSplit);
-                    if (index !== undefined) {
-                        c.push(`<span>${xiao[j]}</span>`);
+                    if (drawnZodiacs.indexOf(xiao[j]) !== -1) {
+                        c.push(`<span style="background-color: #FFFF00">${xiao[j]}</span>`);
                     } else {
                         c.push(`${xiao[j]}`);
                     }

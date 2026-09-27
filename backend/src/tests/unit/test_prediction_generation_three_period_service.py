@@ -130,10 +130,7 @@ def test_text_fallback_prefers_mapping_table_when_available(monkeypatch):
 def test_placeholder_title_is_replaced_not_alternated():
     """mode 62 的占位文案不是真实诗句：有真实候选时必须换掉，而不是与占位轮流出现。"""
     row = {"title": "欲钱解特诗", "content": ""}
-    recent = [
-        {"title": "欲钱解特诗", "content": ""},
-        {"title": "欲钱解特诗", "content": ""},
-    ]
+    recent = [{"title": "欲钱解特诗", "content": ""} for _ in range(4)]
     result = diversity.enforce_three_period_uniqueness(
         mode_id=62,
         row_data=row,
@@ -148,10 +145,7 @@ def test_placeholder_title_is_replaced_not_alternated():
 
 def test_placeholder_used_only_when_no_real_candidate():
     row = {"title": "欲钱解特诗", "content": ""}
-    recent = [
-        {"title": "欲钱解特诗", "content": ""},
-        {"title": "欲钱解特诗", "content": ""},
-    ]
+    recent = [{"title": "欲钱解特诗", "content": ""} for _ in range(4)]
     result = diversity.enforce_three_period_uniqueness(
         mode_id=62,
         row_data=row,
@@ -160,6 +154,55 @@ def test_placeholder_used_only_when_no_real_candidate():
     )
     assert result["title"] == "欲钱解特诗"
     assert "mode_id=62" in str(result.get("_diversity_warning", "")) or result["title"] == "欲钱解特诗"
+
+
+def test_apply_uniqueness_routes_mode_52_through_title_payloads(monkeypatch):
+    """mode 52 与 62 一样按 title 唯一化，走替代文本分支而不是 content 模板分支。"""
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    monkeypatch.setattr(service, "_load_three_period_history_rows",
+                        lambda *args, **kwargs: [
+                            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
+                            {"title": "黯然無光", "jiexi": "牛羊马虎猴鼠猪"},
+                        ])
+    monkeypatch.setattr(service, "_load_three_period_text_payloads",
+                        lambda conn, mode_id: [{"title": "黯然無光"}, {"title": "抓小辫子"}])
+
+    result = service._apply_three_period_uniqueness(
+        object(),
+        config=_config(52, "sizixuanji", ()),
+        mode_id=52,
+        row_data=row,
+        table_name="mode_payload_52",
+        lottery_type=3,
+        site_web_id=4,
+    )
+
+    assert result["title"] == "抓小辫子"
+    assert result["jiexi"] == "蛇鸡虎兔龙鼠羊"
+
+
+def test_apply_uniqueness_requires_four_identical_periods_for_mode_62(monkeypatch):
+    """窗口 5：库里只有连续三期相同时不得换诗句。"""
+    row = {"title": "一字当头十相投，时来运转否泰交", "content": ""}
+    monkeypatch.setattr(service, "_load_three_period_history_rows",
+                        lambda *args, **kwargs: [
+                            {"title": "一字当头十相投，时来运转否泰交", "content": ""},
+                            {"title": "一字当头十相投，时来运转否泰交", "content": ""},
+                        ])
+    monkeypatch.setattr(service, "_load_three_period_text_payloads",
+                        lambda conn, mode_id: [{"title": "别的诗句"}])
+
+    result = service._apply_three_period_uniqueness(
+        object(),
+        config=_config(62, "yqjs", ()),
+        mode_id=62,
+        row_data=row,
+        table_name="mode_payload_62",
+        lottery_type=3,
+        site_web_id=4,
+    )
+
+    assert result["title"] == row["title"]
 
 
 def test_generation_loop_switches_token_after_two_identical_periods(monkeypatch):

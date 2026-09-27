@@ -618,6 +618,7 @@ TEXT_POOL_SOURCES: dict[str, tuple[str, str]] = {
     "一句真言": ("mode_payload_50", "content"),
     "四字玄机": ("mode_payload_52", "title"),
     "独家幽默": ("mode_payload_59", "content"),
+    "欲钱解特": ("mode_payload_62", "title"),
 }
 text_mapping.text_pool_sources = TEXT_POOL_SOURCES
 

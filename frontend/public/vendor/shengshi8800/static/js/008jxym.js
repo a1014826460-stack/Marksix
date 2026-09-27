@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 
 $.ajax({
@@ -51,6 +51,15 @@ $.ajax({
                     }
                 }
 
+                // 「中」只在特肖落在该档候选之内时显示：
+                // ①肖=第1个候选，②肖=前2个，③肖=前3个，⑤/⑦/⑨肖同理。
+                // 原来每档结果后面都写死一个「中」，未命中时同样显示，属于假命中。
+                let marks = {};
+                [1, 2, 3, 5, 7, 9].forEach(function (n) {
+                    marks[n] = (sx && xiao.slice(0, n).indexOf(sx) !== -1) ? '中' : '';
+                });
+                let resTxt = `${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}`;
+
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 		
@@ -64,32 +73,32 @@ $.ajax({
         <font color='#000000'>规律-</font>
         <span style='font-size: 22pt'>${c[0]}</span>
         <font color='#000000'>-统计</font></td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[1]}</td>
     </tr>
     <tr>
       <td>${d.term}期:②肖</td>
       <td style='color: #FF0000;'>${c.slice(0,2).join('')}</td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[2]}</td>
      </tr>
     <tr>
       <td>${d.term}期:③肖</td>
       <td style='color: #FF0000;'>${c.slice(0,3).join('')}</td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[3]}</td>
     </tr>
     <tr>
       <td>${d.term}期:⑤肖</td>
       <td style='color: #FF0000;'>${c.slice(0,5).join('')}</td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[5]}</td>
     </tr>
     <tr>
       <td>${d.term}期:⑦肖</td>
       <td style='color: #FF0000;'>${c.slice(0,7).join('')}</td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[7]}</td>
     </tr>
     <tr>
       <td>${d.term}期:⑨肖</td>
       <td style='color: #FF0000;'>${c.join('')}</td>
-      <td>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}中</td>
+      <td>${resTxt}${marks[9]}</td>
     </tr>
     <tr>
       <td colspan='3'>台湾六合彩论坛 ,让赚钱的节奏停不下来</td>

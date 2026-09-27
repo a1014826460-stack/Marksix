@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 
 $.ajax({
@@ -26,7 +26,7 @@ $.ajax({
 
                 let c2 = [];
                 for (let i = 0; i < ma.length; i++) {
-                    if (code && ma[i].indexOf(code) !== -1) {
+                    if (code && ma[i] === code) {
                         c2.push(`<span style="background-color: #FFFF00">${ma[i]}</span>`);
                     }else {
                         c2.push(`${ma[i]}`)
@@ -34,11 +34,13 @@ $.ajax({
                 }
 
                 //console.log(ma)
+                // 经典24码（mode 34）：特码落在 24 码里才算中，按命中显示「准/错」
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(34, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
         <td>
-            <font color='#000000'>${d.term}期:《经典24码》开【${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}】</font> <br>
+            <font color='#000000'>${d.term}期:《经典24码》开【${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}】${__verdictTxt}</font> <br>
             <span class=\'zl\'>{${c2.slice(0,12).join('.')}}</span><br>
             <span class=\'zl\'>{${c2.slice(12).join('.')}}</span>
         </td>

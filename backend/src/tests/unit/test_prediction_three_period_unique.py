@@ -1,8 +1,9 @@
-"""相邻连续三期的展示值不得相同。
+"""相邻连续 N 期的展示值不得相同。
 
-覆盖用户指定修复的五个模块：28 / 57 / 62 / 63 / 108。
+覆盖用户指定修复的模块：28 / 52 / 57 / 62 / 63 / 108（默认窗口 3 期，62 为 5 期）。
 这里的“展示值”按各模块前台实际渲染的第一个槽位定义：
   - 28 / 57 / 63 / 108：content 数组首项 `标签|号码` 的标签部分（或 content 首字段）
+  - 52：title（四字玄机，前台直接渲染 title）
   - 62：title（欲钱解特诗，前台直接渲染 title）
 """
 
@@ -175,6 +176,8 @@ def test_text_mode_uses_alternative_title():
         recent_rows=[
             {"title": "欲钱解特诗", "content": ""},
             {"title": "欲钱解特诗", "content": ""},
+            {"title": "欲钱解特诗", "content": ""},
+            {"title": "欲钱解特诗", "content": ""},
         ],
         alternative_text_payloads=[
             {"title": "守株待兔", "content": "", "jiexi": ""},
@@ -182,6 +185,110 @@ def test_text_mode_uses_alternative_title():
         ],
     )
     assert result["title"] == "守株待兔"
+
+
+# ---------- 展示唯一窗口（默认 3 期 / mode 62 为 5 期）----------
+
+
+def test_display_unique_window_defaults_to_three_periods():
+    assert diversity.display_unique_window(28) == 3
+    assert diversity.display_unique_window(57) == 3
+    assert diversity.display_unique_window(63) == 3
+    assert diversity.display_unique_window(108) == 3
+    assert diversity.display_unique_window(52) == 3
+
+
+def test_display_unique_window_is_five_for_mode_62():
+    """62 欲钱解特诗候选池最大，要求相邻连续五期不得相同。"""
+    assert diversity.display_unique_window(62) == 5
+
+
+def test_display_token_for_mode_52_uses_title():
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    assert diversity.display_token_for_row(52, row) == "黯然無光"
+
+
+def test_display_token_for_mode_52_falls_back_to_none_without_title():
+    assert diversity.display_token_for_row(52, {"title": "  ", "jiexi": "蛇鸡"}) is None
+
+
+def test_mode_52_title_is_rotated_after_three_identical_periods():
+    """四字玄机（52）连续三期同一标题时必须换一个标题。"""
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=52,
+        row_data=row,
+        recent_rows=[
+            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
+            {"title": "黯然無光", "jiexi": "牛羊马虎猴鼠猪"},
+        ],
+        alternative_text_payloads=[
+            {"title": "黯然無光"},
+            {"title": "抓小辫子"},
+        ],
+    )
+    assert result["title"] == "抓小辫子"
+    assert result["jiexi"] == row["jiexi"]
+
+
+def test_mode_52_title_is_kept_when_one_of_two_recent_differs():
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=52,
+        row_data=row,
+        recent_rows=[
+            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
+            {"title": "抓小辫子", "jiexi": "牛羊马虎猴鼠猪"},
+        ],
+        alternative_text_payloads=[{"title": "抓小辫子"}],
+    )
+    assert result["title"] == "黯然無光"
+
+
+def test_mode_62_rotates_after_four_identical_periods():
+    """第五期必须换诗句：连续四期相同即触发（窗口 5）。"""
+    row = {"title": "万古长青八仙法,蝴蝶恋花自古是", "content": ""}
+    identical = {"title": "万古长青八仙法,蝴蝶恋花自古是", "content": ""}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=62,
+        row_data=row,
+        recent_rows=[dict(identical) for _ in range(4)],
+        alternative_text_payloads=[
+            {"title": "万古长青八仙法,蝴蝶恋花自古是"},
+            {"title": "一字当头十相投，时来运转否泰交"},
+        ],
+    )
+    assert result["title"] == "一字当头十相投，时来运转否泰交"
+
+
+def test_mode_62_keeps_title_when_only_three_preceding_are_identical():
+    """窗口为 5：只要最近四期里有一期不同，就不需要换。"""
+    row = {"title": "一字当头十相投，时来运转否泰交", "content": ""}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=62,
+        row_data=row,
+        recent_rows=[
+            {"title": "一字当头十相投，时来运转否泰交", "content": ""},
+            {"title": "一字当头十相投，时来运转否泰交", "content": ""},
+            {"title": "一字当头十相投，时来运转否泰交", "content": ""},
+            {"title": "万古长青八仙法,蝴蝶恋花自古是", "content": ""},
+        ],
+        alternative_text_payloads=[{"title": "别的诗句"}],
+    )
+    assert result["title"] == "一字当头十相投，时来运转否泰交"
+
+
+def test_mode_62_marks_warning_when_no_alternative_within_five_periods():
+    row = {"title": "一字当头十相投，时来运转否泰交", "content": ""}
+    identical = {"title": "一字当头十相投，时来运转否泰交", "content": ""}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=62,
+        row_data=row,
+        recent_rows=[dict(identical) for _ in range(4)],
+        alternative_text_payloads=[dict(identical)],
+    )
+    assert result["title"] == row["title"]
+    assert "连续5期" in str(result.get("_diversity_warning", ""))
 
 
 def test_placeholder_replaced_by_real_candidate():

@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getDsnx?num=4&web=${web}&type=${type}`, 
     type: 'GET', 
     dataType: 'json', 
@@ -19,6 +19,13 @@
                 let xiaoV =  [];
                 let ma = [];
 
+                // 单双各四肖（mode 31）：只有特肖落在本期两组之一才标「中:」，
+                // 未命中时不再恒显示「中:」。
+                let verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(31, d)
+                    : 'unknown';
+                let hitMark = verdict === 'ok' ? '中:' : '';
+
                 
                 htmlBoxList = htmlBoxList + `<tr>
     <td class="td1" height="20" width="363">
@@ -26,7 +33,7 @@ ${d.term}期<br> </td>
 <td><font color="#0000FF">单:${selNumBcMa22(data[i].xiao_1,data[i].res_sx)}</td>
 <td><font color="#0000FF">双:${selNumBcMa22(data[i].xiao_2,data[i].res_sx)}</font></td>
 <td>
-中:<font color="#FF0000">开${getResultNoTxt(data[i].res_code,data[i].res_sx)}</font>
+${hitMark}<font color="#FF0000">开${getResultNoTxt(data[i].res_code,data[i].res_sx)}</font>
 </td>
 </tr>
         `

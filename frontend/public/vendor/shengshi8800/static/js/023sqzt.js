@@ -39,16 +39,26 @@ $.ajax({
 
                 let c1 = [];
                 let zj = false;
+                // 同一窗口内已开奖各期的特肖（接口按期中升序给出）
+                let periodZodiacs = String(d.period_zodiacs || '')
+                    .split(',')
+                    .map(function (value) { return value.trim(); })
+                    .filter(Boolean);
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                    if (periodZodiacs.indexOf(xiao[i]) !== -1) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                let term = '中1期';
-                if (!sx) term = '中几期'
+                // 「中N期」= 窗口内已开奖各期中，特肖落在候选 4 肖里的期数；
+                // 一期都还没开奖时保持「中几期」（未知），不再恒显示「中1期」。
+                let hitPeriods = 0;
+                for (let i = 0; i < periodZodiacs.length; i++) {
+                    if (xiao.indexOf(periodZodiacs[i]) !== -1) hitPeriods++;
+                }
+                let term = periodZodiacs.length > 0 ? ('中' + hitPeriods + '期') : '中几期'
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 

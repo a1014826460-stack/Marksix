@@ -1,4 +1,4 @@
-﻿var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
+var replaceLegacySiteText = window.__legacyReplaceSiteText || function(value) { return value; };
 
 $.ajax({
     url: httpApi + `/api/kaijiang/ptyw?web=${web}&type=${type}`, 
@@ -45,7 +45,7 @@ $.ajax({
     
      <tr>
       <td>
-        <font color='#0000FF'>${data[i].term}期:</font><font color='#000000'>平特一尾<span class='zl'>《</span></font><span class='zl'>${c[0]}${c[0]}${c[0]}${c[0]}${c[0]}<font color='#000000'>》</font></span><font color='#000000'>开</font>${num||'00'}${__verdictTxt}</td>
+        <font color='#0000FF'>${data[i].term}期:</font><font color='#000000'>平特一尾<span class='zl'>《</span></font><span class='zl'>${c[0]}${c[0]}${c[0]}${c[0]}${c[0]}<font color='#000000'>》</font></span><font color='#000000'>开</font>${num || code || '00'}${__verdictTxt}</td>
     </tr>
     
             `}

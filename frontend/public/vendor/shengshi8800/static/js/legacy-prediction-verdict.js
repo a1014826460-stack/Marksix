@@ -222,6 +222,101 @@
         return parseInt(code, 10) % 2 === 1 ? '单' : '双';
     }
 
+    /** 特码尾数（用于尾数玩法：必中六尾 / 绝杀一尾 / 独家幽默 等）。 */
+    function tailLabel(code) {
+        if (!code) return '';
+        return String(parseInt(code, 10) % 10);
+    }
+
+    /** 本期全部开奖号码（6 平码 + 特码），已补零。 */
+    function drawnCodes(row, resCode) {
+        var codes = csv(resCode == null ? row && row.res_code : resCode);
+        var out = [];
+        for (var i = 0; i < codes.length; i++) {
+            var value = pad(codes[i]);
+            if (value) out.push(value);
+        }
+        return out;
+    }
+
+    /** 本期全部开奖生肖（与开奖号码一一对应）。 */
+    function drawnZodiacs(row) {
+        var zodiacs = csv(row && row.res_sx);
+        var out = [];
+        for (var i = 0; i < zodiacs.length; i++) {
+            if (isZodiacToken(zodiacs[i])) out.push(zodiacs[i]);
+        }
+        return out;
+    }
+
+    /** 从 `X尾` / `X头` 之类的标签里取出数字，取不到返回 ''。 */
+    function labelDigit(label) {
+        var match = text(label).match(/\d/);
+        return match ? match[0] : '';
+    }
+
+    /** 收集候选标签里的尾数集合（`["7尾|07,17"]` -> ['7']）。 */
+    function tailTokens(groupList, content) {
+        var tails = [];
+        function push(token) {
+            var digit = labelDigit(token);
+            if (digit && tails.indexOf(digit) === -1) tails.push(digit);
+        }
+        for (var i = 0; i < groupList.length; i++) {
+            var group = groupList[i];
+            if (group.label) push(group.label);
+        }
+        if (tails.length) return tails;
+        var raw = csv(content);
+        for (var j = 0; j < raw.length; j++) push(raw[j]);
+        return tails;
+    }
+
+    /**
+     * 平特（flat）判定：候选生肖只要落在本期任意一个开奖号码的生肖上即命中。
+     * 口径见 backend/docs/prediction-module-rules.md 的 zodiac_flat / tail_flat。
+     */
+    function flatZodiacVerdict(groupList, row) {
+        var zodiacs = drawnZodiacs(row);
+        if (!zodiacs.length) return 'pending';
+        var any = false;
+        for (var i = 0; i < zodiacs.length; i++) {
+            var hit = zodiacInGroups(groupList, zodiacs[i]);
+            if (hit === true) return 'ok';
+            if (hit === false) any = true;
+        }
+        return any ? 'miss' : 'unknown';
+    }
+
+    /** 平特尾：候选尾数落在本期任意开奖号码的尾数上即命中。 */
+    function flatTailVerdict(groupList, row, content) {
+        var codes = drawnCodes(row);
+        if (!codes.length) return 'pending';
+        var tails = tailTokens(groupList, content);
+        if (!tails.length) return 'unknown';
+        for (var i = 0; i < codes.length; i++) {
+            if (tails.indexOf(tailLabel(codes[i])) !== -1) return 'ok';
+        }
+        return 'miss';
+    }
+
+    /** 尾数玩法（含 59 独家幽默，候选写在 `code` 字段）：特码尾数落在候选尾数内即命中。 */
+    function specialTailVerdict(groupList, code, content) {
+        var tail = tailLabel(code);
+        if (!tail) return 'pending';
+        var tails = tailTokens(groupList, content);
+        if (!tails.length) return 'unknown';
+        return tails.indexOf(tail) !== -1 ? 'ok' : 'miss';
+    }
+
+    /** 绝杀尾数（20 绝杀一尾）：特码尾数不在候选尾数内才算杀中。 */
+    function tailExclusionVerdict(groupList, code, content) {
+        var verdict = specialTailVerdict(groupList, code, content);
+        if (verdict === 'ok') return 'miss';
+        if (verdict === 'miss') return 'ok';
+        return verdict;
+    }
+
     function labelInContent(groupList, label) {
         for (var i = 0; i < groupList.length; i++) {
             if (groupList[i].label.indexOf(label) === 0) return true;
@@ -261,7 +356,7 @@
         var groupList = groups(content);
         // 需要开奖结果才能判定的模块：未开奖一律返回 pending（不显示判定）。
         // 例外：纯文本类（59 段子 / 62 欲钱解特 / 244 诗句）没有可核对候选，直接走 unknown。
-        var needsDraw = modeId !== 59 && modeId !== 62 && modeId !== 244 && modeId !== 17;
+        var needsDraw = modeId !== 62 && modeId !== 244 && modeId !== 17;
 
         if (needsDraw && !code) return 'pending';
 
@@ -277,6 +372,54 @@
                 var value = parseInt(code, 10);
                 return (value >= parseInt(first, 10) && value <= parseInt(last, 10)) ? 'ok' : 'miss';
             }
+            // ── 平特（flat）：任意一个开奖号码命中即算中 ──────────
+            // 43 平特2肖 / 56 平特1肖 / 470 平特3肖 用生肖；
+            // 54 平特1尾 用尾数。口径见 prediction-module-rules.md 的 zodiac_flat / tail_flat。
+            case 43:
+            case 56:
+            case 470: {
+                if (!groupList.length) return 'unknown';
+                return flatZodiacVerdict(groupList, row);
+            }
+            case 54: {
+                if (!groupList.length) return 'unknown';
+                return flatTailVerdict(groupList, row, content);
+            }
+            // ── 尾数玩法：特码尾数落在候选尾数内即命中 ────────────
+            // 2 必中六尾 / 59 独家幽默（候选尾数写在 `code` 字段）/ 66 / 74 / 81 / 123 / 487 / 491
+            case 2:
+            case 66:
+            case 74:
+            case 81:
+            case 123:
+            case 487:
+            case 491: {
+                if (!groupList.length) return 'unknown';
+                return specialTailVerdict(groupList, code, content);
+            }
+            case 59: {
+                // 独家幽默正文是段子，真正可核对的候选尾数在 row.code 里
+                var humorPool = groups(row.code);
+                if (!humorPool.length) return 'unknown';
+                return specialTailVerdict(humorPool, code, row.code);
+            }
+            // ── 绝杀：特码不在候选内才算杀中 ─────────────────────
+            // 20 绝杀一尾 / 42 绝杀三肖 / 472 / 473 绝杀 N 肖
+            case 20: {
+                if (!groupList.length) return 'unknown';
+                return tailExclusionVerdict(groupList, code, content);
+            }
+            case 42:
+            case 472:
+            case 473: {
+                if (!groupList.length) return 'unknown';
+                if (!zodiac) return 'pending';
+                var killed = zodiacInGroups(groupList, zodiac);
+                var killedByCode = numberInGroups(groupList, code);
+                if (killed === true || killedByCode === true) return 'miss';
+                if (killed === false || killedByCode === false) return 'ok';
+                return 'unknown';
+            }
             // ── 号码池 / 生肖池：按数据实际维度判定 ───────────────
             // 维度判定顺序很重要：
             //   1) 池里出现生肖 -> 以「特码生肖是否在候选生肖里」为准
@@ -287,17 +430,12 @@
             case 5:
             case 8:
             case 12:
-            case 20:
             case 26:
-            case 42:
-            case 43:
             case 46:
             case 48:
             case 49:
             case 51:
             case 53:
-            case 54:
-            case 56:
             case 58:
             case 61:
             case 63:
@@ -393,7 +531,8 @@
                 return 'unknown';
             }
             // ── 文本类无法核对：不显示判定 ───────────────────────
-            case 59:
+            // 62 欲钱解特与 244 一语破天机只有上一期的正文/title，接口没有返回
+            // 与本期的候选生肖或号码，无法核对，因此不显示「准/错」。
             case 62:
             case 17:
             case 244:
@@ -420,5 +559,8 @@
         zodiacsOf: zodiacsOf,
         specialCode: specialCode,
         specialZodiac: specialZodiac,
+        drawnCodes: drawnCodes,
+        drawnZodiacs: drawnZodiacs,
+        tailLabel: tailLabel,
     };
 })(typeof window !== 'undefined' ? window : this);

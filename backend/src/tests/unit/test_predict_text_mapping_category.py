@@ -81,3 +81,40 @@ def test_juzi_title_uses_history_title_when_available(monkeypatch):
         "title": "history-title",
         "_labels": ["rat"],
     }
+
+
+def test_juzi_title_falls_back_to_public_payload_title(monkeypatch):
+    """text_history_mappings 缺 mode 62 行时，用 mode_payload_62 的真实诗句 title。"""
+    from predict.categories import text_mapping
+
+    monkeypatch.setattr(text_mapping, "random_text_history_mapping_row", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        text_mapping,
+        "random_text_pool_row",
+        lambda conn, mapping_key: {"title": "一字当头十相投，时来运转否泰交"}
+        if mapping_key == "欲钱解特"
+        else None,
+    )
+
+    assert text_mapping.format_juzi_title(("rat",), object()) == {
+        "title": "一字当头十相投，时来运转否泰交",
+        "_labels": ["rat"],
+    }
+
+
+def test_juzi_title_keeps_placeholder_when_no_candidate(monkeypatch):
+    from predict.categories import text_mapping
+
+    monkeypatch.setattr(text_mapping, "random_text_history_mapping_row", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(text_mapping, "random_text_pool_row", lambda *_args, **_kwargs: None)
+
+    assert text_mapping.format_juzi_title(("rat",), object()) == {
+        "title": "欲钱解特诗",
+        "_labels": ["rat"],
+    }
+
+
+def test_text_pool_sources_include_juzi_mode():
+    from predict.categories import text_mapping
+
+    assert text_mapping.text_pool_sources["欲钱解特"] == ("mode_payload_62", "title")
