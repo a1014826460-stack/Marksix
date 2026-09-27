@@ -216,4 +216,64 @@ for (const name of scripts) {
 }
 assert.deepEqual(tdzOffenders, [], tdzOffenders.join("\n"))
 
+// ── 5. 判定语句引用的行变量必须在其词法作用域内已声明 ──────────
+// 曾出现 `verdictOf(63, d)` 被放在 forEach 之外（d 作用域内不可见），
+// 页面抛 `d is not defined`，整个模块不再渲染。
+// 判定规则：向前扫描，记录每个块级作用域里已绑定的名字（含 for 循环变量与
+// forEach 形参），再检查 verdictOf 第二个实参的根名字是否已绑定。
+function mapBindings(source) {
+  const lines = source.split("\n")
+  const bindings = new Map() // 名称 -> 绑定时的行号（1 基）
+  let depth = 0
+  const push = (name, line) => {
+    if (name && !bindings.has(name)) bindings.set(name, line)
+  }
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+    const lineNo = index + 1
+    // 逐字符更新深度（忽略字符串内的花括号会带来少量误差，保守即可）
+    for (const ch of line) {
+      if (ch === "{") depth++
+      else if (ch === "}") depth--
+    }
+    for (const m of line.matchAll(/\b(?:let|const|var)\s+([A-Za-z_$][\w$]*)/g)) push(m[1], lineNo)
+    for (const m of line.matchAll(/\bfor\s*\(\s*(?:let|const|var)\s+([A-Za-z_$][\w$]*)/g)) push(m[1], lineNo)
+    for (const m of line.matchAll(/([A-Za-z_$][\w$]*)\s*\[\s*\w+\s*\]\s*=/g)) push(m[1], lineNo)
+    for (const m of line.matchAll(/\.forEach\(\s*function\s*\(([^)]*)\)/g)) {
+      for (const name of m[1].split(",")) push(name.trim(), lineNo)
+    }
+    for (const m of line.matchAll(/\.forEach\(\s*\(([^)]*)\)\s*=>/g)) {
+      for (const name of m[1].split(",")) push(name.trim(), lineNo)
+    }
+    // 无括号的箭头形参：`data.forEach(el=>{`
+    for (const m of line.matchAll(/\.forEach\(\s*([A-Za-z_$][\w$]*)\s*=>/g)) {
+      push(m[1], lineNo)
+    }
+    for (const m of line.matchAll(/for\s*\(\s*(?:let|const|var)\s+([A-Za-z_$][\w$]*)\s+in\s+([A-Za-z_$][\w$]*)/g)) {
+      push(m[1], lineNo)
+    }
+  }
+  return bindings
+}
+
+const scopeOffenders = []
+for (const name of scripts) {
+  const source = fs.readFileSync(path.join(JS_DIR, name), "utf8")
+  const bindings = mapBindings(source)
+  const pattern = /let\s+__verdictTxt\s*=.*?verdictOf\((\d+),\s*([A-Za-z_$][\w$[\].]*)\)/g
+  let match
+  while ((match = pattern.exec(source)) !== null) {
+    const varName = match[2]
+    const root = varName.split("[")[0].split(".")[0]
+    const line = source.slice(0, match.index).split("\n").length
+    const boundAt = bindings.get(root)
+    if (boundAt === undefined || boundAt > line) {
+      scopeOffenders.push(
+        `${name}:L${line} 使用 ${varName}，但其作用域内未声明（绑定行=${boundAt ?? "无"}）`,
+      )
+    }
+  }
+}
+assert.deepEqual(scopeOffenders, [], `判定语句引用了作用域外的变量：\n${scopeOffenders.join("\n")}`)
+
 console.log(`legacy verdict contract passed (${scripts.length} 个脚本已接入统一判定)`)

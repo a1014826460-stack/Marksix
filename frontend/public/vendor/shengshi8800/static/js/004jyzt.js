@@ -49,7 +49,6 @@ $.ajax({
         <font color='#000000'>${__verdictTxt}</font>${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}</td>
     </tr>
             `}
-            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(63, d)) : '';
         }
 
         htmlBox = `
