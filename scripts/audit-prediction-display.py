@@ -14,6 +14,10 @@
     R5 repeat_run         同一模块相邻 3 期以上展示值完全相同
     R6 empty_legend       分组说明后面为空（如「右肖:」「阴肖:」）
     R7 verdict_missing    已开奖且有判定语义的模块缺判定文字（提示级）
+    R8 verdict_all_same   某模块 ≥5 期已开奖行判定全同（整列全对/全错的统一性告警）
+
+黄色高亮同时用两种口径识别：元素**计算样式**（能抓到 class / bgcolor 属性造成的黄底）
+与行 HTML 里的 `#FFFF00` 字面量；只统计「相对父节点新增」的黄色，容器整体黄底不算行内高亮。
 
 退出码：0 = 无 error；1 = 存在 error。
 """
@@ -125,11 +129,33 @@ ROW_SCRIPT = r"""
     }
     return '?';
   };
+  // 只统计「相对父节点新增的」黄色：容器整体黄底不会被算成本行高亮，
+  // 但供应商用 class（.stylesb）、bgcolor 属性或内联 style 造成的黄底都能被抓到。
+  const isYellow = (value) => {
+    const s = String(value || '').replace(/\s+/g, '').toLowerCase();
+    return s === 'rgb(255,255,0)' || s === 'rgba(255,255,0,1)' ||
+           s === '#ffff00' || s === '#ff0' || s === 'yellow';
+  };
+  const countYellow = (el) => {
+    let n = 0;
+    const all = [el].concat(Array.from(el.querySelectorAll('*')));
+    for (const node of all) {
+      const cs = getComputedStyle(node);
+      const parent = node.parentElement;
+      const ps = parent ? getComputedStyle(parent) : null;
+      const bg = isYellow(cs.backgroundColor) && !(ps && isYellow(ps.backgroundColor));
+      const hasText = Boolean((node.textContent || '').trim());
+      const fg = hasText && isYellow(cs.color) && !(ps && isYellow(ps.color));
+      if (bg || fg) n += 1;
+    }
+    return n;
+  };
   for (const item of leaves) {
     out.push({
       module: moduleOf(item.el),
       text: item.text,
       html: item.el.outerHTML.slice(0, 4000),
+      highlights: countYellow(item.el),
     });
   }
   return out;
@@ -179,6 +205,7 @@ class SiteReport:
     rows: int = 0
     errors: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    row_dump: list[dict[str, Any]] = field(default_factory=list)
 
 
 def is_pending(text: str) -> bool:
@@ -188,30 +215,60 @@ def is_pending(text: str) -> bool:
 def verdict_of(text: str) -> str:
     """取该行的判定文字。
 
-    只看**开奖结果之后**的部分：模块名里也含「中」（单双中特 / 八肖中特 / 一波中特 …），
-    在整行里搜「中」会把模块名误判成判定。
+    两步定位，避免两类误判：
+    1. 只看**开奖结果之后**的部分——模块名里也含「中」（单双中特 / 八肖中特 / 一波中特 …），
+       在整行里搜「中」会把模块名当成判定；
+    2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」），
+       按固定 token 顺序取第一个会把它当成判定，而真正的判定总在行尾。
+       结束位置相同时优先更长的 token（「不中」优于「中」）。
     """
     openings = list(re.finditer(r"开|開", text))
     tail = text[openings[-1].end():] if openings else text
-    for token in ("不中", "错", "输", "赢", "准", "对", "中"):
-        if token in tail:
-            return token
-    return ""
+    best = ""
+    best_end = -1
+    for token in VERDICT_TOKENS:
+        start = tail.rfind(token)
+        if start < 0:
+            continue
+        end = start + len(token)
+        if end > best_end or (end == best_end and len(token) > len(best)):
+            best = token
+            best_end = end
+    return best
 
 
 def highlight_count(html: str) -> int:
     return html.upper().count("#FFFF00")
 
 
+def row_highlights(row: dict[str, Any]) -> int:
+    """行内黄色高亮数：取「计算样式实测值」与「HTML 字面量」的较大者。
+
+    计算样式能抓到 class / bgcolor 属性造成的黄底，HTML 字面量能抓到样式表里
+    写了 `#FFFF00` 但元素当前不在文档流内的边角情况。
+    """
+    computed = row.get("highlights")
+    computed_count = int(computed) if isinstance(computed, (int, float)) else 0
+    return max(computed_count, highlight_count(str(row.get("html") or "")))
+
+
 def extract_display_token(text: str) -> str:
-    """取「最后一个期号」到「开/開」之间的展示值（预测内容）。"""
+    """取「最后一个期号」到「开/開」之间的展示值（预测内容）。
+
+    若这段文本去掉【…】/［…］/（…）括号内容后什么都不剩，说明它只是模块名/标签
+    （例如 `270期 【逢买必中】 开:…`），没有可比较的展示值，返回空串跳过 R5。
+    """
     opening = re.search(r"开|開", text)
     head = text[: opening.start()] if opening else text
     terms = list(re.finditer(r"\d{2,3}\s*期", head))
     if not terms:
         return ""
     token = head[terms[-1].end():].strip()
-    return re.sub(r"^[::\s]+", "", token)[:30]
+    token = re.sub(r"^[::\s]+", "", token)[:60]
+    without_labels = re.sub(r"[【\[（(《〈「][^】\]）)》〉」]*[】\]）)》〉」]", "", token)
+    if not re.sub(r"[\s:：,，、.。·\-—]", "", without_labels):
+        return ""
+    return token[:30]
 
 
 def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
@@ -224,7 +281,7 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
         module = row.get("module", "?")
         verdict = verdict_of(text)
         pending = is_pending(text)
-        highlights = highlight_count(html)
+        highlights = row_highlights(row)
         samples = text[:120]
 
         # R1 原始 JSON 残留
@@ -247,7 +304,8 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
                                     f"{module} 判定「{verdict}」但仍有一处黄色高亮", samples))
 
         term_match = re.search(r"(\d{2,3})\s*期", text)
-        if term_match:
+        # 只有含「开/開」的才是真正的预测行；文章列表/导航里的「N期 已更新」不算展示值。
+        if term_match and re.search(r"开|開", text):
             display_seq.append((module, term_match.group(1), extract_display_token(text)))
 
     # R4 命中却无高亮：按模块分组，仅当同模块其它行确有高亮时才报
@@ -255,10 +313,10 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
     for row in rows:
         by_module.setdefault(row.get("module", "?"), []).append(row)
     for module, module_rows in by_module.items():
-        if not any(highlight_count(row["html"]) > 0 for row in module_rows):
+        if not any(row_highlights(row) > 0 for row in module_rows):
             continue
         for row in module_rows:
-            if verdict_of(row["text"]) in ("准", "对", "赢", "中") and highlight_count(row["html"]) == 0:
+            if verdict_of(row["text"]) in ("准", "对", "赢", "中") and row_highlights(row) == 0:
                 findings.append(Finding(site_key, "R4 highlight_hit", "warn",
                                         f"{module} 该行判定为命中，但本行没有黄色高亮",
                                         row["text"][:120]))
@@ -280,6 +338,28 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
                                         f"{module} 连续 {run_len} 期展示值相同：{seq[run_start][1]!r}",
                                         terms))
             run_start = index
+
+    # R8 某模块已开奖行全部同一个判定（「整列全对 / 整列全错」的统一性告警）
+    hit_tokens = ("准", "对", "赢", "中")
+    miss_tokens = ("错", "输", "不中")
+    for module, module_rows in by_module.items():
+        decided: list[str] = []
+        for row in module_rows:
+            text = row["text"]
+            if is_pending(text):
+                continue
+            verdict = verdict_of(text)
+            if verdict in hit_tokens:
+                decided.append("hit")
+            elif verdict in miss_tokens:
+                decided.append("miss")
+        if len(decided) < 5 or len(set(decided)) != 1:
+            continue
+        state = "命中（准/对）" if decided[0] == "hit" else "未命中（错）"
+        findings.append(Finding(site_key, "R8 verdict_all_same", "warn",
+                                f"{module} 共 {len(decided)} 期已开奖行全部判定为{state}，"
+                                f"疑似判定口径写死或候选集失效",
+                                ",".join(row["text"][:40] for row in module_rows[:2])))
     return findings
 
 
@@ -336,6 +416,7 @@ def audit_site(site: dict[str, Any], *, headless: bool = True, base_url: str = "
         browser.close()
 
     report.rows = len(all_rows)
+    report.row_dump = all_rows
     report.findings.extend(audit_rows(site["key"], all_rows))
     report.findings.extend(audit_legends(site["key"], all_legends))
     return report
@@ -347,6 +428,7 @@ def main() -> int:
     parser.add_argument("--json", dest="json_path", default="")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--base-url", default="", help="本地预检：替换站点域名为该地址（如 http://127.0.0.1:3000）")
+    parser.add_argument("--dump-rows", default="", help="把抓到的每一行（module/text/highlights）写到该 JSON，便于人工复核")
     args = parser.parse_args()
 
     targets = [site for site in SITES if not args.sites or site["key"] in args.sites]
@@ -398,6 +480,24 @@ def main() -> int:
         with open(args.json_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=1)
         print(f"JSON 报告已写入 {args.json_path}")
+
+    if args.dump_rows:
+        dump_payload = {
+            report.site: [
+                {
+                    "module": row.get("module", "?"),
+                    "text": row.get("text", ""),
+                    "highlights": row_highlights(row),
+                    "verdict": verdict_of(str(row.get("text") or "")),
+                    "pending": is_pending(str(row.get("text") or "")),
+                }
+                for row in report.row_dump
+            ]
+            for report in reports
+        }
+        with open(args.dump_rows, "w", encoding="utf-8") as handle:
+            json.dump(dump_payload, handle, ensure_ascii=False, indent=1)
+        print(f"逐行明细已写入 {args.dump_rows}")
 
     total_errors = sum(1 for report in reports for f in report.findings if f.level == "error")
     print(f"== total error={total_errors}")

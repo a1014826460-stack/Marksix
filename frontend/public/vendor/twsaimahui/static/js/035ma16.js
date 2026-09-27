@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCode?web=${web}&type=${type}&num=16`,
     type: 'GET',
     dataType: 'json',
@@ -11,30 +11,37 @@
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = [];
-                let xiaoV = [];
-                let ma = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let ma = String(d.content == null ? '' : d.content).split(',');
 
                 let c1 = [];
                 let zj = false;
-                for (let i = 0; i < ma.length; i++) {
-                    if (code && ma[i].indexOf(code) !== -1) {
+                for (let j = 0; j < ma.length; j++) {
+                    // 命中：本期特码在 16 码内 → 该码标黄；未命中一律不高亮。
+                    if (opened && ma[j] === code) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${ma[i]}</span>`);
+                        c1.push(`<span style="background-color:#FFFF00">${ma[j]}</span>`);
                     }else {
-                        c1.push(`${ma[i]}`)
+                        c1.push(`${ma[j]}`)
                     }
                 }
+
+                let verdictTxt = opened ? (zj ? '准' : '错') : '';
+                let resTxt = opened ? (`开:${sx}${code}`) : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40><b>
 <font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>精选16码</font></b><br>
-<font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>【${c1.slice(0,8).join('.')}】<br>【${c1.slice(8).join('.')}】</font></b></td>
+<font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>【${c1.slice(0,8).join('.')}】<br>【${c1.slice(8).join('.')}】</font>
+<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${resTxt}${verdictTxt}</font></b></td>
 </tr>
             `
             }

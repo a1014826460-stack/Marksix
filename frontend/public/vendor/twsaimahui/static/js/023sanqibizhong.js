@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getSanqiXiao4new?web=${web}&type=${type}&num=7`,
     type: 'GET',
     dataType: 'json',
@@ -11,72 +11,93 @@
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // 开奖口径（已交叉验证）：
+                //   mode_payload_197 每期一行，res_code/res_sx 是该行 term 的真实开奖，
+                //   第 1 项 = 特码/特肖；前端 /api/kaijiang/getSanqiXiao4new 经
+                //   filterSanqiDisplayRows 只保留「窗口内已开奖的最新一期」，
+                //   已用 lottery_draws.numbers 验证 res_code 与窗口最新期完全一致。
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) {
+                    if (v === null || v === undefined) { return []; }
+                    return String(v).split(',').filter(function (x) { return x !== ''; });
+                };
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
-                for (let i in content) {
-                    let c = content[i].split('|');
+                for (let j in content) {
+                    let c = String(content[j]||'').split('|');
+                    if (!c[0]) continue;
                     xiao.push(c[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 窗口期号：names[0] 最早、names[1] 最晚，中间期 = 最小期 + 1（保持补零宽度）。
                 let terms = [];
-                let names = d.name.split('-');
-                let mid = Math.min(parseInt(names[0]),parseInt(names[1]));
-                mid = (++mid).toString();
-                if (mid.length < names[0].length) {
-                    mid = '0'+mid;
+                let names = String(d.name||'').split('-');
+                if (names.length === 2 && names[0] && names[1]) {
+                    let lo = names[0].trim();
+                    let hi = names[1].trim();
+                    let width = Math.max(lo.length, hi.length);
+                    let mid = String(Math.min(parseInt(lo, 10), parseInt(hi, 10)) + 1);
+                    while (mid.length < width) { mid = '0' + mid; }
+                    while (lo.length < width) { lo = '0' + lo; }
+                    while (hi.length < width) { hi = '0' + hi; }
+                    terms[0] = lo;
+                    terms[1] = mid;
+                    terms[2] = hi;
                 }
-                terms[0] = names[0];
-                terms[1] = mid;
-                terms[2] = names[1];
 
+                // 候选四肖来自真实 content，替换供应商硬编码的「龙马羊狗」。
+                // 命中（本期特肖 ∈ 候选四肖）→ 该生肖标黄；未命中 → 不高亮。
                 let c1 = [];
                 let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
+                        c1.push(`<span style="background-color:#FFFF00">${xiao[k]}</span>`);
                     }else {
-                        c1.push(`${xiao[i]}`)
+                        c1.push(`${xiao[k]}`)
                     }
                 }
+
+                // res_code/res_sx 只覆盖窗口内已开奖的最新一期，其余两期没有逐期开奖数据，
+                // 因此只有该期显示判定与开奖；另两期只显示期号，不显示准/错、不高亮。
+                let resTxt = opened ? ('开:' + sx + code + (zj ? '准' : '错')) : '';
+                let resCell = function (pos) { return (pos === 2 && resTxt) ? resTxt : ''; };
+                let rowTd = function (pos, extra) {
+                    return "<td align='center' bgcolor='#FFFFFF' width='22%'" + (extra || '') + ">" +
+                        "<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>" +
+                        "<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>" +
+                        (terms[pos] ? (terms[pos] + '期') : '') + "</font></b></td>";
+                };
 
                 htmlBoxList += ` 
  <table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
 <tr>
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<b><font face='微软雅黑'>${terms[2]}期</font></b></td>
+${rowTd(2, " height='11'")}
 <td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
-<font face='微软雅黑' size='5' color='#FF0000'><strong>
-龙马羊狗</span></strong></span></font></td>
+<font face='微软雅黑' size='5' color='#FF0000'><strong>${c1.join('')}</strong></font></td>
 <td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>开:猫00</font></td>
+<font face='微软雅黑'>${resCell(2)}</font></td>
 </tr>
 <tr>
+${rowTd(1, " height='11'")}
 <td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-${terms[1]}期</font></b></td>
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>开:蛇12</font></td>
+<font face='微软雅黑'>${resCell(1)}</font></td>
 </tr>
 <tr>
+${rowTd(0, " style='height: 26px'")}
 <td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-${terms[0]}期</font></b></td>
-<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-<font face='微软雅黑'>开:虎27</font></td>
+<font face='微软雅黑'>${resCell(0)}</font></td>
 </tr>
-</table>
- 
+ </table>
             `
             }
         }

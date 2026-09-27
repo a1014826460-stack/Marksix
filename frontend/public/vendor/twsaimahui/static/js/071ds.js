@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/danshuang?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -12,10 +12,14 @@ $.ajax({
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
@@ -24,28 +28,37 @@ $.ajax({
                     continue;
                 }
                 for (let i in content) {
-                    let c = content[i].split('|');
+                    let c = String(content[i]||'').split('|');
                     xiao.push(c[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 命中口径：本期特码落在预测的单/双号码集合内。
+                // 高亮与判定绑定：只有命中的那一行才把命中的「单/双数」标黄；
+                // 判「错」的行一律没有黄色高亮（旧写法把黄底写在开奖段的 font 上）。
                 let c = [];
                 let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                for (let j = 0; j < xiao.length; j++) {
+                    if (opened && code && xiaoV[j].indexOf(code) !== -1) {
                         zj = true;
-                        c.push(`<span style="background-color: #FFFF00">${xiao[i]}数</span>`)
+                        c.push(`<span style="background-color:#FFFF00">${xiao[j]}数</span>`)
                     }else{
-                        c.push(`${xiao[i]}数`)
+                        c.push(`${xiao[j]}数`)
                     }
                 }
+
+                let resHtml = opened
+                    ? (zj
+                        ? `开:<span style="background-color:#FFFF00">${sx}${code}</span>准`
+                        : `开:${sx}${code}错`)
+                    : '开:待开奖';
 
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>单双中特</strong></span>:【<span class='stylezi'><strong>${c.join('')}</strong></span><strong>】 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>单双中特</strong></span>:【<span class='stylezi'><strong>${c.join('')}</strong></span><strong>】 ${resHtml}
 </strong>
 </td>
 </tr>\t

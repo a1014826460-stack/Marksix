@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCyptwei?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -11,10 +11,16 @@
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                // 开奖口径：res_code/res_sx 的第 1 项即本期特码/特肖（已用
+                // lottery_draws.numbers 与 mode_payload_197.res_code 交叉验证）。
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
@@ -45,21 +51,28 @@
                     continue
                 }
                 num +=''
-                let index=99;
-                for (let k in codeSplit) {
-                    if (!codeSplit[k]) continue;
-                    let w = codeSplit[k].split('')[1];
-                    if (w === num) {
-                        zj = true;
-                        index = k;
-                        break
-                    }
+                // 命中口径：本期特码尾数 == 成语对应尾数。
+                // 只有已开奖才判定；未命中绝不回退到列表里任意一个号码。
+                let tail = code ? code.split('').pop() : '';
+                if (opened && tail && tail === num) {
+                    zj = true;
+                }
+
+                // 命中时把本期特码号码标黄（该号码正是命中的那一位尾数）；
+                // 未命中/未开奖一般不渲染，渲染时也只是纯文本，无黄色高亮。
+                let resTxt;
+                if (!opened) {
+                    resTxt = '开:待开奖';
+                } else if (zj) {
+                    resTxt = `开:${sx}<span style="background-color:#FFFF00">${code}</span>准`;
+                } else {
+                    resTxt = `开:${sx}${code}错`;
                 }
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>成语平特尾</strong></span>:【<span class='stylezi'><strong>${title}</strong></span><strong>】 开:${codeSplit[index]||code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>成语平特尾</strong></span>:【<span class='stylezi'><strong>${title}</strong></span><strong>】 ${resTxt}
 </strong>
 </td>
 </tr>

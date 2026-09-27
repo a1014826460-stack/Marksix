@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -11,28 +11,36 @@
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];
                 let ma = [];
 
+                // 绝杀语义：杀掉的生肖「不含」开奖特肖 = 命中 = 准；含 = 错。
+                // 未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = true;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        zj = false;
-                        c1.push(`${xiao[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
+
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40><b>
-<font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${d.term}期:</font><font color='#800080' style='font-size: 13pt' face='方正粗黑宋简体'>绝杀三肖</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'> 【</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>（${c1.join('')}）</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${ (sx?( zj?'赢':'输'):'??')}</font> </font></b></td>
+<font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${d.term}期:</font><font color='#800080' style='font-size: 13pt' face='方正粗黑宋简体'>绝杀三肖</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'> 【</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>（${c1.join('')}）</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>】</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>${resHtml}</font> </font></b></td>
 </tr>
             `
             }

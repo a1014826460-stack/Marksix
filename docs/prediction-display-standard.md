@@ -49,30 +49,110 @@ python scripts\audit-prediction-display.py twsaimahui --base-url http://127.0.0.
 | R4 | `highlight_hit` | warn | 命中却没有高亮（S2/S4） |
 | R5 | `repeat_run` | warn | 连续 ≥3 期展示值相同（S7） |
 | R6 | `empty_legend` | error | 分组说明后面为空（S6） |
+| R7 | `verdict_missing` | warn | 已开奖但缺判定文字（S1） |
+
+**高亮识别口径（2026-09-27 起加固）**：同时用两种口径判定「这一行有没有黄色高亮」——
+
+1. 元素**计算样式**（`getComputedStyle`）：能抓到用 `class='stylesb'`、`bgcolor` 属性或内联
+   `style` 造成的黄底，也能抓到 `color:#FFFF00` 的黄色文字；
+2. 行 HTML 里的 `#FFFF00` **字面量**（兼容边角情况）。
+
+两条取较大值。计算样式口径只统计「相对父节点**新增**」的黄色，所以整个容器/整块面板的黄底
+不会被算成行内高亮；反之，供应商静态模板里预埋的黄标一定会被算进去（这正是 R3 要抓的）。
+
+**R5 的降噪口径**：只统计含「开/開」的真实预测行（文章列表、导航里的「N期 已更新」不算）；
+展示值若被 `【…】`/`《…》`/`（…）` 整个包住（例如 `270期 【逢买必中】 开:…`），说明这一行
+只有模块名、没有可比较的展示值，直接跳过。降噪前后的同一批站点：twcf888 47→0、twcaibawang 8→2、
+shengshi8800 9→5、twjinniu 10→1 条 warn，而 `#dxzt` 这类真正的「3 期同一个值」仍然保留。
 
 **验收门槛：`error=0` 且 `js_errors=0`。** warn 需要人工判断，但数量不得比上一轮增加。
 
 ---
 
-## 三、例行检查工作流（每次改动后 / 每次上线前）
+## 三、固定 workflow（每次改动后 / 每次上线前，照抄执行）
 
-1. **本地改代码** → 启动本地服务：
-   ```powershell
-   # 后端
-   $env:LIUHECAI_RUNTIME_ENV='development'
-   python backend\src\app.py --host 127.0.0.1 --port 8000 --db-path "postgresql://postgres:***@127.0.0.1:5432/liuhecai"
-   # 前端
-   cd frontend; node node_modules\next\dist\bin\next dev --webpack --hostname 127.0.0.1 --port 3000
-   ```
-2. **本地预检**：`python scripts\audit-prediction-display.py <site> --base-url http://127.0.0.1:3000`
-   确认 `error=0` 后再提交。
-3. **提交并推送**：`git push origin main`（需要用户当次授权；授权不跨轮次继承）。
-4. **发布**（见 `DEPLOY.md`「部署工作流（含跳板机）」）：先中心节点、后前端节点；
-   两个节点都用 `git merge --ff-only`，失败即停。
-5. **线上审计**：`python scripts\audit-prediction-display.py --json .codex-temp\audit-live.json`，
-   要求 `error=0`；把报告归档到 `docs/vendor-sites/<site>-*.md` 或 DEPLOY.md 的发布记录里。
-6. **回归**：`cd backend/src; python -m pytest -q`；
-   `node frontend/test/<站点契约>.mjs`。
+### 0. 一次性准备
+
+```powershell
+# 后端（开发环境，避免污染生产语义）
+$env:LIUHECAI_RUNTIME_ENV='development'
+python backend\src\app.py --host 127.0.0.1 --port 8000 --db-path "postgresql://postgres:***@127.0.0.1:5432/liuhecai"
+# 前端
+cd frontend; node node_modules\next\dist\bin\next dev --webpack --hostname 127.0.0.1 --port 3000
+```
+
+### 1. 源码级 lint（改完渲染脚本先跑，秒级反馈）
+
+```powershell
+python scripts\lint-prediction-renderers.py <site>          # 单站点
+python scripts\lint-prediction-renderers.py                 # 全部站点
+```
+
+抓到 `hardcoded_verdict`（写死准/错）、`unsafe_json_parse`、`raw_content_split`、
+`static_sample_result`（写死 `开:猫00` 这类样例）时**先修源码再进第 2 步**。
+
+### 2. 本地预检（结构规则 R1–R7）
+
+```powershell
+python scripts\audit-prediction-display.py <site> --base-url http://127.0.0.1:3000 --json .codex-temp\audit-local.json
+```
+
+要求 `error=0`、`js_errors=0`，且 warn 不高于上一轮。bundle 站点改了源 JS 必须重建：
+
+```powershell
+python scripts\bundle-twsaimahui-modules.py --rebuild --apply   # 其他 bundle 站点用各自的脚本
+```
+
+### 3. 判定真值校验（数据/契约层，不依赖页面）
+
+```powershell
+python scripts\audit-verdict-truth.py --site <site> --json .codex-temp\verdict-truth.json
+```
+
+对每一行重新计算「候选项是否命中真实开奖」，与行内 `is_correct` 比对。出现
+`is_correct=1` 但实际没命中（虚报）或反之，**必须修判定逻辑，不能靠前端补丁掩盖**。
+
+### 4. 判定语义抽查（页面显示 vs 真实开奖）
+
+结构审计抓不到「整列全对 / 整列全错 / 判定口径与玩法不符」。每个改动的模块至少抽查 3 期：
+
+- 用 Playwright 覆盖该站接口的 `is_correct`，把某期强改为命中/未命中，重新渲染；
+- 断言：命中那期**只有命中项**有黄色高亮且显示「准/对」；未命中那期**零黄色高亮**且显示「错」；
+- 未开奖期不显示判定、不高亮。
+
+仓库里可复用的样板：`.codex-temp/crosscheck_verdicts_live.py`（tw8800 逐期复算）、
+`.codex-temp/twbst528_probe_r3.py`（覆盖接口做命中/未命中对照）。
+
+### 5. 提交
+
+```powershell
+git add -A; git commit -m "fix(<site>): <一句话说明>"; git push origin main
+```
+
+（需要用户当次授权；授权不跨轮次继承。）
+
+### 6. 发布（见 `DEPLOY.md`「部署工作流（含跳板机）」）
+
+先中心节点、后前端节点；两个节点都用 `git merge --ff-only`，失败即停。
+
+### 7. 线上验收（十站点全量）
+
+```powershell
+python scripts\audit-prediction-display.py --json .codex-temp\audit-live.json
+python scripts\audit-verdict-truth.py --json .codex-temp\verdict-truth-live.json
+```
+
+`== total error=0` 且 `js_errors=0` 才算通过；把两份报告归档到
+`docs/vendor-sites/<site>-*.md`，并在 `DEPLOY.md` 追加发布记录（提交号、备份目录、
+逐站 error/warn/js_errors 数字、遗留项）。
+
+### 8. 回归
+
+```powershell
+cd backend/src; python -m pytest -q
+node frontend/test\<站点契约>.mjs
+```
+
 
 ---
 

@@ -1073,7 +1073,7 @@ color: #FF0000;
 
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/danshuang?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -1087,10 +1087,14 @@ $.ajax({
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
@@ -1099,28 +1103,37 @@ $.ajax({
                     continue;
                 }
                 for (let i in content) {
-                    let c = content[i].split('|');
+                    let c = String(content[i]||'').split('|');
                     xiao.push(c[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 命中口径：本期特码落在预测的单/双号码集合内。
+                // 高亮与判定绑定：只有命中的那一行才把命中的「单/双数」标黄；
+                // 判「错」的行一律没有黄色高亮（旧写法把黄底写在开奖段的 font 上）。
                 let c = [];
                 let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                for (let j = 0; j < xiao.length; j++) {
+                    if (opened && code && xiaoV[j].indexOf(code) !== -1) {
                         zj = true;
-                        c.push(`<span style="background-color: #FFFF00">${xiao[i]}数</span>`)
+                        c.push(`<span style="background-color:#FFFF00">${xiao[j]}数</span>`)
                     }else{
-                        c.push(`${xiao[i]}数`)
+                        c.push(`${xiao[j]}数`)
                     }
                 }
+
+                let resHtml = opened
+                    ? (zj
+                        ? `开:<span style="background-color:#FFFF00">${sx}${code}</span>准`
+                        : `开:${sx}${code}错`)
+                    : '开:待开奖';
 
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>单双中特</strong></span>:【<span class='stylezi'><strong>${c.join('')}</strong></span><strong>】 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>单双中特</strong></span>:【<span class='stylezi'><strong>${c.join('')}</strong></span><strong>】 ${resHtml}
 </strong>
 </td>
 </tr>\t
@@ -3222,7 +3235,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCyptwei?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -3235,10 +3248,16 @@ color: #FF0000;
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                // 开奖口径：res_code/res_sx 的第 1 项即本期特码/特肖（已用
+                // lottery_draws.numbers 与 mode_payload_197.res_code 交叉验证）。
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
@@ -3269,21 +3288,28 @@ color: #FF0000;
                     continue
                 }
                 num +=''
-                let index=99;
-                for (let k in codeSplit) {
-                    if (!codeSplit[k]) continue;
-                    let w = codeSplit[k].split('')[1];
-                    if (w === num) {
-                        zj = true;
-                        index = k;
-                        break
-                    }
+                // 命中口径：本期特码尾数 == 成语对应尾数。
+                // 只有已开奖才判定；未命中绝不回退到列表里任意一个号码。
+                let tail = code ? code.split('').pop() : '';
+                if (opened && tail && tail === num) {
+                    zj = true;
+                }
+
+                // 命中时把本期特码号码标黄（该号码正是命中的那一位尾数）；
+                // 未命中/未开奖一般不渲染，渲染时也只是纯文本，无黄色高亮。
+                let resTxt;
+                if (!opened) {
+                    resTxt = '开:待开奖';
+                } else if (zj) {
+                    resTxt = `开:${sx}<span style="background-color:#FFFF00">${code}</span>准`;
+                } else {
+                    resTxt = `开:${sx}${code}错`;
                 }
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>成语平特尾</strong></span>:【<span class='stylezi'><strong>${title}</strong></span><strong>】 开:${codeSplit[index]||code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>成语平特尾</strong></span>:【<span class='stylezi'><strong>${title}</strong></span><strong>】 ${resTxt}
 </strong>
 </td>
 </tr>
@@ -3401,7 +3427,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getSanqiXiao4new?web=${web}&type=${type}&num=7`,
     type: 'GET',
     dataType: 'json',
@@ -3414,72 +3440,93 @@ color: #FF0000;
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // 开奖口径（已交叉验证）：
+                //   mode_payload_197 每期一行，res_code/res_sx 是该行 term 的真实开奖，
+                //   第 1 项 = 特码/特肖；前端 /api/kaijiang/getSanqiXiao4new 经
+                //   filterSanqiDisplayRows 只保留「窗口内已开奖的最新一期」，
+                //   已用 lottery_draws.numbers 验证 res_code 与窗口最新期完全一致。
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) {
+                    if (v === null || v === undefined) { return []; }
+                    return String(v).split(',').filter(function (x) { return x !== ''; });
+                };
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
-                for (let i in content) {
-                    let c = content[i].split('|');
+                for (let j in content) {
+                    let c = String(content[j]||'').split('|');
+                    if (!c[0]) continue;
                     xiao.push(c[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 窗口期号：names[0] 最早、names[1] 最晚，中间期 = 最小期 + 1（保持补零宽度）。
                 let terms = [];
-                let names = d.name.split('-');
-                let mid = Math.min(parseInt(names[0]),parseInt(names[1]));
-                mid = (++mid).toString();
-                if (mid.length < names[0].length) {
-                    mid = '0'+mid;
+                let names = String(d.name||'').split('-');
+                if (names.length === 2 && names[0] && names[1]) {
+                    let lo = names[0].trim();
+                    let hi = names[1].trim();
+                    let width = Math.max(lo.length, hi.length);
+                    let mid = String(Math.min(parseInt(lo, 10), parseInt(hi, 10)) + 1);
+                    while (mid.length < width) { mid = '0' + mid; }
+                    while (lo.length < width) { lo = '0' + lo; }
+                    while (hi.length < width) { hi = '0' + hi; }
+                    terms[0] = lo;
+                    terms[1] = mid;
+                    terms[2] = hi;
                 }
-                terms[0] = names[0];
-                terms[1] = mid;
-                terms[2] = names[1];
 
+                // 候选四肖来自真实 content，替换供应商硬编码的「龙马羊狗」。
+                // 命中（本期特肖 ∈ 候选四肖）→ 该生肖标黄；未命中 → 不高亮。
                 let c1 = [];
                 let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
+                        c1.push(`<span style="background-color:#FFFF00">${xiao[k]}</span>`);
                     }else {
-                        c1.push(`${xiao[i]}`)
+                        c1.push(`${xiao[k]}`)
                     }
                 }
+
+                // res_code/res_sx 只覆盖窗口内已开奖的最新一期，其余两期没有逐期开奖数据，
+                // 因此只有该期显示判定与开奖；另两期只显示期号，不显示准/错、不高亮。
+                let resTxt = opened ? ('开:' + sx + code + (zj ? '准' : '错')) : '';
+                let resCell = function (pos) { return (pos === 2 && resTxt) ? resTxt : ''; };
+                let rowTd = function (pos, extra) {
+                    return "<td align='center' bgcolor='#FFFFFF' width='22%'" + (extra || '') + ">" +
+                        "<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>" +
+                        "<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>" +
+                        (terms[pos] ? (terms[pos] + '期') : '') + "</font></b></td>";
+                };
 
                 htmlBoxList += ` 
  <table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
 <tr>
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<b><font face='微软雅黑'>${terms[2]}期</font></b></td>
+${rowTd(2, " height='11'")}
 <td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
-<font face='微软雅黑' size='5' color='#FF0000'><strong>
-龙马羊狗</span></strong></span></font></td>
+<font face='微软雅黑' size='5' color='#FF0000'><strong>${c1.join('')}</strong></font></td>
 <td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>开:猫00</font></td>
+<font face='微软雅黑'>${resCell(2)}</font></td>
 </tr>
 <tr>
+${rowTd(1, " height='11'")}
 <td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-${terms[1]}期</font></b></td>
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>开:蛇12</font></td>
+<font face='微软雅黑'>${resCell(1)}</font></td>
 </tr>
 <tr>
+${rowTd(0, " style='height: 26px'")}
 <td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-${terms[0]}期</font></b></td>
-<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-<font face='微软雅黑'>开:虎27</font></td>
+<font face='微软雅黑'>${resCell(0)}</font></td>
 </tr>
-</table>
- 
+ </table>
             `
             }
         }
@@ -4174,49 +4221,59 @@ $.ajax({
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.xiao.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = String(d.xiao == null ? '' : d.xiao).split(',');
                 let xiaoV = [];
                 let ma = [];
                 let content = [d.content];
                 let ds = [];
                 let dsv = [];
                 for (let i in content) {
-                    let c = content[i].split('|');
-                    ds.push(c[0].split('')[0])
-                    dsv[i] = c[1];
-                }
-
-                let c = `${ds[0]}`;
-                let dsHit = false;
-                if (sx && dsv[0].indexOf(sx) !== -1) {
-                    dsHit = true;
-                    c = `<span style="background-color: #FFFF00">${ds[0]}</span>`
-                }
-
-                let c1 = [];
-                let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) !== -1) {
-                        zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}`)
-                    }
+                    let c = String(content[i]||'').split('|');
+                    ds.push(String(c[0]||'').split('')[0])
+                    dsv[i] = c[1] || '';
                 }
 
                 // 「单双选1（6肖分类池）+ 生肖选2」= 两个维度，任一维度命中即算命中。
                 // 历史资料里 content 分类池与 xiao 候选生肖互斥，二者合计覆盖 8/12 生肖，
                 // 只判 xiao 会把分类池命中的那一半全部误判成"错"（全部显示错的根因）。
+                let dsHit = !!(opened && dsv[0] && dsv[0].indexOf(code) !== -1);
+                let c = dsHit
+                    ? `<span style="background-color:#FFFF00">${ds[0]}</span>`
+                    : `${ds[0]}`;
+
+                let c1 = [];
+                let zj = false;
+                for (let j = 0; j < xiao.length; j++) {
+                    if (opened && sx && xiao[j].indexOf(sx) !== -1) {
+                        zj = true;
+                        c1.push(`<span style="background-color:#FFFF00">${xiao[j]}</span>`);
+                    }else {
+                        c1.push(`${xiao[j]}`)
+                    }
+                }
+
                 let hit = dsHit || zj;
+
+                // 开奖段只在命中时高亮（标黄本期特码），未命中/未开奖绝不高亮。
+                // 旧写法把 `background-color:#FFFF00` 写在开奖段的 font 上，导致判「错」的行也有黄底。
+                let resHtml = opened
+                    ? (hit
+                        ? `开:<span style="background-color:#FFFF00">${sx}${code}</span>准`
+                        : `开:${sx}${code}错`)
+                    : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40><b>
-<font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期本期买</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c}+${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】中特开</font><font color='#FF0000' style='font-size: 14pt; background-color:#FFFF00' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}${ (sx?( hit?'准':'错'):'??')}</font> </font></b></td>
+<font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期本期买</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c}+${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】中特</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${resHtml}</font></b></td>
 </tr>
  
             `
@@ -4660,7 +4717,7 @@ ${d.term}期</strong><span class='styleliao'><strong>一波中特</strong></span
 						</table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCode?web=${web}&type=${type}&num=16`,
     type: 'GET',
     dataType: 'json',
@@ -4673,30 +4730,37 @@ ${d.term}期</strong><span class='styleliao'><strong>一波中特</strong></span
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = [];
-                let xiaoV = [];
-                let ma = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let ma = String(d.content == null ? '' : d.content).split(',');
 
                 let c1 = [];
                 let zj = false;
-                for (let i = 0; i < ma.length; i++) {
-                    if (code && ma[i].indexOf(code) !== -1) {
+                for (let j = 0; j < ma.length; j++) {
+                    // 命中：本期特码在 16 码内 → 该码标黄；未命中一律不高亮。
+                    if (opened && ma[j] === code) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${ma[i]}</span>`);
+                        c1.push(`<span style="background-color:#FFFF00">${ma[j]}</span>`);
                     }else {
-                        c1.push(`${ma[i]}`)
+                        c1.push(`${ma[j]}`)
                     }
                 }
+
+                let verdictTxt = opened ? (zj ? '准' : '错') : '';
+                let resTxt = opened ? (`开:${sx}${code}`) : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40><b>
 <font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>精选16码</font></b><br>
-<font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>【${c1.slice(0,8).join('.')}】<br>【${c1.slice(8).join('.')}】</font></b></td>
+<font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>【${c1.slice(0,8).join('.')}】<br>【${c1.slice(8).join('.')}】</font>
+<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${resTxt}${verdictTxt}</font></b></td>
 </tr>
             `
             }
@@ -6695,7 +6759,7 @@ ${d.term}期</strong><span class='styleliao'><strong>两头中特</strong></span
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShama?web=${web}&type=${type}&num=7`,
     type: 'GET',
     dataType: 'json',
@@ -6708,30 +6772,39 @@ ${d.term}期</strong><span class='styleliao'><strong>两头中特</strong></span
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
-                let ma = d.content.split(',');
+                let ma = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
 
+                // 绝杀语义：杀掉的 7 个号码「全部都不含」开奖特码 = 命中 = 准；
+                // 只要开奖特码出现在杀号里 = 错。
+                // 旧写法用「只要有一项不含就判准」，且缺少已开奖前置判断，
+                // 导致未开奖期也可能被判成「准」。
                 let c1 = [];
-                let zj = false;
-                for (let i = 0; i < ma.length; i++) {
-                    if (code && ma[i].indexOf(code) === -1) {
-                        zj = true;
-                        c1.push(`<span>${ma[i]}</span>`);
-                    }else {
-                        c1.push(`${ma[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < ma.length; k++) {
+                    if (opened && code && ma[k] && ma[k].indexOf(code) !== -1) { hitAny = true; }
+                    c1.push(`<span>${ma[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
 
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40 class='stylelxz'><strong>
 ${d.term}期</strong><span class='styleliao'><strong>绝杀七码</strong></span>:【<span class='stylezi'>${c1.join('.')}</span><strong>】
-开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+ ${resHtml}
 </strong>
 </td>
 </tr>
@@ -6894,7 +6967,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -6907,29 +6980,38 @@ color: #FF0000;
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];
                 let ma = [];
 
+                // 绝杀语义：杀掉的生肖「全部都不含」开奖特肖 = 命中 = 准；
+                // 只要有一个杀肖命中了开奖特肖 = 错。
+                // 旧写法用「只要有一项不含就判准」，几乎恒为「准」。
+                // 未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        zj = true;
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>绝杀二肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>绝杀二肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】${resHtml}
 </strong>
 </td>
 </tr>
@@ -7970,7 +8052,7 @@ ${c1.slice(0,9).join('')}</font></td>
   </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getTou?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -7983,36 +8065,49 @@ ${c1.slice(0,9).join('')}</font></td>
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
-                for (let i in content) {
-                    let c = content[i].split('|');
+                for (let j in content) {
+                    let c = String(content[j]||'').split('|');
                     xiao.push(c[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 命中口径：本期特码落在预测的头数号码集合内。
+                // 高亮与判定绑定：只有命中的那一行才把命中的「N头」标黄；
+                // 判「错」的行一律没有黄色高亮（旧写法把黄底写在开奖段的 font 上）。
                 let c1 = [];
                 let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && code && xiaoV[k].indexOf(code) !== -1) {
                         zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
+                        c1.push(`<span style="background-color:#FFFF00">${xiao[k]}</span>`);
                     }else {
-                        c1.push(`${xiao[i]}`)
+                        c1.push(`${xiao[k]}`)
                     }
                 }
+
+                let resHtml = opened
+                    ? (zj
+                        ? `开:<span style="background-color:#FFFF00">${sx}${code}</span>准`
+                        : `开:${sx}${code}错`)
+                    : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40><b>
-<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>三头中特</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>『${c1.join('.')}』开</font><font color='#FF0000' style='font-size: 14pt; background-color:#FFFF00' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${ (sx?( zj?'准':'错'):'??')}</font> </font></b></td>
+<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>三头中特</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>『${c1.join('.')}』</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${resHtml}</font></b></td>
 </tr>
             `
             }
@@ -8733,7 +8828,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaWei?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -8746,35 +8841,46 @@ color: #FF0000;
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
-                for (let i in content) {
-                    let c = content[i].split('|');
-                    xiao.push(c[0].split('')[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                for (let j in content) {
+                    let c = String(content[j]||'').split('|');
+                    if (!c[0]) continue;
+                    xiao.push(String(c[0]).split('')[0])
+                    xiaoV[xiao.length-1] = c[1] || '';
+                    ma.push(...String(c[1]||'').split(','));
                 }
 
+                // 绝杀语义：杀掉的集合「不含」开奖特码 = 命中 = 准；含 = 错。
+                // 未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = true;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) === -1) {
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        zj = false;
-                        c1.push(`${xiao[i]}`)
-                    }
+                let zj = false;
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    let inList = !!(code && xiaoV[k] && xiaoV[k].indexOf(code) !== -1);
+                    if (inList) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                if (opened && !hitAny) { zj = true; }
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
+
                 htmlBoxList += ` 
 
 <td align='center' height=40><b>
-<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>绝杀三尾</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}尾</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开:</font><font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font> </font></b></td>
+<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>绝杀三尾</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}尾</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】</font><font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${resHtml}</font> </font></b></td>
 </tr>
             `
             }
@@ -8904,7 +9010,7 @@ color: #FF0000;
 */
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -8917,28 +9023,36 @@ color: #FF0000;
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];
                 let ma = [];
 
+                // 绝杀语义：杀掉的生肖「不含」开奖特肖 = 命中 = 准；含 = 错。
+                // 未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = true;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        zj = false;
-                        c1.push(`${xiao[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
+
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40><b>
-<font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${d.term}期:</font><font color='#800080' style='font-size: 13pt' face='方正粗黑宋简体'>绝杀三肖</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'> 【</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>（${c1.join('')}）</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${ (sx?( zj?'赢':'输'):'??')}</font> </font></b></td>
+<font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>${d.term}期:</font><font color='#800080' style='font-size: 13pt' face='方正粗黑宋简体'>绝杀三肖</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'> 【</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>（${c1.join('')}）</font><font color='#000000' style='font-size: 13pt' face='方正粗黑宋简体'>】</font><font color='#FF0000' style='font-size: 13pt' face='方正粗黑宋简体'>${resHtml}</font> </font></b></td>
 </tr>
             `
             }

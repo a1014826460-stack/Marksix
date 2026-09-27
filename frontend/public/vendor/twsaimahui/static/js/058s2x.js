@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -11,29 +11,38 @@
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];
                 let ma = [];
 
+                // 绝杀语义：杀掉的生肖「全部都不含」开奖特肖 = 命中 = 准；
+                // 只要有一个杀肖命中了开奖特肖 = 错。
+                // 旧写法用「只要有一项不含就判准」，几乎恒为「准」。
+                // 未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        zj = true;
-                        c1.push(`<span>${xiao[i]}</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
 
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>绝杀二肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>绝杀二肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】${resHtml}
 </strong>
 </td>
 </tr>

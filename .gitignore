@@ -86,3 +86,5 @@ backend/data/logs/app.log.10
 
 # 每台机器自己的证书映射（lineage -> deploy/ssl 子目录）
 deploy/ssl-sync.map
+
+audit-prediction-display.md
