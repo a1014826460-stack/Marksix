@@ -193,5 +193,102 @@ def build() -> int:
     return 0
 
 
+def compose_bundle(site_root: pathlib.Path, names: list[str]) -> tuple[str, str, int]:
+    """按文档顺序逐字节拼接一个 bundle，返回 ``(文件名, 正文, 字节数)``。
+
+    bundle 文件名取 ``sha256(源文件名 + 源文件内容)[:16]``，因此**内容一变名字就变**，
+    这对浏览器缓存是必需的（vendor 静态资源带长缓存）。``build`` 与 ``rebuild`` 共用本函数，
+    保证两条路径产出完全一致。
+    """
+    sources: list[str] = []
+    digest = hashlib.sha256()
+    for source_name in names:
+        path = site_root / source_name
+        if not path.exists():
+            raise SystemExit(f"missing module script: {path}")
+        data = path.read_bytes()
+        digest.update(source_name.encode("utf-8"))
+        digest.update(data)
+        sources.append(data.decode("utf-8"))
+    bundle_name = f"bundle-{digest.hexdigest()[:16]}.js"
+    header = (
+        "/* twsaimahui 模块脚本合并包（顺序与原文档一致）\n"
+        + "".join(f" *   {name}\n" for name in names)
+        + " */\n"
+    )
+    body = header + "\n;\n".join(sources) + "\n"
+    return bundle_name, body, len(body.encode("utf-8"))
+
+
+def rebuild() -> int:
+    """按 ``bundles.json`` 记录的来源清单重建 bundle（源文件改动后重新合并）。
+
+    页面已经合并完毕时 ``build`` 无事可做（没有可合并区间），但**源文件仍会被继续修改**
+    （例如修判定条件）。此时必须重算正文与内容哈希文件名，否则：
+    1. bundle 正文与源文件不一致（站点实际加载的是 bundle）；
+    2. 文件名哈希与内容不符，浏览器长缓存拿不到新代码。
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rebuild", action="store_true")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--site-root", default=str(SITE_ROOT))
+    args = parser.parse_args()
+
+    site_root = pathlib.Path(args.site_root)
+    manifest_path = site_root / "static/js/bundles.json"
+    if not manifest_path.exists():
+        raise SystemExit("missing static/js/bundles.json; run the merge step first")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    index = site_root / "index.html"
+    html = index.read_text(encoding="utf-8")
+
+    records: list[dict] = []
+    renamed: list[tuple[str, str]] = []
+    for record in manifest.get("runs") or []:
+        names = [str(name) for name in (record.get("sources") or [])]
+        if not names:
+            raise SystemExit("bundles.json run without sources")
+        bundle_name, body, byte_count = compose_bundle(site_root, names)
+        old_name = pathlib.Path(str(record.get("bundle") or "")).name
+        records.append(
+            {
+                "bundle": f"static/js/{bundle_name}",
+                "sources": names,
+                "bytes": byte_count,
+            }
+        )
+        if old_name and old_name != bundle_name:
+            renamed.append((old_name, bundle_name))
+        if args.apply:
+            target = site_root / "static/js" / bundle_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8", newline="")
+            if old_name and old_name != bundle_name:
+                stale = site_root / "static/js" / old_name
+                if stale.exists():
+                    stale.unlink()
+        print(f"  {len(names):2} sources -> {bundle_name} ({byte_count / 1024:.1f} KB)")
+
+    if not args.apply:
+        print("dry-run: nothing written")
+        return 0
+
+    updated = html
+    for old_name, new_name in renamed:
+        updated = updated.replace(f"static/js/{old_name}", f"static/js/{new_name}")
+    if updated != html:
+        index.write_text(updated, encoding="utf-8", newline="")
+
+    manifest["runs"] = records
+    manifest["generated_by"] = "scripts/bundle-twsaimahui-modules.py --rebuild"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline=""
+    )
+    print(f"rebuild done: {len(records)} bundle(s), {len(renamed)} renamed")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--rebuild" in sys.argv:
+        sys.exit(rebuild())
     sys.exit(build())

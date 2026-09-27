@@ -4130,7 +4130,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getDsxiao?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -4161,7 +4161,9 @@ $.ajax({
                 }
 
                 let c = `${ds[0]}`;
+                let dsHit = false;
                 if (sx && dsv[0].indexOf(sx) !== -1) {
+                    dsHit = true;
                     c = `<span style="background-color: #FFFF00">${ds[0]}</span>`
                 }
 
@@ -4176,10 +4178,15 @@ $.ajax({
                     }
                 }
 
+                // 「单双选1（6肖分类池）+ 生肖选2」= 两个维度，任一维度命中即算命中。
+                // 历史资料里 content 分类池与 xiao 候选生肖互斥，二者合计覆盖 8/12 生肖，
+                // 只判 xiao 会把分类池命中的那一半全部误判成"错"（全部显示错的根因）。
+                let hit = dsHit || zj;
+
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40><b>
-<font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期本期买</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c}+${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】中特开</font><font color='#FF0000' style='font-size: 14pt; background-color:#FFFF00' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}${zj?'准':'错'}</font> </font></b></td>
+<font color='#0000FF' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期本期买</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c}+${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】中特开</font><font color='#FF0000' style='font-size: 14pt; background-color:#FFFF00' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}${ (sx?( hit?'准':'错'):'??')}</font> </font></b></td>
 </tr>
  
             `

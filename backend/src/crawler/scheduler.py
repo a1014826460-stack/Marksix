@@ -322,14 +322,14 @@ def _compute_hk_macau_default_next_time_ms(db_path: str | Path, lottery_type_id:
     from calendar import timegm
 
     cfg_key = "draw.hk_default_draw_time" if lottery_type_id == 1 else "draw.macau_default_draw_time"
-    time_str = str(_cfg(db_path, cfg_key, "21:30")).strip()
+    default_clock = "21:30" if lottery_type_id == 1 else "21:32"
+    time_str = str(_cfg(db_path, cfg_key, default_clock)).strip()
     try:
         parts = time_str.split(":")
         hour = int(parts[0])
         minute = int(parts[1]) if len(parts) > 1 else 0
     except (ValueError, IndexError):
-        hour = 21
-        minute = 30
+        hour, minute = (21, 30) if lottery_type_id == 1 else (21, 32)
 
     now_utc = datetime.now(timezone.utc)
     beijing_now = now_utc + timedelta(hours=8)

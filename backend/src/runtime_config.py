@@ -269,9 +269,9 @@ CONFIG_DEFAULTS: dict[str, dict[str, Any]] = {
         "is_secret": 0,
     },
     "draw.macau_default_draw_time": {
-        "value": "21:30",
+        "value": "21:32",
         "value_type": "string",
-        "description": "初始澳门彩开奖时间。",
+        "description": "初始澳门彩开奖时间（与线上实际开奖钟点一致）。",
         "is_secret": 0,
     },
     "draw.taiwan_default_draw_time": {
