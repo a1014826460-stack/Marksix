@@ -1695,3 +1695,41 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   （判定本身正确，已用生产库 `267/266/265/263/262/261` 逐期核对）。
   如需与该模块一致，可把三组标签全部渲染，属独立展示改动，本次未改。
 
+
+### twcaibawang 判定/高亮整改 + 四字玄机候选池部署结果（2026-09-27）
+
+- 发布提交：`5037b55`（twcaibawang 判定与高亮、琴棋书画改版、mode 52 候选池与五期唯一）
+  + `70bb511`（发布脚本支持自定义备份标签、自检加 twcaibawang），已推送 `origin/main`
+  （`c46f777..5037b55..70bb511`）。本轮同时把上一轮 tw8800 的 `c46f777` 一起带上线。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/twcaibawang-verdict-20260927T160558Z`
+  （部署前 HEAD `14d4a37`，`git merge --ff-only` 同步 42 个文件）；
+  重建 `python-api`、`scheduler-worker`、`frontend`；`nginx -t` 通过；
+  `liuhecai-frontend` / `liuhecai-python-api` 恢复正常。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/twcaibawang-verdict-20260927T161506Z`；
+  仅重建 `frontend`（nginx/TLS 与其他容器未改动）；六站自检均 200。
+- 生产数据写入（用户授权）：在 `python-api` 容器内执行
+  `insert_mode_52_sizixuanji_pool()`，向 `public.text_history_mappings` 写入
+  `mode_id = 52` 的 **49 组 (title, jiexi)**：写入前 0 行 → 写入后 49 行、配对 49 行；
+  脚本为 `INSERT ... ON CONFLICT DO NOTHING`，**未修改任何已生成的预测行**。
+  备份目录 `/root/Marksix/.deploy-backups/mode52-seed-20260927T161644Z`（写入前后快照）。
+  写入后只读复核：生成端 12 次抽样得到 **11 个不同标题、0 组未配对**；
+  `_load_three_period_text_payloads(conn, 52)` 返回 49 条且全部带 `jiexi`；
+  `display_unique_window(52) = 5`、`display_unique_window(62) = 5`。
+- 公网验收（`https://www.twcaibawang.com/`，Playwright 实开）：
+  - **0 个 JS 报错**；`#jsyb`（绝杀一波）容器数 = **1**（重复模块已消除）。
+  - 逐期独立复算 115 行判定文字 + 黄底位置：**0 差异**。
+  - 各模块对/错分布：9肖中特 7:1、绝杀一波 8:0、双波 6:2、24码 3:5、必杀一肖 8:0、
+    天地两肖 4:4、四段中特 4:4、稳杀10码 8:0、四行中特 7:1、四头中特 6:2、
+    六肖十八码 3:5、公开一肖一码 1:7、双波12码 6:2、琴棋书画 准6:错2。
+  - 修复前对照：双波/24码/六肖十八码等因接口 `is_correct = null` 恒显示「对」或没有判定；
+    四段中特因 `_compute_outcome_from_row` 缺段位标签**恒显示「错」**（269 期特码 46
+    明明落在预测的 7 段里）。
+- 同期回归（`https://www.tw8800.com/vendor/shengshi8800/embed.html`）：
+  14 个模块逐期独立复算 **0 差异、0 JS 报错**；三期中特按接口新字段
+  `period_zodiacs` 复算得 `263-265 中1期 / 266-268 中1期 / 269-271 中0期`，
+  与生产库同源 loader 的复算完全一致（`269-271` 正是「中0期」场景）。
+- 遗留说明：`天地两肖` 采用「天肖/地肖群 ∪ 两肖」并集判定（vendor 接口只比对那两肖，
+  会让天地肖永不参与判定）；`公开一肖一码` 沿用后端「特肖或特码命中即对」；
+  `琴棋书画` 按需求样例使用「准/错」，其余 12 个模块统一「对/错」。以上均已与用户确认。
