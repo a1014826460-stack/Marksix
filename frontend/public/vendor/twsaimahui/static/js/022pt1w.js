@@ -18,7 +18,7 @@
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])

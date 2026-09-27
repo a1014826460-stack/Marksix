@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getFsx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -7,8 +7,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let feix = '';
-        let soux = '';
+        // fixed_data「肥瘦肖」：肥肖/瘦肖 两组固定。
+        let feix = '龙虎猴鼠牛猪';
+        let soux = '狗兔蛇马羊鸡';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -19,7 +20,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])

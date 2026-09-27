@@ -2,7 +2,7 @@
   "generated_by": "scripts/bundle-twsaimahui-modules.py --rebuild",
   "runs": [
     {
-      "bundle": "static/js/bundle-2cb4846e0d092963.js",
+      "bundle": "static/js/bundle-2b3e22539a9cff5a.js",
       "sources": [
         "static/js/061jy2x.js",
         "static/js/033zuoyou.js",
@@ -62,15 +62,15 @@
         "static/js/048hllx.js",
         "static/js/052qqsh.js"
       ],
-      "bytes": 330714
+      "bytes": 332286
     },
     {
-      "bundle": "static/js/bundle-3ba6a4019a548a92.js",
+      "bundle": "static/js/bundle-ffb466f22129f455.js",
       "sources": [
         "static/js/054sbanbo.js",
         "static/js/055sbands.js"
       ],
-      "bytes": 11903
+      "bytes": 11511
     }
   ],
   "module_scripts_before": 59,

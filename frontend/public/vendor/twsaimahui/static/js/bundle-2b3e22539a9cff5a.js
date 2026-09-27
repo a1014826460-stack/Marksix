@@ -114,7 +114,7 @@ window.apiClient.get('/api/kaijiang/getJyxiao2', { web: window.web, type: window
     });
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getZyx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -123,8 +123,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let zx = '';
-        let yx = '';
+        // fixed_data「左右肖」：左肖/右肖 两组固定，缺一组时用固定值兜底，避免说明行留空。
+        let zx = '鼠牛龙蛇猴鸡';
+        let yx = '虎兔马羊狗猪';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -135,7 +136,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -401,7 +402,7 @@ window.apiClient.get('/api/kaijiang/getXiaoma2', { web: window.web, type: window
     });
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getYysx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -410,8 +411,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let yinx = '';
-        let yangx = '';
+        // fixed_data「阴阳肖」：阴肖/阳肖 两组固定。
+        let yinx = '鼠龙蛇马狗猪';
+        let yangx = '牛虎兔羊猴鸡';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -422,7 +424,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -1345,7 +1347,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getHeds?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -1365,9 +1367,16 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, String(d.content || '').trim() ? [String(d.content)] : []);
                 for (let i in content) {
                     let c = content[i].split('|');
+                    if (c.length < 2 || !c[1]) {
+                        // 供给数据可能是 `合双` 这种纯标签（没有 `标签|号码` 结构），
+                        // 旧实现直接 JSON.parse 会抛错并让整个模块渲染不出来。
+                        xiao.push(c[0]);
+                        xiaoV[i] = '';
+                        continue;
+                    }
                     xiao.push(c[0])
                     xiaoV[i] = c[1];
                     if (c[0] === '阴肖') {
@@ -2072,7 +2081,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getZhongte?web=${web}&type=${type}&num=5`,
     type: 'GET',
@@ -2090,7 +2099,18 @@ $.ajax({
                 let sxSplit = d.res_sx.split(',');
                 let code = codeSplit[codeSplit.length-1]||'';
                 let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // content 是 `["猴|11","鸡|10",…]` 这样的 JSON 数组；
+                // 旧实现直接 split(',') 会把 `["`/`"]`/引号原样打到页面上。
+                let items = [];
+                try {
+                    items = safeParseJSON(d.content, []);
+                } catch (error) {
+                    items = String(d.content || '').split(',');
+                }
+                if (!(items instanceof Array)) items = [];
+                let xiao = items
+                    .map(function (item) { return String(item).split('|')[0].replace(/[\[\]"']/g, '').trim(); })
+                    .filter(Boolean);
                 let xiaoV = [];
                 let ma = [];
 
@@ -2108,7 +2128,7 @@ $.ajax({
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>五肖中特</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>八肖中特</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
 </strong>
 </td>
 </tr>\t
@@ -2121,19 +2141,14 @@ ${d.term}期</strong><span class='styleliao'><strong>五肖中特</strong></span
 <tr>
 <td class='center f13 black l150' height='29' align='center' bgcolor='#FF0000'>
 <b>
-<font size='4'><font color='#FFFF00' face='微软雅黑'>&nbsp;</font><font face='微软雅黑'><font color='#FFFF00'> </font><font color='#FFFFFF'>隐刺五肖</font></font></font></b></td>
+<font size='4'><font color='#FFFF00' face='微软雅黑'>&nbsp;</font><font face='微软雅黑'><font color='#FFFF00'> </font><font color='#FFFFFF'>隐刺八肖</font></font></font></b></td>
 </tr>
 
 <tr>
 <td align='center' height=40 class='stylelxz'>
-<strong>【<span class='stylezi'><strong>特邀高手：隐刺 『五肖』</strong></span>】
+<strong>【<span class='stylezi'><strong>特邀高手：隐刺 『八肖』</strong></span>】
 </td>
 </tr>	
-<tr>
-<td align='center' height=40 class='stylelxz'>
-<span class='stylezi'><strong><a target='_blank' href='/tuizhan.html'>点击进入王中王全网高手会员区</a></strong></span>
-</td>
-</tr>\t
 
             ${htmlBoxList}
             </table>
@@ -2258,7 +2273,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
@@ -2865,7 +2880,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -3391,7 +3406,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -3632,7 +3647,7 @@ ${terms[0]}期</font></b></td>
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -5053,7 +5068,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getWwx?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -5061,8 +5076,9 @@ color: #FF0000;
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let wenx = '';
-        let wux = '';
+        // fixed_data「文武肖」：文肖/武肖 两组固定（武肖按库内写法保留「免」字）。
+        let wenx = '鼠免龙羊鸡猪';
+        let wux = '牛马虎蛇猴狗';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -5235,7 +5251,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -5338,7 +5354,7 @@ color: #FF0000;
 */
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getYwx?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -5346,8 +5362,9 @@ color: #FF0000;
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let yx = '';
-        let wx = '';
+        // fixed_data「有无肖」：有肖/无肖 两组固定。
+        let yx = '龙蛇猴鸡狗猪';
+        let wx = '鼠牛虎兔马羊';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -6387,7 +6404,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
@@ -6525,7 +6542,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
@@ -7352,7 +7369,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCypt?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -7382,10 +7399,13 @@ color: #FF0000;
                 }else {
                     c1.push(`<span>${d.title}</span>`)
                 }
+                // 开奖结果固定显示本期真实特码；命中时高亮成语，未命中不高亮。
+                // 旧写法在成语里找不到开奖生肖时显示 `？00`，看起来像未开奖。
+                let resTxt = sx ? `${sx}${code}` : '？00';
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>成语平特肖</strong></span>:【<span class='stylezi'><strong>${c1[0]}</strong></span><strong>】 开:${(index !== undefined ? sxSplit[index] : '？')}${(index !== undefined ? codeSplit[index] : '00')}${ (sx?( b?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>成语平特肖</strong></span>:【<span class='stylezi'><strong>${c1[0]}</strong></span><strong>】 开:${resTxt}${ (sx?( b?'准':'错'):'??')}
 </strong>
 </td>
 </tr>
@@ -7955,7 +7975,7 @@ ${c1.slice(0,9).join('')}</font></td>
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -8084,7 +8104,7 @@ ${c1.slice(0,9).join('')}</font></td>
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -8302,7 +8322,7 @@ window.apiClient.get('/api/kaijiang/sbzt', { web: window.web, type: window.type,
     let xiao = [];
     let xiaoV = [];
     let ma = [];
-    let content = JSON.parse(d.content);
+    let content = safeParseJSON(d.content, []);
     for (let i in content) {
      let c = content[i].split('|');
      xiao.push(c[0])
@@ -8520,7 +8540,7 @@ window.apiClient.get('/api/kaijiang/sbzt', { web: window.web, type: window.type,
 
 
 ;
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getJmxc?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -8529,8 +8549,10 @@ window.apiClient.get('/api/kaijiang/sbzt', { web: window.web, type: window.type,
 
         let data = response.data
         let attach = response.attach || [];
-        let jm = attach[1] && attach[1].code ? attach[1].code : '';
-        let xc = attach[0] && attach[0].code ? attach[0].code : '';
+        // fixed_data「凶丑吉美生肖」：接口带 attach 时用它，缺失时用固定分组兜底，
+        // 避免说明行 `吉美生肖:` / `凶丑生肖:` 留空。
+        let jm = attach[1] && attach[1].code ? attach[1].code : '兔龙蛇马羊鸡';
+        let xc = attach[0] && attach[0].code ? attach[0].code : '鼠牛虎猴狗猪';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -8716,7 +8738,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
@@ -9019,7 +9041,7 @@ color: #FF0000;
 
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getFsx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -9028,8 +9050,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let feix = '';
-        let soux = '';
+        // fixed_data「肥瘦肖」：肥肖/瘦肖 两组固定。
+        let feix = '龙虎猴鼠牛猪';
+        let soux = '狗兔蛇马羊鸡';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -9040,7 +9063,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
@@ -9400,7 +9423,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].substring(0,2))
@@ -9566,7 +9589,7 @@ color: #FF0000;
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])

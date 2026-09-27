@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getHeds?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -18,9 +18,16 @@
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, String(d.content || '').trim() ? [String(d.content)] : []);
                 for (let i in content) {
                     let c = content[i].split('|');
+                    if (c.length < 2 || !c[1]) {
+                        // 供给数据可能是 `合双` 这种纯标签（没有 `标签|号码` 结构），
+                        // 旧实现直接 JSON.parse 会抛错并让整个模块渲染不出来。
+                        xiao.push(c[0]);
+                        xiaoV[i] = '';
+                        continue;
+                    }
                     xiao.push(c[0])
                     xiaoV[i] = c[1];
                     if (c[0] === '阴肖') {

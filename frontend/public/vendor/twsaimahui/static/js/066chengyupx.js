@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getCypt?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -28,10 +28,13 @@
                 }else {
                     c1.push(`<span>${d.title}</span>`)
                 }
+                // 开奖结果固定显示本期真实特码；命中时高亮成语，未命中不高亮。
+                // 旧写法在成语里找不到开奖生肖时显示 `？00`，看起来像未开奖。
+                let resTxt = sx ? `${sx}${code}` : '？00';
                 htmlBoxList += ` 
 <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>成语平特肖</strong></span>:【<span class='stylezi'><strong>${c1[0]}</strong></span><strong>】 开:${(index !== undefined ? sxSplit[index] : '？')}${(index !== undefined ? codeSplit[index] : '00')}${ (sx?( b?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>成语平特肖</strong></span>:【<span class='stylezi'><strong>${c1[0]}</strong></span><strong>】 开:${resTxt}${ (sx?( b?'准':'错'):'??')}
 </strong>
 </td>
 </tr>

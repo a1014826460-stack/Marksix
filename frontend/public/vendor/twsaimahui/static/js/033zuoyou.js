@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getZyx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -7,8 +7,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let zx = '';
-        let yx = '';
+        // fixed_data「左右肖」：左肖/右肖 两组固定，缺一组时用固定值兜底，避免说明行留空。
+        let zx = '鼠牛龙蛇猴鸡';
+        let yx = '虎兔马羊狗猪';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -19,7 +20,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])

@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getJmxc?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -7,8 +7,10 @@
 
         let data = response.data
         let attach = response.attach || [];
-        let jm = attach[1] && attach[1].code ? attach[1].code : '';
-        let xc = attach[0] && attach[0].code ? attach[0].code : '';
+        // fixed_data「凶丑吉美生肖」：接口带 attach 时用它，缺失时用固定分组兜底，
+        // 避免说明行 `吉美生肖:` / `凶丑生肖:` 留空。
+        let jm = attach[1] && attach[1].code ? attach[1].code : '兔龙蛇马羊鸡';
+        let xc = attach[0] && attach[0].code ? attach[0].code : '鼠牛虎猴狗猪';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]

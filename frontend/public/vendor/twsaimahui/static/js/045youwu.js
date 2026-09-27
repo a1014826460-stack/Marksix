@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getYwx?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -6,8 +6,9 @@
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let yx = '';
-        let wx = '';
+        // fixed_data「有无肖」：有肖/无肖 两组固定。
+        let yx = '龙蛇猴鸡狗猪';
+        let wx = '鼠牛虎兔马羊';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]

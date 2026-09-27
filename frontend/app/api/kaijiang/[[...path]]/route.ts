@@ -2270,9 +2270,9 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
         const payload = await fetchLegacyRows(url, 155, 10)
 
-        const mapped = mapJiMeiXiongChou(payload.rows)
-
-        return jsonResponse(mapped.data)
+        // 返回 { data, attach }：前台用 attach 渲染「吉美生肖 / 凶丑生肖」两行分组说明，
+        // 只返回 data 会让说明行留空。
+        return jsonResponse(mapJiMeiXiongChou(payload.rows))
 
       }
 

@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getZhongte?web=${web}&type=${type}&num=5`,
     type: 'GET',
@@ -16,7 +16,18 @@ $.ajax({
                 let sxSplit = d.res_sx.split(',');
                 let code = codeSplit[codeSplit.length-1]||'';
                 let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // content 是 `["猴|11","鸡|10",…]` 这样的 JSON 数组；
+                // 旧实现直接 split(',') 会把 `["`/`"]`/引号原样打到页面上。
+                let items = [];
+                try {
+                    items = safeParseJSON(d.content, []);
+                } catch (error) {
+                    items = String(d.content || '').split(',');
+                }
+                if (!(items instanceof Array)) items = [];
+                let xiao = items
+                    .map(function (item) { return String(item).split('|')[0].replace(/[\[\]"']/g, '').trim(); })
+                    .filter(Boolean);
                 let xiaoV = [];
                 let ma = [];
 
@@ -34,7 +45,7 @@ $.ajax({
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>五肖中特</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>八肖中特</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
 </strong>
 </td>
 </tr>\t
@@ -47,19 +58,14 @@ ${d.term}期</strong><span class='styleliao'><strong>五肖中特</strong></span
 <tr>
 <td class='center f13 black l150' height='29' align='center' bgcolor='#FF0000'>
 <b>
-<font size='4'><font color='#FFFF00' face='微软雅黑'>&nbsp;</font><font face='微软雅黑'><font color='#FFFF00'> </font><font color='#FFFFFF'>隐刺五肖</font></font></font></b></td>
+<font size='4'><font color='#FFFF00' face='微软雅黑'>&nbsp;</font><font face='微软雅黑'><font color='#FFFF00'> </font><font color='#FFFFFF'>隐刺八肖</font></font></font></b></td>
 </tr>
 
 <tr>
 <td align='center' height=40 class='stylelxz'>
-<strong>【<span class='stylezi'><strong>特邀高手：隐刺 『五肖』</strong></span>】
+<strong>【<span class='stylezi'><strong>特邀高手：隐刺 『八肖』</strong></span>】
 </td>
 </tr>	
-<tr>
-<td align='center' height=40 class='stylelxz'>
-<span class='stylezi'><strong><a target='_blank' href='/tuizhan.html'>点击进入王中王全网高手会员区</a></strong></span>
-</td>
-</tr>\t
 
             ${htmlBoxList}
             </table>

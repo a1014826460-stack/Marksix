@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getWwx?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -6,8 +6,9 @@
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let wenx = '';
-        let wux = '';
+        // fixed_data「文武肖」：文肖/武肖 两组固定（武肖按库内写法保留「免」字）。
+        let wenx = '鼠免龙羊鸡猪';
+        let wux = '牛马虎蛇猴狗';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]

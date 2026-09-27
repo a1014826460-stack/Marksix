@@ -1,4 +1,4 @@
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getYysx?web=${web}&type=${type}&num=2`,
     type: 'GET',
@@ -7,8 +7,9 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        let yinx = '';
-        let yangx = '';
+        // fixed_data「阴阳肖」：阴肖/阳肖 两组固定。
+        let yinx = '鼠龙蛇马狗猪';
+        let yangx = '牛虎兔羊猴鸡';
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -19,7 +20,7 @@ $.ajax({
                 let xiao = [];
                 let xiaoV = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                let content = safeParseJSON(d.content, []);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
