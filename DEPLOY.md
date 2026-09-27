@@ -1533,3 +1533,25 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   （源文件 + 站点实际加载的 bundle 双查 + 真实 9 期判定核对）通过；
   `twsaimahui-bundle-contract.mjs` 通过；`node --check` 通过；
   后端全量 **916 passed / 17 skipped / 1 failed**（既有 nginx health 契约）。
+
+### tw8800 判定与八肖显示修复部署结果（2026-09-27）
+
+- 发布提交：`32481e0`（`896ecea` 三期不同规则 + `4f9ba35` 全站判定 + `32481e0` 八肖显示/文档），
+  已推送 `origin/main`（`31025ed..32481e0`）。
+- 中心节点 `207.56.3.82:29618`：备份目录
+  `/root/Marksix/.deploy-backups/tw8800-verdict-20260927T134420Z`
+  （含 `docker-compose.yml`、`.env`、`deploy/nginx.conf`、`HEAD.txt`、`status.txt`、`worktree.patch`、`untracked.txt`）；
+  `git merge --ff-only` 同步 42 个文件；重建 `python-api`、`scheduler-worker`、`frontend`；
+  `nginx -t` 通过；`liuhecai-frontend`、`liuhecai-python-api` 均为 `healthy`。
+  容器内校验：判定模块 414 行、`5xiao.js` 含「八肖中特」2 处、`slice(0, 5)` 残留 0 处。
+- 前端节点 `207.56.2.71:62594`：备份目录
+  `/root/Marksix/.deploy-backups/tw8800-verdict-20260927T135458Z`；
+  仅重建 `frontend`（`nginx` 与 TLS 未改动），`nginx -t` 通过，`liuhecai-frontend` `healthy`。
+- 公网核查（浏览器直开 `https://www.tw8800.com/vendor/shengshi8800/index.html`，20 个模块区块、152 行）：
+  **显示「准」39 行 / 显示「错」25 行**，未发现「未命中却显示准」；
+  `八肖中特` 每行显示满 **8 肖**（标题已由「五肖中特」改为「八肖中特」）。
+- 已知展示口径（非判定错误）：`肉菜草肖`(mode 3) 每期候选是 肉/菜/草 **三组中的两组**，
+  页面只渲染前两组标签，因此当特肖落在未渲染的第三组时「准」缺少可见依据
+  （判定本身正确，已用生产库 `267/266/265/263/262/261` 逐期核对）。
+  如需与该模块一致，可把三组标签全部渲染，属独立展示改动，本次未改。
+
