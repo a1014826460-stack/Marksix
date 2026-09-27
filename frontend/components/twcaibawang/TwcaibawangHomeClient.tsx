@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import type { PublicModule, PublicSitePageData } from "@/lib/site-page"
@@ -42,13 +42,13 @@ const LOTTERY_TYPE_OPTIONS: LotteryTypeOption[] = [
 ]
 
 const GENERIC_MODULES: GenericModuleConfig[] = [
-  { anchor: "qqsh", title: "琴棋书画", mechanismKey: "qinqi", face: "微软雅黑", predictionColor: "#FF0000" },
   { anchor: "szpt", title: "四字平特", mechanismKey: "sizixuanji", face: "微软雅黑", predictionColor: "#FF0000" },
   { anchor: "yjbt", title: "一句真言", mechanismKey: "yijuzhenyan", face: "微软雅黑", predictionColor: "#008000" },
   { anchor: "bz9x", title: "9肖中特", mechanismKey: "9xzt", face: "微软雅黑", predictionColor: "#FF0000" },
   { anchor: "sxjh3", title: "三期4肖", mechanismKey: "title_197", face: "微软雅黑", predictionColor: "#0000FF" },
   { anchor: "x912m", title: "9肖12码", mechanismKey: "9xiao12ma", face: "华文中宋", predictionColor: "#FF9900" },
-  { anchor: "jsyb", title: "绝杀一波", mechanismKey: "jueshabanbo", face: "微软雅黑", predictionColor: "#0000FF" },
+  // 绝杀一波由 renderJueshabanbo 单独渲染（见 buildPageHtml），
+  // 这里若再放一份会造成页面出现两个 #jsyb 模块。
 ]
 
 function escapeHtml(value: unknown) {
@@ -342,6 +342,82 @@ function mapColorToWave(color: string) {
   return ""
 }
 
+/**
+ * 号码 -> 波色（与库内 res_color 的标准分组一致：红 17 / 蓝 16 / 绿 16）。
+ * 用于双波 / 双波12码等模块自行判定命中，因为这些模块的
+ * `is_correct` 接口返回 null（无法由后端判定）。
+ */
+const COLOR_BY_CODE: Record<string, "red" | "blue" | "green"> = (() => {
+  const map: Record<string, "red" | "blue" | "green"> = {}
+  const put = (codes: string, name: "red" | "blue" | "green") => {
+    codes.split(",").forEach((code) => {
+      map[code] = name
+    })
+  }
+  put("01,02,07,08,12,13,18,19,23,24,29,30,34,35,40,45,46", "red")
+  put("03,04,09,10,14,15,20,25,26,31,36,37,41,42,47,48", "blue")
+  put("05,06,11,16,17,21,22,27,28,32,33,38,39,43,44,49", "green")
+  return map
+})()
+
+function waveLabelOfCode(code: string) {
+  const color = COLOR_BY_CODE[String(code || "").padStart(2, "0")]
+  return color ? mapColorToWave(color) : ""
+}
+
+/** 号码 -> 半波标签（如 `蓝双` / `绿单`），用于绝杀一波的命中复算。 */
+function halfWaveLabelOfCode(code: string) {
+  const wave = waveLabelOfCode(code)
+  if (!wave) return ""
+  const value = Number.parseInt(String(code), 10)
+  // 库内半波标签写作「蓝双 / 绿单」（不带「波」字）
+  return `${wave.replace(/波$/, "")}${value % 2 === 0 ? "双" : "单"}`
+}
+
+function headDigitOfCode(code: string) {
+  return String(code || "").charAt(0)
+}
+
+/** 开奖结果里的特码号码 / 特肖（未开奖返回空串）。 */
+function specialPartsOf(resultText: string, isOpened: boolean) {
+  if (!isOpened) return { code: "", sx: "" }
+  const parts = parseResultParts(resultText)
+  return { code: parts.code, sx: parts.sx }
+}
+
+/**
+ * 统一的命中判定：接口已能给结论时用接口；接口返回 null（无法判定）时用本地复算。
+ * 这样「对/错」不会因为 is_correct=null 而恒定显示同一个值。
+ */
+function resolveJudgement(apiValue: boolean | null | undefined, computed: boolean | null) {
+  if (apiValue === true || apiValue === false) return apiValue
+  return computed
+}
+
+/** 命中判定文字：只显示「对」或「错」；未开奖只显示开奖结果的占位。 */
+function renderJudgeResult(
+  resultText: string,
+  isOpened: boolean,
+  isCorrect: boolean | null,
+  pending = "???????"
+) {
+  return renderResultWithCustomJudge(resultText, isOpened, isCorrect, {
+    pending,
+    hitText: "对",
+    missText: "错",
+  })
+}
+
+/** 在 `标签|号码` 条目里找出包含该号码的标签（找不到返回空串）。 */
+function labelForCode(
+  entries: Array<{ label: string; codes: string[] }>,
+  code: string
+) {
+  if (!code) return ""
+  const normalized = code.padStart(2, "0")
+  return entries.find((entry) => entry.codes.includes(normalized))?.label || ""
+}
+
 function parsePt1WeiTriple(prediction: string) {
   const match = prediction.match(/(\d)尾/)
   return match ? match[1].repeat(3) : prediction
@@ -467,9 +543,14 @@ function renderPublicYixiaoYima(
   if (!module?.history?.length) return ""
   const rows = module.history
     .map((row) => {
+      const { code: hitCode, sx: hitSx } = specialPartsOf(row.result.result_text, row.result.is_opened)
       const isHit =
         row.result.is_opened && row.result.res_sx === row.best_pick.xiao && row.result.res_code === row.best_pick.code
-      const finalText = row.result.is_opened ? (isHit ? "100%,中！" : "未中") : "待开"
+      const isCorrect = resolveJudgement(row.is_correct, row.result.is_opened ? isHit : null)
+      // 每一档分组单独按「特肖 / 特码是否落在该档」标黄，命中档位才是有效映射
+      const xiaoCell = (items: string[]) => renderFontList(items, row.result.is_opened ? hitSx : "")
+      const codeCell = (items: string[]) => renderDottedCodes(items, row.result.is_opened ? hitCode : "")
+      const bestHit = isCorrect === true
       return `<div class="neimu">
                 <table width="100%" border="1">
     <thead>
@@ -486,7 +567,7 @@ function renderPublicYixiaoYima(
         <td style="text-align: left" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">${escapeHtml(row.term)}期推荐九肖:</font>
-                <font color="#FF0000">${renderFontList(row.xiao_groups.xiao_9)}</font>
+                <font color="#FF0000">${xiaoCell(row.xiao_groups.xiao_9)}</font>
                 <font color="#0000FF">~~稳准狠</font>
             </font>
         </td>
@@ -495,7 +576,7 @@ function renderPublicYixiaoYima(
         <td style="text-align: left" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">${escapeHtml(row.term)}期推荐七肖:</font>
-                <font color="#FF0000">${renderFontList(row.xiao_groups.xiao_7)}</font>
+                <font color="#FF0000">${xiaoCell(row.xiao_groups.xiao_7)}</font>
                 <font color="#0000FF">~~稳准狠</font>
             </font>
         </td>
@@ -504,7 +585,7 @@ function renderPublicYixiaoYima(
         <td style="text-align: left; height: 37px;" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">${escapeHtml(row.term)}期推荐五肖:</font>
-                <font color="#FF0000">${renderFontList(row.xiao_groups.xiao_5)}</font>
+                <font color="#FF0000">${xiaoCell(row.xiao_groups.xiao_5)}</font>
                 <font color="#0000FF">~~稳准狠</font></font>
         </td>
     </tr>
@@ -512,7 +593,7 @@ function renderPublicYixiaoYima(
         <td style="text-align: left; height: 37px;" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">${escapeHtml(row.term)}期推荐三肖:</font>
-                <font color="#FF0000">${renderFontList(row.xiao_groups.xiao_3)}</font>
+                <font color="#FF0000">${xiaoCell(row.xiao_groups.xiao_3)}</font>
                 <font color="#0000FF">~~稳准狠</font></font>
         </td>
     </tr>
@@ -520,14 +601,14 @@ function renderPublicYixiaoYima(
         <td style="text-align: left" bgcolor="#FFFFFF">
             <font face="微软雅黑" style="font-size: 11pt">
                 <font color="#000000">精选14码:</font>
-                <font color="#FF0000">${renderDottedCodes(row.code_groups.code_14)}</font></font>
+                <font color="#FF0000">${codeCell(row.code_groups.code_14)}</font></font>
         </td>
     </tr>
     <tr>
         <td style="text-align: left" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">精选8码:</font>
-                <font color="#FF0000">${renderDottedCodes(row.code_groups.code_8)}</font>
+                <font color="#FF0000">${codeCell(row.code_groups.code_8)}</font>
                 <font color="#0000FF">~已确定100%</font>
             </font>
         </td>
@@ -536,7 +617,7 @@ function renderPublicYixiaoYima(
         <td style="text-align: left" bgcolor="#FFFFFF">
             <font face="微软雅黑">
                 <font color="#000000">精选5码:</font>
-                <font color="#FF0000">${renderDottedCodes(row.code_groups.code_5)}</font>
+                <font color="#FF0000">${codeCell(row.code_groups.code_5)}</font>
                 <font color="#0000FF">~已确定100%</font></font>
         </td>
     </tr>
@@ -545,8 +626,8 @@ function renderPublicYixiaoYima(
             <p style="text-align: center">
                 <font color="#000000" face="微软雅黑">本期推荐一肖一码(</font>
                 <font color="#FF0000" face="微软雅黑">
-                    <span style="font-size: 1.5em"><font>${escapeHtml(row.best_pick.xiao)}</font><font>${escapeHtml(row.best_pick.code)}</font></span></font>
-                <font color="#000000" face="微软雅黑">)${finalText}</font></p>
+                    <span style="font-size: 1.5em"><font>${highlightIf(escapeHtml(row.best_pick.xiao), bestHit && row.best_pick.xiao === hitSx)}</font><font>${highlightIf(escapeHtml(row.best_pick.code), bestHit && row.best_pick.code === hitCode)}</font></span></font>
+                <font color="#000000" face="微软雅黑">)开${renderJudgeResult(row.result.result_text, row.result.is_opened, isCorrect)}</font></p>
         </td>
     </tr>
     </tbody>
@@ -590,6 +671,22 @@ function renderShujinguang(
         </div>`
 }
 
+/**
+ * 天地肖固定分组（与 fixed_data「天地肖」及 mode_payload_5 的 content 一致）：
+ * 天肖 = 兔马猴猪牛龙，地肖 = 鼠虎蛇羊鸡狗。
+ */
+const TIANDI_ZODIACS: Record<string, string[]> = {
+  天肖: ["兔", "马", "猴", "猪", "牛", "龙"],
+  地肖: ["鼠", "虎", "蛇", "羊", "鸡", "狗"],
+}
+
+function tiandiZodiacsOf(label: string) {
+  const text = String(label || "").trim()
+  if (text.startsWith("天")) return TIANDI_ZODIACS.天肖
+  if (text.startsWith("地")) return TIANDI_ZODIACS.地肖
+  return []
+}
+
 function renderTiandi2Xiao(
   module: Extract<VendorHomepageModule, { module_key: "tiandi_2xiao" }> | undefined,
   lotteryTypeId: 1 | 2 | 3
@@ -597,18 +694,25 @@ function renderTiandi2Xiao(
   if (!module?.history?.length) return ""
   const rows = module.history
     .map((row) => {
-      const hitSx = row.result.res_sx
-      const tiandi = row.is_correct && !row.xiao_pair.includes(hitSx)
-        ? `<span style="background-color: #FFFF00">${escapeHtml(row.tiandi)}</span>`
-        : escapeHtml(row.tiandi)
+      const { sx: hitSx } = specialPartsOf(row.result.result_text, row.result.is_opened)
+      const tiandiGroup = tiandiZodiacsOf(row.tiandi)
+      // 天地两肖 = 天肖/地肖（6 肖）+ 两肖，特肖落在任一部分都算命中。
+      // 这里必须本地复算：vendor 接口的 is_correct 只比对那两肖，会让「天地肖」永远不参与判定，
+      // 也就永远不会被高亮。
+      const isCorrect = row.result.is_opened && hitSx
+        ? tiandiGroup.includes(hitSx) || row.xiao_pair.includes(hitSx)
+        : null
+
+      const tiandiHit = isCorrect === true && hitSx !== "" && tiandiGroup.includes(hitSx)
+      const tiandi = highlightIf(escapeHtml(row.tiandi), tiandiHit)
       const xiaoPair = row.xiao_pair
         .map((item) =>
-          row.is_correct && item === hitSx
+          isCorrect === true && item === hitSx
             ? `<span style="background-color: #FFFF00">${escapeHtml(item)}</span>`
             : escapeHtml(item)
         )
         .join("")
-      const result = renderPlainResult(row.result.result_text, row.result.is_opened, row.is_correct)
+      const result = renderJudgeResult(row.result.result_text, row.result.is_opened, isCorrect)
 
       return `<tr>
                     <td height="40" bgcolor="#FFFFFF">
@@ -697,8 +801,13 @@ function renderShuangbo12Ma(
   if (!module?.history?.length) return ""
   const rows = module.history
     .map((row) => {
-      const hitWave = mapColorToWave(row.result.res_color)
-      const hitCode = row.result.res_code
+      const { code: hitCode } = specialPartsOf(row.result.result_text, row.result.is_opened)
+      const hitWave = row.result.is_opened ? waveLabelOfCode(hitCode) : ""
+      // 双波12码：特码落在所预测的两个波之内才算命中（接口 is_correct 为 null，本地复算）
+      const isCorrect = resolveJudgement(
+        row.is_correct as boolean | null,
+        row.result.is_opened ? row.wave_groups.some((group) => group.label === hitWave) : null
+      )
       const groups = row.wave_groups
         .map((group, index) => {
           const color = group.label === "红波" ? "red" : group.label === "蓝波" ? "blue" : "green"
@@ -717,15 +826,16 @@ function renderShuangbo12Ma(
           return `${index > 0 ? `<font color="#FF0000"><br></font>` : ""}<font color="${color}">${label}:<font>${codes}</font></font>`
         })
         .join("")
+      const result = renderJudgeResult(row.result.result_text, row.result.is_opened, isCorrect)
 
       return `<tr>
                     <td height="40" bgcolor="#FFFFFF">
                         <p align="center">
                             <b>
                                 <font face="微软雅黑" size="4" color="#000000">${escapeHtml(row.term)}期</font>
-                                <font face="微软雅黑" size="4" color="#800000">【双波10码】</font>
+                                <font face="微软雅黑" size="4" color="#800000">【双波12码】</font>
                                 <font face="微软雅黑" size="4" color="#000000">开</font>
-                                <font face="微软雅黑" size="4" color="#FF0000">${row.is_opened ? escapeHtml(row.result.res_code + row.result.res_sx) : "?????"}</font>
+                                <font face="微软雅黑" size="4" color="#FF0000">${result}</font>
                                 <font face="微软雅黑" style="font-size: 14pt"><br>${groups}</font>
                             </b>
                         </p>
@@ -800,16 +910,21 @@ function renderShuangbo(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
         .split(/[,+，]/)
         .map((part) => part.trim())
         .filter(Boolean)
-      const resColor = String(row.raw?.res_color || "")
-      const hitWave = row.isOpened ? mapColorToWave(resColor.split(",").pop() || resColor) : ""
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const hitWave = row.isOpened ? waveLabelOfCode(hitCode) : ""
+      // 双波：特码落在所预测的两个波之内才算命中（site-page 的 is_correct 为 null，本地复算）
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitWave ? parts.includes(hitWave) : null
+      )
       const display = parts
-        .map((part) => highlightIf(escapeHtml(part), part === hitWave && row.isCorrect === true))
+        .map((part) => highlightIf(escapeHtml(part), hitWave !== "" && part === hitWave))
         .join("+")
       return `<tr>
                     <td width="100%" height="40">
                         <p align="center">
                             <font face="楷体" style="font-size: 14pt">
-                                <b>${escapeHtml(row.term)}期  <font color="#0000FF">【${display}】</font>开${renderPlainResult(row.result, row.isOpened, row.isCorrect, "??????")}</b></font>
+                                <b>${escapeHtml(row.term)}期  <font color="#0000FF">【${display}】</font>开${renderJudgeResult(row.result, row.isOpened, isCorrect, "??????")}</b></font>
                         </p>
                     </td>
                 </tr>`
@@ -831,18 +946,17 @@ function renderJuesha1Xiao(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
     .map((row) => {
       const triple = repeatPrediction(row.prediction)
       const isKillSuccess = row.isOpened && parseResultParts(row.result).sx !== row.prediction
-      const result = row.isOpened
-        ? isKillSuccess
-          ? `<font color="#FF0000">${escapeHtml(formatOpenResult(row.result))}对</font>`
-          : `${escapeHtml(formatOpenResult(row.result))}<font color="#000">错</font>`
-        : "?????"
+      const isCorrect = resolveJudgement(row.isCorrect, row.isOpened ? isKillSuccess : null)
+      // 杀中（特肖不在被杀之列）时给被杀生肖标黄
+      const killed = highlightIf(escapeHtml(triple), isCorrect === true)
+      const result = renderJudgeResult(row.result, row.isOpened, isCorrect, "?????")
       return `<tr>
                     <td height="39" bgcolor="#FFFFFF">
                         <p align="center">
                             <b>
                                 <font face="隶书" size="4">${escapeHtml(row.term)}期：</font>
                                 <font color="#008000" size="3" face="隶书">必杀一肖</font>
-                                <font color="#FF00FF" size="3" face="隶书">『${escapeHtml(triple)}』</font>
+                                <font color="#FF00FF" size="3" face="隶书">『${killed}』</font>
                                 <font face="隶书" size="4">开${result}</font></b>
                         </p>
                     </td>
@@ -929,13 +1043,14 @@ function renderMa24(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
     .map((row) => {
       const content = getRowContent(row)
       const codes = formatMa24Codes(content)
-      const hitCode = row.isOpened ? parseResultParts(row.result).code : ""
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const isCorrect = resolveJudgement(row.isCorrect, row.isOpened && hitCode ? codes.includes(hitCode) : null)
       const lines = chunkArray(codes, 8)
         .slice(0, 3)
         .map((line) =>
           line
             .map((code) =>
-              row.isCorrect === true && code === hitCode
+              isCorrect === true && code === hitCode
                 ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
                 : `<font>${escapeHtml(code)}</font>`
             )
@@ -945,7 +1060,7 @@ function renderMa24(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
 
       return `<tr>
                     <td width="100%" height="40">
-                        <p align="center"><b><font face="华文中宋" size="4" color="#CC3300"><span style="background-color: #FFFF00">${escapeHtml(String(row.term).padStart(3, "0"))}期${escapeHtml(regionName)}六合彩24码开:${renderOpenResultCodeOnly(row.result, row.isOpened)}</span></font></b></p>
+                        <p align="center"><b><font face="华文中宋" size="4" color="#CC3300">${escapeHtml(String(row.term).padStart(3, "0"))}期${escapeHtml(regionName)}六合彩24码开:${renderJudgeResult(row.result, row.isOpened, isCorrect)}</font></b></p>
                         <p style="text-align: center"><span style="color: #0066FF; font-family: &quot;Microsoft YaHei&quot;, Arial, Helvetica, sans-serif; font-size: 18.3333px; font-weight: 700; text-align: center; background-color: #FFFFFF;">${lines}</span></p>
                     </td>
                 </tr>`
@@ -999,17 +1114,34 @@ function renderJueshabanbo(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
       const rawItem = parseJsonStringArray(getRowContent(row))[0] || ""
       const [labelPart = "", codesPart = ""] = String(rawItem).split("|", 2)
       const label = labelPart.trim()
-      const hitWave = row.isOpened ? parseResultParts(row.result).raw.slice(0, 2) : ""
-      const highlightedLabel = row.isCorrect === true ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)
-      const displayCode = codesPart.trim()
+      const codes = codesPart
+        .split(",")
+        .map((code) => code.trim())
+        .filter(Boolean)
+        .map((code) => code.padStart(2, "0"))
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      // 绝杀半波：特码既不在被杀半波的号码里，也不属于该半波，才算杀中
+      const halfWave = row.isOpened ? halfWaveLabelOfCode(hitCode) : ""
+      const computedKill = row.isOpened && hitCode ? !codes.includes(hitCode) && label !== halfWave : null
+      const isCorrect = resolveJudgement(row.isCorrect, computedKill)
+      const highlightedLabel = isCorrect === true
+        ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
+        : escapeHtml(label)
+      const displayCode = codes
+        .map((code) =>
+          isCorrect === true && code === hitCode
+            ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
+            : escapeHtml(code)
+        )
+        .join(",")
       return `<tr>
                     <td height="39">
                         <p align="center">
                             <b>
-                                <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期绝杀一波 </font><font color="#0000FF" size="4">【${highlightedLabel}】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderPlainResult(row.result, row.isOpened, row.isCorrect)}</font>
+                                <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期绝杀一波 </font><font color="#0000FF" size="4">【${highlightedLabel}】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderJudgeResult(row.result, row.isOpened, isCorrect)}</font>
                             </b>
                         </p>
-                        ${displayCode ? `<p align="center" style="margin:0;"><font face="微软雅黑" size="4" color="#000000">${escapeHtml(displayCode)}</font></p>` : ""}
+                        ${displayCode ? `<p align="center" style="margin:0;"><font face="微软雅黑" size="4" color="#000000">${displayCode}</font></p>` : ""}
                     </td>
                 </tr>`
     })
@@ -1024,40 +1156,65 @@ function renderJueshabanbo(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
 }
 
 function renderSxjh3(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
-  const rows = toSourceRows(module)
+  const rows = sortRowsByTermDesc(toSourceRows(module))
   if (!rows.length) return ""
-  const groups: Array<{
-    startTerm: string
-    endTerm: string
-    labels: string[]
-    hitCount: number
-  }> = []
 
-  for (let index = 0; index < rows.length; index += 3) {
-    const windowRows = rows.slice(index, index + 3)
-    if (windowRows.length < 3) continue
-    const latestRow = windowRows[0]
-    const entries = parseLabelCodeEntries(getRowContent(latestRow)).slice(0, 4)
-    const labels = entries.map((entry) => entry.label).filter(Boolean)
-    if (!labels.length) continue
-    const hitCount = windowRows.reduce((count, row) => {
-      const hit = parseResultParts(row.result).sx
-      return count + (row.isOpened && hit && labels.includes(hit) ? 1 : 0)
-    }, 0)
-    groups.push({
-      startTerm: String(windowRows[windowRows.length - 1]?.term || "").padStart(3, "0"),
-      endTerm: String(windowRows[0]?.term || "").padStart(3, "0"),
-      labels,
-      hitCount,
-    })
+  // 同一个三期窗口内的每一期共用同一组候选（后端已按窗口同步 content），
+  // 因此按 raw.start/end 归组，而不是简单每 3 行切一刀。
+  const windows = new Map<string, SourceRow[]>()
+  for (const row of rows) {
+    const start = String(row.raw?.start || "").trim()
+    const end = String(row.raw?.end || "").trim()
+    const key = start && end ? `${start}-${end}` : row.term
+    const bucket = windows.get(key)
+    if (bucket) bucket.push(row)
+    else windows.set(key, [row])
   }
+
+  const groups = [...windows.entries()]
+    .map(([key, windowRows]) => {
+      const ordered = [...windowRows].sort(
+        (left, right) => Number.parseInt(left.term, 10) - Number.parseInt(right.term, 10)
+      )
+      const latest = ordered[ordered.length - 1]
+      const entries = parseLabelCodeEntries(getRowContent(latest)).slice(0, 4)
+      const labels = entries.map((entry) => entry.label).filter(Boolean)
+      const hitZodiacs: string[] = []
+      let openedCount = 0
+      let hitCount = 0
+      for (const row of ordered) {
+        if (!row.isOpened) continue
+        const hit = parseResultParts(row.result).sx
+        if (!hit) continue
+        openedCount += 1
+        if (labels.includes(hit)) {
+          hitCount += 1
+          if (!hitZodiacs.includes(hit)) hitZodiacs.push(hit)
+        }
+      }
+      const bounds = key.split("-")
+      return {
+        key,
+        startTerm: (bounds[0] || latest.term).padStart(3, "0"),
+        endTerm: (bounds[1] || latest.term).padStart(3, "0"),
+        labels,
+        hitZodiacs,
+        hitCount,
+        openedCount,
+      }
+    })
+    .filter((group) => group.labels.length > 0)
 
   const body = groups
     .map((group) => {
-      const hitLabel = group.hitCount > 0 ? `中${group.hitCount}期` : "中几期"
+      // 窗口内一期都还没开奖 -> 未知；已开奖但没有一期命中 -> 中0期
+      const hitLabel = group.openedCount === 0 ? "中几期" : `中${group.hitCount}期`
+      const labels = group.labels
+        .map((label) => highlightIf(escapeHtml(label), group.hitZodiacs.includes(label)))
+        .join("")
       return `<tr>
                     <td bgcolor="#FFFFFF" style="text-align: left; padding: 8px 10px;">
-                        <font color="#000000">${escapeHtml(group.startTerm)}-${escapeHtml(group.endTerm)}期: 三期中特→ [${escapeHtml(group.labels.join(""))}]开:${escapeHtml(hitLabel)}</font>
+                        <font color="#000000">${escapeHtml(group.startTerm)}-${escapeHtml(group.endTerm)}期: 三期中特→ [${labels}]开:${escapeHtml(hitLabel)}</font>
                     </td>
                 </tr>`
     })
@@ -1108,7 +1265,73 @@ function renderUnifiedSiteFooter(siteName: string, siteDomain: string) {
 	</div>`
 }
 
+/** 琴棋书画固定分组（与 fixed_data「四艺生肖」一致），用于没有参考串时兜底。 */
+const QINQI_ZODIACS: Array<[string, string]> = [
+  ["琴", "兔蛇鸡"],
+  ["棋", "鼠牛狗"],
+  ["书", "虎龙马"],
+  ["画", "羊猴猪"],
+]
+
+function qinqiLegend(reference: string) {
+  const text = String(reference || "").trim()
+  if (text) return text
+  return `${QINQI_ZODIACS[0][0]}:${QINQI_ZODIACS[0][1]}　${QINQI_ZODIACS[1][0]}:${QINQI_ZODIACS[1][1]}\n${QINQI_ZODIACS[2][0]}:${QINQI_ZODIACS[2][1]}　${QINQI_ZODIACS[3][0]}:${QINQI_ZODIACS[3][1]}`
+}
+
+/**
+ * 琴棋书画（mode 26）：顶部两行固定分组说明，下面每期一行
+ * `NNN期: 琴棋书画→画琴书开:鸡46准`。
+ */
+function renderQinqi(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  const rows = toSourceRows(module)
+  if (!rows.length) return ""
+  const reference = rows.map((row) => String(row.raw?.qinqi_reference || "")).find(Boolean) || ""
+  const legend = qinqiLegend(reference)
+    .split("\n")
+    .map(
+      (line) =>
+        `<p align="center" style="margin:0;padding:0 0 2px;"><font face="微软雅黑" size="4">${escapeHtml(line)}</font></p>`
+    )
+    .join("")
+
+  const body = rows
+    .map((row) => {
+      const labels = String(row.raw?.title || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .join("")
+      const isCorrect = resolveJudgement(row.isCorrect, null)
+      const { code, sx } = specialPartsOf(row.result, row.isOpened)
+      const result = row.isOpened
+        ? `${escapeHtml(sx || "？")}${escapeHtml(code || "00")}<font color="${isCorrect === true ? "#FF0000" : "#000000"}">${isCorrect === true ? "准" : "错"}</font>`
+        : "？00"
+      return `<tr>
+                    <td width="100%" height="34" align="center" bgcolor="#FFFFFF">
+                        <p align="center" style="margin:0;padding:4px 0;">
+                            <b><font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期: 琴棋书画→</font><font face="微软雅黑" size="4" color="#0000FF">${escapeHtml(labels)}</font><font face="微软雅黑" size="4" color="#000000">开:</font><font face="微软雅黑" size="4" color="#FF0000">${result}</font></b>
+                        </p>
+                    </td>
+                </tr>`
+    })
+    .join("")
+
+  return `<div class="box pad" id="qqsh" style="margin:0px;">
+            ${renderLotteryTitleTable(lotteryTypeId, "琴棋书画")}
+            <div style="background:#FFFFFF;border-left:1px solid #000;border-right:1px solid #000;border-bottom:1px solid #000;padding:6px 4px;">
+              ${legend}
+            </div>
+            <table style="border-collapse:collapse;color:#000;font-weight:700;border:1px solid #000;border-top:none;" border="1" width="100%" bgcolor="#ffffff">
+                <tbody>${body}</tbody>
+            </table>
+        </div>`
+}
+
 function renderGenericModule(config: GenericModuleConfig, module: PublicModule | null, lotteryTypeId: 1 | 2 | 3) {
+  if (config.mechanismKey === "qinqi") {
+    return renderQinqi(module, lotteryTypeId)
+  }
   if (config.mechanismKey === "yijuzhenyan") {
     return renderYijuzhenyan(module, lotteryTypeId)
   }
@@ -1123,14 +1346,24 @@ function renderGenericModule(config: GenericModuleConfig, module: PublicModule |
   const face = config.face || "微软雅黑"
   const body = rows
     .map((row) => {
-      const prediction = highlightIf(escapeHtml(row.prediction), row.isCorrect === true)
+      const { sx: hitSx } = specialPartsOf(row.result, row.isOpened)
+      const isCorrect = resolveJudgement(row.isCorrect, null)
+      // 生肖类候选逐肖标黄（9肖中特等），单值文本类保持整串标黄
+      const items = String(row.prediction || "")
+        .split(/[,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const prediction =
+        items.length > 1
+          ? renderFontList(items, isCorrect === true ? hitSx : "")
+          : highlightIf(escapeHtml(row.prediction), isCorrect === true)
       return `<tr>
                     <td height="39">
                         <p align="center">
                             <b>
                                 <font face="${escapeAttr(face)}" size="4">${escapeHtml(row.term)}期</font>
                                 <font color="${escapeAttr(config.predictionColor || "#0000FF")}" size="4" face="${escapeAttr(face)}">【${prediction}】</font>
-                                <font face="${escapeAttr(face)}" size="4">开${renderPlainResult(row.result, row.isOpened, row.isCorrect)}</font>
+                                <font face="${escapeAttr(face)}" size="4">开${renderJudgeResult(row.result, row.isOpened, isCorrect)}</font>
                             </b>
                         </p>
                     </td>
@@ -1234,12 +1467,16 @@ function renderSiduanzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 |
   const body = rows
     .map((row) => {
       const entries = parseLabelCodeEntries(getRowContent(row))
-      const hitCode = parseResultParts(row.result).code
-      const hitLabel = row.isOpened ? getHitLabelFromEntries(entries, hitCode) : ""
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const hitLabel = row.isOpened ? labelForCode(entries, hitCode) : ""
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitCode ? hitLabel !== "" : null
+      )
       const display = entries
         .map((entry) => {
           const shortLabel = entry.label.replace(/段$/u, "")
-          return row.isCorrect === true && hitLabel === entry.label
+          return isCorrect === true && hitLabel === entry.label
             ? `<span style="background-color: #FFFF00">${escapeHtml(shortLabel)}</span>`
             : escapeHtml(shortLabel)
         })
@@ -1248,7 +1485,7 @@ function renderSiduanzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 |
                 <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
                     <p align="center" style="margin:0;padding:6px 0;">
                         <b>
-                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF0000">【${display}段】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderResultWithCustomJudge(row.result, row.isOpened, row.isCorrect, { pending: "???????中", hitText: "对中", missText: "错" })}</font>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF0000">【${display}段】</font><font face="微软雅黑" size="4" color="#000000"> 开 ${renderJudgeResult(row.result, row.isOpened, isCorrect)}</font>
                         </b>
                     </p>
                 </td>
@@ -1313,12 +1550,28 @@ function renderWensha10ma(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3)
   if (!rows.length) return ""
   const body = rows
     .map((row) => {
-      const codes = parseJsonStringArray(getRowContent(row)).join(".")
+      const items = parseJsonStringArray(getRowContent(row))
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => item.padStart(2, "0"))
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitCode ? !items.includes(hitCode) : null
+      )
+      // 稳杀：特码不在被杀 10 码内才算杀中；杀中时把被杀号码标黄
+      const codes = items
+        .map((code) =>
+          isCorrect === true
+            ? `<span style="background-color: #FFFF00">${escapeHtml(code)}</span>`
+            : escapeHtml(code)
+        )
+        .join(",")
       return `<tr>
                 <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
                     <p align="center" style="margin:0;padding:6px 0;">
                         <b>
-                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期杀</font><font face="微软雅黑" size="4" color="#FF1493">「${escapeHtml(codes)}」</font><font face="微软雅黑" size="4" color="#000000">开${renderResultWithCustomJudge(row.result, row.isOpened, row.isCorrect, { pending: "??????", hitText: "中", missText: "错" })}</font>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期杀</font><font face="微软雅黑" size="4" color="#FF1493">「${codes}」</font><font face="微软雅黑" size="4" color="#000000">开${renderJudgeResult(row.result, row.isOpened, isCorrect, "??????")}</font>
                         </b>
                     </p>
                 </td>
@@ -1339,19 +1592,26 @@ function renderSihangzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 |
   if (!rows.length) return ""
   const body = rows
     .map((row) => {
-      const labels = parseJsonStringArray(getRowContent(row))
-        .map((item) => item.split("|")[0].trim())
-        .filter(Boolean)
-      const hitCode = row.isOpened ? parseResultParts(row.result).code : ""
-      const hitHead = row.isOpened && hitCode ? hitCode.charAt(0) : ""
-      const text = labels
-        .map((label) => (row.isCorrect === true && label === hitHead ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)))
+      const entries = parseLabelCodeEntries(getRowContent(row))
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const hitLabel = row.isOpened ? labelForCode(entries, hitCode) : ""
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitCode ? hitLabel !== "" : null
+      )
+      // 四行中特：标黄特码所属的五行
+      const text = entries
+        .map((entry) =>
+          isCorrect === true && hitLabel === entry.label
+            ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
+            : escapeHtml(entry.label)
+        )
         .join("-")
       return `<tr>
                 <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
                     <p align="center" style="margin:0;padding:6px 0;">
                         <b>
-                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#0000FF">【${text}行】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderTwcaibawangResultSuffix(row.result, row.isOpened, row.isCorrect, "??????")}</font>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#0000FF">【${text}行】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderJudgeResult(row.result, row.isOpened, isCorrect, "??????")}</font>
                         </b>
                     </p>
                 </td>
@@ -1372,20 +1632,26 @@ function renderSitouzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 | 
   if (!rows.length) return ""
   const body = rows
     .map((row) => {
-      const labels = parseJsonStringArray(getRowContent(row))
-        .map((item) => item.split("|")[0].trim())
-        .filter(Boolean)
-      const hitHead = row.isOpened ? parseResultParts(row.result).code.charAt(0) || "" : ""
-      const display = labels
-        .map((label) =>
-          row.isCorrect === true && hitHead === label ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>` : escapeHtml(label)
+      const entries = parseLabelCodeEntries(getRowContent(row))
+      const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
+      const hitLabel = row.isOpened ? labelForCode(entries, hitCode) : ""
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitCode ? hitLabel !== "" : null
+      )
+      // 四头中特：标黄特码头数所属的那一档
+      const display = entries
+        .map((entry) =>
+          isCorrect === true && hitLabel === entry.label
+            ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
+            : escapeHtml(entry.label)
         )
         .join("-")
       return `<tr>
                 <td width="100%" height="40" align="center" bgcolor="#FFFFFF">
                     <p align="center" style="margin:0;padding:6px 0;">
                         <b>
-                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF1493">【${display}】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderTwcaibawangResultSuffix(row.result, row.isOpened, row.isCorrect, "??????")}</font>
+                            <font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期 </font><font face="微软雅黑" size="4" color="#FF1493">【${display}】</font><font face="微软雅黑" size="4" color="#000000">开 ${renderJudgeResult(row.result, row.isOpened, isCorrect, "??????")}</font>
                         </b>
                     </p>
                 </td>
@@ -1406,18 +1672,33 @@ function renderLiuxiao18ma(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
   if (!rows.length) return ""
   const body = rows
     .map((row) => {
-      const xiao = String(row.raw?.xiao || row.prediction || "").trim()
-      const code = String(row.raw?.code || "").trim().replace(/,/g, ".")
+      const xiaoItems = String(row.raw?.xiao || row.prediction || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const codeItems = String(row.raw?.code || "")
+        .split(/[,.]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => item.padStart(2, "0"))
+      const { code: hitCode, sx: hitSx } = specialPartsOf(row.result, row.isOpened)
+      // 六肖十八码：特肖落在候选 6 肖里才算命中（接口 is_correct 为 null，本地复算）
+      const isCorrect = resolveJudgement(
+        row.isCorrect,
+        row.isOpened && hitSx ? xiaoItems.includes(hitSx) : null
+      )
+      const xiao = renderFontList(xiaoItems, isCorrect === true ? hitSx : "")
+      const code = renderDottedCodes(codeItems, isCorrect === true ? hitCode : "")
       return `<tr>
                 <td width="100%" align="center" bgcolor="#FFFFFF" style="padding:6px 8px;">
                     <p align="center" style="margin:0;padding:2px 0;">
-                        <b><font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期:六肖十八码 开:${renderOpenResultCodeOnly(row.result, row.isOpened)}</font></b>
+                        <b><font face="微软雅黑" size="4" color="#000000">${escapeHtml(String(row.term).padStart(3, "0"))}期:六肖十八码 开:${renderJudgeResult(row.result, row.isOpened, isCorrect)}</font></b>
                     </p>
                     <p align="center" style="margin:0;padding:2px 0;">
-                        <b><font face="微软雅黑" size="4" color="#FF0000">${escapeHtml(xiao)}</font></b>
+                        <b><font face="微软雅黑" size="4" color="#FF0000">${xiao}</font></b>
                     </p>
                     <p align="center" style="margin:0;padding:2px 0;">
-                        <b><font face="微软雅黑" size="4" color="#FF0000">${escapeHtml(code)}</font></b>
+                        <b><font face="微软雅黑" size="4" color="#FF0000">${code}</font></b>
                     </p>
                 </td>
             </tr>`
@@ -1560,6 +1841,7 @@ function buildPageHtml(
     renderMa24(resolveModule(modules, "ma24"), defaultLotteryTypeId),
     render3Tou(resolveModule(modules, "3tou"), defaultLotteryTypeId),
     renderDaxiao(resolveModule(modules, "daxiao"), defaultLotteryTypeId),
+    renderQinqi(resolveModule(modules, "qinqi"), defaultLotteryTypeId),
     ...GENERIC_MODULES.map((config) => renderGenericModule(config, resolveModule(modules, config.mechanismKey), defaultLotteryTypeId)),
     `<managed-site-links site-key="twcaibawang"></managed-site-links>`,
     renderUnifiedSiteFooter(siteData.site.name, siteData.site.domain),

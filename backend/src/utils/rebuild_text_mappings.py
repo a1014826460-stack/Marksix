@@ -40,6 +40,64 @@ TEXT_COLUMNS = ("content", "jiexi", "title")
 MODE_244_ID = 244
 MODE_244_TABLE = "mode_payload_244"
 
+MODE_52_ID = 52
+
+#: 四字玄机（mode 52）的备选文案池：49 组 (标题, 解肖)。
+#: 标题是四字词，解肖是该期候选的 7 个生肖（命中判定 = 特肖落在解肖内）。
+#: mode_payload_52 未被标记 is_text=1，通用重建路径会跳过它，
+#: 因此在重建结束后单独回填，保证“重建不会丢掉这批候选”。
+MODE_52_SIZIXUANJI_POOL: tuple[tuple[str, str], ...] = (
+    ("否极泰来", "兔羊蛇牛猴鼠猪"),
+    ("春风化雨", "马蛇牛龙鸡羊狗"),
+    ("秋毫无犯", "羊龙狗鼠虎猪鸡"),
+    ("雪中送炭", "狗鸡兔鼠虎龙猴"),
+    ("锦上添花", "龙兔鸡马牛狗鼠"),
+    ("月明星稀", "鼠鸡猪马狗牛虎"),
+    ("水落石出", "鸡蛇鼠虎羊牛龙"),
+    ("云淡风轻", "虎猪牛兔鼠羊鸡"),
+    ("山高水长", "鸡猴牛鼠羊狗兔"),
+    ("柳暗花明", "狗鼠龙牛兔马羊"),
+    ("鹤立鸡群", "鸡猴牛鼠兔猪羊"),
+    ("鱼跃龙门", "狗羊龙兔虎猪鸡"),
+    ("马到成功", "猪虎牛鸡蛇兔马"),
+    ("龙飞凤舞", "蛇鸡羊牛狗马鼠"),
+    ("虎踞龙盘", "牛狗马羊鸡虎兔"),
+    ("猴年马月", "马猴鸡兔猪龙牛"),
+    ("守株待兔", "牛羊蛇狗虎鼠猴"),
+    ("亡羊补牢", "鸡狗猪鼠龙兔猴"),
+    ("对牛弹琴", "马猴狗猪羊蛇兔"),
+    ("画蛇添足", "猴蛇龙马兔羊牛"),
+    ("杯弓蛇影", "狗羊鼠马龙牛猪"),
+    ("狐假虎威", "龙猪鼠羊兔蛇狗"),
+    ("九牛一毛", "虎鸡马蛇猪牛猴"),
+    ("万马奔腾", "猴狗蛇鼠兔马猪"),
+    ("走马观花", "虎狗鼠鸡兔牛马"),
+    ("青梅竹马", "鸡蛇猴马羊牛龙"),
+    ("叶公好龙", "牛龙羊虎兔狗猪"),
+    ("狼吞虎咽", "马猪鼠牛猴兔蛇"),
+    ("猪朋狗友", "狗鸡马兔龙牛猴"),
+    ("鸡鸣狗盗", "牛马狗龙羊鼠猪"),
+    ("金鸡独立", "鸡鼠羊牛狗猪猴"),
+    ("天马行空", "虎猴龙牛鸡猪狗"),
+    ("老马识途", "猪蛇鸡羊猴龙马"),
+    ("车水马龙", "龙虎猴蛇猪鼠兔"),
+    ("杯水车薪", "羊鸡马蛇鼠猪牛"),
+    ("雪泥鸿爪", "羊猴牛龙兔狗鼠"),
+    ("雁过留声", "鸡牛兔猪羊蛇狗"),
+    ("鸟语花香", "牛猴羊马猪蛇虎"),
+    ("鱼目混珠", "龙蛇猪鼠鸡羊虎"),
+    ("鹿死谁手", "鼠龙猪马羊鸡狗"),
+    ("凤毛麟角", "鼠虎猴马兔狗牛"),
+    ("龟年鹤寿", "猴羊虎鼠马蛇牛"),
+    ("龙潭虎穴", "猴猪虎牛兔羊狗"),
+    ("蛛丝马迹", "鸡蛇虎羊龙猪猴"),
+    ("鸦雀无声", "蛇猴猪牛羊龙兔"),
+    ("螳臂当车", "龙鸡虎蛇猪猴牛"),
+    ("鹬蚌相争", "狗蛇马兔猴龙牛"),
+    ("塞翁失马", "龙狗牛鼠兔马蛇"),
+    ("闻鸡起舞", "猴龙兔鸡狗鼠猪"),
+)
+
 
 def quote_identifier(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
@@ -193,6 +251,41 @@ def insert_mode_244_content_pool(conn: Any) -> int:
     return after_count - before_count
 
 
+def insert_mode_52_sizixuanji_pool(conn: Any) -> int:
+    """回填 mode_id=52（四字玄机）的备选 (title, jiexi) 池。
+
+    mode_payload_52 的 `title` 是四字词、`jiexi` 是候选 7 肖，两者必须配对；
+    生成端与相邻期展示唯一性都会从 text_history_mappings 读取 mode 52 的候选，
+    因此这里把 49 组备选写进映射表（幂等，重复执行不会重复插入）。
+    """
+    if not conn.table_exists(MAPPING_TABLE):
+        raise ValueError(
+            "text_history_mappings 不存在：请先执行完整重建（不带 --only-mode52）再回填 mode 52 池"
+        )
+
+    before_row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
+    ).fetchone()
+    before_count = int(before_row["cnt"] or 0) if before_row else 0
+
+    for title, jiexi in MODE_52_SIZIXUANJI_POOL:
+        conn.execute(
+            f"""
+            INSERT INTO {quote_identifier(MAPPING_TABLE)} (mode_id, content, jiexi, title)
+            VALUES (?, '', ?, ?)
+            ON CONFLICT (mode_id, content, jiexi, title) DO NOTHING
+            """,
+            (MODE_52_ID, jiexi, title),
+        )
+    conn.commit()
+
+    after_row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
+    ).fetchone()
+    after_count = int(after_row["cnt"] or 0) if after_row else 0
+    return after_count - before_count
+
+
 def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, Any]:
     with connect(db_path) as conn:
         target_modes = get_text_mode_tables(conn)
@@ -227,6 +320,10 @@ def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, A
         if mode_244_inserted > 0:
             print(f"[OK] modes_id=244: inserted {mode_244_inserted} rows from source+seed pool")
 
+        mode_52_inserted = insert_mode_52_sizixuanji_pool(conn)
+        if mode_52_inserted > 0:
+            print(f"[OK] modes_id=52: inserted {mode_52_inserted} rows from seed pool")
+
         total_row = conn.execute(
             f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)}"
         ).fetchone()
@@ -237,8 +334,9 @@ def rebuild_text_history_mappings(db_path: str = DEFAULT_DB_PATH) -> dict[str, A
         "scanned_tables": scanned_tables,
         "missing_tables": missing_tables,
         "skipped_without_text_columns": skipped_without_text_columns,
-        "inserted": inserted + mode_244_inserted,
+        "inserted": inserted + mode_244_inserted + mode_52_inserted,
         "mode_244_inserted": mode_244_inserted,
+        "mode_52_inserted": mode_52_inserted,
         "total_after_dedup": total,
     }
 
@@ -248,7 +346,23 @@ def main() -> None:
         description="Rebuild public.text_history_mappings from public.mode_payload_tables where is_text=1."
     )
     parser.add_argument("--db-path", default=DEFAULT_DB_PATH, help="PostgreSQL DSN")
+    parser.add_argument(
+        "--only-mode52",
+        action="store_true",
+        help="只回填 mode 52（四字玄机）的 49 组备选 title/jiexi，不重建整张表",
+    )
     args = parser.parse_args()
+
+    if args.only_mode52:
+        with connect(args.db_path) as conn:
+            inserted = insert_mode_52_sizixuanji_pool(conn)
+            total_row = conn.execute(
+                f"SELECT COUNT(*) AS cnt FROM {quote_identifier(MAPPING_TABLE)} WHERE mode_id = ?",
+                (MODE_52_ID,),
+            ).fetchone()
+            total = int(total_row["cnt"] or 0) if total_row else 0
+        print(f"[OK] modes_id=52: inserted {inserted} rows; mode_id=52 现有 {total} 行")
+        return
 
     print("=" * 60)
     print("Rebuild text_history_mappings")

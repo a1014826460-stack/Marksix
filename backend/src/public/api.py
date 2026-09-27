@@ -128,7 +128,7 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
     """从行数据计算所有可能的特码分类标签，供 hit_checker 使用。
 
     输出为 `|` 分隔的标签串，覆盖单双、大小、头、尾、波色、合数单双、
-    合数大小、家禽野兽、特码生肖、号码、以及五行元素。
+    合数大小、家禽野兽、特码生肖、号码、五行元素、四艺（琴棋书画）以及段位。
     """
     codes = split_csv(row.get("res_code"))
     zodiacs = split_csv(row.get("res_sx"))
@@ -170,6 +170,8 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
         code,
         element,
         qqsh_label,
+        # 段位（四段中特等）：01-49 每 7 个号码一段
+        f"{((number - 1) // 7) + 1}段",
     ]
     return "|".join(o for o in outcomes if o)
 

@@ -195,11 +195,11 @@ def test_display_unique_window_defaults_to_three_periods():
     assert diversity.display_unique_window(57) == 3
     assert diversity.display_unique_window(63) == 3
     assert diversity.display_unique_window(108) == 3
-    assert diversity.display_unique_window(52) == 3
 
 
-def test_display_unique_window_is_five_for_mode_62():
-    """62 欲钱解特诗候选池最大，要求相邻连续五期不得相同。"""
+def test_display_unique_window_is_five_for_text_pool_modes():
+    """52 四字玄机与 62 欲钱解特候选池最大，要求相邻连续五期不得相同。"""
+    assert diversity.display_unique_window(52) == 5
     assert diversity.display_unique_window(62) == 5
 
 
@@ -212,31 +212,31 @@ def test_display_token_for_mode_52_falls_back_to_none_without_title():
     assert diversity.display_token_for_row(52, {"title": "  ", "jiexi": "蛇鸡"}) is None
 
 
-def test_mode_52_title_is_rotated_after_three_identical_periods():
-    """四字玄机（52）连续三期同一标题时必须换一个标题。"""
+def test_mode_52_title_is_rotated_after_four_identical_periods():
+    """四字玄机（52）连续五期同一标题时必须换一个标题，且 jiexi 同步替换。"""
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    identical = {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"}
+    result = diversity.enforce_three_period_uniqueness(
+        mode_id=52,
+        row_data=row,
+        recent_rows=[dict(identical) for _ in range(4)],
+        alternative_text_payloads=[
+            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
+            {"title": "抓小辫子", "jiexi": "牛羊马虎猴鼠猪"},
+        ],
+    )
+    assert result["title"] == "抓小辫子"
+    assert result["jiexi"] == "牛羊马虎猴鼠猪", "title 换了 jiexi 必须一起换，否则命中口径对不上"
+
+
+def test_mode_52_title_is_kept_when_one_of_four_recent_differs():
     row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
     result = diversity.enforce_three_period_uniqueness(
         mode_id=52,
         row_data=row,
         recent_rows=[
             {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
-            {"title": "黯然無光", "jiexi": "牛羊马虎猴鼠猪"},
-        ],
-        alternative_text_payloads=[
-            {"title": "黯然無光"},
-            {"title": "抓小辫子"},
-        ],
-    )
-    assert result["title"] == "抓小辫子"
-    assert result["jiexi"] == row["jiexi"]
-
-
-def test_mode_52_title_is_kept_when_one_of_two_recent_differs():
-    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
-    result = diversity.enforce_three_period_uniqueness(
-        mode_id=52,
-        row_data=row,
-        recent_rows=[
+            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
             {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
             {"title": "抓小辫子", "jiexi": "牛羊马虎猴鼠猪"},
         ],

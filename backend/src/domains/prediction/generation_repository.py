@@ -202,8 +202,10 @@ def load_mode_payload_title_rows(
 ) -> list[dict[str, Any]]:
     """读取某 mode 在 public 表里已有的非空 title（只读，供文本类模式补充候选）。
 
-    仅用于缺少 text_history_mappings 行时枚举历史文本候选，
-    不写入、不修改任何已生成的预测行。
+    同时带上 `jiexi` / `content`：四字玄机（52）的 title 与 jiexi 是配对的
+    （jiexi 决定命中与否），只换 title 会让两者对不上。
+
+    仅用于枚举历史文本候选，不写入、不修改任何已生成的预测行。
     """
     if int(mode_id or 0) <= 0 or not conn.table_exists(table_name):
         return []
@@ -212,9 +214,11 @@ def load_mode_payload_title_rows(
     if "title" not in columns:
         return []
 
+    selected = ["title"] + [column for column in ("jiexi", "content") if column in columns]
+    selected_sql = ", ".join(quote_identifier(column) for column in selected)
     rows = conn.execute(
         f"""
-        SELECT DISTINCT title
+        SELECT DISTINCT {selected_sql}
         FROM {quote_identifier(table_name)}
         WHERE COALESCE(title, '') <> ''
         ORDER BY title
@@ -222,7 +226,7 @@ def load_mode_payload_title_rows(
         """,
         (int(limit),),
     ).fetchall()
-    return [{"title": str(row["title"])} for row in rows]
+    return [{column: str(row[column] or "") for column in selected} for row in rows]
 
 
 def load_text_history_candidate_rows(

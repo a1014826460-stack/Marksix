@@ -26,7 +26,7 @@ This document is generated from the internal rule manifest. It documents candida
 | 49 | 9xzt | 9肖中特 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
 | 50 | yijuzhenyan | 一句真言 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 51 | 4xiao8ma | 4肖8码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 52 | sizixuanji | 四字玄机 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
+| 52 | sizixuanji | 四字玄机 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature; adjacent 5 periods: display value differs |
 | 53 | 3hang | 3行中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 54 | pt1wei | 平特1尾 | tail_flat | any drawn number's tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 56 | pt1xiao | 平特1肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |

@@ -26,8 +26,8 @@ THREE_PERIOD_UNIQUE_MODE_IDS = frozenset({28, 52, 57, 62, 63, 108})
 #: 前台直接渲染 title，因此唯一性也必须按 title 判定。
 TITLE_UNIQUE_MODE_IDS = frozenset({52, 62})
 
-#: 连续不重复窗口：默认 3 期；62 欲钱解特诗句候选池最大，要求相邻 5 期不得相同。
-DISPLAY_UNIQUE_WINDOW_BY_MODE: dict[int, int] = {62: 5}
+#: 连续不重复窗口：默认 3 期；52 四字玄机与 62 欲钱解特候选池最大，要求相邻 5 期不得相同。
+DISPLAY_UNIQUE_WINDOW_BY_MODE: dict[int, int] = {52: 5, 62: 5}
 
 #: 默认窗口（未在 DISPLAY_UNIQUE_WINDOW_BY_MODE 中单独指定的托管模式）。
 DEFAULT_DISPLAY_UNIQUE_WINDOW = 3

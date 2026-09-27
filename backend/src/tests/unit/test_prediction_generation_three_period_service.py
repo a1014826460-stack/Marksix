@@ -105,6 +105,27 @@ def test_text_fallback_reads_public_table_when_mapping_table_is_empty(monkeypatc
     assert "守株待兔" in titles
 
 
+def test_text_fallback_keeps_title_and_jiexi_paired(monkeypatch):
+    """mode 52：title 与 jiexi 必须成对带出，否则命中口径与标题对不上。"""
+    monkeypatch.setattr(service.generation_repository, "load_text_history_candidate_rows",
+                        lambda conn, **kwargs: [])
+    monkeypatch.setattr(
+        service.generation_repository,
+        "load_mode_payload_title_rows",
+        lambda conn, **kwargs: [
+            {"title": "黯然無光", "jiexi": "虎马兔龙牛羊狗", "content": ""},
+            {"title": "抓小辫子", "jiexi": "猴鼠兔龙猪马牛", "content": ""},
+        ],
+    )
+
+    payloads = service._load_three_period_text_payloads(object(), 52)
+
+    assert [(p["title"], p["jiexi"]) for p in payloads] == [
+        ("黯然無光", "虎马兔龙牛羊狗"),
+        ("抓小辫子", "猴鼠兔龙猪马牛"),
+    ]
+
+
 def test_text_fallback_ignores_rows_without_title(monkeypatch):
     monkeypatch.setattr(service.generation_repository, "load_text_history_candidate_rows",
                         lambda conn, **kwargs: [])
@@ -159,13 +180,14 @@ def test_placeholder_used_only_when_no_real_candidate():
 def test_apply_uniqueness_routes_mode_52_through_title_payloads(monkeypatch):
     """mode 52 与 62 一样按 title 唯一化，走替代文本分支而不是 content 模板分支。"""
     row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    identical = {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"}
     monkeypatch.setattr(service, "_load_three_period_history_rows",
-                        lambda *args, **kwargs: [
-                            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
-                            {"title": "黯然無光", "jiexi": "牛羊马虎猴鼠猪"},
-                        ])
+                        lambda *args, **kwargs: [dict(identical) for _ in range(4)])
     monkeypatch.setattr(service, "_load_three_period_text_payloads",
-                        lambda conn, mode_id: [{"title": "黯然無光"}, {"title": "抓小辫子"}])
+                        lambda conn, mode_id: [
+                            {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"},
+                            {"title": "抓小辫子", "jiexi": "牛羊马虎猴鼠猪"},
+                        ])
 
     result = service._apply_three_period_uniqueness(
         object(),
@@ -174,11 +196,34 @@ def test_apply_uniqueness_routes_mode_52_through_title_payloads(monkeypatch):
         row_data=row,
         table_name="mode_payload_52",
         lottery_type=3,
-        site_web_id=4,
+        site_web_id=5,
     )
 
     assert result["title"] == "抓小辫子"
-    assert result["jiexi"] == "蛇鸡虎兔龙鼠羊"
+    assert result["jiexi"] == "牛羊马虎猴鼠猪"
+
+
+def test_apply_uniqueness_keeps_mode_52_title_when_mapping_table_missing_or_same(monkeypatch):
+    """候选表缺 mode 52 行、或候选与最近四期都相同时，保持原值并给出告警。"""
+    row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}
+    identical = {"title": "黯然無光", "jiexi": "猪猴蛇鸡兔虎狗"}
+    monkeypatch.setattr(service, "_load_three_period_history_rows",
+                        lambda *args, **kwargs: [dict(identical) for _ in range(4)])
+    monkeypatch.setattr(service, "_load_three_period_text_payloads",
+                        lambda conn, mode_id: [dict(identical)])
+
+    result = service._apply_three_period_uniqueness(
+        object(),
+        config=_config(52, "sizixuanji", ()),
+        mode_id=52,
+        row_data=row,
+        table_name="mode_payload_52",
+        lottery_type=3,
+        site_web_id=5,
+    )
+
+    assert result["title"] == "黯然無光"
+    assert "连续5期" in str(result.get("_diversity_warning", ""))
 
 
 def test_apply_uniqueness_requires_four_identical_periods_for_mode_62(monkeypatch):

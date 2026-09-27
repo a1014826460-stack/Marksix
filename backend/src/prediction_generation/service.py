@@ -675,7 +675,7 @@ def _three_period_alternative_content_templates(
 
 
 def _load_three_period_text_payloads(conn: Any, mode_id: int) -> list[dict[str, Any]]:
-    """文本类模式（62）的三期替代候选。
+    """文本类模式（52 四字玄机 / 62 欲钱解特）的替代候选。
 
     优先使用 text_history_mappings；该表缺少本 mode 行时，
     回退读取 public.mode_payload_<mode_id> 已有的非空 title（只读）。
@@ -693,12 +693,19 @@ def _load_three_period_text_payloads(conn: Any, mode_id: int) -> list[dict[str, 
     except Exception:  # noqa: BLE001 - 读不到候选时保持原值
         return []
 
+    # title 与 jiexi 是配对的（四字玄机的命中由 jiexi 决定），必须一起带出
     candidates: list[dict[str, Any]] = []
     for row in rows:
         title = str((row or {}).get("title") or "").strip()
         if not title:
             continue
-        candidates.append({"title": title, "content": "", "jiexi": ""})
+        candidates.append(
+            {
+                "title": title,
+                "content": str((row or {}).get("content") or ""),
+                "jiexi": str((row or {}).get("jiexi") or ""),
+            }
+        )
     return candidates
 
 
