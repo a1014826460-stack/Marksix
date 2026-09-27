@@ -1733,3 +1733,75 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
 - 遗留说明：`天地两肖` 采用「天肖/地肖群 ∪ 两肖」并集判定（vendor 接口只比对那两肖，
   会让天地肖永不参与判定）；`公开一肖一码` 沿用后端「特肖或特码命中即对」；
   `琴棋书画` 按需求样例使用「准/错」，其余 12 个模块统一「对/错」。以上均已与用户确认。
+
+### 十站点预测模块展示规范整改（2026-09-27/28，两轮）
+
+**目标**：十个站点（web_id 4–13）的预测模块统一满足《预测模块展示规范》
+（`docs/prediction-display-standard.md`）：命中才黄色高亮、未命中一律不高亮、
+未开奖不给判定、判定与真实开奖一致、分组说明两组都显示、页面无 JS 报错。
+
+**发布提交**：`72ba0fa`（规范+审计工具）→ `38aa264`（文档）→ `7f98c78`（twsaimahui 首批 + twbst528/twjsz666 适配器）
+→ `aa9eeb7`（twssz/twjsz666 错行清黄）→ `4c716db`（twsaimahui 12 模块 + 审计加固 + R8）
+→ `74353fb`（文档基线）→ `387d4be`（判定真值原子化 + tokens 形状护栏）→ `be09abc`（审计行切分/判定取法）
+→ `5f850c0`（结果字段补齐脚本）→ `641dfe9`（shengshi8800/twcaibawang/twcf888/twjinniu/twwanli/twsyw + mode 38 + 号码集合展示顺序）
+→ 已推送 `origin/main`。
+
+中心节点 `207.56.3.82:29618`：备份目录
+`/root/Marksix/.deploy-backups/display-standard-20260927T170247Z`（第一轮，`7f98c78`）与
+`display-standard-2-20260927T180808Z`（第二轮，`641dfe9`）；重建 `python-api`、`scheduler-worker`、`frontend`；
+`nginx -t` 通过；容器恢复正常。
+前端节点 `207.56.2.71:62594`：备份目录 `display-standard-20260927T170954Z`（`7f98c78`）与
+`display-standard-2-20260927T181512Z`（`641dfe9`）；仅重建 `frontend`。
+
+**生产数据操作（用户授权，只填空值、不碰预测正文）**：
+在 `python-api` 容器内执行 `backend/scripts/backfill_created_result_catchup.py`，
+补齐 `created.mode_payload_*` 里「已开奖但 `res_code` 为空」的历史行
+（前端原本只能显示 `??` 占位）。备份与前后快照目录
+`/root/Marksix/.deploy-backups/rescode-catchup-20260927T181551Z`
+（`before.txt` / `apply.txt` / `after.txt`）：
+补齐前缺口 **214 个期号 / 14745 张表命中** → 补齐 **174 个期号、61622 行结果字段**
+→ 剩余 **40 个期号 / 610 次**（这些期号在 `lottery_draws` 里没有开奖号码或未开奖，未处理）。
+
+**公网验收（Playwright 实开，`scripts/audit-prediction-display.py`）**：
+
+| 站点 | rows | js_errors | error | warn |
+| --- | ---: | ---: | ---: | ---: |
+| shengshi8800 | 440 | 0 | 0 | 11 |
+| twcaibawang | 292 | 0 | 0 | 8 |
+| twsaimahui | 652 | 0 | 0 | 35 |
+| twjinniu | 469 | 0 | 0 | 1 |
+| twcf888 | 451 | 0 | 0 | 19 |
+| twssz | 289 | 0 | 0 | 52 |
+| twbst528 | 468 | 0 | 0 | 74 |
+| twjsz666 | 276 | 0 | 0 | 9 |
+| twwanli | 202 | 0 | 0 | 1 |
+| twsyw | 545 | 0 | 0 | 7 |
+| **合计** | **4084** | **0** | **0** | **217** |
+
+warn 全部是 R4（命中却没高亮，含杀号类「准=没有可高亮项」等口径判断）与 R5（连续 ≥3 期展示值相同），
+无 error 级。
+
+**生产判定真值校验**（`scripts/audit-verdict-truth.py` 在 `python-api` 容器内对生产库跑）：
+`rows=22039 error=0 warn=2865`（10/10 站点 error=0）——**生产库里没有任何一行**
+`is_correct` 与「候选项是否命中真实开奖」相矛盾。
+
+**本轮修掉的主要缺陷类别**（每条的根因与证据见 `docs/vendor-sites/`）：
+
+1. 供应商静态 `index.html` 每行自带样例黄底，适配器只改文字不清样式 → 判「错」的行仍带黄底
+   （twssz 6→0、twjsz666 9→0、twbst528 2→0）。
+2. 「一期」被拆到同辈单元格 / 相邻 `<tr>`，旧审计只取叶子行 → R3（error 级）整类漏报；
+   审计加固后新暴露并修复 twcf888 绝杀类 24 处、twjinniu `#sxbm`/`#pmzq` 17 处、
+   shengshi8800 11 处、twcaibawang 2 处。
+3. 判定文字写死在模板里或与高亮各算各的（shengshi8800 `tp5.js`/`dx.js`/`018shu3x.js`、
+   twcaibawang `TwcaibawangHomeClient.tsx`）。
+4. 判定口径取错字段（twsaimahui `012liuxiao.js` 用码串去匹配特肖 → 六肖三码 6 期全「错」）。
+5. mode 38 双波中特 `is_correct` 恒 `null`（`content_parser` 只认生肖不认波色标签）→ 命中也不显示判定。
+6. 号码集合类玩法（mode 116「10码中特」等）每期前两位固定 `01.17` → 展示顺序改为按成员集合一次性置换
+   （判定语义逐值验证不变）。
+7. 未开奖期仍显示判定／twsyw 标题行被并进预测行造成的假阳性（审计加 `isTitleRow` + 页面标题行加
+   `data-prediction-title="true"`）。
+
+**遗留（已知、已记录、非 error）**：
+`docs/prediction-display-standard.md` 第五节之二记录了 R4/R5/R8 的人工判定结论；
+`R4` 对「平特三肖连」「A级大公开」等模块的命中项高亮仍欠缺（warn 级，未纳入本轮硬性要求）；
+`shengshi8800/handleSelect.js` 的 `getResult()` 仍写死「准」但**无调用方**（死代码，勿复活）。
