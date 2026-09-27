@@ -1487,3 +1487,49 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
     建议后续把登记默认值对齐（属配置项，本次未改）。
   - 自愈路径已验证：新期由备用源开盘（行内 `next_time` 为空）时，插入路径仍会触发同步，
     `resolve_next_time_ms` 会写入推导出的未来时间，倒计时不会再被清空。
+
+### twsaimahui 单双中特判定修复 + 澳门默认钟点对齐上线结果（2026-09-27）
+
+- 上线提交：`76ef5b8`（origin/main 与两节点一致；本机到 GitHub 的 TLS 再次被中断，
+  改经**中心节点 SOCKS 隧道** `git push` 成功：`e411a82..76ef5b8`）。
+- 故障：twsaimahui（web=6）「单双中特（单双选1，生肖选2）」mode 15 / 端点
+  `/api/kaijiang/getDsxiao` / 文件 `004danshuang.js`，连续多期**全部显示"错"**。
+- 根因两处叠加：
+  1. 判定只看 `xiao` 候选生肖（2/12 生肖），**完全忽略 `content` 分类池**（6/12）。
+     模块标题即「单双选1 + 生肖选2」，且 `predict/mechanisms.py::format_content_xiao_columns`
+     明确注明"content 分类池与 xiao 候选生肖**互斥**"——二者合计覆盖 8/12 生肖（≈67%，
+     贴合目标命中率 0.65）；只判候选肖则 2/12 ≈ 17%。线上 261–269 期真实资料：
+     按「分类池 ∪ 候选肖」= **6/9 命中**，只判候选肖 = 2/9 → 即"全部是错"。
+  2. 未开奖行也走 `zj?'准':'错'`，应按原逻辑显示 `??`。
+- 修复（`frontend/public/vendor/twsaimahui/static/js/004danshuang.js`）：
+  新增 `dsHit`（分类池命中），判定改为 `hit = dsHit || zj`（任一维度命中即命中），
+  未开奖继续显示 `??`。
+- bundle 处理（关键）：站点加载的是 bundle，且 bundle 文件名是**内容哈希**、
+  响应头 `cache-control: public, max-age=31536000, immutable`，因此**必须改名**才能击穿缓存。
+  在 `scripts/bundle-twsaimahui-modules.py` 新增 `--rebuild`（按 `bundles.json` 来源清单
+  重算正文与哈希、更新 `index.html`/`bundles.json`、删除旧文件，并抽出 `compose_bundle()`
+  与合并路径共用），重建结果：`bundle-a6c1849c09290a14.js → bundle-2cb4846e0d092963.js`。
+  顺带修掉既有问题：`049rccx.js`（肉菜草肖）此前与 bundle 不一致，
+  既有 `twsaimahui-bundle-contract.mjs` 长期失败 → 重建后**通过**（该文件仅 3 行差异，
+  来自已提交的 `88d4abb`）。
+- 配置对齐：`runtime_config.py` 的 `draw.macau_default_draw_time` 登记默认值
+  **21:30 → 21:32**，`_compute_hk_macau_default_next_time_ms` 的兜底按彩种区分
+  （香港 21:30 / 澳门 21:32）。生产库本就为 `21:32`，线上行为零变化。
+- 部署：中心节点备份 `.deploy-backups/twsaimahui-verdict-20260927T053631Z`
+  （`e411a82 → 76ef5b8` + 重建 `python-api`/`scheduler-worker`，`healthy`）；
+  前端节点备份 `.deploy-backups/twsaimahui-verdict-20260927T054527Z`（仅 pull）。
+- 上线核查：中心 **PASS=20 / PENDING=0 / FAIL=0**、前端 **PASS=17 / PENDING=0 / FAIL=0**。
+- 服务内容验证（经 nginx + `Host: www.twsaimahui.com`）：
+  `index.html` 引用 `bundle-2cb4846e0d092963.js`；该 bundle（200，329274 B）内
+  `dsHit = true` 存在、`let hit = dsHit || zj` 存在、`getDsxiao` 块内**无**旧判定、
+  未开奖分支为 `??`；响应头 `cache-control: public, max-age=31536000, immutable`
+  （正是必须改文件名的原因）。
+- 修复后逐期判定（真实资料）：**261 准｜262 错｜263 准｜264 错｜265 准｜266 准｜267 准｜268 准｜269 错｜270 `??`（未开奖）= 6/9**。
+  - 269 期仍为"错"：该行分类池 `双生肖|鼠,虎,龙,马,猴,狗` 与候选肖 `羊,龙` 都不含
+    `鸡`（46 的生肖）。`fixed_data` 的「单生肖/双生肖」「单肖/双肖」分组是**地支阴阳**口径，
+    其号码奇偶与标签相反（"双生肖"内全是单数号码）；若产品要求按**号码奇偶**重做分组，
+    会影响多个模块（15/28/31 等），属独立决策，本次未改。
+- 契约与单测：新增 `frontend/test/twsaimahui-danshuang-verdict-contract.mjs`
+  （源文件 + 站点实际加载的 bundle 双查 + 真实 9 期判定核对）通过；
+  `twsaimahui-bundle-contract.mjs` 通过；`node --check` 通过；
+  后端全量 **916 passed / 17 skipped / 1 failed**（既有 nginx health 契约）。
