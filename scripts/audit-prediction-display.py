@@ -151,11 +151,52 @@ ROW_SCRIPT = r"""
     return n;
   };
   for (const item of leaves) {
+    // 供应商常把一期的内容拆成多个单元格 / 相邻两个 <tr>：
+    //   `<td>270期【绝杀二肖】开 马37错</td><td>鸡,马</td>`
+    // 只取叶子会看不到「鸡,马」这块高亮，于是 R3（判错却有黄底）整类漏报。
+    // 这里把「本单元格之后、不含期号的同辈」和「相邻的不含期号的 <tr>」合并进来，
+    // 只合并含开奖段或确实带黄底的那一块，遇到下一个期号立刻停止。
+    let text = item.text;
+    const nodes = [item.el];
+    // 从叶子沿祖先链向上最多 4 层，把「本节点之后、不含期号」的同辈逐个并进来
+    // （一期的内容可能被拆在 <td> 里的多个 <span>，也可能拆在同一 <tr> 的多个 <td>）。
+    let cursor = item.el;
+    for (let depth = 0; depth < 4 && cursor && cursor.parentElement; depth += 1) {
+      const holder = cursor.parentElement;
+      let collecting = false;
+      for (const child of Array.from(holder.children)) {
+        if (child === cursor || child.contains(cursor)) { collecting = true; continue; }
+        if (!collecting) continue;
+        const childText = (child.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!childText || childText.length > 260) continue;
+        if (/\d{2,3}\s*期/.test(childText)) { collecting = false; break; }
+        if (!/开|開/.test(childText) && countYellow(child) === 0) continue;
+        if (text.length + childText.length > 220) { collecting = false; break; }
+        text = (text + ' ' + childText).trim();
+        nodes.push(child);
+      }
+      const tag = String(holder.tagName || '').toUpperCase();
+      if (tag === 'TR' || tag === 'TBODY' || tag === 'TABLE' || tag === 'BODY') break;
+      cursor = holder;
+    }
+    const host = item.el.closest('tr');
+    if (host) {
+      for (const sib of [host.nextElementSibling, host.previousElementSibling]) {
+        if (!sib) continue;
+        const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!sibText || sibText.length > 260) continue;
+        if (/\d{2,3}\s*期/.test(sibText)) continue;
+        if (!/开|開/.test(sibText) && countYellow(sib) === 0) continue;
+        text = (text + ' ' + sibText).trim();
+        nodes.push(sib);
+        break;
+      }
+    }
     out.push({
       module: moduleOf(item.el),
-      text: item.text,
-      html: item.el.outerHTML.slice(0, 4000),
-      highlights: countYellow(item.el),
+      text: text,
+      html: nodes.map((node) => node.outerHTML).join('').slice(0, 4000),
+      highlights: nodes.reduce((sum, node) => sum + countYellow(node), 0),
     });
   }
   return out;
@@ -212,18 +253,27 @@ def is_pending(text: str) -> bool:
     return any(token in text for token in PENDING_PATTERNS)
 
 
+VERDICT_TAIL_RE = re.compile(r"(不中|[准对错赢输中])\s*[）)】\]》〉」\s。．.]*$")
+
+
 def verdict_of(text: str) -> str:
     """取该行的判定文字。
 
-    两步定位，避免两类误判：
+    三步定位，避免三类误判：
     1. 只看**开奖结果之后**的部分——模块名里也含「中」（单双中特 / 八肖中特 / 一波中特 …），
        在整行里搜「中」会把模块名当成判定；
-    2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」），
-       按固定 token 顺序取第一个会把它当成判定，而真正的判定总在行尾。
-       结束位置相同时优先更长的 token（「不中」优于「中」）。
+    2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」，
+       行内没有「开」字时整行就是 tail），按固定 token 顺序取第一个会把它当成判定，
+       而真正的判定总在行尾。结束位置相同时优先更长的 token（「不中」优于「中」）；
+    3. 行内**没有**「开/開」时，只有当判定字出现在**行尾**（允许后面跟右括号/空白/句号）
+       才认账——否则「270期七肖中特：www.xxx.com长期跟踪」这类标题/文章行里的「中」
+       会被误判成判定（R2/R3/R4/R8 的主要误报来源）。
     """
     openings = list(re.finditer(r"开|開", text))
-    tail = text[openings[-1].end():] if openings else text
+    if not openings:
+        tail_match = VERDICT_TAIL_RE.search(text)
+        return tail_match.group(1) if tail_match else ""
+    tail = text[openings[-1].end():]
     best = ""
     best_end = -1
     for token in VERDICT_TOKENS:
