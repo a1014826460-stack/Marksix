@@ -26,6 +26,107 @@
 - 每次服务器操作须由用户明确说明目标服务器和动作范围；未明确的服务器、服务或数据库均不得触碰。
 - 获得部署授权后，先核对工作区与远端运行时文件，按本指南完成备份和保护，再执行被授权的最小操作范围。
 
+## 部署工作流（含跳板机，2026-09-27 起为标准流程）
+
+### 为什么走跳板机
+
+直连两个节点的 SSH 握手实测 **3.0–4.1 s**；经跳板机后 **约 0.7 s**（快 5–9 倍）。
+因此**默认经跳板机访问**，直连仅作兜底。
+
+实测数据（2026-09-27，Windows 客户端，各 4–5 次握手）：
+
+| 路径 | 中心节点 | 前端节点 | 跳板机自身 |
+| --- | --- | --- | --- |
+| 直连 | 3080–4064 ms | 3099–3847 ms | — |
+| `ProxyJump`（推荐） | 686–769 ms | 678–725 ms | 324–431 ms |
+| 本地端口转发（持久隧道） | 403–477 ms | 418–479 ms | — |
+
+### 节点与跳板机
+
+| 角色 | 地址 | 说明 |
+| --- | --- | --- |
+| 跳板机 | `8.163.93.151:22`，用户 `Administrator` | `~/.ssh/id_ed25519` |
+| 中心节点 | `207.56.3.82:29618`，用户 `root` | 跑 `docker-compose.yml`（python-api / scheduler-worker / frontend / nginx / PostgreSQL / PgBouncer） |
+| 前端节点 | `207.56.2.71:62594`，用户 `root` | 跑 `docker-compose.frontend-node.yml`，另有非 Liuhecai 容器 |
+
+本地 `~/.ssh/config` 建议固化以下条目（`ProxyJump` 由 OpenSSH 自动用可用密钥完成跳板认证，无需 agent）：
+
+```sshconfig
+Host liuhecai-jump
+    HostName 8.163.93.151
+    User Administrator
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+
+Host liuhecai-center
+    HostName 207.56.3.82
+    Port 29618
+    User root
+    IdentityFile ~/.ssh/id_ed25519
+    ProxyJump liuhecai-jump
+
+Host liuhecai-frontend
+    HostName 207.56.2.71
+    Port 62594
+    User root
+    IdentityFile ~/.ssh/id_ed25519
+    ProxyJump liuhecai-jump
+```
+
+### 标准发布顺序
+
+1. **本地**：跑通回归并提交、推送。
+
+   ```powershell
+   cd backend/src; python -m pytest -q
+   node frontend/test/<相关契约>.mjs
+   git push origin main
+   ```
+
+2. **发布脚本走 stdin + gzip 传输**（避免在 PowerShell 里拼引号，也避免 `scp` 依赖）：
+
+   ```powershell
+   $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+   # 中心节点
+   gzip -c deploy/deploy-scripts/deploy-center.sh |
+     ssh -i $env:USERPROFILE\.ssh\id_ed25519 -o IdentitiesOnly=yes liuhecai-center `
+       "gunzip > /tmp/deploy-center.sh && bash /tmp/deploy-center.sh $stamp"
+   # 前端节点
+   gzip -c deploy/deploy-scripts/deploy-frontend.sh |
+     ssh -i $env:USERPROFILE\.ssh\id_ed25519 -o IdentitiesOnly=yes liuhecai-frontend `
+       "gunzip > /tmp/deploy-frontend.sh && bash /tmp/deploy-frontend.sh $stamp"
+   ```
+
+   - 必须**先中心、后前端**。
+   - 两个脚本都会先做时间戳备份（`/root/Marksix/.deploy-backups/tw8800-verdict-<stamp>`，
+     含 `HEAD.txt`、`status.txt`、`worktree.patch`、`untracked.txt`、compose、`.env`、nginx 配置），
+     再 `git merge --ff-only`，失败即停不改动运行状态。
+   - 中心节点重建 `python-api`、`scheduler-worker`、`frontend`，**不重建** PostgreSQL/PgBouncer/数据卷；
+     前端节点**仅重建 `frontend`**，保留 nginx、TLS 与其他容器。
+
+3. **公网验收**：`/health`、各站首页、以及本次改动对应的静态资源与页面行为
+   （静态资源验证示例：`curl -s https://<host>/vendor/shengshi8800/static/js/5xiao.js | grep -c 八肖中特`）。
+
+4. **收尾**：清理节点 `/tmp` 上的临时脚本。
+
+### 排障与注意事项
+
+- 脚本用 `set -uo pipefail`（**不要加 `-e`**）：`grep -c` 未命中会返回 1，
+  会让 `set -e` 在重建前中断（2026-09-27 首次发布即因此漏掉重建，后补跑修复）。
+- 脚本末尾的 `/health` 自检要在容器起来后 20–30 s 再判读：`docker compose up -d` 刚返回时
+  `frontend`/`python-api` 仍是 `health: starting`，此时请求会得到 **502**（正常现象，非故障）。
+  以 `docker compose ps` 显示 `(healthy)` 为准。
+- `ProxyJump` 不可用时，改用持久隧道：
+  `ssh -N -L 12961:207.56.3.82:29618 -L 16251:207.56.2.71:62594 liuhecai-jump`，
+  之后 `ssh -p 12961 root@127.0.0.1` / `ssh -p 16251 root@127.0.0.1`。
+- 远端工作区常年存在站点运行期未跟踪文件（中心约 22 项、前端约 13 项），
+  `git merge --ff-only` 不动它们；**禁止**在远端用 `reset --hard` / `clean`。
+- `grep -c` 之类的校验计数为 0 时命令返回非 0，脚本中一律用 `|| true` 兜住。
+- 首次验证（2026-09-27）：两个节点的发布脚本均通过
+  `gzip -c deploy-scripts/deploy-*.sh | ssh liuhecai-<node> "gunzip > /tmp/... && bash /tmp/... <stamp>"`
+  成功执行；中心节点重建后约 30 s 内全部 `(healthy)`，公网 `/health` 200。
+
+
 ## 密钥管理与轮换
 
 - `DATABASE_URL`、`POSTGRES_PASSWORD`、`FRP_AUTH_TOKEN` 只能通过部署平台 Secret、受限环境变量或被 Git 忽略的本地文件注入；不得写入脚本、TOML、文档示例或日志。
