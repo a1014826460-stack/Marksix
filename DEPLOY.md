@@ -1432,3 +1432,58 @@ docker compose -f docker-compose.frontend-node.yml exec -T nginx nginx -t
   `public_open_delay_seconds ≤ 60`、`lottery.{hk,macau}_next_time` 不再被前滚到次日、
   日志出现 `Chase mode enabled … window#1` → `running open pipeline` → `opened=1`
   且无 `windows exhausted`。
+
+### 09-26 港澳开奖实测（P1 追赶机制首次真实验收）
+
+- **香港彩 104**：源站 `open_time=2026-09-26 21:35:23`；并行追赶探测于 `13:34:01.245Z`
+  从 `www.lnlllt.com` 命中 `2026104`（`Chase lt=1: new period … found by parallel probe`），
+  auto-crawl 于 `13:34:31` 开盘，`public_open_delay_seconds=15` → **准时**（早于源站标注时间）。
+- **澳门彩 269**：源站 `open_time=21:32:32`；`13:34:40.578Z` `macaumarksix.com` 首次返回
+  `2026269` → `13:34:50.926` 开盘，`public_open_delay_seconds=138` → **延迟 138 秒**。
+  构成：`21:32:32–21:34:40` 期间**三源都还没有新期**（`www.lnlllt.com` 连续 `ReadTimeout`
+  于 `13:33:48/13:34:18/13:34:48`，`macaumarksix.com`/`api.csjid.com` 仍是 `2026268`），
+  我们自己的管线只占约 10 秒；相比 268 期的 367.7 秒改善 62%，且**全程无盲区**
+  （追赶心跳每 5–20 秒一轮并行探测）。
+- 告警链路同时验证：`YELLOW ALERT: 香港彩 draw overdue by 255s` + 邮件，
+  恢复后 `13:34:32` 发"已恢复"邮件。
+
+### 港澳"下次开奖"倒计时修复上线结果（2026-09-27）
+
+- 上线提交：`026cde1`。origin/main 与两节点同步（push 经 `git -c http.version=HTTP/1.1`
+  第 3 次重试成功；`schannel`/`openssl` 在 HTTP/2 下被中断）。
+- 现象：`/api/next-draw-deadline?lottery_type=1|2` 返回 `next_time: null`，
+  面板徽标一直停在 `下次开奖 --:--:--`。
+- 根因：09-26 的香港 104、澳门 269 是**由备用源开盘**的
+  （`api.csjid.com` / `macaumarksix.com`），这两个源的响应里**没有 `next_time` 字段**
+  → `lottery_draws.next_time` 为空 → `sync_lottery_type_next_time_from_latest_draw`
+  把空值写进 `lottery_types.next_time` 与 `system_config.lottery.{hk,macau}_next_time`。
+  面板 `local.html` 的 `normalizeToSeconds(Number(null))===0` 走 `--:--:--` 分支（`local.html:609-610`）。
+  台湾彩不受影响（其 next_time 来自未来期行/持久化任务）。
+- 修复（仅代码）：
+  - `helpers.compute_next_draw_time_ms()`：按排期推导——香港 `draw.hk_draw_weekdays`
+    （默认 `1,3,5` = 周二/四/六，Python `weekday()` 约定）、澳门每日，
+    钟点取 `draw.{hk,macau}_default_draw_time`；**台湾返回空串，不参与推导**；
+  - `helpers.resolve_next_time_ms()`：优先级 = 源站值 → 仍在未来的已存值 → 排期推导，
+    **绝不用空值覆盖已有排期**；
+  - `sync_lottery_type_next_time_from_latest_draw` 与 `/api/public/next-draw-deadline` 共用
+    （接口层兜底，库值暂时为空也能给出未来时间）。
+- 部署：中心节点备份 `.deploy-backups/countdown-fix-20260927T045838Z`
+  （`34202c7 → 026cde1` + 重建 `python-api`/`scheduler-worker`，`healthy`）；
+  前端节点备份 `.deploy-backups/countdown-fix-20260927T050734Z`（仅 pull，无前端文件变更）。
+- 一次性补正（与调度器周期同步同一路径，容器内执行）：
+  `lottery.hk_next_time = 1790688600000`（**2026-09-29 21:30 北京**，周二）、
+  `lottery.macau_next_time = 1790515920000`（**2026-09-27 21:32 北京**，今晚）；
+  台湾 `1790519520000` 未变。两地与源站 `current` 的 `next_time` **完全一致**。
+- 验收：`/api/next-draw-deadline` 经 nginx + Next 全链路返回上述值；
+  上线核查中心 **PASS=20 / PENDING=0 / FAIL=0**、前端 **PASS=17 / PENDING=0 / FAIL=0**；
+  单测 `backend/src/tests/unit/test_next_draw_deadline_fallback.py` 9 项通过，
+  全量 **916 passed / 17 skipped / 1 failed**（既有 nginx health 契约）。
+- 备注：
+  - 面板 HTML 里的静态占位符仍是 `下次开奖 --:--:--`，由 JS 在接口返回后替换；
+    本机到公网被中断（`ERR_CONNECTION_CLOSED`）无法跑 Playwright 复核，
+    客户端渲染按既有逻辑（`remainingSec>0` → `formatCountdown`）成立。
+  - `runtime_config` 中 `draw.macau_default_draw_time` 的**登记默认值**是 `21:30`，
+    而生产库为 `21:32`（澳门实际开奖钟点）；若库值丢失，推导会差 2 分钟，
+    建议后续把登记默认值对齐（属配置项，本次未改）。
+  - 自愈路径已验证：新期由备用源开盘（行内 `next_time` 为空）时，插入路径仍会触发同步，
+    `resolve_next_time_ms` 会写入推导出的未来时间，倒计时不会再被清空。
