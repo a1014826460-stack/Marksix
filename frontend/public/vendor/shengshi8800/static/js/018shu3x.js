@@ -30,6 +30,7 @@ $.ajax({
     }
 
     //console.log(ma)
+        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(42, d)) : '';
     htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
@@ -38,7 +39,6 @@ $.ajax({
 	    <td width=\'23%\'><font color=\'#000080\'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
-	        let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(42, d)) : '';
   }
 
   htmlBox = `

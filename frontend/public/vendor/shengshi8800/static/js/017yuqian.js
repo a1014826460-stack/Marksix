@@ -17,6 +17,7 @@ $.ajax({
                 let resSx = data[i].res_sx.split(",");
                 let result = '00'
                 //console.log(ma)
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(62, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
@@ -26,7 +27,6 @@ $.ajax({
         </td>
     </tr>
             `}
-            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(62, d)) : '';
         }
 
         htmlBox = `

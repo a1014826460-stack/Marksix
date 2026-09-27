@@ -35,6 +35,7 @@ $.ajax({
 
 
                 //console.log(ma)
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(38, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
     
     <tr>
@@ -48,7 +49,6 @@ $.ajax({
     </tr>
     
             `}
-            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(38, d)) : '';
         }
         
         htmlBox = `

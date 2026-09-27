@@ -200,4 +200,20 @@ for (const name of scripts) {
 }
 assert.deepEqual(literalOffenders, [], literalOffenders.join("\n"))
 
+// ── 4. 声明必须先于使用 ──────────────────────────────────────
+// 曾出现 `let __verdictTxt` 被插到模板之后 → 页面抛
+// `Cannot access '__verdictTxt' before initialization`，整个模块不再渲染。
+const tdzOffenders = []
+for (const name of scripts) {
+  const live = stripComments(fs.readFileSync(path.join(JS_DIR, name), "utf8"))
+  const lines = live.split("\n")
+  const declAt = lines.findIndex((line) => /let\s+__verdictTxt\s*=/.test(line))
+  if (declAt === -1) continue
+  const useAt = lines.findIndex((line) => line.includes("${__verdictTxt}"))
+  if (useAt !== -1 && useAt < declAt) {
+    tdzOffenders.push(`${name}: 声明在 L${declAt + 1}，但 L${useAt + 1} 已使用（TDZ 报错）`)
+  }
+}
+assert.deepEqual(tdzOffenders, [], tdzOffenders.join("\n"))
+
 console.log(`legacy verdict contract passed (${scripts.length} 个脚本已接入统一判定)`)

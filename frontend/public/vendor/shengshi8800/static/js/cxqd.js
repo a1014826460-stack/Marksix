@@ -37,6 +37,7 @@ $.ajax({
                     }
                 }
                 
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(61, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
   
   <tr>
@@ -47,7 +48,6 @@ $.ajax({
   </tr>
   
             `}
-              let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(61, d)) : '';
         }
         
         htmlBox = `<div class="list-title">台湾四季生肖</div>

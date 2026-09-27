@@ -51,6 +51,7 @@ $.ajax({
                 }
 
                 //console.log(ma)
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(59, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr style='background: #FFFF00;'>
@@ -63,7 +64,6 @@ $.ajax({
         <span class='zl'><font color='#000000'>推荐特尾：：</font>${c1.join('')}</span></td>
     </tr>
             `}
-	            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(59, data[i])) : '';
         }
 
         htmlBox = `

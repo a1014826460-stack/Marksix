@@ -22,13 +22,13 @@ $.ajax({
                 var hit = code && content.indexOf(code) !== -1;
 
                 //console.log(ma)
+                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(65, data[i])) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
         <td><font color='#000000'>${data[i].term}期:开特码段</font><span class='zl'>【${content[0]}-${content[content.length-1]}】</span><font color='#000000'>开:${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}${__verdictTxt}</td>
     </tr>
             `}
-            let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(65, data[i])) : '';
         }
 
         htmlBox = `
