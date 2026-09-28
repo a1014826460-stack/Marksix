@@ -56,8 +56,13 @@ for (const file of [SOURCE, ...bundleFiles()]) {
   }
   if (file !== SOURCE) bundleChecked += 1
   const block = getDsxiaoBlock(text)
-  if (!/dsHit\s*=\s*true/.test(block)) {
-    throw new Error(`${file}: 缺少"分类池命中"标记（dsHit）`)
+  // `dsHit` = 「本期特码落在分类池」这一维度。分类池取自 `content` 的 `标签|号码池`
+  // 后半段（`dsv`），因此断言必须钉住「依据 dsv + 用特码 code 比对」这两点，
+  // 只匹配 `dsHit = true` 会漏掉「写死为 true」的伪实现。
+  if (!/let\s+dsHit\s*=\s*!!\([^;]*dsv[^;]*\.indexOf\(\s*code\s*\)/.test(block)) {
+    throw new Error(
+      `${file}: 「分类池命中」必须由特码是否落在 content 号码池（dsv）判定（dsHit = !!(… dsv…indexOf(code)…))`,
+    )
   }
   if (!/let\s+hit\s*=\s*dsHit\s*\|\|\s*zj/.test(block)) {
     throw new Error(`${file}: 判定必须是「分类池 ∪ 候选生肖」任一命中`)
@@ -65,8 +70,24 @@ for (const file of [SOURCE, ...bundleFiles()]) {
   if (/zj\s*\?\s*'准'\s*:\s*'错'/.test(block)) {
     throw new Error(`${file}: 仍存在只看候选生肖的旧判定`)
   }
-  if (!/\(\s*sx\s*\?\s*\(\s*hit\s*\?\s*'准'\s*:\s*'错'\s*\)\s*:\s*'\?\?'\s*\)/.test(block)) {
-    throw new Error(`${file}: 未开奖必须继续显示 '??'，已开奖按 hit 显示 准/错`)
+  // `sx` 必须是**特肖**（res_sx 末项），否则「候选肖命中」这一维度会拿第一个平码的生肖去比。
+  if (!/let\s+sx\s*=\s*sxSplit\[sxSplit\.length-1\]/.test(block)) {
+    throw new Error(`${file}: 特肖必须取 res_sx 最后一项（sxSplit[sxSplit.length-1]）`)
+  }
+  if (!/let\s+code\s*=\s*codeSplit\[codeSplit\.length-1\]/.test(block)) {
+    throw new Error(`${file}: 特码必须取 res_code 最后一项（codeSplit[codeSplit.length-1]）`)
+  }
+  // 开奖段：未开奖不给判定（待开奖），已开奖按 hit 显示 准/错；
+  // 且只有命中那一行才允许出现黄色高亮（旧写法把黄底写在开奖段 font 上，判「错」也有黄底）。
+  if (!/let\s+resHtml\s*=\s*opened[\s\S]{0,220}?'开:待开奖'/.test(block)) {
+    throw new Error(`${file}: 未开奖必须显示「开:待开奖」，不得给判定`)
+  }
+  if (!/hit[\s\S]{0,120}?准[\s\S]{0,120}?错/.test(block)) {
+    throw new Error(`${file}: 已开奖必须按 hit 显示 准/错`)
+  }
+  const highlightSpans = (block.match(/background-color:\s*#FFFF00/g) || []).length
+  if (highlightSpans === 0) {
+    throw new Error(`${file}: 命中时必须标黄本期特码`)
   }
 }
 

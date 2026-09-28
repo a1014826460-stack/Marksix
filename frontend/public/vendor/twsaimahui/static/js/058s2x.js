@@ -13,11 +13,12 @@ $.ajax({
                 let d = data[i]
                 // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
                 let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
-                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（已交叉验证）。
+                // 开奖口径：res_code/res_sx 的**最后一项**才是本期特码/特肖
+                // （res_code 是本期完整开奖串，与 lottery_draws.numbers 同序，末位即特码）。
                 let codeSplit = csv(d.res_code);
                 let sxSplit = csv(d.res_sx);
-                let code = codeSplit[0]||'';
-                let sx = sxSplit[0]||'';
+                let code = codeSplit[codeSplit.length-1]||'';
+                let sx = sxSplit[sxSplit.length-1]||'';
                 let opened = !!(code && sx);
                 let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];

@@ -16,10 +16,10 @@ $.ajax({
 
                 let codeSplit = csv(d.res_code);
                 let sxSplit = csv(d.res_sx);
-                // 开奖口径：res_code/res_sx 的第 1 项即本期特码/特肖（已用
-                // lottery_draws.numbers 与 mode_payload_197.res_code 交叉验证）。
-                let code = codeSplit[0]||'';
-                let sx = sxSplit[0]||'';
+                // 开奖口径：res_code/res_sx 的**最后一项**才是本期特码/特肖
+                // （res_code 是本期完整开奖串，与 lottery_draws.numbers 同序，末位即特码）。
+                let code = codeSplit[codeSplit.length-1]||'';
+                let sx = sxSplit[sxSplit.length-1]||'';
                 let opened = !!(code && sx);
                 let xiao = [];
                 let xiaoV = [];

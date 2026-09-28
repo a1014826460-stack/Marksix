@@ -106,6 +106,40 @@ def runs_from(html: str) -> list[list[re.Match[str]]]:
     return runs
 
 
+def _lf_bytes(path: pathlib.Path) -> bytes:
+    """读取源文件并把行尾归一为 LF。
+
+    仓库在 Windows 上以 ``core.autocrlf=true`` 检出，部分 ``0xx*.js`` 会带 CRLF。
+    若直接按原始字节拼接，同一个提交在 LF 检出的机器上算出的 bundle 哈希会不同，
+    而且 ``git add`` 会把 CRLF 归一成 LF，导致**落库的正文与文件名哈希不再对应**
+    （浏览器长缓存按文件名取资源，哈希失配就拿不到新代码）。
+    统一归一为 LF 后，bundle 正文在任意检出环境下都一致。
+    """
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
+def _compose(site_root: pathlib.Path, names: list[str]) -> tuple[str, bytes, int]:
+    """按文档顺序拼接一个 bundle，返回 ``(文件名, 字节正文, 字节数)``。"""
+    raw_sources: list[bytes] = []
+    digest = hashlib.sha256()
+    for source_name in names:
+        path = site_root / source_name
+        if not path.exists():
+            raise SystemExit(f"missing module script: {path}")
+        data = _lf_bytes(path)
+        digest.update(source_name.encode("utf-8"))
+        digest.update(data)
+        raw_sources.append(data)
+    bundle_name = f"bundle-{digest.hexdigest()[:16]}.js"
+    header = (
+        "/* twsaimahui 模块脚本合并包（顺序与原文档一致）\n"
+        + "".join(f" *   {name}\n" for name in names)
+        + " */\n"
+    ).encode("utf-8")
+    body = header + b"\n;\n".join(raw_sources) + b"\n"
+    return bundle_name, body, len(body)
+
+
 def build() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
@@ -122,33 +156,18 @@ def build() -> int:
     replacements: list[tuple[int, int, str]] = []
     bundle_records: list[dict] = []
     for run in runs:
-        sources: list[str] = []
-        digest = hashlib.sha256()
         names: list[str] = []
         for match in run:
             source_name = src_of(match)
             if source_name is None:  # pragma: no cover - runs_from guarantees a src
                 raise SystemExit("module run contains a script without src")
-            path = site_root / source_name
-            if not path.exists():
-                raise SystemExit(f"missing module script: {path}")
-            data = path.read_bytes()
-            digest.update(source_name.encode("utf-8"))
-            digest.update(data)
-            sources.append(data.decode("utf-8"))
             names.append(source_name)
-        bundle_name = f"bundle-{digest.hexdigest()[:16]}.js"
+        bundle_name, body, byte_count = _compose(site_root, names)
         bundle_path = site_root / "static/js" / bundle_name
-        header = (
-            "/* twsaimahui 模块脚本合并包（顺序与原文档一致）\n"
-            + "".join(f" *   {name}\n" for name in names)
-            + " */\n"
-        )
-        body = header + "\n;\n".join(sources) + "\n"
         record = {
             "bundle": f"static/js/{bundle_name}",
             "sources": names,
-            "bytes": len(body.encode("utf-8")),
+            "bytes": byte_count,
         }
         start, end = element_span(run[0], html)
         replacements.append((start, end, f'<script type="text/javascript" src="static/js/{bundle_name}"></script>'))
@@ -159,8 +178,8 @@ def build() -> int:
             replacements.append((tag_start, tag_end, ""))
         if args.apply:
             bundle_path.parent.mkdir(parents=True, exist_ok=True)
-            bundle_path.write_text(body, encoding="utf-8", newline="")
-        print(f"  {len(run):2} scripts -> {bundle_name} ({record['bytes'] / 1024:.1f} KB)")
+            bundle_path.write_bytes(body)
+        print(f"  {len(run):2} scripts -> {bundle_name} ({byte_count / 1024:.1f} KB)")
 
     if not args.apply:
         print("dry-run: nothing written")
@@ -193,31 +212,14 @@ def build() -> int:
     return 0
 
 
-def compose_bundle(site_root: pathlib.Path, names: list[str]) -> tuple[str, str, int]:
-    """按文档顺序逐字节拼接一个 bundle，返回 ``(文件名, 正文, 字节数)``。
+def compose_bundle(site_root: pathlib.Path, names: list[str]) -> tuple[str, bytes, int]:
+    """按文档顺序拼接一个 bundle，返回 ``(文件名, 字节正文, 字节数)``。
 
-    bundle 文件名取 ``sha256(源文件名 + 源文件内容)[:16]``，因此**内容一变名字就变**，
-    这对浏览器缓存是必需的（vendor 静态资源带长缓存）。``build`` 与 ``rebuild`` 共用本函数，
-    保证两条路径产出完全一致。
+    bundle 文件名取 ``sha256(源文件名 + 源文件内容)[:16]``（行尾归一为 LF，见 ``_lf_bytes``），
+    因此**内容一变名字就变**，这对浏览器缓存是必需的（vendor 静态资源带长缓存）。
+    ``build`` 与 ``rebuild`` 共用本模块级实现，保证两条路径产出完全一致。
     """
-    sources: list[str] = []
-    digest = hashlib.sha256()
-    for source_name in names:
-        path = site_root / source_name
-        if not path.exists():
-            raise SystemExit(f"missing module script: {path}")
-        data = path.read_bytes()
-        digest.update(source_name.encode("utf-8"))
-        digest.update(data)
-        sources.append(data.decode("utf-8"))
-    bundle_name = f"bundle-{digest.hexdigest()[:16]}.js"
-    header = (
-        "/* twsaimahui 模块脚本合并包（顺序与原文档一致）\n"
-        + "".join(f" *   {name}\n" for name in names)
-        + " */\n"
-    )
-    body = header + "\n;\n".join(sources) + "\n"
-    return bundle_name, body, len(body.encode("utf-8"))
+    return _compose(site_root, names)
 
 
 def rebuild() -> int:
@@ -262,7 +264,7 @@ def rebuild() -> int:
         if args.apply:
             target = site_root / "static/js" / bundle_name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body, encoding="utf-8", newline="")
+            target.write_bytes(body)
             if old_name and old_name != bundle_name:
                 stale = site_root / "static/js" / old_name
                 if stale.exists():

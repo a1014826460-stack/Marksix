@@ -40,12 +40,15 @@ const hidden = commentSpans(indexHtml)
 for (const run of manifest.runs) {
   const bundlePath = path.join(ROOT, run.bundle.replace(/^static\//, "static/"))
   if (!fs.existsSync(bundlePath)) throw new Error(`bundle missing on disk: ${run.bundle}`)
-  const bundle = fs.readFileSync(bundlePath, "utf8")
+  // 行尾归一：bundle 正文以 LF 落库（`scripts/bundle-twsaimahui-modules.py` 会归一），
+  // 而 Windows 上 `core.autocrlf=true` 会把部分源文件检出成 CRLF。逐字节核对前必须
+  // 统一行尾，否则「bundle 内容是否包含源文件」的判定会随检出环境而变。
+  const bundle = fs.readFileSync(bundlePath, "utf8").replace(/\r\n/g, "\n")
   let cursor = 0
   for (const source of run.sources) {
     const sourcePath = path.join(ROOT, source)
     if (!fs.existsSync(sourcePath)) throw new Error(`original module script missing: ${source}`)
-    const body = fs.readFileSync(sourcePath, "utf8").trim()
+    const body = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n").trim()
     const found = bundle.indexOf(body, cursor)
     if (found < 0) throw new Error(`${run.bundle} does not contain ${source} in document order`)
     cursor = found + body.length
