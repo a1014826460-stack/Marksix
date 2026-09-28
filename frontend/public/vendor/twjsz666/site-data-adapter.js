@@ -250,7 +250,11 @@
         setText(group, options.wrap ? options.wrap(value) : value);
         if (options.writeResult) setText(fonts[fonts.length - 1], resultText(row));
       }
-      markPredictionRow(tr, row, index);
+      // 黄底只能落在候选节点上：三行结构用 data-prediction-content 槽，旧结构用 .zl 分组；
+      // 排除玩法（绝杀/杀号）没有可命中的候选，传 [] 保证零黄底。宁可不亮，
+      // 也不允许像旧实现那样飘到同一行的「开:22羊对」上。
+      var candidate = group || (cell && cell.querySelector("[data-prediction-content]")) || [];
+      markPredictionRow(tr, row, index, options.noHighlight ? [] : candidate);
     });
   }
 
@@ -284,7 +288,9 @@
       prefix: function (row) { return normalizedIssue(row) + ": 绝杀二肖"; },
       formatter: function (row) { return listValue(rawValue(row, "xiao")).slice(0, 2).join(".") || formatLabels(row, ".").slice(0, 12); },
       wrap: function (value) { return "【" + value + "】"; },
-      writeResult: true
+      writeResult: true,
+      // 排除玩法：判定「准」= 开奖目标**不在**候选里，本来就没有命中的候选文字可点亮。
+      noHighlight: true
     });
   }
 
@@ -293,7 +299,8 @@
       prefix: function (row) { return normalizedIssue(row) + ":绝杀①半波"; },
       formatter: function (row) { return String(rawValue(row, "wave") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join(""); },
       wrap: function (value) { return "【" + value + "】"; },
-      writeResult: true
+      writeResult: true,
+      noHighlight: true
     });
   }
 
@@ -301,7 +308,8 @@
     renderInlineSlots(section, module, {
       prefix: function (row) { return normalizedIssue(row) + ":绝杀"; },
       formatter: function (row) { return String(rawValue(row, "tail") || formatLabels(row, "、")).split(/[|,，、\s]+/).filter(Boolean).slice(0, 1).join(""); },
-      writeResult: true
+      writeResult: true,
+      noHighlight: true
     });
   }
 
@@ -357,7 +365,7 @@
       setText(groups[0], "【" + single.join("") + "】");
       setText(fonts[1], "双肖");
       setText(groups[1], "【" + doubled.join("") + "】");
-      markPredictionRow(tr, row, index);
+      markPredictionRow(tr, row, index, [groups[0], groups[1]]);
     });
   }
 
@@ -371,7 +379,8 @@
       setText(groups[0], poultry.join(""));
       setText(groups[1], beast.join(""));
       setText(cells[2], resultText(row));
-      markPredictionRow(tr, row, index);
+      // 只允许「家:…」「野:…」两格被点亮，开奖格（cells[2]）不参与高亮。
+      markPredictionRow(tr, row, index, [groups[0], groups[1]]);
     });
   }
 
@@ -396,14 +405,18 @@
       if (leaves.length) leaves[0].nodeValue = "合肖（" + zodiac.join("") + "）";
       if (leaves.length > 1) leaves[1].nodeValue = codes.join(".");
       clearLeaves(detail, leaves.slice(0, 2));
-      markPredictionRow(tr, row, index);
+      // 该模块的 DOM 里开奖段排在候选之前，旧实现按整行找第一个匹配 → 命中的
+      // 生肖/号码会先命中开奖段。这里把范围钉死在候选格 detail 上。
+      markPredictionRow(tr, row, index, detail);
     });
   }
 
-  function renderNumberLines(section, module, count, separator) {
+  function renderNumberLines(section, module, count, separator, options) {
+    var skipHighlight = Boolean(options && options.noHighlight);
     Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
       var row = rowData(module, index), cells = rowCells(tr);
       if (!row) { clearLeaves(tr); if (cells[0]) writeLeaf(cells[0], ""); return; }
+      var candidate = [];
       if (cells.length >= 3) {
         setText(cells[0], normalizedIssue(row));
         var numberCell = cells[1], numbers = tokenValues(row).slice(0, count);
@@ -414,13 +427,16 @@
           setText(slot, numbers[slotIndex] || "");
         });
         setText(cells[2], resultText(row));
+        candidate = numberCell;
       } else {
         var fonts = tr.querySelectorAll("font"), detail = tr.querySelector("font[color='#0000ff']");
         setText(fonts[0], normalizedIssue(row) + ": ");
         setText(fonts[2], " " + resultText(row));
         setText(detail, "【" + tokenValues(row).slice(0, count).join(separator) + "】");
+        candidate = detail || [];
       }
-      markPredictionRow(tr, row, index);
+      // 号码玩法：只点亮候选号码格里的命中号码；「稳杀⑦码」这类排除玩法传 noHighlight。
+      markPredictionRow(tr, row, index, skipHighlight ? [] : candidate);
     });
   }
   function renderFourXiaoOddsUnavailable(section) { clearUnavailableSlots(section); }
@@ -446,6 +462,12 @@
         setText(slot, codes.slice(slotIndex * 6, slotIndex * 6 + 6).join("."));
       });
       setText(card.querySelector(".bizhong1-foot"), heads.length ? "本期推荐一头：（" + heads[0] + "）" : "");
+      // 该卡自带候选槽（左栏头数、右栏 24 码）：命中时点亮候选里的那个头/号码。
+      // 旧实现从不给这些卡绑定预测行，所以它们「准」的时候永远零黄底。
+      markPredictionRow(card, codeRow || headRow, index, [
+        card.querySelector(".bizhong1-l"),
+        card.querySelector(".bizhong1-r")
+      ]);
     });
   }
 
@@ -490,19 +512,46 @@
     Array.prototype.forEach.call(window.document.querySelectorAll("[data-prediction-row]"), function (element) {
       element.__twjsz666PredictionRow = null;
     });
+    // 已存在槽位（买码之前先上）的高亮标记同样必须先清掉，否则某张卡当期没有
+    // 重写槽位时会残留上一期的「命中」标记。
+    Array.prototype.forEach.call(window.document.querySelectorAll("[data-prediction-hit-slot]"), function (element) {
+      element.removeAttribute("data-prediction-hit-slot");
+    });
   }
 
   function markPredictionRow(element, row, index, highlightScope) {
     if (!element || !element.setAttribute) return;
     if (index !== undefined) element.setAttribute("data-prediction-row", String(index));
     element.__twjsz666PredictionRow = row || null;
-    // 高亮范围默认是整行；「三头四尾」这类玩法必须只点亮命中的**候选**（头/尾），
-    // 不能去点亮同一行「开:37马对」里的开奖号码，所以单独限定到候选单元格。
+    // 高亮范围**必须**是承载预测候选的节点（单个元素或元素数组）：
+    // 只有这样才能保证黄底落在「命中的候选文字」上，而不会落到同一行的
+    // 期号、「开:22羊对」开奖段或判定字上。传 `[]` 表示该玩法没有可点亮的
+    // 命中候选（绝杀/杀号这一类排除玩法），渲染后零黄底。
     element.__twjsz666HighlightScope = highlightScope || null;
   }
 
-  // 命中值按优先级分组：先整颗（生肖/号码），再带「头」「尾」的位，最后才退化到裸数字，
-  // 这样 "45" 命中不会去点亮 22 码里的 "4"，而「三头四尾」仍能同时点亮命中的头与尾。
+  // 命中值按优先级分组：
+  //   1) 整颗标签：生肖 / 特码 / 波色「红波」 / 大小「大数」——这些是候选格里原样出现的写法；
+  //   2) 带「头」「尾」的位与单字波色/大小；
+  //   3) 最后才退化到裸数字（"45" 命中不会去点亮 22 码里的 "4"）。
+  // 波色与大小由**特码**推导（标准波色分组；1-24 小、25-49 大），这样
+  // 「双波中特」「大小中特」命中时点亮的是候选格里的波色/大小，而不是开奖号码。
+  var COLOR_BY_CODE = (function () {
+    var map = {};
+    var red = ["01", "02", "07", "08", "12", "13", "18", "19", "23", "24", "29", "30", "34", "35", "40", "45", "46"];
+    var blue = ["03", "04", "09", "10", "14", "15", "20", "25", "26", "31", "36", "37", "41", "42", "47", "48"];
+    var green = ["05", "06", "11", "16", "17", "21", "22", "27", "28", "32", "33", "38", "39", "43", "44", "49"];
+    function put(list, name) {
+      for (var i = 0; i < list.length; i++) map[list[i]] = name;
+    }
+    put(red, "red");
+    put(blue, "blue");
+    put(green, "green");
+    return map;
+  })();
+  var WAVE_FULL = { red: "红波", blue: "蓝波", green: "绿波" };
+  var WAVE_SHORT = { red: "红", blue: "蓝", green: "绿" };
+
   function hitTokenGroups(row) {
     var result = row && row.result || {};
     if (!result || result.isOpened !== true || result.isCorrect !== true) return [];
@@ -511,6 +560,8 @@
     var primary = [];
     var secondary = [];
     var tertiary = [];
+    var wave = COLOR_BY_CODE[code];
+    var size = /^\d{2}$/.test(code) ? (parseInt(code, 10) >= 25 ? "大数" : "小数") : "";
     if (zodiac) primary.push(zodiac);
     if (code) {
       primary.push(code);
@@ -522,6 +573,14 @@
         tertiary.push(digits.charAt(0));
         tertiary.push(digits.charAt(1));
       }
+    }
+    if (wave) {
+      primary.push(WAVE_FULL[wave]);
+      secondary.push(WAVE_SHORT[wave]);
+    }
+    if (size) {
+      primary.push(size);
+      secondary.push(size.charAt(0));
     }
     return [primary, secondary, tertiary];
   }
@@ -561,10 +620,14 @@
     var row = element && element.__twjsz666PredictionRow;
     var groups = hitTokenGroups(row);
     var scope = element && element.__twjsz666HighlightScope || element;
+    var scopes = Array.isArray(scope) ? scope : [scope];
     for (var index = 0; index < groups.length; index += 1) {
       var matched = false;
-      groups[index].forEach(function (token) {
-        if (highlightToken(scope, token)) matched = true;
+      scopes.forEach(function (scopeElement) {
+        if (!scopeElement) return;
+        groups[index].forEach(function (token) {
+          if (highlightToken(scopeElement, token)) matched = true;
+        });
       });
       if (matched) return;
     }
@@ -581,7 +644,14 @@
       var value = values[index] || "";
       writeLeaf(slot, value);
       if (slot.style) slot.style.removeProperty("background-color");
-      if (value && value === hitValue && slot.style) slot.style.backgroundColor = "#FFFF00";
+      // 已存在的槽位不能像 highlightToken 那样再包一层 span（会破坏供应商布局），
+      // 因此用 data-prediction-hit-slot 标记「这一格是命中高亮」，
+      // 供清理与展示审计识别：判定为「错」时该标记必须一并消失。
+      slot.removeAttribute("data-prediction-hit-slot");
+      if (value && value === hitValue && slot.style) {
+        slot.style.backgroundColor = "#FFFF00";
+        slot.setAttribute("data-prediction-hit-slot", "");
+      }
     });
   }
 
@@ -638,7 +708,8 @@
         setText(cells[0], row ? displayIssue(row) + ":" + spec[0] : "");
         setText(cells[1], values.join(""));
         setText(cells[2], row ? resultText(row).replace(/^开:/, "") : "");
-        markPredictionRow(rows[specIndex], row, specIndex);
+        // 只点亮本行的候选格 cells[1]（开奖格 cells[2] 不参与）。
+        markPredictionRow(rows[specIndex], row, specIndex, cells[1]);
       });
     });
   }
@@ -674,14 +745,34 @@
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }
+  /**
+   * 四字资料的「解肖」生肖串。
+   *
+   * 供应商该 mode 的正文是 `成语|解肖生肖`（如 `黯然無光|牛羊马虎猴鼠猪`）。旧实现只用
+   * `formatLabels()` 取 `|` 左侧，于是候选格只剩成语本身：命中时没有任何候选生肖可点亮，
+   * 引擎只能退到同一行的开奖段 → 「命中却零高亮 + 开奖段被标黄」。这里把右侧解肖取回来。
+   */
+  function solvedZodiacs(row) {
+    var direct = rawValue(row, "jiexi");
+    if (direct) return listValue(direct).join("");
+    var tokens = tokenValues(row);
+    for (var index = 0; index < tokens.length; index += 1) {
+      var parts = String(tokens[index]).split("|");
+      if (parts.length > 1 && parts[1]) return listValue(parts[1]).join("");
+    }
+    var content = String(rawValue(row, "content") || "");
+    if (content.indexOf("|") !== -1) return listValue(content.split("|")[1]).join("");
+    return "";
+  }
   function renderFourCharacterFlatXiao(section, module) {
     Array.prototype.forEach.call(sectionRows(section), function (tr, index) {
       var row = rowData(module, index), cells = rowCells(tr), group = tr.querySelector(".zl");
       if (!row) { clearLeaves(tr); if (cells[0]) writeLeaf(cells[0], ""); return; }
       setText(cells[0], normalizedIssue(row));
-      setText(group, "【" + formatLabels(row, "").slice(0, 16) + "】");
+      var solved = solvedZodiacs(row);
+      setText(group, "【" + formatLabels(row, "").slice(0, 16) + "】" + solved);
       setText(cells[2], resultText(row));
-      markPredictionRow(tr, row, index);
+      markPredictionRow(tr, row, index, group);
     });
   }
   function renderPoultryBeastUnavailable(section) { clearUnavailableSlots(section); }
@@ -700,7 +791,7 @@
   function renderSelectedTwentyTwo(section, module) { renderNumberLines(section, module, 22, "-"); }
 
   function renderKillSevenCodeUnavailable(section) { clearUnavailableSlots(section); }
-  function renderKillSevenCode(section, module) { renderNumberLines(section, module, 7, "."); }
+  function renderKillSevenCode(section, module) { renderNumberLines(section, module, 7, ".", { noHighlight: true }); }
 
 
   function moduleMap(result) {

@@ -463,10 +463,10 @@
     font-size: 30px;
 }
 .qxtable.left{
-	text-align: left;
+	text-align: center;
 }
 .qxtable.left th{
-	text-align: left;
+	text-align: center;
 }
 .qxtable.yxym{
 	table-layout:auto;
@@ -1107,4 +1107,36 @@ height: 125px;
 .blgg td {
     font-size: 11pt;
 }
+}
+
+/* ------------------------------------------------------------------
+   预测模块文字统一居中（2026-09-29）
+   ------------------------------------------------------------------
+   覆盖模块容器、表格单元格、列表项与段落，清掉供应商模板残留的
+   `text-align: left` / `unset`。只约束 text-align，不改字号、颜色，
+   也不参与命中高亮（高亮仍由 site-data-adapter.js 按本期判定决定）。
+   ------------------------------------------------------------------ */
+.box.pad,
+.box.pad td,
+.box.pad th,
+.box.pad li,
+.box.pad p,
+.box.pad div,
+#yxym,
+#yxym td,
+#yxym th,
+#yxym li,
+#yxym p,
+.qxtable,
+.qxtable td,
+.qxtable th,
+.qxtable li,
+.bizhong1,
+.bizhong1 li,
+.bizhong1-foot,
+.post-list,
+.post-list p,
+.post-list div,
+.post-list li {
+    text-align: center;
 }
