@@ -92,13 +92,30 @@ def _parse_json_array(value: Any) -> list[Any]:
 
 
 def _split_labels(value: Any) -> list[str]:
-    items = [item.strip() for item in split_csv(value) if str(item).strip()]
-    if items and not (len(items) == 1 and re.fullmatch(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]+", items[0])):
-        return items
+    # 先按 JSON 数组解析。`content` 列常见形态是 `["单|01","03",…,"49"]`，
+    # 直接丢给 `split_csv` 会**按引号内的逗号切碎**，得到
+    # `['["单|01', '"03"', …]` 这种带残破引号的碎片（线上「独家公式」的
+    # 单双/大小标签就是这样坏掉的）。JSON 解析成功时以它为准。
+    parsed = _parse_json_array(value)
+    if parsed:
+        items = [str(item).strip() for item in parsed if str(item).strip()]
+        if items:
+            return items
 
     text = str(value or "").strip()
     if not text:
         return []
+    # 形如 `["单|01", …` 但 JSON 不合法（被截断等）：退回逐个引号取词，
+    # 不要再按逗号切，否则仍会得到碎片。
+    if text.startswith("["):
+        quoted = re.findall(r'"([^"]*)"', text)
+        if quoted:
+            return [item.strip() for item in quoted if item.strip()]
+
+    items = [item.strip() for item in split_csv(value) if str(item).strip()]
+    if items and not (len(items) == 1 and re.fullmatch(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]+", items[0])):
+        return items
+
     if "|" in text:
         text = text.split("|", 1)[0].strip()
     zodiacs = re.findall(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]", text)
@@ -546,17 +563,28 @@ def _extract_two_xiao(row: dict[str, Any]) -> list[str]:
 
 def _build_tiandi_2xiao(ctx: VendorModuleContext, db_path: str | Any) -> dict[str, Any]:
     td_rows = _load_mode_rows(db_path, modes_id=5, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    # mode 251（天地二肖）在这台站点上**一行都没有**（实测 0 行），
+    # 但 mode 5 的 `xiao` 列本来就带当期那 2 个生肖（如 2026190 → `龙,狗`）。
+    # 过去强制要求两路都在，导致「天地+②肖」整块 rows=0（有壳无数据）。
     x2_rows = _load_mode_rows(db_path, modes_id=251, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
     bytd = _rows_by_issue(td_rows)
     byx2 = _rows_by_issue(x2_rows)
+
+    def two_xiao_for(issue: str, td_row: dict[str, Any]) -> list[str]:
+        x2_row = byx2.get(issue)
+        labels = _extract_two_xiao(x2_row) if x2_row else []
+        if labels:
+            return labels
+        # 回退：直接取 mode 5 自己的 `xiao` 列。
+        return _split_labels(td_row.get("xiao"))[:2]
+
     history: list[dict[str, Any]] = []
     for issue in _history_window(td_rows, x2_rows, limit=ctx.history_limit):
         td_row = bytd.get(issue)
-        x2_row = byx2.get(issue)
-        if not td_row or not x2_row:
+        if not td_row:
             continue
         result = _pick_result(td_row)
-        labels = _extract_two_xiao(x2_row)
+        labels = two_xiao_for(issue, td_row)
         tiandi = _extract_tiandi_label(td_row)
         is_correct = None
         if result["is_opened"] and result["res_sx"]:
@@ -572,7 +600,7 @@ def _build_tiandi_2xiao(ctx: VendorModuleContext, db_path: str | Any) -> dict[st
                 "result": result,
                 "is_opened": result["is_opened"],
                 "is_correct": is_correct,
-                "raw": {"source_mode_ids": [5, 251]},
+                "raw": {"source_mode_ids": [5, 251], "xiao": ",".join(labels)},
             }
         )
     return {
@@ -612,29 +640,49 @@ def _build_dujia_gongshi(ctx: VendorModuleContext, db_path: str | Any) -> dict[s
             if not row:
                 return None
             is_correct: bool | None = None
-            if result["is_opened"] and labels:
+            # 特码必须是纯数字才能参与单双/大小/尾数判定；否则 int() 会抛异常
+            # （is_opened 与特码非空并不总是同时成立）。
+            special = str(result["res_code"] or "").strip()
+            if result["is_opened"] and labels and special.isdigit():
+                special_code = int(special)
                 if row is parity_row:
-                    is_correct = ("双" if int(result["res_code"]) % 2 == 0 else "单") in labels
+                    is_correct = ("双" if special_code % 2 == 0 else "单") in labels
                 elif row is size_row:
-                    is_correct = ("大" if int(result["res_code"]) >= 25 else "小") in labels
+                    is_correct = ("大" if special_code >= 25 else "小") in labels
                 else:
-                    is_correct = str(int(result["res_code"]) % 10) in labels
+                    is_correct = str(special_code % 10) in labels
             return {"labels": labels, "is_correct": is_correct}
 
+        # `raw.res_code` 必须是**本期完整开奖串**（前 6 个平码 + 末位特码），
+        # 与 lottery_draws.numbers 同序：twbst528 适配器的「独家公式」要用它显示
+        # 6 个平码（`20-19-38-35-23-42`），取不到才会退化成 `---------------------`。
+        # `result.res_code` 只是特码，不能拿来当整串。
+        draw_codes = _split_labels(source.get("res_code"))
+        draw_zodiacs = _split_labels(source.get("res_sx"))
+        draw_colors = _split_labels(source.get("res_color"))
+        formula = {
+            "parity": entry(parity_row, _labels_for_row(parity_row or {})),
+            "size": entry(size_row, _labels_for_row(size_row or {})),
+            "tails": entry(tail_row, _labels_for_row(tail_row or {}, tail=True)),
+        }
         history.append(
             {
                 "issue": issue,
                 "year": str(source.get("year") or ""),
                 "term": str(source.get("term") or ""),
-                "formula": {
-                    "parity": entry(parity_row, _labels_for_row(parity_row or {})),
-                    "size": entry(size_row, _labels_for_row(size_row or {})),
-                    "tails": entry(tail_row, _labels_for_row(tail_row or {}, tail=True)),
-                },
+                "formula": formula,
                 "result": result,
                 "is_opened": result["is_opened"],
                 "is_correct": None,
-                "raw": {"source_mode_ids": [28, 57, 491]},
+                "raw": {
+                    "source_mode_ids": [28, 57, 491],
+                    "res_code": ",".join(draw_codes),
+                    "res_sx": ",".join(draw_zodiacs),
+                    "res_color": ",".join(draw_colors),
+                    # twbst528 适配器读的是 `raw.formula[kind]`（不是 history 顶层的
+                    # formula），所以这里同时挂一份；否则单双 / 大小永远取不到标签。
+                    "formula": formula,
+                },
             }
         )
     return {
