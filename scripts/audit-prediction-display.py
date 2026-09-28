@@ -14,7 +14,7 @@
     R5 repeat_run         同一模块相邻 3 期以上展示值完全相同
     R6 empty_legend       分组说明后面为空（如「右肖:」「阴肖:」）
     R7 verdict_missing    已开奖且有判定语义的模块缺判定文字（提示级）
-    R8 verdict_all_same   某模块 ≥5 期已开奖行判定全同（整列全对/全错的统一性告警）
+    R8 verdict_all_same   某模块 ≥5 期已开奖行判定全同（整列对/错的统一性告警）
 
 黄色高亮同时用两种口径识别：元素**计算样式**（能抓到 class / bgcolor 属性造成的黄底）
 与行 HTML 里的 `#FFFF00` 字面量；只统计「相对父节点新增」的黄色，容器整体黄底不算行内高亮。
@@ -117,6 +117,9 @@ ROW_SCRIPT = r"""
     const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
     if (!text || text.length > 260) continue;
     if (!/\d{2,3}\s*期/.test(text)) continue;
+    // 隐藏/未渲染的元素（供应商模板里的备用行、display:none 的草稿）不算页面展示，
+    // 否则会把没上屏的原始 `标签|值` 串也算成违规。
+    if (el.getClientRects().length === 0) continue;
     cands.push({ el, text });
   }
   const leaves = cands.filter((item) => !cands.some((other) => other.el !== item.el && item.el.contains(other.el)));
@@ -134,7 +137,7 @@ ROW_SCRIPT = r"""
   // 只按容器分组会让 R4/R5 把不同玩法混成一个模块，所以补一段「行内标签」做二级区分：
   // 取「最后一个期号」之后到第一个【『（《 或 开 之间的短文本；取不到就退回方括号里的短文本。
   const labelOf = (text) => {
-    const m = text.match(/\d{2,3}\s*期\s*[:：]?\s*([^【『（(《开:：;；]{1,16})/);
+    const m = text.match(/\d{2,3}\s*期\s*[:：]?\s*([^【『（(《开:：;；|]{1,16})/);
     if (m) {
       const label = m[1].replace(/[：:\s;；]+$/, '').trim();
       if (label) return label.slice(0, 16);
@@ -147,6 +150,16 @@ ROW_SCRIPT = r"""
     const base = containerOf(el);
     const label = labelOf(text || '');
     return label ? base + '|' + label : base;
+  };
+  // 「纯候选单元格」判定：供应商常把「期号 + 玩法标签」放一个 <td>、把候选生肖/号码放另一个 <td>，
+  // 候选格里既没有「开」也没有黄底，只按那两条过滤会把它丢掉，于是 R5 看不到展示值、
+  // R8 也把「有候选」的模块误判成空集。这里用「像候选」的形态把它捞回来。
+  const ZODIAC_CHARS = /[鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬]/g;
+  const looksLikeCandidates = (value) => {
+    const text = String(value || '');
+    const zodiacs = (text.match(ZODIAC_CHARS) || []).length;
+    const numbers = (text.match(/\d{2}/g) || []).length;
+    return zodiacs >= 2 || numbers >= 2 || /[尾头波]/.test(text);
   };
   // 只统计「相对父节点新增的」黄色：容器整体黄底不会被算成本行高亮，
   // 但供应商用 class（.stylesb）、bgcolor 属性或内联 style 造成的黄底都能被抓到。
@@ -199,7 +212,7 @@ ROW_SCRIPT = r"""
         const childText = (child.textContent || '').replace(/\s+/g, ' ').trim();
         if (!childText || childText.length > 260) continue;
         if (/\d{2,3}\s*期/.test(childText)) { collecting = false; break; }
-        if (!/开|開/.test(childText) && countYellow(child) === 0) continue;
+        if (!/开|開/.test(childText) && countYellow(child) === 0 && !looksLikeCandidates(childText)) continue;
         if (text.length + childText.length > 220) { collecting = false; break; }
         text = (text + ' ' + childText).trim();
         nodes.push(child);
@@ -219,7 +232,7 @@ ROW_SCRIPT = r"""
         const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
         if (!sibText || sibText.length > 260) continue;
         if (/\d{2,3}\s*期/.test(sibText)) continue;
-        if (!/开|開/.test(sibText) && countYellow(sib) === 0) continue;
+        if (!/开|開/.test(sibText) && countYellow(sib) === 0 && !looksLikeCandidates(sibText)) continue;
         text = (text + ' ' + sibText).trim();
         nodes.push(sib);
         break;
@@ -288,8 +301,9 @@ def is_pending(text: str) -> bool:
 
 
 VERDICT_TAIL_RE = re.compile(r"(不中|[准对错赢输中])\s*[）)】\]》〉」\s。．.]*$")
-# 「中奖 / 不中奖」是站点自渲染的状态文案，不是对/错判定，读进来会造出大量假命中。
-VERDICT_NOISE_RE = re.compile(r"不?中奖")
+# 「中奖 / 不中奖 / 必中N肖 / 中特」都是站点自带的标签文案，不是对/错判定，
+# 读进来会造出大量假命中（twsaimahui 的「必中六肖/必中三肖/必中一肖」就在开奖段之后）。
+VERDICT_NOISE_RE = re.compile(r"不?中奖|必中|中特")
 # 排除型（杀号）玩法：判定「准/对」= 杀掉的集合里没有开奖目标 = 本来就没有可高亮的命中项，
 # R4（命中却没高亮）对这类模块不适用。
 EXCLUDE_MODULE_RE = re.compile(r"绝杀|绝禁|绝版杀|输尽光|杀[一二三四五六七八九十\d]|必杀")
