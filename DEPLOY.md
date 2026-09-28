@@ -1805,3 +1805,84 @@ warn 全部是 R4（命中却没高亮，含杀号类「准=没有可高亮项�
 `docs/prediction-display-standard.md` 第五节之二记录了 R4/R5/R8 的人工判定结论；
 `R4` 对「平特三肖连」「A级大公开」等模块的命中项高亮仍欠缺（warn 级，未纳入本轮硬性要求）；
 `shengshi8800/handleSelect.js` 的 `getResult()` 仍写死「准」但**无调用方**（死代码，勿复活）。
+
+### 十站点展示告警二轮收敛（2026-09-28，warn 217 → 27）
+
+**发布提交**：`d58865f`（已推送 `origin/main`）。中心节点备份
+`/root/Marksix/.deploy-backups/display-standard-3-20260928T064016Z`，
+前端节点备份 `/root/Marksix/.deploy-backups/display-standard-3-20260928T064706Z`；
+重建 `python-api`、`scheduler-worker`、`frontend`（前端节点仅 `frontend`）。
+
+**这一轮做了什么**
+
+1. **审计工具二次加固**（决定了后面所有数字的可比性）：
+   - 模块归属 = `容器 + "|" + 行内标签`（`.box.pad`、`#yxym`、`#table7` 都是多玩法共用容器，旧口径把它们混成一个模块）；
+   - 行切分补齐「纯候选单元格」并把后续多个兄弟 `<tr>` 一并并入（判定在 header 行、命中黄底在 detail 行的「配对模块」终于能对齐）；
+   - 过期判定字口径：判定字必须在「最后一个 `开/開`」之后的 16 字窗口内，否则退回「行尾判定字」——
+     修掉笑话正文里的「**对**我又是…」被读成判定「对」这类误报；
+   - R5 的展示值改为「去掉标签、取括号内容」；出现频率 ≥40% 的 token 判为标签跳过；
+     隐藏元素（`getClientRects().length === 0`）不计；
+   - R4/R8 豁免：排除型（杀号）玩法按模块级豁免、无容器归属（`?`）的行豁免、
+     「一格多玩法」的聚合卡片（A级猛料/AAA级大公开）按卡判定豁免。
+
+2. **真缺陷修复**（全部落地并上线）：
+   - **mode 492「三头四尾」判定恒「错」**：`_check_correct_by_mechanism` 把通用复合 outcome 喂给了
+     以机制专属 outcome 为契约的 checker（恒 False），且该 checker 写的是 `all(...)`（头尾同时命中），
+     与 `PredictionCategory.MIXED`「任一维度命中即算命中」约束和供应商样本都不符。已改为使用
+     `config.outcome_loader` 的专属目标 + `any(...)`；同时补 `prediction-contract.ts` 的头尾维度校验
+     （否则前端 `reconcileVerdict` 会把修好的「对」再降级成「错」）。`generation_rules` 里 mode 492 的
+     `rule_revision` 1 → 2，避免与旧语义的预约结果混淆。
+   - **半波类候选判定写死**（`#banbodanshuang_shu` mode 490、twjsz666 绝杀①半波 mode 58）：
+     `蓝双/绿单` 不是通用 outcome 任何原子的子串 → `excludes_hit` 恒 True。`_compute_outcome_from_row`
+     补 `{波色}{单双}` 半波原子（与 `fixed_data.波色单双` 一致，01–49 全量单测）。
+   - **twsaimahui `057s1x.js`（绝杀一肖）漏改**：未开奖时 `sx===''`，`''.indexOf('')===0` 使「杀肖不含特肖」
+     恒成立 → 输出「？00错」并给候选标黄（S1+S3 双违规）。按同批脚本口径补 `opened` 守卫，已重建 bundle
+     （`bundle-993c1bed20e86f4a.js`）。
+   - **twcaibawang 四字玄机（mode 52）连续 4 期同值**：`load_recent_created_rows` 硬性要求 `content` 列，
+     而 `created.mode_payload_52` 只有 `title/jiexi` → 历史恒空 → `enforce_three_period_uniqueness(52)`
+     **从未生效**。去掉该硬要求后实测 `history rows: 0 → 8`。历史期不改，下期生成起生效。
+   - **twssz 命中项无高亮（R4×7）**：配对模块（8肖16码/三肖六码/双波10码）根本没有标黄机制，
+     残留黄底全是供应商静态样例；A级猛料卡的 `markGradeHits` 又是**卡级并集**（七肖格不含马却因三肖格命中而判「对」）。
+     已把判定与高亮下沉到「展示值所在的格」，按各玩法口径（生肖=特肖；平特=整期 7 个号码；波色=特码波；
+     排除型只清不标）逐值标黄，并把 `moduleRowForTerm` 的「无本期行回退第 0 行」改为返回本期空行（不再串期）。
+   - **twbst528 同期号三条重复行**：`renderCompositeLines` 用 `Math.min(..., length-1)` 把越界小节回退到
+     最后一个模块，「三期计划」的第 5/6 小节因此把「3.肖中特」的行写了三遍。改为越界即「暂无后端资料」。
+   - **twcf888 / twjinniu / twwanli / twsyw**：平特类高亮按本期 7 个开奖号码定位命中项；绝杀一波取反且不参与高亮；
+     `sanxiao15ma` 展示完整候选集合（命中的第 8/9 位不再不可见）；twwanli 波色行不再渲染「暂无后端资料」兜底串
+     并照常给判定；twsyw `#nannv` 改渲染真实候选、`#kill1tou` 展示全部 3 个候选头。
+   - **shengshi8800 裸 `JSON.parse` 兜底**：18 个文件改走 `safeParseJSON / parseContentList`（永不抛异常），
+     正常 JSON 路径逐字节不变（16/16 模块 HTML 一致），非 JSON 输入由「整块模块空白」变为正常渲染（64/64）。
+     lint L2 由 29 降至 9（余下为 helper 本体与已受 try/catch 保护的低风险点）。
+
+**公网验收（Playwright 实开，`scripts/audit-prediction-display.py`，2026-09-28）**
+
+| 站点 | rows | js_errors | error | warn |
+| --- | ---: | ---: | ---: | ---: |
+| shengshi8800 | 447 | 0 | 0 | 1 |
+| twcaibawang | 292 | 0 | 0 | 3 |
+| twsaimahui | 652 | 0 | 0 | 5 |
+| twjinniu | 469 | 0 | 0 | 0 |
+| twcf888 | 451 | 0 | 0 | 5 |
+| twssz | 282 | 0 | 0 | 3 |
+| twbst528 | 468 | 0 | 0 | 2 |
+| twjsz666 | 276 | 0 | 0 | 0 |
+| twwanli | 202 | 0 | 0 | 1 |
+| twsyw | 545 | 0 | 0 | 6 |
+| **合计** | **4084** | **0** | **0** | **27** |
+
+**生产判定真值校验**（`scripts/audit-verdict-truth.py` 在 `python-api` 容器内对生产库）：
+`rows=22024 error=0 warn=3751`（10/10 站点 error=0）。
+
+**回归**：`cd backend/src; python -m pytest -q` → `1036 passed, 13 skipped, 2 failed`，
+两条失败均为既有问题（`test_ha_runtime_config_contract.py` 的 nginx 契约用例 + 并发下抖动的
+`test_versioned_migrations.py::..._lock_timeout`，单独重跑通过）；前端契约
+`run-prediction-token-shape-contract.mjs`（20 模块）/`run-prediction-verdict-truth-contract.mjs`/
+`twsaimahui-012-liuxiao-display-contract.mjs`/`twcaibawang-verdict-contract.mjs` 全部通过。
+
+**剩余 27 条 warn 的性质**（已逐条给出书面结论，见 `docs/vendor-sites/display-convergence-5-sites-2026-09-28.md`
+与 `docs/vendor-sites/sites-7-8-12-13-display-convergence.md`）：绝大多数是 R8「整列判定全同」，
+经真实开奖逐期复算属**概率内**（八肖 8/12 连对、10码 10/49 连错、杀号类连准等）或
+**统计假象**（`#table7`/`.box.pad` 是十几张表共用的同一个 id/class，该组本身就是「多个玩法的未命中行并集」）。
+真正的 R5 只剩 3 条，均为**生成侧相邻期唯一性**问题，已落库历史期无法靠渲染修复
+（其中 twcaibawang mode 52 已修代码，下期起生效）。
+
