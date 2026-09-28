@@ -18,15 +18,50 @@ def test_latest_migration_creates_forced_announcement_tables():
     conn = _Connection()
     latest = versioned_migrations.MIGRATIONS[-1]
 
-    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 29
-    assert latest.version == 29
-    assert latest.name == "raise_history_publication_delay_to_eight_minutes"
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 31
+    assert latest.version == 31
+    assert latest.name == "sync_twwanli_jiaye_zhongte_authorization"
     # forced_announcements 表由迁移 27 创建，验证它仍然存在
     forced = next(m for m in versioned_migrations.MIGRATIONS if m.version == 27)
     assert forced.name == "create_forced_announcements"
     forced.apply(conn)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcements" in sql for sql in conn.statements)
     assert any("CREATE TABLE IF NOT EXISTS forced_announcement_sites" in sql for sql in conn.statements)
+
+
+def test_migration_thirty_adds_lottery_draws_opened_at_once(tmp_path):
+    """迁移 30 给 lottery_draws 补 opened_at 揭示锚点列，且可重复执行。"""
+    from db import connect
+    from database.versioned_migrations import _add_lottery_draws_opened_at
+
+    db_path = str(tmp_path / "opened-at-migration.sqlite3")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE lottery_draws (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lottery_type_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                term INTEGER NOT NULL,
+                numbers TEXT NOT NULL,
+                draw_time TEXT,
+                status INTEGER NOT NULL DEFAULT 1,
+                is_opened INTEGER NOT NULL DEFAULT 0,
+                next_term INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        _add_lottery_draws_opened_at(conn)
+        _add_lottery_draws_opened_at(conn)
+        columns = [
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(lottery_draws)").fetchall()
+        ]
+
+    assert columns.count("opened_at") == 1
 
 
 def test_migration_twenty_nine_moves_the_history_gate_without_touching_custom_values(tmp_path):

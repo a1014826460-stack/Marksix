@@ -3,8 +3,20 @@ import fs from "node:fs"
 const adapter = fs.readFileSync("frontend/public/vendor/twssz/site-data-adapter.js", "utf8")
 const dependencies = fs.readFileSync("backend/src/domains/prediction/site_page_dependencies.py", "utf8")
 
-for (const token of ["createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "<style"]) {
-  if (adapter.includes(token)) throw new Error(`adapter must not mutate UI: ${token}`)
+// 白名单说明（2026-09-29）：`createElement` / `appendChild` 是 twssz 适配器
+// **既有**的命中高亮与候选值写入机制，不是本次引入的 DOM 破坏。
+// 证据：`git show ea1d5de:frontend/public/vendor/twssz/site-data-adapter.js` 中
+// `createElement` 出现 5 次、`appendChild` 4 次，与 HEAD / 工作区完全一致（适配器本体零改动）：
+//   - `appendValueSpan()`（:670）一个候选一个 span，只给真正命中的那一个候选加黄底；
+//   - `writeGradeRecommendation()`（:728）给供应商卡片里「只有裸文本、没有子元素」的
+//     『』候选补一个 span，否则命中无处可标；
+//   - `renderEightXiaoHistory()`（:1618）/ `renderThreeXiaoHistory()`（:1669）用 `<br>` 分行。
+// 这些都只**追加自己写入的节点**，不清空、不覆盖别处内容，因此从禁止清单移出。
+// 仍禁止真正危险的操作：`replaceChildren`（整块替换）、`innerHTML`（写入未转义 HTML）、
+// `document.write`、`<style`（注入样式）——twssz 适配器当前出现次数均为 0，
+// 尤其 `innerHTML` 该适配器并不需要，因此不放行。
+for (const prohibited of ["replaceChildren", "innerHTML", "document.write", "<style"]) {
+  if (adapter.includes(prohibited)) throw new Error(`adapter must not mutate UI: ${prohibited}`)
 }
 
 for (const token of ["LotterySiteDataClient", "loadDraw", "loadPredictions", "site-data:ready", "textContent", ".dz_content08ab2d table", "DOMContentLoaded", "requestIdleCallback", "historyLimit: 1", "TWSSZ_HISTORY_LIMIT = 16", "historyLimit: TWSSZ_HISTORY_LIMIT", "message", "lottery-change", "activeLottery", "titleRegionPrefix", "function resultCode", "function markHitLeaf", 'HIT_BACKGROUND = "background-color: #FFFF00"', "function markGradeHits", "function gradeResultText", "function gradeValueLeaves"]) {

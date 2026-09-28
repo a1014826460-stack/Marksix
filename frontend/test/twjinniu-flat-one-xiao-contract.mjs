@@ -41,7 +41,30 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
-async function renderModule(modeId, content) {
+// 展示规范 S2/S3：黄底（`background-color: #FFFF00`）只允许落在**候选**上，
+// 「开：」开奖段与判定字一律不许黄；未命中 / 未开奖整行零黄底。
+// 模块标题用的是 `<font color="#FFFF00">`（前景色属性），不会被下面的统计口径计入。
+function highlightCount(html) {
+  return (html.match(/background-color: #FFFF00/g) || []).length
+}
+
+function drawSegment(html) {
+  return html.match(/开：([\s\S]*?)<\/font>/)?.[1] ?? ""
+}
+
+function assertHighlightOnlyOnCandidate(html, candidateSpan, context) {
+  assert(
+    highlightCount(html) === 1,
+    `${context}：命中行黄底必须恰好 1 处（只落在候选上），实得 ${highlightCount(html)} 处：${html.slice(0, 400)}`
+  )
+  assert(html.includes(candidateSpan), `${context}：命中的候选必须标黄：${html.slice(0, 400)}`)
+  assert(
+    !drawSegment(html).includes("FFFF00"),
+    `${context}：开奖段（“开：”）不得标黄 —— 高亮只落在候选上：${html.slice(0, 400)}`
+  )
+}
+
+async function renderModule(modeId, content, drawIsOpened = 1) {
   globalThis.__twjinniuRows = {
     [modeId]: [
       {
@@ -50,7 +73,7 @@ async function renderModule(modeId, content) {
         content,
         res_code: DRAWN_CODES,
         res_sx: DRAWN_ZODIACS,
-        draw_is_opened: 1,
+        draw_is_opened: drawIsOpened,
       },
     ],
   }
@@ -64,12 +87,24 @@ let html = modules.pingte_xiao.html
 assert(html.includes("<span style=\"background-color: #FFFF00\">蛇蛇蛇</span>"), "平特一肖命中时三连生肖必须高亮")
 assert(html.includes("<font color=\"#FF0000\">08猪对</font>"), `平特一肖平码命中必须显示“对”：${html.slice(0, 400)}`)
 assert(!html.includes("错</font>"), "平特一肖平码命中不得显示“错”")
+assertHighlightOnlyOnCandidate(
+  html,
+  "<span style=\"background-color: #FFFF00\">蛇蛇蛇</span>",
+  "平特一肖平码命中"
+)
+
+// 1b) 平特一肖未开奖：只给占位，零高亮、不给判定字
+modules = await renderModule(103, JSON.stringify(["蛇|02,14,26,38"]), 0)
+html = modules.pingte_xiao.html
+assert(highlightCount(html) === 0, `平特一肖未开奖时整行不得有任何黄底：${html.slice(0, 400)}`)
+assert(!html.includes("对</font>") && !html.includes("错</font>"), "平特一肖未开奖不得给判定字")
 
 // 2) 平特一肖：预测生肖不在 7 个号码里 → 显示“错”
 modules = await renderModule(103, JSON.stringify(["马|01,13,25,37"]))
 html = modules.pingte_xiao.html
 assert(html.includes("08猪<font color=\"#000\">错</font>"), `未命中必须显示“错”：${html.slice(0, 400)}`)
 assert(!html.includes("#FFFF00\">马马马"), "未命中时不得高亮")
+assert(highlightCount(html) === 0, `平特一肖未命中时整行不得有任何黄底：${html.slice(0, 400)}`)
 
 // 3) 公式平特肖（mode 56）：同样按平特口径显示 √
 modules = await renderModule(56, "蛇")
@@ -94,9 +129,21 @@ html = modules.pingte_wei.html
 assert(html.includes("<span style=\"background-color: #FFFF00\">111</span>"), "平特一尾平码尾数命中必须高亮")
 assert(html.includes("08猪对"), `平特一尾平码命中必须显示“对”：${html.slice(0, 400)}`)
 assert(!html.includes("错</font>"), "平特一尾平码命中不得显示“错”")
+assertHighlightOnlyOnCandidate(
+  html,
+  "<span style=\"background-color: #FFFF00\">111</span>",
+  "平特一尾平码命中"
+)
+
+// 6b) 平特一尾未开奖：只给占位，零高亮、不给判定字
+modules = await renderModule(173, JSON.stringify(["1尾|01,11,21,31,41"]), 0)
+html = modules.pingte_wei.html
+assert(highlightCount(html) === 0, `平特一尾未开奖时整行不得有任何黄底：${html.slice(0, 400)}`)
+assert(!html.includes("对</font>") && !html.includes("错</font>"), "平特一尾未开奖不得给判定字")
 
 // 7) 平特一尾：尾数不在 7 个号码里 → 显示“错”
 modules = await renderModule(173, JSON.stringify(["3尾|03,13,23,33,43"]))
 html = modules.pingte_wei.html
 assert(html.includes("08猪<font color=\"#000\">错</font>"), `平特一尾未命中必须显示“错”：${html.slice(0, 400)}`)
 assert(!html.includes("#FFFF00\">333"), "平特一尾未命中时不得高亮")
+assert(highlightCount(html) === 0, `平特一尾未命中时整行不得有任何黄底：${html.slice(0, 400)}`)

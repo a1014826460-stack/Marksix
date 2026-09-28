@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 29
+CURRENT_SCHEMA_VERSION = 31
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -625,6 +625,36 @@ def _sync_twwanli_featured_posts_authorization(conn: Any) -> None:
     _install_twwanli_site_profile(conn)
 
 
+def _sync_twwanli_jiaye_zhongte_authorization(conn: Any) -> None:
+    """Persist the site-12 profile that authorizes 家野中特 mode 63 (`title_63`).
+
+    【买啥开啥】在 twwanli（web 12）已切到后端动态模块「家野中特」mode 63；它的
+    机制 key 由 `default_modes_id` 派生（`title_{modes_id}` → `title_63`），运行时
+    授权只认已存储的 `site_blueprint_profiles` 行，因此清单新增后必须显式重刷。
+    本迁移**只**写 profile：`site_prediction_modules.status` 仍由
+    `scripts/reconcile_site_prediction_modules.py` 负责，迁移不得启用/停用模块行。
+    幂等：值已一致时不写库，重复执行连 `updated_at` 都不再变化。
+    """
+    if not conn.table_exists("site_blueprint_profiles"):
+        return
+
+    from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
+
+    required_mode_ids_json = json.dumps(
+        list(required_mode_ids_for_site_key("twwanli")),
+        ensure_ascii=False,
+    )
+    conn.execute(
+        """
+        UPDATE site_blueprint_profiles
+        SET required_mode_ids_json = ?, updated_at = ?
+        WHERE blueprint_name = ?
+          AND (required_mode_ids_json IS NULL OR required_mode_ids_json <> ?)
+        """,
+        (required_mode_ids_json, utc_now(), "twwanli", required_mode_ids_json),
+    )
+
+
 def _create_publication_outbox(conn: Any) -> None:
     """Install the durable publication Outbox through explicit PostgreSQL DDL."""
     from database.connection import auto_increment_primary_key
@@ -680,6 +710,17 @@ def _raise_history_publication_delay_to_eight_minutes(conn: Any) -> None:
     )
 
 
+def _add_lottery_draws_opened_at(conn: Any) -> None:
+    """Add lottery_draws.opened_at — the first-publication anchor for reveal.
+
+    前台开奖面板以 opened_at（号码首次对外可用的北京时间）作为逐球揭示的
+    全局锚点（/api/latest-draw 的 reveal_start），刷新不重放、跨浏览器一致。
+    """
+    from database.migrations import add_column_if_missing
+
+    add_column_if_missing(conn, "lottery_draws", "opened_at", "TEXT")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -710,6 +751,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(27, "create_forced_announcements", _create_forced_announcements),
     Migration(28, "disable_shengshi8800_legacy_title_123", _disable_shengshi8800_legacy_title_123),
     Migration(29, "raise_history_publication_delay_to_eight_minutes", _raise_history_publication_delay_to_eight_minutes),
+    Migration(30, "add_lottery_draws_opened_at", _add_lottery_draws_opened_at),
+    Migration(31, "sync_twwanli_jiaye_zhongte_authorization", _sync_twwanli_jiaye_zhongte_authorization),
 )
 
 

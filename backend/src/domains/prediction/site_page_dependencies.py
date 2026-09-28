@@ -187,6 +187,9 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("title_5", 5), ("3tou", 12), ("title_279", 279),
             ("pt1xiao", 56), ("pt1wei", 54), ("sitouzhongte", 483),
             ("title_132", 132), ("qinqi", 26), ("3hang", 53), ("6xzt", 46),
+            # 【买啥开啥】的数据源是动态注册的「家野中特」mode 63，机制 key 由
+            # modes_id 派生（`title_{modes_id}` → `title_63`），必须显式授权。
+            ("title_63", 63),
         )
     ),
     *(

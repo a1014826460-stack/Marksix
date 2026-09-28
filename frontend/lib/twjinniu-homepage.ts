@@ -662,6 +662,8 @@ function renderPingteXiao(rows: LegacyModeRow[]) {
       const result = resolveResult(row)
       const label = entry?.label || splitPredictionTokens(row.content).at(0) || ""
       // 平特一肖：开奖 7 个号码的任一肖命中预测生肖即算命中，不看特码生肖。
+      // 高亮只落在候选（displayLabel）上：「开：」段一律不标黄（展示规范 S2/S3），
+      // 所以这里用 renderResultJudge，不能用会在开奖段加黄底的 renderResultJudgeBox。
       const isCorrect =
         result.isOpened &&
         Boolean(label) &&
@@ -673,7 +675,7 @@ function renderPingteXiao(rows: LegacyModeRow[]) {
       return `
         <tr>
           <td style="color:#000;font-family:微软雅黑;font-weight:700;border:2px solid #000" align="center" width="100%" height="50">
-            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一肖</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudgeBox(result, isCorrect)}</font>
+            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一肖</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudge(result, isCorrect)}</font>
           </td>
         </tr>
       `
@@ -713,12 +715,13 @@ function renderPingteWei(rows: LegacyModeRow[]) {
       const digit = match?.[1] || cleanText(entry?.label)
       const triple = digit ? digit.repeat(3) : cleanText(entry?.label)
       // 平特一尾：开奖 7 个号码中任一尾数命中即算命中。
+      // 同平特一肖：开奖段不标黄，高亮只落在候选（displayLabel）上。
       const isCorrect = result.isOpened && Boolean(digit) && flatTailHit(row, digit)
       const displayLabel = isCorrect ? `<span style="background-color: #FFFF00">${escapeHtml(triple)}</span>` : escapeHtml(triple)
       return `
         <tr>
           <td style="color:#000;font-family:微软雅黑;font-weight:700;border:2px solid #000" align="center" width="100%" height="50">
-            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一尾</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudgeBox(result, isCorrect)}</font>
+            <font size="3"><span style="color: #00F;">${escapeHtml(row.term)}期</span>:<span style="color: #800000;">平特一尾</span>〖<span style="color: #F00;">${displayLabel}</span>〗开：${renderResultJudge(result, isCorrect)}</font>
           </td>
         </tr>
       `
