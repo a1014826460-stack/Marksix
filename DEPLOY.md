@@ -2280,3 +2280,110 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
 `audit-verdict-truth.py --site twbst528` 的 11 条 `false_hit` 与 25/13 条 `verdict_contract` 仍在；
 该脚本的 `ELEMENT_BY_GROUP` 旧表也未同步到 `predict.common.ELEMENT_NUMBER_GROUPS`。红蓝绿肖面板仍原样显示
 `标签|值` 原始串（S5 观感，非 error）。
+
+### 五行口径彻底统一（mode 53/482 正文改写）+ 判定真值审计工具收敛（2026-09-29 第十二轮）
+
+**发布提交**：`30a881f`（五行口径统一 + 审计工具收敛）→ `a3e2077`（平特尾多尾原子 + 审计工具 mode 54 解析）。
+中心节点：`element-standard-20260928T141414Z`（我这一轮，同步到 `30a881f`）；
+`a3e2077` 的同步与重建由**并发会话的** `deploy-center.sh 20260928T144735Z` 完成
+（备份 `deploy-20260928T144735Z`，我自己的同刻运行因并发 `git` 锁在 ff-only 处中止、未改动运行状态），
+部署后核对：`HEAD=a3e2077`、容器重建、`https://www.tw8800.com/health=200`，
+容器内 `_tail_digits(("1尾,3尾,5尾",)) == {1,3,5}`、`flat_tail_hit('0尾|…|9尾', ("1尾,3尾,5尾",)) is True`。
+前端节点：`element-standard-20260928T142129Z`（同步到 `30a881f`）；`a3e2077` 不含 `frontend/**` 改动，
+故前端节点内容与 `a3e2077` 等价，无需再次重建。
+**公网验收**：10/10 站点 `error=0`、`js_errors=0`（warn 合计 31，与第十一轮持平/下降）。
+
+#### 一、五行口径统一（任务 ①）
+
+| 层面 | 改动 |
+| --- | --- |
+| 权威口径 | `public.fixed_data` `sign='五行'`（**号码五行**，37 → 木）= `predict.common.ELEMENT_NUMBER_GROUPS`；`sign='五行肖'`（生肖五行，马为火肖）不得用于推导号码清单 |
+| 生成侧 | `predict/mechanisms.py`：`TABLE_FIXED_MAPPING_KEYS["mode_payload_53"]` 由 `五行肖` → `五行`；`3hang`/`sihangzhongte`/`_make_source_column_element_config` 的 `labels_loader` 与 explanation 同步 |
+| 已落库正文 | 新增 `backend/scripts/repair_mode53_element_content.py`（+ `utils/created_prediction_store.py` 里的 SQL 助手）：把 `created.mode_payload_53/482` 正文里每个五行标签后的号码清单重写为号码五行清单，**只改 content 一列**，标签/条目顺序/期号与其它列一律不动，`public.*` 不碰 |
+
+- 修复前：`created.mode_payload_53` 2051/2053 行、`created.mode_payload_482` 1122/1122 行是旧口径
+  （`public.mode_payload_53` 206 行本来就是新口径，是目标格式样板）。
+- 生产执行（用户授权）：`/root/Marksix/.deploy-backups/element-standard-data-20260928T142220Z/`
+  含 `before.sql`（pg_dump，880 KB）、`dryrun.txt`、`apply.txt`、`after.txt`、
+  `element-dryrun.json`（1.40 MB，3173 行 before/after，即回滚依据）、`element-applied.json`、
+  `meta-before.txt` / `meta-after.txt`、`verify.txt`。
+  - 干跑：`将修改 3173 行`（53: 2051，482: 1122；8 个 web_id 10/12/4/5/6/7/8/9）。
+  - `--apply`：**已更新 3173 行；并发冲突/未命中 0 行**。
+  - 幂等：再干跑 `将修改 0 行`（53 2053 行、482 1122 行全部「已是权威口径」）。
+  - **只改 content 的证明**：写入前后对两表「除 content 外全部列」做 `md5(string_agg(...))`
+    → `mode53=322a001f5e271d723e52185ab207a05d`、`mode482=e8c801344ca509e0438050f9b10ea82e`，
+    前后**完全一致**。
+  - 残留检查：`mode53_old_element=0`、`mode482_old_element=0`；`mode53_canonical_rows=2053`、
+    `mode482_canonical_rows=1122`。
+- 回滚入口：`python backend/scripts/repair_mode53_element_content.py --db-path "$DATABASE_URL"
+  --rollback /root/Marksix/backend/data/element-applied.json --apply`（只写 content 一列，
+  带「原正文」比较条件）；最坏用 `before.sql` 表级还原（先 `TRUNCATE` 再灌）。
+- 本地证据：1892 行逐行校验「每个标签的清单 == 权威号码五行清单」全部通过；有序标签序列分布
+  与修复前逐项一致（证明只改了号码清单）；用修复前 `pg_dump` 逐行比对其它列 0 处不同。
+- **判定语义未变**：`is_correct` 读时复算（与正文号码无关），本次只改展示用的候选清单。
+
+#### 二、审计工具自身口径收敛（任务 ②）
+
+`scripts/audit-verdict-truth.py`：
+
+1. 删掉脚本内自维护的 `ELEMENT_BY_GROUP`（实为生肖五行、漏 49），改为直接
+   `from predict.common import ELEMENT_NUMBER_GROUPS` + 启动自检（01-49 全覆盖不重叠）。
+   **这一条解释了全部 93 条 error**（mode 53 `false_hit` 57 / mode 482 24 / mode 98 12）。
+2. 候选抽取与后端同源（`content_loader or summarize_prediction_text` + 机制自带 `content_parser`），
+   删掉把模块名当候选的死代码。
+3. `SPLIT_OUTCOME_CHECKERS` 补 MIXED 的两个 checker（任一维度命中即命中），消除 119 条 mode 198 误报。
+4. error/warn/info 分级重做：未开奖期由 warn 降为 `pending_draw`(info) 并移出 `judged` 分母；
+   `verdict_contract` 拆为 `verdict_contract_atom`（标签空间口径问题）与「疑似真不一致」；
+   新增 `content_loader_gap` / `not_judgeable` / `element_drift` / `title_fallback` 记账；补 vendor 无声计数。
+5. 新增 `coverage` 覆盖度自检（受控 mode 57 个全覆盖、未被覆盖 0）与 `--baseline` 前后对照；
+   修正 `--limit` 单位（行）、`--help`/docstring/退出码。
+6. mode 54 平特一尾解析缺口：`parse_pipe_label_content` 取 `|` 左侧但不拆逗号 →
+   `["9尾,4尾,…,1尾|"]` 只得到一个整串标签，工具恒判不命中 → 假 `false_hit`
+   （twbst528/twjsz666/twwanli/twjinniu 各 5 条）。新增 `LABEL_SPACE_FLAT_TAIL` +
+   `tail_atom_labels()`，只对 `flat_tail` 机制摊平成 `N尾` 原子；真值目标与判定算子未改，
+   归一为空时回退原标签。另新增 `tail_multi_label` 记账。
+
+**生产复核（在 `python-api` 容器内对生产库跑）**：
+
+| 范围 | rows | judged | error | warn | element_drift | 备注 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 默认（各站各 mode 60 行，工具 @`30a881f`） | 32844 | 30880 | **0** | 885 | **0** | 全部 10 站 error=0；`missing_res_code=541` |
+| 默认 + `--check-missing-res-code`（工具 @`a3e2077`） | 32859 | 31413 | **0** | 352 | **0** | `missing_res_code_gap.total=541`（与上一行一致） |
+| `--limit 200` 深扫（工具 @`a3e2077`） | 104848 | 99497 | **0** | 1421 | **0** | `tail_multi_label=24`、`title_fallback=1234` |
+
+保留的真问题（工具只读、已记账，**未修**，需后端/口径负责人收口）：
+`missing_res_code`（已开奖但行内 res_code 为空）、`content_loader_gap`（受控 mode 484/489
+后端 `content_loader` 读不到候选 → 整列无准/错）、`verdict_contract_atom`（mode 110/159
+标签空间问题）、`title_fallback`（mode 336 从模块名算出准/错）。
+
+#### 三、平特尾漏判修复（`a3e2077`）
+
+- 缺陷：`predict/common.py::_tail_digits` 收到 *tuple*（候选标签）时整串算一个 token、
+  `re.search` 只取第一个 `N尾` → `("1尾,3尾,5尾",)` 只得 `{"1"}`；「第一个尾不中、后面某个尾命中」
+  的期次会被判「错」（展示漏判）。生产 `--limit 200` 命中该形态共 24 行（`pt1wei`）。
+- 修法：元组与字符串一律先按 `, | ，、 \s` 拆 token 再逐个解析，含「尾」的 token 用 `findall`
+  收全部尾原子；集合只会变大 → 结论只会 `错 → 对`，只修漏判、不制造虚报命中。
+- 新增 `backend/src/tests/unit/test_flat_tail_multi_label_hit.py`（12 例）。
+- 影响面：修复后生产深扫仍 `error=0`（24 行当前结论无翻转）。
+
+#### 四、测试
+
+- `cd backend/src; python -m pytest -q`：`1159 passed / 13 skipped / 1 failed`
+  （唯一失败是既有 nginx 契约用例 `test_ha_runtime_config_contract.py::test_nginx_exposes_exact_liveness_and_readiness_proxies`。
+  另有环境相关的 `test_postgres_scheduler_task_is_exclusively_acquired_and_recovers_after_lock_timeout`
+  在全量并发下偶发失败、单跑必过——`acquire_due_scheduler_tasks` 会一并取走当时所有 due 任务，
+  共享库里有其它 due 任务时断言 `== [task_key]` 失败）。
+- 前端契约：`twbst528-zonghe-juesha-contract.py`（夹具改用号码五行清单并把「本地复算优先于接口值」
+  的反例断言改为「两者口径一致」）通过；`twbst528-display-contract.mjs`、`twbst528-tiandi-display-contract.py` 通过。
+
+#### 五、遗留
+
+1. `public.mode_payload_53`（206 行，web=4）本来就是号码五行口径，未动；`public.mode_payload_482` 0 行。
+2. `predict/common.py::build_element_number_map` 的 DB 兜底分支仍读 `sign='五行肖'`（当前是死代码，
+   常量已覆盖 49 码时直接返回），未清理以免扩大改动面。
+3. `flat_zodiac_hit` 对含逗号的候选标签不拆分（后端 `predicted` 集合不拆逗号）—— 现有
+   `parse_zodiac_content` 已逐肖输出，生产深扫未见受影响行；作为潜在口径风险记录，未改。
+4. twbst528「红蓝绿肖」面板仍原样显示 `标签|值` 原始串（S5 观感，非 error）。
+5. 审计工具残留项（`missing_res_code` / `content_loader_gap` / `verdict_contract_atom` /
+   `title_fallback`）都要动 `backend/src/**`，本轮未动。
+
