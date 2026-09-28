@@ -204,6 +204,13 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     173: _rule("tail_flat", _flat_tails),
     57: _rule("size", _special_size),
     58: _rule("half_wave_exclusion", _special_half_wave),
+    # 单双各4尾（mode 30，前台 `003ds4w.js` / getDsWei）：候选是**尾数**，不是号码。
+    # `dan` 列 = 4 个单尾（只能取 {1,3,5,7,9}），`shuang` 列 = 4 个双尾（只能取 {0,2,4,6,8}）。
+    # 登记为受控规则后，未来期候选改由 `candidate_control` 在分组候选域内枚举，
+    # 即使命中目标要求替换某个尾数，也不会把偶尾写进单尾。
+    # 2026-09-28 之前该 mode 无规则（silent fallback），实测出现 `dan=3,9,7,0`（184 期）、
+    # `dan=0,9,5,1`（166 期）、`shuang=7,...`（179/208/213 期）等越界值。
+    30: _rule("tail", _special_tail),
     66: _rule("tail", _special_tail),
     74: _rule("tail", _special_tail, prefix_width=2),
     77: _rule("number", _special_number, prefix_width=2),

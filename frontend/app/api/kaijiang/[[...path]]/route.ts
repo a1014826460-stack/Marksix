@@ -525,6 +525,36 @@ function sanqiWindowZodiacs(rows: LegacyRow[]) {
 
 
 
+// 窗口内逐期开奖（按期号升序）。供应商把三期窗口拆成「每期一行」存储
+// （最新窗口只有 1 行，历史窗口 3 行），每行自带该期真实开奖；这里把整个窗口的
+// 逐期结果一并带出，供 twsaimahui `023sanqibizhong.js` 逐期渲染。
+// 只新增字段，不改既有 res_code/res_sx（仍是窗口内最新已开奖那一期）的语义。
+function sanqiWindowPeriods(rows: LegacyRow[]) {
+
+  const ordered = rows.slice().sort((left, right) => {
+
+    const leftTerm = Number(asString(left.term).trim() || "0")
+
+    const rightTerm = Number(asString(right.term).trim() || "0")
+
+    return leftTerm - rightTerm
+
+  })
+
+  return ordered.map((row) => ({
+
+    term: asString(row.term),
+
+    res_code: asString(row.res_code),
+
+    res_sx: asString(row.res_sx),
+
+  }))
+
+}
+
+
+
 function filterSanqiDisplayRows(rows: LegacyRow[]) {
 
   const grouped = new Map<string, LegacyRow[]>()
@@ -598,8 +628,9 @@ function filterSanqiDisplayRows(rows: LegacyRow[]) {
     if (!survivor) continue
 
     // 同一个三期窗口内的每一期共用同一组候选（库内已按窗口同步 content），
-    // 因此这里把窗口内已开奖每一期的特肖一并带出，供前台计算「中N期」。
-    picked.push({ ...survivor, period_zodiacs: sanqiWindowZodiacs(bucket) })
+    // 因此这里把窗口内已开奖每一期的特肖一并带出，供前台计算「中N期」；
+    // periods 是该窗口的逐期开奖明细（新增字段，只增不改）。
+    picked.push({ ...survivor, period_zodiacs: sanqiWindowZodiacs(bucket), periods: sanqiWindowPeriods(bucket) })
 
   }
 
@@ -773,11 +804,40 @@ function mapHeiBaiContent(rows: LegacyRow[]) {
 
 
 
+// mode 251（家野两肖 / getJyxiao2）的后端列：
+//   title = `家禽|牛,马,羊,鸡,狗,猪`（**组名|组成员**）—— 这张表没有 content 列，
+//   title 就是它的正文列（见 backend/src/predict/mechanisms.py 的 content_column 兼容）；
+//   xiao  = 两肖（供应商原始 mode_payload_251 的 xiao 宽度恒为 2，例如 `蛇,龙`）。
+// 历史实现丢掉了 title、并用 xiao 合成 `["马|","虎|",…]`（竖线后为空码），
+// 于是组名丢失、同一批 6 肖被渲染两遍。这里按后端字段组装：
+//   content ← `["组名|组成员"]`，xiao ← 两肖。
+// 生成侧历史上曾把 title 的成员列表误当成候选标签（宽度 6），已落库的行因此带 6 肖；
+// 按字段语义取前 2 项，既不修改已落库正文，也不再把 6 肖冒充两肖。
+const JYXIAO2_XIAO_WIDTH = 2
+
+function jyxiao2GroupItems(row: LegacyRow) {
+
+  const title = asString(row.title).trim()
+
+  if (!title.includes("|")) return [] as string[]
+
+  const [label, values = ""] = title.split("|")
+
+  const name = label.trim()
+
+  if (!name) return [] as string[]
+
+  return [`${name}|${values.trim()}`]
+
+}
+
 function mapJyxiao2(rows: LegacyRow[]) {
 
   return rows.map((row) => {
 
-    const parsedArray = parseJsonArray(row.content)
+    const groupItems = jyxiao2GroupItems(row)
+
+    const parsedArray = groupItems.length > 0 ? groupItems : parseJsonArray(row.content)
 
     let items: string[] = []
 
@@ -799,7 +859,7 @@ function mapJyxiao2(rows: LegacyRow[]) {
 
     return {
 
-      content: JSON.stringify(items),
+      content: JSON.stringify(items.slice(0, JYXIAO2_XIAO_WIDTH)),
 
       res_code: asString(row.res_code),
 
@@ -807,7 +867,7 @@ function mapJyxiao2(rows: LegacyRow[]) {
 
       term: asString(row.term),
 
-      xiao: splitCsv(row.xiao).join(",") || asString(row.xiao),
+      xiao: splitCsv(row.xiao).slice(0, JYXIAO2_XIAO_WIDTH).join(",") || asString(row.xiao),
 
     }
 
@@ -834,6 +894,10 @@ function mapSanqiTwsaimahui(rows: LegacyRow[]) {
       res_code: asString(row.res_code),
 
       res_sx: asString(row.res_sx),
+
+      // 新增字段（既有字段全部保留、语义不变）：窗口内逐期开奖明细，按期中升序。
+      // 渲染器按它逐期显示「开:<特肖><特码> 准/错」，未开奖期 res_code/res_sx 为空串。
+      periods: Array.isArray(row.periods) ? row.periods : [],
 
     }
 
@@ -1182,6 +1246,63 @@ function mapDanShuangSiWei(rows: LegacyRow[]) {
 
 
 
+/**
+ * 固定分组（`public.fixed_data`）的只读读取结果。
+ *
+ * 合数单双（mode 132 / `getHeds`）的正文只有 `合单` / `合双` 这种**纯标签**，
+ * 渲染层必须把它们展开成号码集合，才能按「特码是否在集合内」判定命中。
+ * 号码表一律来自后端 `public.fixed_data`（`predict.common.load_fixed_data_groups`），
+ * 前端不得硬编码。
+ */
+type FixedDataGroupsPayload = {
+  sign: string
+  groups: { label: string; codes: string[] }[]
+}
+
+const FIXED_DATA_GROUPS_TTL_MS = 60_000
+
+const fixedDataGroupsCache = new Map<string, { expiresAt: number; payload: Promise<FixedDataGroupsPayload> }>()
+
+function loadFixedDataGroups(sign: string): Promise<FixedDataGroupsPayload> {
+  const key = sign.trim()
+  const now = Date.now()
+  const cached = fixedDataGroupsCache.get(key)
+  if (cached && cached.expiresAt > now) {
+    return cached.payload
+  }
+  const payload = backendFetchJson<FixedDataGroupsPayload>("/public/fixed-data-groups", {
+    query: { sign: key },
+  }).catch(() => ({ sign: key, groups: [] }) as FixedDataGroupsPayload)
+  fixedDataGroupsCache.set(key, { expiresAt: now + FIXED_DATA_GROUPS_TTL_MS, payload })
+  return payload
+}
+
+/**
+ * 把 label -> 号码集合 的映射代码化成 `标签|号码列表`。
+ *
+ * 渲染层与 `parseJsonArray` 已按 `标签|值` 结构约定解析，因此这里沿用既有正文形态，
+ * 不新增响应字段；找不到该标签的号码集合时保留原始标签，交由渲染层按「无可判定候选」
+ * 处理（绝不退化成子串匹配）。
+ */
+function expandContentWithFixedGroups(
+  content: string,
+  codesByLabel: Map<string, string[]>,
+): string {
+  const raw = asString(content).trim()
+  if (!raw) return raw
+  const items = parseJsonArray(raw)
+  const entries = items.length > 0 ? items : [raw]
+  const expanded = entries.map((entry) => {
+    const text = String(entry || "").trim()
+    if (!text) return text
+    if (text.includes("|")) return text
+    const codes = codesByLabel.get(text)
+    if (!codes || codes.length === 0) return text
+    return `${text}|${codes.join(",")}`
+  })
+  return JSON.stringify(expanded)
+}
+
 function mapJsonContentRows(rows: LegacyRow[]) {
 
   return rows.map((row) => {
@@ -1191,6 +1312,30 @@ function mapJsonContentRows(rows: LegacyRow[]) {
     return baseItem(row, {
 
       content: parsedArray.length > 0 ? JSON.stringify(parsedArray) : asString(row.content),
+
+    })
+
+  })
+
+}
+
+/**
+ * 合数单双（mode 132）：把 `合单` / `合双` 纯标签展开成 `标签|号码集合`。
+ *
+ * 判定口径与后端 `predict.categories.size_parity.special_combined_parity_from_row`
+ * 一致（特码十位 + 个位之和的奇偶），号码表来自 `public.fixed_data` sign `合单双`。
+ */
+function mapCombinedParityRows(rows: LegacyRow[], codesByLabel: Map<string, string[]>) {
+
+  return rows.map((row) => {
+
+    const parsedArray = parseJsonArray(row.content)
+
+    const rawContent = parsedArray.length > 0 ? JSON.stringify(parsedArray) : asString(row.content)
+
+    return baseItem(row, {
+
+      content: expandContentWithFixedGroups(rawContent, codesByLabel),
 
     })
 
@@ -1633,15 +1778,18 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
       case "getSanqiXiao4new": {
 
-        const payload = await fetchLegacyRows(url, 197, 8)
+        const requestedWeb = Number(url.searchParams.get("web") || "0")
+
+        // mode 197 按「每期一行」存储：最新窗口只有 1 行（其余期未生成），历史窗口 3 行。
+        // twsaimahui 的三期必中要逐期渲染窗口内 3 期，必须把每个窗口的 3 行都取全，
+        // limit=10 恰好覆盖 4 个完整窗口（1 + 3 + 3 + 3）；其它站点保持原来的 8 行不变。
+        const payload = await fetchLegacyRows(url, 197, requestedWeb === 6 ? 10 : 8)
 
         const filteredRows = filterSanqiDisplayRows(payload.rows)
 
-        const requestedWeb = Number(url.searchParams.get("web") || "0")
-
         if (requestedWeb === 6) {
 
-          return jsonResponse(mapSanqiTwsaimahui(filteredRows))
+          return jsonResponse(mapSanqiTwsaimahui(filteredRows) as unknown as LegacyItem[])
 
         }
 
@@ -2240,7 +2388,15 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
         const payload = await fetchLegacyRows(url, 132, 10)
 
-        return jsonResponse(mapJsonContentRows(payload.rows))
+        // mode 132 正文只有 `合单` / `合双` 标签。渲染层必须拿到号码集合才能按集合
+        // 语义判定，否则会退化成「拿空串去 indexOf」→ 每期都显示「不中」。
+        const fixedGroups = await loadFixedDataGroups("合单双")
+
+        const codesByLabel = new Map<string, string[]>(
+          fixedGroups.groups.map((group) => [String(group.label || "").trim(), group.codes || []]),
+        )
+
+        return jsonResponse(mapCombinedParityRows(payload.rows, codesByLabel))
 
       }
 

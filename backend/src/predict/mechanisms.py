@@ -2012,6 +2012,38 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "例如 42 的合数为 6，因此归类为合数小。",
         ),
     ),
+    # 单双各4尾（mode 30，前台 `003ds4w.js` / getDsWei，列 `dan` / `shuang`）。
+    # 与动态 `_classify_second_stage_config` 的 `dan/shuang` + `parse_tail_digit_content`
+    # 分支等价，但显式登记后才能：
+    #   1. 进入 `backend/docs/prediction-module-rules.md` 的规则清单（受控生成可审阅）；
+    #   2. 让生成侧的「未来期差异保证」按分组候选域替换候选（单尾只取奇数尾、双尾只取偶数尾）。
+    # 2026-09-28 之前该 mode 没有规则登记，未来期走 silent fallback，实测出现
+    # `dan=3,9,7,0`（184 期）、`dan=0,9,5,1`（166 期）、`shuang=7,...`（179/208/213 期）等越界值。
+    "title_30": PredictionConfig(
+        key="title_30",
+        title="单双各4尾",
+        default_table="mode_payload_30",
+        default_modes_id=30,
+        labels=tuple(TAIL_NUMBER_MAP.keys()),
+        label_count=8,
+        outcome_loader=special_tail_from_row,
+        content_loader=parsed_columns_content_loader(("dan", "shuang"), parse_tail_digit_content),
+        content_parser=parse_tail_digit_content,
+        content_formatter=format_split_tail_columns(("dan", "shuang"), (4, 4)),
+        hit_checker=contains_hit,
+        labels_loader=lambda _conn: tuple(TAIL_NUMBER_MAP.keys()),
+        selection_groups=(
+            ("1尾", "3尾", "5尾", "7尾", "9尾"),
+            ("0尾", "2尾", "4尾", "6尾", "8尾"),
+        ),
+        selection_widths=(4, 4),
+        explanation=(
+            "单双四尾把候选拆成两列：`dan` 是 4 个单尾（只能取 1/3/5/7/9），"
+            "`shuang` 是 4 个双尾（只能取 0/2/4/6/8）。",
+            "回测以特码尾数是否落入 8 个候选尾数判断命中，生成时按两列各自的候选域限额选取。",
+            "输出阶段按历史列宽回填为纯数字尾数，保持与原始表结构一致。",
+        ),
+    ),
     "qianhou_texiao": PredictionConfig(
         key="qianhou_texiao",
         title="前后特肖",
@@ -3382,6 +3414,25 @@ def _classify_second_stage_config(
                     len(code_values),
                     exclude,
                 )
+        # 候选宽度取 `xiao` 列（该玩法的候选列），不能取 content/title 的标签数：
+        # `家禽|牛,马,羊,鸡,狗,猪` 里逗号右侧是**分类成员**，不是候选生肖。
+        # 历史实现用 parse_pipe_label_content 把它按逗号拆成 6 个标签，
+        # mode 251（家野两肖）于是每期生成 6 肖写进 xiao，而厂商原始
+        # mode_payload_251 的 xiao 宽度恒为 2（两肖，如 `蛇,龙`），
+        # 渲染出来就成了「家禽+6肖」。这里按 xiao 列的实际宽度（样本众数）还原字段语义。
+        if "xiao" in columns:
+            xiao_widths = _infer_group_widths(conn, table_name, ("xiao",), parse_zodiac_content)
+            if xiao_widths:
+                return _make_content_xiao_config(
+                    key,
+                    title,
+                    table_name,
+                    modes_id,
+                    xiao_widths[0],
+                    exclude,
+                    content_column=_content_col,
+                )
+
         # 回退：content/title 管道标签模式（家|… / 野|… 等）
         content_sample = _sample_column_value(conn, table_name, _content_col)
         inferred_labels = parse_pipe_label_content(content_sample)

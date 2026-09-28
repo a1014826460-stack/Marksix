@@ -496,6 +496,77 @@ def load_history(
         )
     return history
 
+def selection_group_quotas(
+    selection_groups: tuple[tuple[str, ...], ...] | None,
+    selection_widths: tuple[int, ...] | None,
+    candidate_universe: tuple[str, ...] | None = None,
+) -> tuple[tuple[str, ...], ...] | None:
+    """返回「候选全域可划分成互斥分组」时的有效分组配额，否则返回 None。
+
+    ``selection_groups`` 的语义是「每一列候选有自己的业务域」：``单双各4尾``
+    的单尾域必须落在 ``{1,3,5,7,9}``、双尾域必须落在 ``{0,2,4,6,8}``。生成侧
+    **凡是替换/新增候选标签的地方都必须按组限域**，否则会把偶尾写进单尾
+    （线上 184 期 `dan=3,9,7,0`、166 期 `dan=0,9,5,1`）。
+
+    判据是「各分组互不重叠，且并集恰好等于候选全域」：这样「第 k 个候选位置
+    属于第 k 组」的配额假设才成立（``score_labels`` 正是按分组顺序依次取候选的）。
+    有些玩法（如 ``家野4肖``）的分组之间互相重叠（同一生肖可同时出现在家/野域）、
+    并集也不等于候选全域，此时返回 None，调用方退回不限域的旧行为。
+
+    ``candidate_universe`` 必须是**全部可选候选**（如 ``config.labels``），
+    不是本期已选出的那几个候选；传入本期选择集会被判成“并集不匹配”而失效。
+    """
+    if not selection_groups or not selection_widths:
+        return None
+    if len(selection_groups) != len(selection_widths):
+        return None
+    normalized = tuple(tuple(str(label) for label in group) for group in selection_groups)
+    if any(not group for group in normalized):
+        return None
+    flattened = [label for group in normalized for label in group]
+    if len(set(flattened)) != len(flattened):
+        return None  # 分组互相重叠，位置无法归组
+    if candidate_universe is None:
+        return normalized
+    configured = {str(label) for label in candidate_universe}
+    if set(flattened) != configured:
+        return None
+    return normalized
+
+
+def _group_index_for_position(
+    groups: tuple[tuple[str, ...], ...],
+    widths: tuple[int, ...],
+    position: int,
+) -> int | None:
+    """返回第 ``position`` 个候选标签所属的分组下标（超出配额时返回 None）。"""
+    offset = 0
+    for index, (group, width) in enumerate(zip(groups, widths)):
+        offset += max(0, int(width))
+        if position < offset:
+            return index if group else None
+    return None
+
+
+def _group_alt_pool(
+    *,
+    alt_pool: list[str],
+    replace_idx: int,
+    selection_groups: tuple[tuple[str, ...], ...] | None,
+    selection_widths: tuple[int, ...] | None,
+    candidate_universe: tuple[str, ...] | None = None,
+) -> list[str]:
+    """返回「第 ``replace_idx`` 个位置所属分组」内可用的替换候选；无法限域时返回空表。"""
+    groups = selection_group_quotas(selection_groups, selection_widths, candidate_universe)
+    if groups is None:
+        return []
+    widths = tuple(int(width) for width in (selection_widths or ()))
+    group_index = _group_index_for_position(groups, widths, replace_idx)
+    if group_index is None:
+        return []
+    return [label for label in alt_pool if label in groups[group_index]]
+
+
 def score_labels(
     history: list[HistoryRecord],
     labels: tuple[str, ...],
@@ -622,16 +693,26 @@ def predict(
             config.selection_groups, config.selection_widths,
         )
 
-        # 未来期差异保证：用种子替换标签，确保不同期号产生不同结果
+        # 未来期差异保证：用种子替换标签，确保不同期号产生不同结果。
+        # 替换必须留在本位置所属的分组候选域内：``单双各4尾`` 的单尾位置只能换成奇数尾，
+        # 否则会把偶尾写进单尾（线上 184 期 `dan=3,9,7,0`、166 期 `dan=0,9,5,1`）。
+        # 限域不可用（分组重叠/缺失）时退回旧的全池替换，保持既有行为。
         if _seed_int is not None and len(predicted_labels) > 0:
             random.seed(_seed_int)
             alt_pool = [lb for lb in labels if lb not in predicted_labels]
             if alt_pool:
                 # 使用种子高位选择替换位置，避免低位 mod 碰撞
                 replace_idx = (_seed_int >> 8) % len(predicted_labels)
-                replacement = random.choice(alt_pool)
+                group_labels = _group_alt_pool(
+                    alt_pool=alt_pool,
+                    replace_idx=replace_idx,
+                    selection_groups=config.selection_groups,
+                    selection_widths=config.selection_widths,
+                    candidate_universe=tuple(labels),
+                )
+                replacement_pool = group_labels if group_labels else alt_pool
                 plist = list(predicted_labels)
-                plist[replace_idx] = replacement
+                plist[replace_idx] = random.choice(replacement_pool)
                 predicted_labels = tuple(plist)
 
         # 绝杀类单选模块随机化：避免每次都生成相同结果

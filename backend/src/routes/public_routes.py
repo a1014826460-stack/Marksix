@@ -20,6 +20,7 @@ from app_http.router import Router
 from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from core.errors import ValidationError
 from domains.sites.service import get_public_notice, get_public_site_links
+from domains.numbers.fixed_groups import load_fixed_data_groups
 from domains.announcements.service import get_effective_forced_announcement
 from domains.traffic.service import record_traffic_event
 
@@ -31,6 +32,7 @@ def register(router: Router) -> None:
     router.add("GET", "/api/public/draw-history", draw_history)
     router.add("GET", "/api/public/current-period", current_period)
     router.add("GET", "/api/public/notice", notice)
+    router.add("GET", "/api/public/fixed-data-groups", fixed_data_groups)
     router.add("GET", "/api/public/forced-announcement", forced_announcement)
     router.add("GET", "/api/public/site-links", site_links)
     router.add("POST", "/api/public/traffic-events", traffic_events)
@@ -297,6 +299,19 @@ def _backfill_current_period(
     except (CacheUnavailable, ValueError):
         # Cache safety and availability never change the authoritative response.
         return
+
+
+def fixed_data_groups(ctx: RequestContext) -> None:
+    """公开的 fixed_data 固定分组读取入口（只读、无鉴权）。
+
+    渲染层需要把 `合单` / `合双` 这类纯标签展开成号码集合，才能按集合语义判定
+    「特码是否命中」；号码表一律来自 `public.fixed_data`，禁止前端硬编码。
+    """
+    ctx.response.set_header("Cache-Control", "no-store")
+    sign = str(ctx.query_value("sign", "") or "").strip()
+    if not sign:
+        raise ValidationError("sign 不能为空")
+    ctx.send_json(load_fixed_data_groups(ctx.db_path, sign))
 
 
 def notice(ctx: RequestContext) -> None:

@@ -48,6 +48,52 @@ def _unordered_set_legend() -> str:
     )
 
 
+_SEMANTIC_NOTES: tuple[str, ...] = (
+    "\n".join(
+        (
+            "Wave-label modules (mode 38 双波中特 / mode 143 一波中特) store the candidate as the **wave label** itself",
+            "(`蓝波,绿波`, or `[\"蓝波|03,04,…\",\"绿波|05,06,…\"]`), so their `content_parser` must be",
+            "`parse_literal_label_content`; `parse_zodiac_content` only recognizes zodiac characters and returns an empty",
+            "tuple for wave labels, which made `is_correct` permanently `null` for mode 38 before 2026-09-28.",
+            "The special-number wave comes from `res_color` (last value → 红波/蓝波/绿波) with `fixed_data` sign `波色`",
+            "as fallback (`predict.categories.size_parity.special_wave_from_row`) and is embedded in the composite outcome",
+            "by `public.api._compute_outcome_from_row`.",
+        )
+    ),
+    "\n".join(
+        (
+            "Half-wave modules (mode 58 绝杀半波 / mode 490 杀两半波) predict the candidate as the **half-wave label**",
+            "itself (`蓝双` / `绿单`), so `_compute_outcome_from_row` must also carry the half-wave atom",
+            "(`{波色}{单双}` = `蓝双`) next to the wave and parity atoms; without it the `label in outcome` substring",
+            "check can never match and `excludes_hit` returns `True` for every row (the whole column was permanently",
+            "\"对\" before 2026-09-28).",
+        )
+    ),
+    "\n".join(
+        (
+            "Mode 492 三头四尾 is a `PredictionCategory.MIXED` play (`头:` / `尾:` label prefixes), so its hit semantics",
+            "follow the repo-wide mixed rule — **any dimension hits** (特码头或特尾任一落入对应候选即命中), implemented by",
+            "`predict.mechanisms.three_head_four_tail_hit` and mirrored by",
+            "`frontend/lib/prediction-contract.ts::verifyVerdictAgainstCandidates`.",
+        )
+    ),
+    "\n".join(
+        (
+            "Mode 30 单双各4尾 splits its candidate across two columns: `dan` must hold 4 **single** tails",
+            "(`1尾/3尾/5尾/7尾/9尾`, each tail at most once) and `shuang` must hold 4 **double** tails",
+            "(`0尾/2尾/4尾/6尾/8尾`). The generator draws every tail from its own group",
+            "(`predict.common.selection_group_quotas` / `domains.prediction.candidate_control` group quotas),",
+            "so `0尾` can never appear in `dan` and `1尾` can never appear in `shuang`.",
+        )
+    ),
+)
+
+
+def _semantic_notes() -> str:
+    """审阅用的候选形态说明（纯静态文本，不含任何开奖真值）。"""
+    return "\n\n".join((*(note for note in _SEMANTIC_NOTES), ""))
+
+
 def _outcome_description(rule_id: str) -> str:
     descriptions = {
         "zodiac": "special zodiac is in any candidate",
@@ -91,6 +137,7 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
         "",
         _unordered_set_legend(),
         "",
+        _semantic_notes(),
         "| mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |",
         "|---:|---|---|---|---|---|---|---|",
     ]

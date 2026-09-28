@@ -287,3 +287,176 @@ python scripts\audit-prediction-display.py twsaimahui --base-url http://127.0.0.
 - 未连接任何远程服务器；全部验证都在 `127.0.0.1:3000` / `127.0.0.1:8000` 本地完成。
 - 未改动 `backend/src` 的预测数据生成逻辑，未改动已落库的预测数据（仅只读查询 `lottery_draws`
   与 `mode_payload_197` 用于验证）。
+
+---
+
+## 九、第二轮：家野两肖（`.l1`）+ 四肖三期内必出（`.l21`）（2026-09-28）
+
+### 9.1 家野两肖 `061jy2x.js`（mode 251，容器 `.l1`）
+
+**根因（数据来源核查结论）**
+
+| 问题 | 结论 |
+| --- | --- |
+| 走哪个 mode | `/api/kaijiang/getJyxiao2` → **mode 251**（`mode_payload_tables.title='家野两肖'`，`site_page_dependencies` / `route.ts` / `frontend_compat.py` 三处一致） |
+| payload 里有没有「组名」列 | 有：`title = 家禽\|牛,马,羊,鸡,狗,猪`（组名\|组成员）。**该表没有 `content` 列**，`title` 就是正文列（`predict/mechanisms.py` 的 `content_column` 兼容） |
+| payload 里有没有「两肖」列 | `xiao`。供应商原始数据（`public.mode_payload_251`，web 1/5 共 223 行）的 `xiao` 宽度**恒为 2**，即两肖 |
+| `content` 的 `肖\|码` 是不是被截断了 | 不是截断，而是**合成出来的假结构**：`mapJyxiao2()` 丢掉 `title`，用 `xiao` 拼 `肖\|`（该表没有 `code` 列，所以竖线后恒为空） |
+| 生成侧数据缺陷 | 宽度推断用 `parse_pipe_label_content(title)`，把分类成员按逗号拆成 6 个候选标签 → `created.mode_payload_251` 的 `xiao` 全部是 6 肖（web 1/4/5/6/7/8 × type 1/2/3，合计 358 行，宽度分布 100% = 6），与字段语义（两肖）不符 |
+
+**改动文件**
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/app/api/kaijiang/[[...path]]/route.ts`（**共用文件**） | 新增 `jyxiao2GroupItems()`：`content ← ["组名\|组成员"]`（来自 `row.title`，缺失时保持旧兜底）；`xiao ← 两肖`（`slice(0, 2)`，字段语义宽度）。字段名、顺序、其它返回值不变 |
+| `frontend/public/vendor/twsaimahui/static/js/061jy2x.js` | 重写渲染：`【组名+两肖】`；判定 = 特肖 ∈ 组成员 ∪ 两肖；命中两肖 → 高亮该生肖，命中组内成员 → 高亮组名；未命中零黄底；未开奖 `开:待开奖` 且无判定无高亮；特肖/特码取开奖串最后一项 |
+| `backend/src/predict/mechanisms.py` | `_classify_second_stage_config()` 的家野两肖分支：候选宽度改由 `xiao` 列推断（`_infer_group_widths(..., ("xiao",))`），不再用 `title` 的成员数 |
+| `backend/src/tests/unit/test_jyxiao2_xiao_width.py` | 新增：锁定「宽度 = xiao 列 = 2，不是 title 成员数 = 6」 |
+| `frontend/public/vendor/twsaimahui/static/js/bundle-257fb7a8b0eebf10.js` + `index.html` + `bundles.json` | `python scripts\bundle-twsaimahui-modules.py --rebuild --apply` 重建（文件名是内容哈希，旧 `bundle-993c1bed20e86f4a.js` 已删除，index.html 与 bundles.json 引用同步改名） |
+
+**修复前后对照（页面可见文本 + 黄底）**
+
+线上（旧代码，`rows-tsam-live.json`）：
+
+```
+271期家畜野兽:【马虎猪龙牛鼠+马虎猪龙牛鼠】 开:？00??      黄底 0
+270期家畜野兽:【虎马兔牛猴鸡+虎马兔牛猴鸡】 开:马37准      黄底 1
+269期家畜野兽:【马虎羊猴龙鸡+马虎羊猴龙鸡】 开:鸡46准      黄底 1
+268期家畜野兽:【虎马蛇羊猴兔+虎马蛇羊猴兔】 开:猴11准      黄底 1
+267期家畜野兽:【猪虎蛇牛鸡鼠+猪虎蛇牛鸡鼠】 开:羊24错      黄底 0
+```
+
+本地（修复后）：
+
+```
+191期家畜野兽:【家禽+马狗】 开:待开奖                     黄底 0
+190期家畜野兽:【野兽+虎马】 开:狗45错                     黄底 0
+189期家畜野兽:【家禽+马虎】 开:狗09准                     黄底 1（家禽）
+188期家畜野兽:【野兽+虎马】 开:蛇38准                     黄底 1（野兽）
+187期家畜野兽:【家禽+马虎】 开:虎29准                     黄底 1（虎）
+```
+
+**逐期复算（真值 = `lottery_draws.numbers` 最后一项 + `fixed_data` sign=`生肖`）**
+
+| 期 | 特码 | 特肖 | 组名 | 组成员命中 | 两肖 | 应判 | 页面 | 页面黄底 | 一致 |
+| --- | --- | --- | --- | --- | --- | --- | --- | ---: | --- |
+| 191 | - | - | 家禽 | - | 马,狗 | 待开奖 | 开:待开奖 | 0 | OK |
+| 190 | 45 | 狗 | 野兽 | 否 | 虎,马 | 错 | 开:狗45错 | 0 | OK |
+| 189 | 09 | 狗 | 家禽 | 是 | 马,虎 | 准 | 开:狗09准 | 1 | OK |
+| 188 | 38 | 蛇 | 野兽 | 是 | 虎,马 | 准 | 开:蛇38准 | 1 | OK |
+| 187 | 29 | 虎 | 家禽 | 否 | 马,虎 | 准 | 开:虎29准 | 1 | OK |
+| 186 | 42 | 牛 | 家禽 | 是 | 鼠,虎 | 准 | 开:牛42准 | 1 | OK |
+| 185 | 20 | 猪 | 家禽 | 是 | 马,虎 | 准 | 开:猪20准 | 1 | OK |
+| 184 | 21 | 狗 | 家禽 | 是 | 马,鼠 | 准 | 开:狗21准 | 1 | OK |
+| 183 | 35 | 猴 | 野兽 | 是 | 虎,马 | 准 | 开:猴35准 | 1 | OK |
+| 182 | 12 | 羊 | 家禽 | 是 | 虎,马 | 准 | 开:羊12准 | 1 | OK |
+
+9 期已开奖，**0 不一致**。
+
+### 9.2 四肖三期内必出 `023sanqibizhong.js`（mode 197，容器 `.l21`）
+
+**根因**
+
+1. `filterSanqiDisplayRows()` 按 `start-end` 分组后只保留「窗口内最新已开奖的一行」，另外两期被丢弃
+   —— 而 `mode_payload_197` 本来就是**每期一行**、每行自带该期真实开奖，数据并不缺；
+2. 渲染器只把这一期的开奖写进窗口**最后一行**（`resCell(2)`），另外两行空白；
+3. 渲染器取 `res_code[0]`/`res_sx[0]`（第一项）当特码/特肖，把平码当成了特码：线上 269-271 窗口显示
+   `开:兔28错`，真实是 `270 开:马37`。
+
+**改动文件**
+
+| 文件 | 改动 |
+| --- | --- |
+| `route.ts`（**共用文件**） | 新增 `sanqiWindowPeriods()`；`filterSanqiDisplayRows()` 在既有字段之外附加 `periods`；`mapSanqiTwsaimahui()` **只新增** `periods`（既有 `content`/`name`/`res_code`/`res_sx` 与语义不变）；web=6 取数 `limit` 8 → 10（1+3+3+3，四个**完整**窗口） |
+| `frontend/public/vendor/twsaimahui/static/js/023sanqibizhong.js` | 逐期渲染：窗口 3 期各一行 `期号 / 候选4肖 / 开:<特肖><特码>准/错`；候选单元格**每期独立高亮**（不再整窗口共用一个高亮状态）；特肖/特码取开奖串最后一项；未开奖 `开:待开奖`、无判定、零黄底 |
+| `frontend/test/twsaimahui-api-audit.mjs` | `getSanqiXiao4new` 期望字段加入 `periods`（字段顺序严格比对） |
+| bundle / `index.html` / `bundles.json` | 同 9.1 |
+
+**修复前后对照**
+
+线上（旧代码）：
+
+```
+271期 虎羊鼠猴 开:兔28错     ← 特肖/特码取错第一项；开奖段只挂在窗口最新期
+270期                       ← 空白
+269期                       ← 空白
+268期 虎龙兔猪 开:鼠07错
+267期
+266期
+265期 兔蛇牛龙 开:狗21错
+264期
+263期
+```
+
+本地（修复后）：
+
+```
+193期 兔马羊狗 开:待开奖     黄底 0
+192期 兔马羊狗 开:待开奖     黄底 0
+191期 兔马羊狗 开:待开奖     黄底 0
+190期 牛马狗鼠 开:狗45准     黄底 1（狗）
+189期 牛马狗鼠 开:狗09准     黄底 1（狗）
+188期 牛马狗鼠 开:蛇38错     黄底 0
+187期 龙鼠猴虎 开:虎29准     黄底 1（虎）
+186期 龙鼠猴虎 开:牛42错     黄底 0
+185期 龙鼠猴虎 开:猪20错     黄底 0
+184期 蛇狗虎鸡 开:狗21准     黄底 1（狗）
+183期 蛇狗虎鸡 开:猴35错     黄底 0
+182期 蛇狗虎鸡 开:羊12错     黄底 0
+```
+
+线上 269-271 窗口代入新代码（候选 `虎羊鼠猴`，逐期真实开奖取自用户口径 269→鸡46、270→马37）：
+`271期 开:待开奖` / `270期 开:马37错` / `269期 开:鸡46错`。
+
+**逐期复算**
+
+| 期 | 特码 | 特肖 | 候选4肖 | 应判 | 页面 | 页面黄底 | 一致 |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+| 193 | - | - | 兔马羊狗 | 待开奖 | 开:待开奖 | 0 | OK |
+| 192 | - | - | 兔马羊狗 | 待开奖 | 开:待开奖 | 0 | OK |
+| 191 | - | - | 兔马羊狗 | 待开奖 | 开:待开奖 | 0 | OK |
+| 190 | 45 | 狗 | 牛马狗鼠 | 准 | 开:狗45准 | 1 | OK |
+| 189 | 09 | 狗 | 牛马狗鼠 | 准 | 开:狗09准 | 1 | OK |
+| 188 | 38 | 蛇 | 牛马狗鼠 | 错 | 开:蛇38错 | 0 | OK |
+| 187 | 29 | 虎 | 龙鼠猴虎 | 准 | 开:虎29准 | 1 | OK |
+| 186 | 42 | 牛 | 龙鼠猴虎 | 错 | 开:牛42错 | 0 | OK |
+| 185 | 20 | 猪 | 龙鼠猴虎 | 错 | 开:猪20错 | 0 | OK |
+| 184 | 21 | 狗 | 蛇狗虎鸡 | 准 | 开:狗21准 | 1 | OK |
+| 183 | 35 | 猴 | 蛇狗虎鸡 | 错 | 开:猴35错 | 0 | OK |
+| 182 | 12 | 羊 | 蛇狗虎鸡 | 错 | 开:羊12错 | 0 | OK |
+
+9 期已开奖，**0 不一致**；未开奖 3 期均无判定、零黄底。同时校验 `periods[term].res_code`
+最后一项与 `lottery_draws.numbers` 最后一项逐期一致，未开奖期 `periods` 的开奖串为空。
+
+### 9.3 审计与回归数字
+
+| 口径 | 命令 | rows | error | warn | js_errors |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 线上（旧代码） | `python scripts\audit-prediction-display.py twsaimahui --json .codex-temp\audit-tsam-live.json` | 652 | 0 | 5 | 0 |
+| 本地修复前 | `... --base-url http://127.0.0.1:3000 --json .codex-temp\audit-tsam-before.json` | 649 | 0 | 2 | 1（一次性 pageerror，见遗留项） |
+| 本地修复后 | `... --base-url http://127.0.0.1:3000 --json .codex-temp\audit-tsam-fix.json --dump-rows .codex-temp\rows-tsam-fix.json` | 655 | 0 | 2 | 0 |
+
+修复后残留的 2 条 warn 均为**既有** R8（`.box.l45` 绝杀七码、`.box.l67` 琴棋书画肖），
+与本次改动无关；`error=0`、`js_errors=0`。
+
+| 回归项 | 结果 |
+| --- | --- |
+| `node frontend/test/run-prediction-token-shape-contract.mjs` | 通过（`prediction.tokens` 对外形状未变） |
+| `node frontend/test/run-prediction-verdict-truth-contract.mjs` | 通过 |
+| `node frontend/test/twsaimahui-jy2x-sanqi-display-contract.mjs`（新增） | 通过 |
+| `node frontend/test/twsaimahui-api-audit.mjs` | 65 例中 1 例既有失败（`getJmxc` 返回对象非数组），本次改动的两个接口通过 |
+| `python scripts\lint-prediction-renderers.py twsaimahui` | 24 条 finding（error 4 / warn 20），**均不在**本次改动的两个文件里 |
+| `cd backend/src; python -m pytest -q` | `1 failed, 1039 passed, 13 skipped`；唯一失败为既有 `test_nginx_exposes_exact_liveness_and_readiness_proxies`（`deploy/nginx.conf`，与本次改动无关） |
+| `npx tsc --noEmit`（frontend） | `route.ts` 唯一报错在 2431 行（他人并行改动区域），本次改动区域无类型错误 |
+
+### 9.4 遗留项
+
+1. **已落库的 `created.mode_payload_251.xiao` 仍是 6 肖**（358 行）。按任务约束「不改已落库的预测正文」，
+   兼容层按字段语义取前 2 项展示；生成侧已修，新生成的期号会写 2 肖。若要彻底对齐，需要单独授权的
+   回填动作（不在本轮范围）。
+2. **两肖的选取是「前 2 项」**：6 肖候选按 `hot` 热度排名生成，前 2 项即热度最高的两肖；这与宽度 2 的
+   生成结果不完全等价（种子替换位在 6 个位置上算）。根因修好后再生成的行不再有此问题。
+3. **本地修复前那一次审计出现一次性 `pageerror`（rows 649 < 655）**：`001sb.js:16` 直接
+   `d.content.split(',')`，`content` 非字符串时会抛错，抛错点之后的同一 bundle 内模块全部不渲染。
+   属于既有缺陷（`lint-prediction-renderers.py` 已列为 warn），本轮未处理。
+4. 极老的「`?`占位」英文口径 `开:？00??`（普通未开奖模块）本轮只改了 `.l1`；其余模块维持原状。

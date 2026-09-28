@@ -58,6 +58,29 @@
  *   static/js/052qqsh.js
  */
 // 特邀家野两肖 (使用统一请求工具 + safeParseJSON)
+//
+// 数据来源：`/api/kaijiang/getJyxiao2` → mode 251「家野两肖」。
+//   content = `["家禽|牛,马,羊,鸡,狗,猪"]`（组名|组成员，来自后端 title 列）
+//   xiao    = 两肖（字段语义宽度 2，例如 `蛇,龙`）
+// 展示口径（见 docs/prediction-display-standard.md）：
+//   【组名+两肖】；命中 = 特肖 ∈ 组成员 ∪ 两肖；
+//   命中项高亮（命中的是两肖里的某一个 → 高亮该生肖；命中的是组内成员 → 高亮组名），
+//   未命中的一律不高亮；未开奖显示「开:待开奖」，不显示判定也不高亮。
+//
+// 家禽/野兽的固定分组以 `public.fixed_data`（sign='家禽|野兽'，id 16/17，status=1）为准，
+// 接口没带回组成员时用它兜底。
+var JYXIAO2_FIXED_GROUPS = {
+    '家禽': '牛,马,羊,鸡,狗,猪',
+    '野兽': '鼠,虎,兔,龙,蛇,猴'
+};
+
+var jyxiao2SplitCsv = function (value) {
+    return String(value === null || value === undefined ? '' : value)
+        .split(',')
+        .map(function (item) { return item.trim(); })
+        .filter(function (item) { return item !== ''; });
+};
+
 window.apiClient.get('/api/kaijiang/getJyxiao2', { web: window.web, type: window.type, num: '2' })
     .done(function (response) {
         var htmlBoxList = '';
@@ -68,40 +91,64 @@ window.apiClient.get('/api/kaijiang/getJyxiao2', { web: window.web, type: window
         }
         for (var i = 0; i < data.length; i++) {
             var d = data[i];
-            var codeSplit = (d.res_code || '').split(',');
-            var sxSplit = (d.res_sx || '').split(',');
+            var codeSplit = jyxiao2SplitCsv(d.res_code);
+            var sxSplit = jyxiao2SplitCsv(d.res_sx);
+            // 特码/特肖都是开奖串的最后一项（与 012liuxiao.js / shengshi8800 023sqzt.js 同口径）。
             var code = codeSplit[codeSplit.length - 1] || '';
             var sx = sxSplit[sxSplit.length - 1] || '';
-            var xiao = [];
-            var xiaoV = [];
-            var ma = (d.xiao || '').split(',');
+            var opened = !!(code && sx);
+
+            var groupName = '';
+            var groupMembers = [];
+            var pair = jyxiao2SplitCsv(d.xiao);
             var content = safeParseJSON(d.content, []);
-            if (!content.length) continue;
             for (var j = 0; j < content.length; j++) {
-                var c = content[j].split('|');
-                xiao.push(c[0]);
-                xiaoV[j] = c[1] || '';
-            }
-            var c1 = [];
-            var zj = false;
-            for (var k = 0; k < xiao.length; k++) {
-                if (sx && xiaoV[k] && xiaoV[k].indexOf(sx) !== -1) {
-                    zj = true;
-                    c1.push('<span style="background-color: #FFFF00">' + xiao[k] + '</span>');
-                } else {
-                    c1.push(xiao[k]);
+                var item = String(content[j] === null || content[j] === undefined ? '' : content[j]);
+                var c = item.split('|');
+                var left = String(c[0] || '').trim();
+                if (!left) continue;
+                // `组名|组成员`（组名是 家禽 / 野兽，右侧是该组 6 肖）
+                if (c.length > 1 && JYXIAO2_FIXED_GROUPS[left]) {
+                    groupName = left;
+                    var members = jyxiao2SplitCsv(c[1]);
+                    groupMembers = members.length ? members : jyxiao2SplitCsv(JYXIAO2_FIXED_GROUPS[left]);
                 }
             }
-            var c2 = [];
-            for (var m = 0; m < ma.length; m++) {
-                if (sx && ma[m].indexOf(sx) !== -1) {
-                    zj = true;
-                    c2.push('<span style="background-color: #FFFF00">' + ma[m] + '</span>');
-                } else {
-                    c2.push(ma[m]);
-                }
+            // 接口兜底：content 缺失时按固定分组表反查组名；两肖缺失时退回 content 左侧标签。
+            if (!groupMembers.length && groupName && JYXIAO2_FIXED_GROUPS[groupName]) {
+                groupMembers = jyxiao2SplitCsv(JYXIAO2_FIXED_GROUPS[groupName]);
             }
-            htmlBoxList += ' <tr><td align=\'center\' height=40 class=\'stylelxz\'><strong>' + d.term + '期</strong><span class=\'styleliao\'><strong>家畜野兽</strong></span>:【<span class=\'stylezi\'><strong>' + c1.join('') + '+' + c2.join('') + '</strong></span><strong>】 开:' + (sx || '？') + (code || '00') + (sx ? (zj ? '准' : '错') : '??') + '</strong></td></tr>';
+            if (!pair.length && content.length) {
+                for (var k = 0; k < content.length; k++) {
+                    var legacy = String(content[k] === null || content[k] === undefined ? '' : content[k]).split('|');
+                    var legacyLabel = String(legacy[0] || '').trim();
+                    if (legacyLabel && !JYXIAO2_FIXED_GROUPS[legacyLabel]) { pair.push(legacyLabel); }
+                }
+                pair = pair.slice(0, 2);
+            }
+            if (!groupName && !pair.length) continue;
+
+            // 命中：特肖落在两肖里 → 高亮该生肖；否则落在组成员里 → 高亮组名；都不在 → 不高亮。
+            var pairHit = opened && pair.indexOf(sx) !== -1;
+            var groupHit = opened && !pairHit && groupMembers.indexOf(sx) !== -1;
+            var zj = pairHit || groupHit;
+
+            var groupHtml = (groupHit && sx)
+                ? '<span style="background-color: #FFFF00">' + groupName + '</span>'
+                : groupName;
+            var pairHtml = pair.map(function (xiaoLabel) {
+                return (pairHit && xiaoLabel === sx)
+                    ? '<span style="background-color: #FFFF00">' + xiaoLabel + '</span>'
+                    : xiaoLabel;
+            }).join('');
+            // 两肖缺失（异常数据）时不渲染多余的「+」。
+            var shown = groupName
+                ? (groupHtml + (pairHtml ? '+' + pairHtml : ''))
+                : pairHtml;
+            // 判定必须与真实开奖一致：命中 → 准，未命中 → 错，未开奖 → 不显示判定。
+            var resTxt = opened ? (sx + code + (zj ? '准' : '错')) : '待开奖';
+
+            htmlBoxList += ' <tr><td align=\'center\' height=40 class=\'stylelxz\'><strong>' + d.term + '期</strong><span class=\'styleliao\'><strong>家畜野兽</strong></span>:<span class=\'stylezi\'><strong>【' + shown + '】</strong></span><strong> 开:' + resTxt + '</strong></td></tr>';
         }
         if (!htmlBoxList) {
             renderEmpty('.l1');
@@ -1425,20 +1472,39 @@ $.ajax({
 
                 let c1 = [];
                 let zj = false;
+                // 候选号码集合缺失时不能给出任何判定：既不能假命中，也不能假不中。
+                // 供给数据只有 `合单` / `合双` 纯标签（没有 `标签|号码` 结构）时，
+                // 旧实现把空串拿去 indexOf → 每期都显示「不中」。
+                let hasCandidates = false;
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                    // 合数单双的候选是一组号码（`合单|01,03,…`），必须做**集合精确匹配**：
+                    // 用 indexOf 会让特码 `11` 命中候选串里的 `11`（属于合双）、或让 `3`
+                    // 命中 `37`，把「不中」显示成「中」。
+                    // 号码集合来自后端 `/api/kaijiang/getHeds`（读 public.fixed_data 的「合单双」）。
+                    let candidates = String(xiaoV[i] || '').split(',').map(v => v.trim()).filter(v => v !== '');
+                    if (candidates.length > 0) {
+                        hasCandidates = true;
+                    }
+                    let hit = !!(code && candidates.length > 0 && candidates.indexOf(code) !== -1);
+                    if (hit) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
                     }
                 }
+                let verdict = '';
+                if (sx && code) {
+                    verdict = !hasCandidates ? '??' : (zj ? '中' : '不中');
+                } else if (!sx) {
+                    verdict = '??';
+                }
 
                 htmlBoxList += ` 
  
 \t\t\t\t\t\t\t\t\t<tr>
 \t\t\t<td align='center' height=40><b>
-\t\t\t<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>澳合数</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${ (sx?( zj?'中':'不中'):'??')}</font></b></td>
+\t\t\t<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>澳合数</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${verdict}</font></b></td>
 \t\t</tr>
             `
             }
@@ -3442,110 +3508,120 @@ color: #FF0000;
 </table>*/
 
 ;
+// 四肖三期内必出（mode 197 / getSanqiXiao4new）
+//
+// 展示口径（见 docs/prediction-display-standard.md）：
+//   一个窗口 3 期，**每期都要显示自己的开奖与判定**（未开奖显示「开:待开奖」，不给判定、不高亮）；
+//   某期特肖 ∈ 候选 4 肖 → 准（该生肖标黄），否则错（整行零黄底）。
+//
+// 数据来源：接口返回 `periods`（新增字段）= 窗口内逐期开奖明细，按期中升序，
+// 每项 { term, res_code, res_sx }；res_code/res_sx 是该期完整开奖串，
+// 特码/特肖取**最后一项**（与 061jy2x.js / 012liuxiao.js / shengshi8800 023sqzt.js 同口径）。
+// 既有 res_code/res_sx（窗口内最新已开奖那一期）保留不变，仅在缺少 periods 时兜底。
 $.ajax({
     url: httpApi + `/api/kaijiang/getSanqiXiao4new?web=${web}&type=${type}&num=7`,
     type: 'GET',
     dataType: 'json',
     success: function (response) {
-        let htmlBox = '', htmlBoxList = '', term = ''
+        let htmlBoxList = ''
 
         let data = response.data
-        let yinx = '';
-        let yangx = '';
-        if (data.length > 0) {
-            for (let i in data) {
-                let d = data[i]
-                // 开奖口径（已交叉验证）：
-                //   mode_payload_197 每期一行，res_code/res_sx 是该行 term 的真实开奖，
-                //   第 1 项 = 特码/特肖；前端 /api/kaijiang/getSanqiXiao4new 经
-                //   filterSanqiDisplayRows 只保留「窗口内已开奖的最新一期」，
-                //   已用 lottery_draws.numbers 验证 res_code 与窗口最新期完全一致。
-                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
-                let csv = function (v) {
-                    if (v === null || v === undefined) { return []; }
-                    return String(v).split(',').filter(function (x) { return x !== ''; });
-                };
-                let codeSplit = csv(d.res_code);
-                let sxSplit = csv(d.res_sx);
-                let code = codeSplit[0]||'';
-                let sx = sxSplit[0]||'';
-                let opened = !!(code && sx);
-                let xiao = [];
-                let xiaoV = [];
-                let ma = [];
-                let content = safeParseJSON(d.content, []);
-                for (let j in content) {
-                    let c = String(content[j]||'').split('|');
-                    if (!c[0]) continue;
-                    xiao.push(c[0])
-                    xiaoV[xiao.length-1] = c[1] || '';
-                    ma.push(...String(c[1]||'').split(','));
-                }
+        if (!data || !data.length) { return }
 
-                // 窗口期号：names[0] 最早、names[1] 最晚，中间期 = 最小期 + 1（保持补零宽度）。
-                let terms = [];
-                let names = String(d.name||'').split('-');
-                if (names.length === 2 && names[0] && names[1]) {
-                    let lo = names[0].trim();
-                    let hi = names[1].trim();
-                    let width = Math.max(lo.length, hi.length);
-                    let mid = String(Math.min(parseInt(lo, 10), parseInt(hi, 10)) + 1);
-                    while (mid.length < width) { mid = '0' + mid; }
-                    while (lo.length < width) { lo = '0' + lo; }
-                    while (hi.length < width) { hi = '0' + hi; }
-                    terms[0] = lo;
-                    terms[1] = mid;
-                    terms[2] = hi;
-                }
+        let csv = function (v) {
+            if (v === null || v === undefined) { return []; }
+            return String(v).split(',').map(function (x) { return String(x).trim(); })
+                .filter(function (x) { return x !== ''; });
+        };
+        let esc = function (v) { return String(v === null || v === undefined ? '' : v); };
 
-                // 候选四肖来自真实 content，替换供应商硬编码的「龙马羊狗」。
-                // 命中（本期特肖 ∈ 候选四肖）→ 该生肖标黄；未命中 → 不高亮。
-                let c1 = [];
-                let zj = false;
+        for (let i = 0; i < data.length; i++) {
+            let d = data[i]
+
+            // 候选四肖来自真实 content（`肖|号码池` 形态，取左侧肖名）。
+            let xiao = []
+            let content = safeParseJSON(d.content, [])
+            for (let j = 0; j < content.length; j++) {
+                let c = String(content[j] || '').split('|')
+                let name = String(c[0] || '').trim()
+                if (!name) continue
+                xiao.push(name)
+            }
+            if (!xiao.length) { continue }
+
+            // 窗口期号：names[0] 最早、names[1] 最晚，中间期 = 最小期 + 1（保持补零宽度）。
+            let terms = []
+            let names = String(d.name || '').split('-')
+            if (names.length === 2 && names[0] && names[1]) {
+                let lo = names[0].trim()
+                let hi = names[1].trim()
+                let width = Math.max(lo.length, hi.length)
+                let mid = String(Math.min(parseInt(lo, 10), parseInt(hi, 10)) + 1)
+                while (mid.length < width) { mid = '0' + mid; }
+                while (lo.length < width) { lo = '0' + lo; }
+                while (hi.length < width) { hi = '0' + hi; }
+                // 渲染顺序：最新期在上（与厂商静态样表一致）。
+                terms = [hi, mid, lo]
+            } else if (d.name) {
+                terms = [String(d.name).trim()]
+            }
+            if (!terms.length) { continue }
+
+            // 逐期开奖：periods（接口新增字段）。缺失时退回既有 res_code/res_sx，
+            // 并把它记在窗口最新期上（旧接口只能给出一期的开奖）。
+            let periods = Array.isArray(d.periods) ? d.periods : safeParseJSON(d.periods, [])
+            let byTerm = {}
+            for (let p = 0; p < periods.length; p++) {
+                let item = periods[p]
+                if (!item || item.term === undefined || item.term === null) continue
+                byTerm[String(item.term).trim()] = item
+            }
+            if (!periods.length) {
+                byTerm[terms[0]] = { term: terms[0], res_code: d.res_code, res_sx: d.res_sx }
+            }
+
+            let rowsHtml = ''
+            for (let t = 0; t < terms.length; t++) {
+                let term = terms[t]
+                let info = byTerm[term] || {}
+                let codeSplit = csv(info.res_code)
+                let sxSplit = csv(info.res_sx)
+                // 特码/特肖取开奖串最后一项：完整开奖串的前 6 项是平码。
+                let code = codeSplit[codeSplit.length - 1] || ''
+                let sx = sxSplit[sxSplit.length - 1] || ''
+                let opened = !!(code && sx)
+                let zj = opened && sx !== '' && xiao.indexOf(sx) !== -1
+
+                // 命中才高亮，未命中/未开奖整行零黄底。
+                let c1 = []
                 for (let k = 0; k < xiao.length; k++) {
-                    if (opened && sx && xiao[k].indexOf(sx) !== -1) {
-                        zj = true;
-                        c1.push(`<span style="background-color:#FFFF00">${xiao[k]}</span>`);
-                    }else {
+                    if (zj && xiao[k] === sx) {
+                        c1.push(`<span style="background-color:#FFFF00">${xiao[k]}</span>`)
+                    } else {
                         c1.push(`${xiao[k]}`)
                     }
                 }
+                let resTxt = opened ? ('开:' + sx + code + (zj ? '准' : '错')) : '开:待开奖'
 
-                // res_code/res_sx 只覆盖窗口内已开奖的最新一期，其余两期没有逐期开奖数据，
-                // 因此只有该期显示判定与开奖；另两期只显示期号，不显示准/错、不高亮。
-                let resTxt = opened ? ('开:' + sx + code + (zj ? '准' : '错')) : '';
-                let resCell = function (pos) { return (pos === 2 && resTxt) ? resTxt : ''; };
-                let rowTd = function (pos, extra) {
-                    return "<td align='center' bgcolor='#FFFFFF' width='22%'" + (extra || '') + ">" +
-                        "<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>" +
-                        "<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>" +
-                        (terms[pos] ? (terms[pos] + '期') : '') + "</font></b></td>";
-                };
-
-                htmlBoxList += ` 
- <table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
+                rowsHtml += `
 <tr>
-${rowTd(2, " height='11'")}
-<td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
+<td align='center' bgcolor='#FFFFFF' width='22%' height='11'>
+<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
+<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>${esc(term)}期</font></b></td>
+<td align='center' bgcolor='#FFFFFF' width='55%'>
 <font face='微软雅黑' size='5' color='#FF0000'><strong>${c1.join('')}</strong></font></td>
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>${resCell(2)}</font></td>
-</tr>
-<tr>
-${rowTd(1, " height='11'")}
-<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-<font face='微软雅黑'>${resCell(1)}</font></td>
-</tr>
-<tr>
-${rowTd(0, " style='height: 26px'")}
-<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-<font face='微软雅黑'>${resCell(0)}</font></td>
-</tr>
+<td align='center' bgcolor='#FFFFFF' width='22%'>
+<font face='微软雅黑'>${resTxt}</font></td>
+</tr>`
+            }
+
+            htmlBoxList += `
+ <table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
+${rowsHtml}
  </table>
             `
-            }
         }
-        htmlBoxList = `
+        let htmlBox = `
 <table border='1' width='100%' cellpadding='0' height='29' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
 
 <tr>
@@ -3559,149 +3635,12 @@ ${rowTd(0, " style='height: 26px'")}
 </table>
             ${htmlBoxList}
         `;
-        $(".l21").html(htmlBoxList)
+        $(".l21").html(htmlBox)
     },
     error: function (xhr, status, error) {
         console.error('Error:', error);
     }
 });
-
-
-
-
-
-
-/*
-
-<table border='1' width='100%' cellpadding='0' height='29' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
-
-	<tr>
-
-		<td  height='29' align='center' bgcolor='#FF0000'>
-
-		<font color='#FFFFFF' size='4'>
-		<span style='font-family: 微软雅黑; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; font-weight: 700; letter-spacing: normal; orphans: 2; text-align: -webkit-center; text-indent: 0px; text-transform: none; white-space: normal; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; display: inline !important; float: none'>
-		 【四肖三期内必出】 </span></font></td>
-		</tr>
-		</table>
-
-
-	<!----开始---->    
-	<table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
-		<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b><font face='微软雅黑'>268期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
-		<font face='微软雅黑' size='5' color='#FF0000'><strong>
-		龙马羊狗</span></strong></span></font></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:猫00</font></td>
-		</tr>
-	<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-		267期</font></b></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:蛇12</font></td>
-		</tr>
-	<tr>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-		266期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<font face='微软雅黑'>开:虎27</font></td>
-		</tr>
-		</table>
-		
-<!----结束----> 			
-
-
-
-
-
-
-	
-	<!----开始---->    
-	<table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
-		<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b><font face='微软雅黑'>265期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
-		<font face='微软雅黑' size='5' color='#FF0000'><strong>
-		<span style='background-color: #FFFF00'>鸡</span>虎蛇羊</span></strong></span></font></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:牛16</font></td>
-		</tr>
-	<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-		264期</font></b></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:猪30</font></td>
-		</tr>
-	<tr>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-		263期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<font face='微软雅黑'>开:龙13</font></td>
-		</tr>
-		</table>
-		
-<!----结束----> 			
-
-
-
-
-
-
-
-	<!----开始---->    
-	<table border='1' width='100%' cellpadding='0' height='83' cellspacing='0' bgcolor='#FFFFFF' bordercolor='#D4D4D4' style='border-collapse: collapse'>
-		<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b><font face='微软雅黑'>262期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='55%' rowspan='3'>
-		<font face='微软雅黑' size='5' color='#FF0000'><strong>
-		<span style='background-color: #FFFF00'>龙</span>鸡羊<span style='background-color: #FFFF00'>牛</span></span></strong></span></font></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:鸡44</font></td>
-		</tr>
-	<tr>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		261期</font></b></td>
-		<td  height='11' align='center' bgcolor='#FFFFFF' width='22%'>
-		<font face='微软雅黑'>开:龙01</font></td>
-		</tr>
-	<tr>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<b style='padding: 0px; margin: 0px; word-wrap: break-word;'>
-		<font face='微软雅黑' style='word-wrap: break-word; margin: 0px; padding: 0px'>
-		260期</font></b></td>
-		<td align='center' bgcolor='#FFFFFF' width='22%' style='height: 26px'>
-		<font face='微软雅黑'>开:牛40</font></td>
-		</tr>
-		</table>
-		
-
-
-
- 
-
- 
- 
-
- 
-
- 
-
- 
-*/
 
 ;
 ﻿$.ajax({

@@ -66,7 +66,8 @@ function buildCases() {
     kaijiangCase("011jiepaoma.js", "/api/kaijiang/getXiaoma2", 7, ["content", "image_url", "res_code", "res_sx", "term"], { contentJson: true }),
     kaijiangCase("030lflx.js", "/api/kaijiang/getZhongte", 4, ["content", "res_code", "res_sx", "term"]),
     kaijiangCase("068chengyupw.js", "/api/kaijiang/getCyptwei", 2, ["res_code", "res_sx", "term", "title"]),
-    kaijiangCase("023sanqibizhong.js", "/api/kaijiang/getSanqiXiao4new", 7, ["content", "name", "res_code", "res_sx"], { contentJson: true }),
+    // getSanqiXiao4new 于 2026-09-28 新增 periods（窗口内逐期开奖明细，只增不改）。
+    kaijiangCase("023sanqibizhong.js", "/api/kaijiang/getSanqiXiao4new", 7, ["content", "name", "res_code", "res_sx", "periods"], { contentJson: true }),
     kaijiangCase("075tiandi.js", "/api/kaijiang/getTdsx1", 2, ["content", "res_code", "res_sx", "term"], { contentJson: true }),
     kaijiangCase("038ma10.js", "/api/kaijiang/getCode", 10, ["content", "res_code", "res_sx", "term"]),
     kaijiangCase("050siji.js", "/api/kaijiang/getSjsx", 3, ["content", "res_code", "res_sx", "term"], { contentJson: true }),

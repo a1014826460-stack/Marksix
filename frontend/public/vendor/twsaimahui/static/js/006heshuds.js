@@ -40,20 +40,39 @@ $.ajax({
 
                 let c1 = [];
                 let zj = false;
+                // 候选号码集合缺失时不能给出任何判定：既不能假命中，也不能假不中。
+                // 供给数据只有 `合单` / `合双` 纯标签（没有 `标签|号码` 结构）时，
+                // 旧实现把空串拿去 indexOf → 每期都显示「不中」。
+                let hasCandidates = false;
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                    // 合数单双的候选是一组号码（`合单|01,03,…`），必须做**集合精确匹配**：
+                    // 用 indexOf 会让特码 `11` 命中候选串里的 `11`（属于合双）、或让 `3`
+                    // 命中 `37`，把「不中」显示成「中」。
+                    // 号码集合来自后端 `/api/kaijiang/getHeds`（读 public.fixed_data 的「合单双」）。
+                    let candidates = String(xiaoV[i] || '').split(',').map(v => v.trim()).filter(v => v !== '');
+                    if (candidates.length > 0) {
+                        hasCandidates = true;
+                    }
+                    let hit = !!(code && candidates.length > 0 && candidates.indexOf(code) !== -1);
+                    if (hit) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
                     }
                 }
+                let verdict = '';
+                if (sx && code) {
+                    verdict = !hasCandidates ? '??' : (zj ? '中' : '不中');
+                } else if (!sx) {
+                    verdict = '??';
+                }
 
                 htmlBoxList += ` 
  
 \t\t\t\t\t\t\t\t\t<tr>
 \t\t\t<td align='center' height=40><b>
-\t\t\t<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>澳合数</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${ (sx?( zj?'中':'不中'):'??')}</font></b></td>
+\t\t\t<font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${d.term}期</font><font color='#339933' style='font-size: 14pt' face='方正粗黑宋简体'>澳合数</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>【</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${c1.join('')}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>】开</font><font color='#FF0000' style='font-size: 14pt' face='方正粗黑宋简体'>${sx||'？'}${code||'00'}</font><font color='#000000' style='font-size: 14pt' face='方正粗黑宋简体'>${verdict}</font></b></td>
 \t\t</tr>
             `
             }

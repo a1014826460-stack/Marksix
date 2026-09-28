@@ -23,6 +23,22 @@ follow the repo-wide mixed rule — **any dimension hits** (特码头或特尾�
 `predict.mechanisms.three_head_four_tail_hit` and mirrored by
 `frontend/lib/prediction-contract.ts::verifyVerdictAgainstCandidates`.
 
+Mode 30 单双各4尾 splits its candidate across two columns: `dan` must hold 4 **single** tails
+(`1尾/3尾/5尾/7尾/9尾`, each tail at most once) and `shuang` must hold 4 **double** tails
+(`0尾/2尾/4尾/6尾/8尾`). The generator draws every tail from its own group
+(`predict.common.selection_group_quotas` / `domains.prediction.candidate_control` group quotas),
+so `0尾` can never appear in `dan` and `1尾` can never appear in `shuang`.
+
+
+Mode 251 家野两肖 stores its正文 in the **`title`** column (`家禽|牛,马,羊,鸡,狗,猪` = group|members)
+and its candidates in **`xiao`**, whose supplier width is **always 2** (两肖, e.g. `蛇,龙`).
+The candidate width must therefore come from the `xiao` column; `parse_pipe_label_content(title)`
+splits the **group members** on commas and yields 6, which generated `xiao` with 6 zodiacs per issue
+(all webs/types, 200+ rows) and made the renderer print `家禽+6肖`. Fixed on 2026-09-28:
+`_classify_second_stage_config` infers the width with `_infer_group_widths(..., ("xiao",))`
+(`label_count = 2`, same as mode 142 「家野2肖（家野选1，生肖选2）」). Already persisted rows are
+**not** rewritten; the compat route takes the width-2 semantic prefix instead.
+
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
 | 3 | rcca | 肉菜草肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
@@ -34,6 +50,7 @@ follow the repo-wide mixed rule — **any dimension hits** (特码头或特尾�
 | 20 | juesha1wei | 绝杀一尾 | tail_exclusion | special number tail is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 26 | qinqi | 琴棋书画 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 28 | danshuangtema | 单双中特（单双码） | parity | special number parity is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
+| 30 | title_30 | 单双各4尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 31 | danshuang4xiao | 单双四肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
 | 34 | ma24 | 24码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
 | 38 | shuangbo | 双波中特 | wave | special number wave is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
+from core.errors import ValidationError
 from routes import public_routes
 from tests.helpers.api_contract import make_ctx, response_json
 
@@ -117,6 +120,35 @@ def test_public_site_links_contract_missing_current_site_key_defaults_to_empty()
     handler.assert_called_once_with(ctx.db_path, "")
     assert ctx.handler.response_status == 200
     assert response_json(ctx) == payload
+
+
+def test_public_fixed_data_groups_contract_reads_sign_from_query():
+    """合数单双等固定分组的号码表必须由后端只读接口提供（前端不得硬编码）。"""
+    ctx = make_ctx("/api/public/fixed-data-groups?sign=%E5%90%88%E5%8D%95%E5%8F%8C")
+    payload = {
+        "sign": "合单双",
+        "groups": [
+            {"label": "合单", "codes": ["01", "03"]},
+            {"label": "合双", "codes": ["02", "04"]},
+        ],
+    }
+
+    with patch("routes.public_routes.load_fixed_data_groups", return_value=payload) as handler:
+        public_routes.fixed_data_groups(ctx)
+
+    handler.assert_called_once_with(ctx.db_path, "合单双")
+    assert ctx.handler.response_status == 200
+    assert response_json(ctx) == payload
+
+
+def test_public_fixed_data_groups_contract_rejects_blank_sign():
+    ctx = make_ctx("/api/public/fixed-data-groups?sign=")
+
+    with patch("routes.public_routes.load_fixed_data_groups") as handler:
+        with pytest.raises(ValidationError):
+            public_routes.fixed_data_groups(ctx)
+
+    handler.assert_not_called()
 
 class _Snapshots:
     def __init__(self, latest=None, current=None, error=None):
