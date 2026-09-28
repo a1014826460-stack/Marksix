@@ -1,4 +1,4 @@
-﻿<html lang="en">
+<html lang="en">
 
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
@@ -26,10 +26,12 @@
 
 <style>
 [data-prediction-issue], [data-prediction-content], [data-prediction-content-secondary], [data-prediction-result] { display:block; }
-#tdsx [data-prediction-issue], #tdsx [data-prediction-content], #tdsx [data-prediction-result],
-#pt1xiao [data-prediction-issue], #pt1xiao [data-prediction-content], #pt1xiao [data-prediction-result],
-#qqsh [data-prediction-issue], #qqsh [data-prediction-content], #qqsh [data-prediction-result] { text-align:center; }
-#sdzt [data-prediction-issue], #sdzt [data-prediction-content], #sdzt [data-prediction-result] { text-align:center; }
+/* 预测模块文字统一居中（2026-09-29）：所有模块的三段槽位都居中，不再逐模块挑。 */
+[data-prediction-issue], [data-prediction-content], [data-prediction-content-secondary], [data-prediction-result] { text-align:center; }
+/* 放大「预测内容」字号并加粗，突出显示（原来是 15px 继承值 / 局部 26px）。 */
+[data-prediction-content] { font-size:26px; font-weight:700; }
+[data-prediction-content-secondary] { font-size:22px; font-weight:700; }
+/* 命中高亮只由适配器给「命中的那一项」打标记；其余文字一律不带黄底。 */
 [data-prediction-hit="true"] { background-color:#FFFF00; }
 </style>
 <script src="/vendor/_shared/forced-announcement.js"></script>

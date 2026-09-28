@@ -128,13 +128,13 @@
 
   // 一行多个候选项时，只把真正命中的那一项包进 data-prediction-hit，
   // 没命中的候选项保持无高亮（S2：只有命中才高亮）。
-  function highlightOnly(items, hitValue) {
+  function highlightOnly(items, hitValue, separator) {
     return items.map(function (item) {
       var text = String(item == null ? "" : item);
       return text && text === hitValue
         ? '<span data-prediction-hit="true">' + escapeHtml(text) + "</span>"
         : escapeHtml(text);
-    }).join("+");
+    }).join(separator === undefined ? "+" : separator);
   }
 
   function renderUnavailableHistory(id) {
@@ -235,6 +235,23 @@
     return category === "家禽" || category === "野兽" ? category : "";
   }
 
+  // 家禽 / 野兽的**固定分组**（与 `public.fixed_data` sign='家禽|野兽' 一致）。
+  // 判定必须用这 6+6 全组，不能用本期 `jia`/`ye` 抽出的子集：例如 270 期预测
+  // 〈〈家禽〉〉、特码 37 马 —— 马 ∈ 家禽全组，应为「对」；旧实现拿 jia/ye 子集
+  // 反查「哪一列含特肖」，特肖没被抽中就得到空分类 → 误判「错」。
+  var DOMESTIC_WILD_GROUPS = {
+    "家禽": ["牛", "马", "羊", "鸡", "狗", "猪"],
+    "野兽": ["鼠", "虎", "兔", "龙", "蛇", "猴"],
+  };
+
+  function canonicalDomesticWildCategory(zodiac) {
+    var value = String(zodiac || "").trim();
+    if (!value) return "";
+    return ["家禽", "野兽"].filter(function (label) {
+      return DOMESTIC_WILD_GROUPS[label].indexOf(value) >= 0;
+    })[0] || "";
+  }
+
   function predictedDomesticWildCategory(row) {
     var zodiac = resultParts(row).zodiac;
     return ["家禽", "野兽"].filter(function (label) {
@@ -249,16 +266,26 @@
       if (!source) return writeRow(node, "", "暂无后端资料", "");
       var parts = resultParts(source);
       if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野〈〈待开奖〉〉", "待开奖", "？00");
-      var category = domesticWildCategory(source);
-      var predictedCategory = predictedDomesticWildCategory(source);
-      var hit = Boolean(category && category === predictedCategory);
+      // 展示的分类优先取后端注记；缺注记时退回「本期 jia/ye 里含特肖的那一类」。
+      var category = domesticWildCategory(source) || predictedDomesticWildCategory(source);
+      // 判定 = 特别号生肖是否落在该分类的固定分组里（fixed_data 家禽|野兽 全组）。
+      var hit = Boolean(category && canonicalDomesticWildCategory(parts.zodiac) === category);
+      var verdict = hit ? "准" : "错";
+      var shown = category || "暂无后端资料";
+      // 分类名写进预测内容槽，只有它是候选；命中时仅把分类名包进命中标记
+      // （期号、〈〈 〉〉、「准/错」、开奖号码一律不黄）。
+      var contentHtml = "〈〈" + (hit && category
+        ? '<span data-prediction-hit="true">' + escapeHtml(category) + "</span>"
+        : escapeHtml(shown)) + "〉〉";
       writeRow(
         node,
-        issueOf(source) + "期:火爆家野〈〈" + (category || "暂无后端资料") + "〉〉",
-        hit ? "准" : "错",
-        parts.zodiac + parts.code + (hit ? "准" : "错"),
+        issueOf(source) + "期:火爆家野",
         "",
-        hit
+        parts.zodiac + parts.code + verdict,
+        "",
+        false,
+        null,
+        contentHtml
       );
     });
   }
@@ -269,13 +296,51 @@
   function renderSelectedTwentyFour(modules) { renderThreeColumnHistory("jx24m", modules.ma24, function (row) { return codeValues(row).slice(0, 24).join("-") || "暂无后端资料"; }); }
   function renderFourSegments(modules) { renderThreeColumnHistory("sdzt", modules.siduanzhongte, function (row) { return labels(row).slice(0, 4).join("+") || "暂无后端资料"; }); }
   function renderOneWave(modules) { renderThreeColumnHistory("ybzt", modules.title_143, function (row) { return listValue(rawValue(row, "wave")).slice(0, 1).join("") || labels(row).slice(0, 1).join("") || "暂无后端资料"; }); }
+  // 天地肖固定分组（与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致）。
+  var TIANDI_GROUPS = {
+    "天肖": ["兔", "马", "猴", "猪", "牛", "龙"],
+    "地肖": ["鼠", "虎", "蛇", "羊", "鸡", "狗"],
+  };
+
+  function tiandiGroup(sideLabel) {
+    var value = String(sideLabel || "");
+    if (value.indexOf("天") === 0) return TIANDI_GROUPS["天肖"];
+    if (value.indexOf("地") === 0) return TIANDI_GROUPS["地肖"];
+    return [];
+  }
+
   function renderHeavenEarth(modules) {
-    renderThreeColumnHistory("tdsx", modules.title_5, function (row) {
-      // 天地生肖 = 天地选1 + 生肖选2：既要显示本期落在天肖还是地肖，
-      // 也要显示本期的 2 个候选生肖（原先只渲染组名，生肖内容整列丢失）。
-      var sideLabel = labels(row).slice(0, 1).join("") || "天地肖";
-      var chosen = listValue(rawValue(row, "xiao"));
-      return "【" + sideLabel + (chosen.length ? "+" + chosen.join("") : "") + "】";
+    var sourceRows = distinctRows(modules.title_5);
+    rows(section("tdsx")).forEach(function (node, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(node, "", "暂无后端资料", "");
+      var parts = resultParts(source);
+      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期", "天地〈〈待开奖〉〉", "？00");
+      var sideLabel = labels(source).slice(0, 1).join("") || "天地肖";
+      var chosen = listValue(rawValue(source, "xiao"));
+      // 天地生肖 = 天地选1 + 生肖选2：特肖落在**天地组**或**两肖**任一即命中。
+      // vendor 接口的 is_correct 只比对那两肖（会让天地肖永远不参与判定，
+      // 270 期「天肖+兔鸡」开 37 马应为对却显示错），所以这里本地复算，
+      // 与 twcaibawang 的天地两肖并集口径一致。
+      var inGroup = tiandiGroup(sideLabel).indexOf(parts.zodiac) >= 0;
+      var inChosen = chosen.indexOf(parts.zodiac) >= 0;
+      var hit = inGroup || inChosen;
+      // 只点亮真正命中的那一项：命中两肖 → 点亮该生肖；命中天地组 → 点亮组名。
+      var sideHtml = inGroup && !inChosen
+        ? '<span data-prediction-hit="true">' + escapeHtml(sideLabel) + "</span>"
+        : escapeHtml(sideLabel);
+      var chosenHtml = highlightOnly(chosen, inChosen ? parts.zodiac : "", "");
+      var contentHtml = "【" + sideHtml + (chosen.length ? "+" + chosenHtml : "") + "】";
+      writeRow(
+        node,
+        issueOf(source) + "期",
+        "",
+        "开:" + parts.code + parts.zodiac + (hit ? "对" : "错"),
+        "",
+        false,
+        null,
+        contentHtml
+      );
     });
   }
   function renderThreeHeads(modules) { renderThreeColumnHistory("3tzt", modules["3tou"], function (row) { return labels(row).slice(0, 3).join("-") || "暂无后端资料"; }); }

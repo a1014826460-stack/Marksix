@@ -110,18 +110,13 @@ def summarize_prediction_text(row: dict[str, Any]) -> str:
     return ""
 
 
-# 五行元素映射（与 public.fixed_data 中 "五行肖" sign 一致）
-_ELEMENT_MAP: dict[str, str] = {}
-_ELEMENT_BY_GROUP = {
-    "金": ("10", "11", "22", "23", "34", "35", "46", "47"),
-    "木": ("04", "05", "16", "17", "28", "29", "40", "41"),
-    "水": ("07", "08", "19", "20", "31", "32", "43", "44"),
-    "火": ("01", "02", "13", "14", "25", "26", "37", "38"),
-    "土": ("03", "06", "09", "12", "15", "18", "21", "24", "27", "30", "33", "36", "39", "42", "45", "48"),
-}
-for _el, _codes in _ELEMENT_BY_GROUP.items():
-    for _c in _codes:
-        _ELEMENT_MAP[_c] = _el
+# 五行元素映射：唯一权威来源是 predict.common 的号码五行分组（= fixed_data 五行分组）。
+# 这里曾维护过一份**过期的硬编码表**（37 → 火），与 fixed_data 的「37 → 木」冲突，
+# 导致「精准五行 / 三行中特」把 37 判成不入预测三行 → 应「对」却显示「错」。
+from predict.common import canonical_element_number_map as _canonical_element_number_map
+from predict.common import TIANDI_ZODIACS as _TIANDI_ZODIACS
+
+_ELEMENT_MAP: dict[str, str] = _canonical_element_number_map()
 
 
 def _compute_outcome_from_row(row: dict[str, Any]) -> str:

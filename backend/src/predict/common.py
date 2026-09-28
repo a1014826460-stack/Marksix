@@ -388,12 +388,47 @@ def excludes_hit_exact(outcome: str, labels: tuple[str, ...]) -> bool:
     """绝杀玩法命中（原子口径）：真实结果原子都不在预测标签里。"""
     return not exact_contains_hit(outcome, labels)
 
+#: 号码 → 五行 的**权威**分组，与 `public.fixed_data` 的五行分组 / `mode_payload_53`
+#: 正文一致（01-49 全覆盖、互不重叠）：
+#:   金 10 码、木 10 码、水 8 码、火 12 码、土 9 码 = 49。
+#: 判定必须按**号码**的五行（例如 37 → 木），不能用生肖五行（马为火肖）替代：
+#: 「精准五行 / 三行中特 / 四行中特」的候选是三行标签，特码 37 属于木，
+#: 落在预测的「金+土+木」里就是命中。
+ELEMENT_NUMBER_GROUPS: dict[str, tuple[str, ...]] = {
+    "金": ("03", "04", "11", "12", "25", "26", "33", "34", "41", "42"),
+    "木": ("07", "08", "15", "16", "23", "24", "37", "38", "45", "46"),
+    "水": ("13", "14", "21", "22", "29", "30", "43", "44"),
+    "火": ("01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"),
+    "土": ("05", "06", "19", "20", "27", "28", "35", "36", "49"),
+}
+
+#: 天地肖固定分组（与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致）。
+TIANDI_ZODIACS: dict[str, tuple[str, ...]] = {
+    "天肖": ("兔", "马", "猴", "猪", "牛", "龙"),
+    "地肖": ("鼠", "虎", "蛇", "羊", "鸡", "狗"),
+}
+
+
+def canonical_element_number_map() -> dict[str, str]:
+    """返回权威的 01-49 号码 → 五行映射（不依赖数据库）。"""
+    return {
+        number: element
+        for element, numbers in ELEMENT_NUMBER_GROUPS.items()
+        for number in numbers
+    }
+
+
 def build_element_number_map(conn: Any) -> dict[str, str]:
     """建立号码到五行的映射。
 
-    优先从 fixed_data 的“五行肖”组合生肖号码映射；旧数据缺失时回退到 3行中特
-    的历史 content。
+    以 `ELEMENT_NUMBER_GROUPS`（= fixed_data 五行分组）为准，保证**号码**五行口径
+    与展示、判定一致；该常量若被改动到不足 49 码，才回退到数据库推导：
+    先试 fixed_data 的“五行肖”组合生肖号码映射，再试 3行中特的历史 content。
     """
+    canonical = canonical_element_number_map()
+    if len(canonical) == 49:
+        return canonical
+
     mapping: dict[str, str] = {}
     fixed_element_map = load_fixed_value_map(conn, "五行肖")
     zodiac_number_map = load_fixed_value_map(conn, "生肖")

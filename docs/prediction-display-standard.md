@@ -601,6 +601,100 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 
 ---
 
+## 五之十一、twjsz666 全模块居中 + 命中高亮只落候选（2026-09-29）
+
+**需求**：① 全部模块文字居中；② 只有命中的生肖/数字/波色/大小/头尾文字可以标黄，
+其余文字（期号、`开:22羊对` 开奖段、判定字、模块标题）一律不许黄。
+
+**改动**
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/public/vendor/twjsz666/site-data-adapter.js` | `markPredictionRow()` 的高亮范围由「整行」改为**候选节点**（元素或数组，`[]` = 无候选）；`hitTokenGroups()` 补「波色/大小」两个维度；排除玩法 `noHighlight`；`四字解平特肖` 候选补回解肖生肖；`一头一码` 24 码卡补绑定预测行；已存在槽位高亮加 `data-prediction-hit-slot` 并在重置时清除 |
+| `frontend/public/vendor/twjsz666/index.html` | 买码之前先上 9 卡 × 2 单元格内联左对齐 → 居中（18 处）；`.bizhong1-tit` 黄字 `#ff0` → `#fff` |
+| `frontend/public/vendor/twjsz666/static/css/style.css` | 新增预测模块统一居中块；`.qxtable.left` 左对齐 → 居中 |
+| `frontend/public/vendor/twjsz666/15*.html`（14 个子页） | 正文容器内联 `text-align:unset` → `center` |
+| `frontend/test/twjsz666-display-contract.py` | 新增：本地静态服务 + 桩数据 + Playwright 真渲染断言（居中 / 黄底落点 / 逐行判定 / 字幕 / 子页） |
+
+**根因**：`highlightToken()` 在行内按**文档顺序取第一个匹配**。预测格里没有该字时
+（波色玩法、大小玩法、七尾、四字解、绝杀类、以及 DOM 里开奖段排在候选之前的 ④肖⑧码），
+黄底就落到同一行的开奖段上；命中 token 里原本也没有「波色/大小」两类，所以这两类玩法
+必然飘到开奖段。旧实现只有「三头四尾」传了候选范围。
+
+**验收（合成数据真渲染，`python frontend/test/twjsz666-display-contract.py`）**
+
+| 项目 | 结果 |
+| --- | --- |
+| 非居中文字 | 0（含 14 个文章子页） |
+| 黄底总数 / 落在期号槽或开奖段的 | 20 / **0** |
+| 未命中(+)未开奖行残留黄底 | 0（未命中行 32 行） |
+| 命中却零黄底 | 0（命中行 16 行；排除玩法按规范豁免） |
+| 杂散黄底/黄字（供应商残留、标题黄字） | 0 |
+| 逐模块命中字幕 | 15 条断言（大小中特=`小数`、双波=`绿波`、七尾=`2`、四字解=`羊`、24码卡=`22` …） |
+
+**本轮同站点发现的既有异常（未在本轮改动范围）**
+
+1. `twjsz666-subpage-contract.mjs` 失败：14 个子页共 59 处引用
+   `static/picture/c73120ca0585a192625208b7bcdfd1bd.jpg`，仓库里实际文件是
+   `…bd2.jpg`（多一个 `2`）→ 图片链接 404。HEAD 版本同样如此，属既有缺陷。
+2. `twjsz666-section-inventory-contract.mjs` 失败：契约写死「25 个可见 list-title」，
+   HEAD 与当前实测都是 **24**（契约数字过期，非渲染回归）。
+3. `twjsz666-adapter-contract.mjs` 失败：契约禁止 `document.createElement` / `appendChild`，
+   但 `highlightToken()` 一直用它们包高亮 span（HEAD 同样命中）→ 契约与实现早已冲突。
+4. `scripts/lint-prediction-renderers.py twjsz666` 有 3 条 `unsafe_json_parse`（error 级），
+   均为既有 `try { JSON.parse } catch` 兜底写法，HEAD 同为 3 条，本轮未新增。
+
+---
+
+## 五之十二、twwanli 全模块居中/放大字号 + 三项判定口径修正（2026-09-29）
+
+**需求**：① 全部模块文字居中；② 只有命中的生肖/数字/波色文字标黄；③ 放大「预测内容」
+字号突出显示；④【精准五行】270 期 `金+土+木` 开 37 马应为「对」；⑤【买啥开啥】
+〈〈家禽〉〉开 37 马应为「准」；⑥【天地生肖】`【天肖+兔鸡】` 开 37 马应为「对」；
+⑦ 检查其他站点同类模块的判定。
+
+### 判定口径修正（根因 + 改动）
+
+| 模块 | 根因 | 改动 |
+| --- | --- | --- |
+| 精准五行 / 三行中特 / 四行中特（mode 53 等） | `public/api.py` 里维护了一份**过期硬编码五行表**（37 → 火），与 `public.fixed_data` / `mode_payload_53` 的号码分组（**37 → 木**）冲突；且该表只覆盖 48 码（49 缺失）。按生肖看马是火肖，于是「木」不入预测三行 → 应「对」判「错」 | 新增权威常量 `predict.common.ELEMENT_NUMBER_GROUPS`（金10/木10/水8/火12/土9 = 49，与 fixed_data 一致），`build_element_number_map()` 直接返回它，`public/api.py` 改为引用同一来源（删除过期表） |
+| 买啥开啥（twwanli `#msks`，source `title_14`） | 旧判定拿**本期 jia/ye 抽出的 4+4 子集**反查「哪一列含特肖」，特肖没被抽中就得到空分类 → 误判「错」 | 改为按 `fixed_data` 的**家禽/野兽全组**（家禽=牛马羊鸡狗猪 / 野兽=鼠虎兔龙蛇猴）判定：特肖所属固定分类 === 展示分类 → 准；顺带把黄底从「准/错」字移到命中的分类名 |
+| 天地生肖（twwanli `#tdsx`，source `title_5`） | vendor/接口的 `is_correct` **只比对 `xiao` 那 2 肖**，天地组（6 肖）永远不参与判定 → 「天肖里含开奖特肖却显示错」 | 适配器本地复算并集：特肖 ∈ 天地组 ∪ 两肖 → 对；只点亮命中的那一项（组名或某个肖）。与 twcaibawang 既有的并集口径一致 |
+
+### 展示项（items 1–3）
+
+- `index.html` 的共享样式块：所有 `[data-prediction-issue/content/content-secondary/result]`
+  一律 `text-align:center`（原来只挑 `#tdsx/#pt1xiao/#qqsh/#sdzt` 四个模块）；
+  `[data-prediction-content]` 字号 `26px` 加粗、`-secondary` `22px` 加粗。
+- 6 个文章子页（`21/22/25-28.html`）的内联样式块同步居中 + 放大。
+- 高亮本来就是**标记制**（`[data-prediction-hit="true"]{background:#FFFF00}`，模板里没有预埋
+  黄底），所以「其余文字不黄」只需保证标记只打给命中项；本轮把「买啥开啥」的黄底从判定字
+  移到分类名，并让「天地生肖」用 `highlightOnly` 只标命中项。
+
+### 验收
+
+- 新增 `frontend/test/twwanli-display-contract.py`（本地静态服务 + 桩数据 + Playwright 真渲染）：
+  0 处槽位非居中、预测内容字号恒为 26px、0 处杂散黄底；买啥开啥 270 期「〈〈家禽〉〉+37马」
+  → 准且只黄「家禽」、269 期「野兽+37马」→ 错零黄底；天地生肖 270 期「天肖+兔鸡」+37马
+  → 对且只黄「天肖」、269 期「地肖+兔鸡」+37马 → 错零黄底、267 期「天肖+兔鸡」+22鸡
+  → 对且只黄「鸡」；精准五行 270 期显示「金+土+木 / 开:37马对」。
+- 新增 `backend/src/tests/unit/test_element_number_groups.py`（7 条）：49 码无重叠、
+  37→木 / 49→土 / 04→金、`api._ELEMENT_MAP` 与权威来源一致、复合 outcome 含「木」且不含「火」、
+  天地分组与各站 sx.html 一致。
+- 后端 `python -m pytest tests/unit -q`：**1 failed, 1086 passed**；唯一失败是既有的
+  `test_ha_runtime_config_contract.py::test_nginx_exposes_exact_liveness_and_readiness_proxies`
+  （与本轮无关，改动前同样失败）。
+
+### item 7：使用同类模块的其他站点核查结论
+
+| 模块 | 站点 | 现状 |
+| --- | --- | --- |
+| 五行（mode 53 / `3hang`） | 所有走接口 `is_correct` 的站点（twbst528 150.html、twwanli、twjinniu 蓝图、tw8800 `013shzt.js`、twsaimahui `025sanhang.js` …） | **本轮后端修正一次性覆盖**（判定读时复算）。旧站 legacy 脚本（tw8800/twsaimahui）对 mode 53 不输出判定字，无需另改 |
+| 天地生肖（mode 5 / `title_5`） | twcaibawang（已本地并集判定）、**twwanli（本轮已修）**、twsyw `#nannv`（**同缺陷未修**）、twssz / twbst528 的天地资料卡 | twsyw `site-data-adapter.js:185` 仍 `isHit = source.result.isCorrect` → 天地组命中会显示「错」；twssz/twbst528 同样依赖接口判定。**待修**（同 twwanli 口径，各自需要契约） |
+| 家禽/野兽（mode 14 / `title_14`） | twwanli `#msks`（本轮已修）、twwjsz666 `156.html`、twbst528 `144.html`、twjinniu | 其它站点的卡片语义若是「8 肖候选」而非「分类二选一」，则应按机制自身口径（特肖 ∈ 8 肖）判定，**不能**照搬家禽/野兽全组口径 —— 需按站点卡片语义逐个确认 |
+
+---
+
 ## 六、常见根因速查
 
 | 现象 | 常见根因 | 处理 |
