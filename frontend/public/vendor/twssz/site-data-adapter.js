@@ -115,7 +115,10 @@
     { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, hitScope: "drawn", renderer: renderStructuredHistory },
     { key: "title_48", title: "8肖16码", renderer: renderEightXiaoHistory },
     { key: "wuzhong5ma", title: "内幕⑤不中", renderer: renderFiveNotHistory },
-    { key: "3hang", title: "综合资料", target: function () { return targetAfter("top_2", 0, 2); }, rows: allRows, renderer: renderStructuredHistory },
+    // 综合资料 = mode 53（三行/精准五行）：「候选」就是五行标签本身，命中行只能由
+    // 特码的**号码五行**决定（hitElement），不能用正文里的号码清单反推 —— 见下面
+    // `elementOfCode` 的说明。
+    { key: "3hang", title: "综合资料", target: function () { return targetAfter("top_2", 0, 2); }, rows: allRows, hitElement: true, renderer: renderStructuredHistory },
     { key: "pt3xiao", title: "三肖六码", renderer: renderThreeXiaoHistory },
     { key: "shuangbo", title: "双波10码", renderer: renderDoubleWaveHistory },
     { key: "title_47", title: "四肖中特", target: fourZodiacHistoryTarget, rows: allRows, renderer: renderStructuredHistory },
@@ -799,6 +802,61 @@
     }).forEach(function (node) { node.nodeValue = ""; });
   }
 
+  // ── 号码五行（号码 → 五行）───────────────────────────────────────────────
+  // 权威源：`backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
+  // = `canonical_element_number_map()` = `public.fixed_data` sign='五行'
+  // （49 码全覆盖、互不重叠），与前端权威源 `frontend/lib/element-number-groups.ts`
+  // 逐项一致。本文件是浏览器原生 `<script src>`，不能 import ESM，所以按仓库分层约定
+  // **自包含**一份拷贝；`frontend/test/element-number-groups-contract.mjs` 会从后端
+  // 权威值逐项比对（本文件已登记进它的 KNOWN_VENDOR_COPIES），任何漂移都会 FAIL。
+  //
+  // ⚠️ `fixed_data` 里另有一份 sign='五行肖'，那是**生肖五行**（只覆盖 48 码），对同一个
+  // 号码给出不同结果：24 → 号码五行 木（生肖羊 → 生肖五行 土）、37 → 木（马 → 火）、
+  // 45 → 木（狗 → 土）、04 → 金（兔 → 木）。历史遗留的 mode 53 正文（未修复的
+  // `public.mode_payload_53` 行）里，「五行标签|号码清单」的清单就是按**生肖五行**拼的，
+  // 所以五行类玩法（mode 53「综合资料」三行/精准五行）的命中行**只能**拿特码号码查本表，
+  // **禁止**用正文清单反推 —— 否则 24 的黄底会点在【土】上。
+  var ELEMENT_NUMBER_GROUPS = {
+    金: ["03", "04", "11", "12", "25", "26", "33", "34", "41", "42"],
+    木: ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"],
+    水: ["13", "14", "21", "22", "29", "30", "43", "44"],
+    火: ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"],
+    土: ["05", "06", "19", "20", "27", "28", "35", "36", "49"]
+  };
+  var ELEMENT_ORDER = ["金", "木", "水", "火", "土"];
+  var ELEMENT_BY_CODE = (function () {
+    var map = {};
+    for (var elementIndex = 0; elementIndex < ELEMENT_ORDER.length; elementIndex += 1) {
+      var codes = ELEMENT_NUMBER_GROUPS[ELEMENT_ORDER[elementIndex]];
+      for (var codeIndex = 0; codeIndex < codes.length; codeIndex += 1) map[codes[codeIndex]] = ELEMENT_ORDER[elementIndex];
+    }
+    return map;
+  })();
+
+  // 号码 → 五行；号码缺失或非法（空、00、50…）返回 ''，**绝不**回退到生肖五行。
+  function elementOfCode(code) {
+    var digits = String(code == null ? "" : code).replace(/[^0-9]/g, "");
+    if (!digits) return "";
+    var normalized = digits.length === 1 ? "0" + digits : digits;
+    return ELEMENT_BY_CODE[normalized] || "";
+  }
+
+  // 特码**号码**的五行：特码 = `raw.res_code` 的最后一项（后端
+  // `mechanisms.py` 的 mode 53 命中也按「res_code 最后一个号码按特码处理」）。
+  // 未开奖（res_code 为空）或指到非法号码时返回 ''，此时不高亮任何行。
+  function specialElementOfCode(row) {
+    var codes = String(row && row.raw && row.raw.res_code || "").match(/\d{1,2}/g) || [];
+    return codes.length ? elementOfCode(codes[codes.length - 1]) : "";
+  }
+
+  // 正文五行标签归一化：去掉引号/括号/空白与后缀「行」（`土行`、`【木】` → `土`/`木`）。
+  // 与 `frontend/lib/element-number-groups.ts::normalizeElementLabel` 同口径。
+  function normalizeElementLabel(value) {
+    return String(value == null ? "" : value)
+      .replace(/[[\](){}「」【】"'“”‘’　\s]/g, "")
+      .replace(/行$/, "");
+  }
+
   // Fallback for vendor tables with one pre-existing text field per history row.
   // It writes that field only, never a table/div/container, and has a named
   // renderer entry so a new vendor layout cannot silently use raw API tokens.
@@ -839,8 +897,18 @@
     }).filter(function (item) { return item.text; });
   }
 
-  function structuredHit(draw, mapping, item) {
+  function structuredHit(draw, mapping, item, row) {
     if (mapping.mergeTokens) return Boolean(draw.opened && draw.code && waveForNumber(draw.code) === item.text);
+    // 五行类玩法（mode 53「综合资料」三行/精准五行）：候选就是一个五行标签，
+    // 命中的那一行只由特码的**号码五行**决定。这里**不读**正文里的号码清单：
+    // 历史 mode 53 正文的清单是按生肖五行拼的（24∈土、37∈火、04∈木），拿它定位
+    // 会把黄底点在错行上（应当 24/37/45=木、04=金）。未开奖 / 特码缺失 / 标签不是
+    // 五行名 → 不高亮。判定本身仍只来自接口的 `is_correct`，本函数只决定黄底。
+    if (mapping.hitElement) {
+      if (!draw || !draw.opened) return false;
+      var element = specialElementOfCode(row);
+      return Boolean(element) && normalizeElementLabel(item.text) === element;
+    }
     return candidateHit(draw, item.token, mapping.hitScope || "special");
   }
 
@@ -852,7 +920,7 @@
     appendTextNode(valueSlot, termValue(row) + " " + mapping.title + "：");
     structuredCandidates(row, mapping).forEach(function (item, index) {
       if (index) appendTextNode(valueSlot, "·");
-      appendValueSpan(valueSlot, item.text, rowHit && structuredHit(draw, mapping, item));
+      appendValueSpan(valueSlot, item.text, rowHit && structuredHit(draw, mapping, item, row));
     });
     appendTextNode(valueSlot, " 开：" + openedResult(row));
   }

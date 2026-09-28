@@ -8,7 +8,8 @@
 //
 // 本契约**不手写任何期望值**：期望值一律从后端权威源解析出来，再去比对
 //   1. `frontend/lib/element-number-groups.ts`（前端唯一权威源）；
-//   2. 三个厂站源码拷贝：twcf888 首页内联脚本 / tw8880 统一判定模块 / twsaimahui 三行中特；
+//   2. 四个厂站源码拷贝：twcf888 首页内联脚本 / tw8880 统一判定模块 / twsaimahui 三行中特 /
+//      twssz 站点数据适配器；
 //   3. twsaimahui 的**打包镜像**（文件名是内容哈希，只能按 `bundles.json` 反查）；
 //   4. 机器扫描 `frontend/public/vendor/**`，任何**未登记**的新拷贝都必须与权威值一致。
 //
@@ -179,6 +180,7 @@ const TWCF888_SHELL = "frontend/public/vendor/twcf888.com/index.html"
 const SHENGSHI_VERDICT = "frontend/public/vendor/shengshi8800/static/js/legacy-prediction-verdict.js"
 const TWSAIMAHUI_SANHANG = "frontend/public/vendor/twsaimahui/static/js/025sanhang.js"
 const TWSAIMAHUI_SANHANG_SOURCE = "static/js/025sanhang.js"
+const TWSSZ_ADAPTER = "frontend/public/vendor/twssz/site-data-adapter.js"
 
 /** twsaimahui 打包镜像：文件名是内容哈希，按 `bundles.json` 反查（不得硬编码）。 */
 const SANHANG_MIRRORS = twsaimahuiBundlesFor(TWSAIMAHUI_SANHANG_SOURCE)
@@ -191,6 +193,7 @@ const KNOWN_VENDOR_COPIES = [
   { file: TWCF888_SHELL, how: "twcf888 首页内联脚本（iframe 壳）" },
   { file: SHENGSHI_VERDICT, how: "tw8880 统一判定模块（<script src>）" },
   { file: TWSAIMAHUI_SANHANG, how: "twsaimahui 三行中特源脚本（<script>）" },
+  { file: TWSSZ_ADAPTER, how: "twssz 站点数据适配器（<script src>，mode 53「综合资料」命中行）" },
   ...SANHANG_MIRRORS.map((file) => ({
     file,
     how: `twsaimahui 打包镜像（按 bundles.json 反查 ${TWSAIMAHUI_SANHANG_SOURCE}）`,
