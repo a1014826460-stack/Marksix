@@ -1939,4 +1939,55 @@ twsaimahui 5、twjinniu 0、twcf888 5、twssz 5、twbst528 2、twjsz666 0、twwa
 twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract.mjs` 因新增
 `sanqiWindowPeriods` 抽取缺失被修好。
 
+### 10码中特（mode 116）接入受控生成（2026-09-28 第五轮）
+
+**发布提交**：`94d28e3`。中心节点备份 `/root/Marksix/.deploy-backups/display-standard-5-20260928T090745Z`，
+前端节点 `/root/Marksix/.deploy-backups/display-standard-5-20260928T091344Z`。
+
+**需求**：用户要求把 twsaimahui「10码中特」接入受控生成规则体系，让以后生成的期次按
+`prediction.simulation.target_hit_rate` 受控，而不是纯随机 10/49。
+
+**改动**
+
+1. `backend/src/domains/prediction/generation_rules.py`：新增
+   `116: _rule("number", _special_number, prefix_width=2)`。
+   `prefix_width=2` 依据：同族 mode 77（14码中特）取 2、mode 34（24码）取 3，116 宽度最小；
+   10×9=90 个有序前两位对「每期个位数站点」是可满足约束，取 1 区分度不足、取 3 收益有限。
+2. **关键发现并修复：只登记规则不足以受控。** `candidate_control._candidate_sequences` 的候选是
+   有序元组、预算 32768，当 `predicted_labels` 宽度等于候选宽度时，整个预算被同一组号码的
+   `10!` 排列吃光——**前 32768 个候选里含特码的数量为 0**，于是需要命中时必然回落随机 fallback
+   （`candidate_space_exhausted`）。这不止影响 116：mode 34/77/481/493/494/65 同样
+   `can_hit=False`，即它们的「受控」在需要命中时一直是空的。
+   修复：新增 `_loader_row_from_truth()` / `label_for_truth_outcome()`（把 `DrawTruth` 适配成
+   `outcome_loader` 期望的开奖行，解析真实目标标签）与 `directional_hit_candidates()`
+   （命中方向给出 48 个互不相同的前缀签名，避免所有候选都以真值开头）；定向重排**只在历史行为
+   必然失败的方向**生效，其余情况候选顺序完全不变；互斥候选域（`selection_quotas`，如 mode 30
+   单双各4尾）明确排除在定向重排之外。
+3. `rule_documentation.py`：修复两个生成器缺陷——动态受控 mode（如 116）不会出现在静态
+   `PREDICTION_CONFIGS` 里因而永远不入文档；mode 251 的口径段原为手写、重新生成会丢。
+   顺带让 `site_page_dependencies.generation_assurance_for_mode()` 先查规则登记表
+   （此前会把已登记受控的动态 mode 误报成 `history_only`；实测影响 mode 103/116/173，
+   只是审计口径修正，不改变生成行为）。
+4. 新增 `backend/src/tests/unit/test_prediction_mode116_10ma_control.py`（13 例）并扩展 2 个测试文件。
+
+**验证**
+
+- `get_generation_rule(title_116)` → `rule_id="number"`、`supported=True`、`cross_site_prefix_width=2`
+  （生产容器内实测）。
+- `verify_hit` 双向正确（集合语义，逆序候选仍命中）。
+- 本地库真实未来期干跑（2026 第 191 期，只读真值；只写临时 sqlite）：
+  4 个站点候选都含真实特码、`verified_hit=True`、跨站前缀两两不同、`reserve_control` 全部成功；
+  10 站同期 10/10 distinct prefixes；`target_hit_rate=0.0` 时不中方向也正确。
+- 与展示置换的兼容：`service.py` 只在 `control_plan is None` 时才调 `enforce_prediction_diversity`，
+  受控行落库顺序 = 预约前缀顺序；测试证明置换会改动前缀签名，从而锁定该前提。
+- `pytest -q` → `1079 passed, 13 skipped, 2 failed`（两条既有无失败）。
+- 生产只读核对：`prediction_generation_controls` 中 mode 116 记录数 = 0（尚未生成）、
+  `created.mode_payload_116` web6 最新期号 = 271（登记前已生成，保持原样）。
+
+**受控起点**：从登记后的**下一次台湾彩未来期生成**起生效（271 期已存在，不受影响；272 期起受控）。
+**历史期零影响**：未回填、未 UPDATE 任何已落库预测行。
+**回滚**：单文件级 `git checkout` 即可；最小回滚 = 删掉 `116: _rule(...)` 那一行，
+但 `candidate_control.py` 的可达性修复是独立收益（同样修复 mode 34/77 的「伪受控」），建议保留。
+
+
 
