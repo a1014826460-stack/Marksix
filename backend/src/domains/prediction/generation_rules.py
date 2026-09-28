@@ -214,6 +214,27 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     66: _rule("tail", _special_tail),
     74: _rule("tail", _special_tail, prefix_width=2),
     77: _rule("number", _special_number, prefix_width=2),
+    # 10码中特（mode 116 / 表 `mode_payload_116` / 动态 key `title_116` / 站点 twsaimahui）。
+    # 口径：`content` 是 10 个逗号分隔号码（`01,17,42,...`），**特码号码落入候选集合即命中**，
+    # 所以 truth 目标是特码号码（`_special_number`），不是生肖/尾数/号码外排除。
+    # 该 mode 的动态配置已经具备受控所需的一切（由 `_make_number_config` 生成）：
+    # `outcome_loader=special_number_from_row`、`content_parser=parse_number_content`、
+    # `hit_checker=contains_hit`、`label_count=10`，因此只需在此登记规则即可放行受控链路。
+    # 登记前 `get_generation_rule()` 返回 `blocked_pending_rule`：未来期走 silent fallback
+    # （纯随机 10/49 + 无规则校验 + 无滚动窗口控制），线上 262-270 连 9 期未中就是该表现。
+    # 登记日期 2026-09-29。
+    #
+    # `prefix_width=2` 的依据（跨站前缀签名 = 前 N 个号码，用于同一期不同站点之间
+    # “前 N 位不得雷同”的预约校验）：
+    #   1. 同表结构同玩法族对照：mode 34（24码）取 3，mode 77（14码中特）取 2。
+    #      mode 116（10码）候选宽度最小，取 2 与 mode 77 一致，绝不会比它更宽；
+    #   2. 前缀空间：10 个号码的有序前两位 = 10*9 = 90 种。台湾彩每期启用该模块的站点数为
+    #      个位数（同一期每站一条预约），90 > 站数，所以“跨站前二不同”是**可满足**约束，
+    #      不需要像二元玩法（大/小，mode 57）那样退化为允许重复前缀；
+    #   3. 取 1 会太松（同一期多站共用首位号码时几乎无区分度），取 3 会把前缀空间缩到
+    #      10*9*8=720 但也同时收紧相邻期签名比较，而 mode 116 的候选全域只有 10 个号码，
+    #      收紧收益有限，取 2 与同族 mode 77 保持一致更便于审阅。
+    116: _rule("number", _special_number, prefix_width=2),
     81: _rule("tail", _special_tail),
     123: _rule("tail", _special_tail),
     132: _rule("combined_parity", _combined_parity),
@@ -241,6 +262,10 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     493: _rule("number", _special_number, prefix_width=3),
     494: _rule("number_exclusion", _special_number, prefix_width=2),
 }
+
+#: 只读别名：受控能力审计（规则文档 / 站点清单 assurance）需要按 mode_id 直接查询登记表。
+#: 该映射本身不得在运行时被改写；受控链路仍然只通过 `get_generation_rule()` 读取。
+RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = _RULE_BY_MODE_ID
 
 
 def get_generation_rule(config: Any) -> PredictionGenerationRule:

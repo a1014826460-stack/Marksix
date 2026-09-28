@@ -29,7 +29,6 @@ Mode 30 单双各4尾 splits its candidate across two columns: `dan` must hold 4
 (`predict.common.selection_group_quotas` / `domains.prediction.candidate_control` group quotas),
 so `0尾` can never appear in `dan` and `1尾` can never appear in `shuang`.
 
-
 Mode 251 家野两肖 stores its正文 in the **`title`** column (`家禽|牛,马,羊,鸡,狗,猪` = group|members)
 and its candidates in **`xiao`**, whose supplier width is **always 2** (两肖, e.g. `蛇,龙`).
 The candidate width must therefore come from the `xiao` column; `parse_pipe_label_content(title)`
@@ -38,6 +37,19 @@ splits the **group members** on commas and yields 6, which generated `xiao` with
 `_classify_second_stage_config` infers the width with `_infer_group_widths(..., ("xiao",))`
 (`label_count = 2`, same as mode 142 「家野2肖（家野选1，生肖选2）」). Already persisted rows are
 **not** rewritten; the compat route takes the width-2 semantic prefix instead.
+
+Mode 116 10码中特（登记日期 2026-09-29）is a dynamic module: its config is discovered from
+`mode_payload_tables` as `title_116` (`mode_payload_116`, 10 candidates, `label_count=10`),
+so it never appears in the static `PREDICTION_CONFIGS` manifest. Semantics: **特码号码落入候选号码集合即命中**
+— `outcome_loader=special_number_from_row`, `content_parser=parse_number_content`,
+`hit_checker=contains_hit`. Before registration `get_generation_rule()` returned `blocked_pending_rule`,
+so future issues were generated as a silent random 10/49 draw with no rule verification and no rolling
+hit-rate control. Cross-site prefix width is **2** (same family shape as mode 77 14码中特; mode 34 24码 uses 3):
+10 ordered pairs = 90 distinct prefixes, which is satisfiable for the handful of sites enabled per issue.
+Mode 116 is also in `prediction_generation.diversity.UNORDERED_NUMBER_SET_MODE_IDS`, but the display
+permutation is applied **only when `control_plan is None`** (`prediction_generation.service`), so a controlled
+row is persisted in exactly the order whose prefix was reserved — the cross-site prefix contract and the
+adjacent-period full-signature contract stay valid.
 
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
@@ -82,6 +94,7 @@ splits the **group members** on commas and yields 6, which generated `xiao` with
 | 78 | sixiao_sima | 四肖四码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 81 | shiwu_mazhong | 15码中特 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 108 | dxztt1 | 大小中特带1头 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
+| 116 | title_116 | 10码中特 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 117 | sanxiao_siwei_xiao | 三肖四尾 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 123 | sanxiao_siwei_wei | 四尾八码 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 132 | title_132 | 合数单双 | combined_parity | special digit-sum parity is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |

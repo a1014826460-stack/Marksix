@@ -86,12 +86,47 @@ _SEMANTIC_NOTES: tuple[str, ...] = (
             "so `0尾` can never appear in `dan` and `1尾` can never appear in `shuang`.",
         )
     ),
+    "\n".join(
+        (
+            "Mode 251 家野两肖 stores its正文 in the **`title`** column (`家禽|牛,马,羊,鸡,狗,猪` = group|members)",
+            "and its candidates in **`xiao`**, whose supplier width is **always 2** (两肖, e.g. `蛇,龙`).",
+            "The candidate width must therefore come from the `xiao` column; `parse_pipe_label_content(title)`",
+            "splits the **group members** on commas and yields 6, which generated `xiao` with 6 zodiacs per issue",
+            "(all webs/types, 200+ rows) and made the renderer print `家禽+6肖`. Fixed on 2026-09-28:",
+            "`_classify_second_stage_config` infers the width with `_infer_group_widths(..., (\"xiao\",))`",
+            "(`label_count = 2`, same as mode 142 「家野2肖（家野选1，生肖选2）」). Already persisted rows are",
+            "**not** rewritten; the compat route takes the width-2 semantic prefix instead.",
+        )
+    ),
+    "\n".join(
+        (
+            "Mode 116 10码中特（登记日期 2026-09-29）is a dynamic module: its config is discovered from",
+            "`mode_payload_tables` as `title_116` (`mode_payload_116`, 10 candidates, `label_count=10`),",
+            "so it never appears in the static `PREDICTION_CONFIGS` manifest. Semantics: **特码号码落入候选号码集合即命中**",
+            "— `outcome_loader=special_number_from_row`, `content_parser=parse_number_content`,",
+            "`hit_checker=contains_hit`. Before registration `get_generation_rule()` returned `blocked_pending_rule`,",
+            "so future issues were generated as a silent random 10/49 draw with no rule verification and no rolling",
+            "hit-rate control. Cross-site prefix width is **2** (same family shape as mode 77 14码中特; mode 34 24码 uses 3):",
+            "10 ordered pairs = 90 distinct prefixes, which is satisfiable for the handful of sites enabled per issue.",
+            "Mode 116 is also in `prediction_generation.diversity.UNORDERED_NUMBER_SET_MODE_IDS`, but the display",
+            "permutation is applied **only when `control_plan is None`** (`prediction_generation.service`), so a controlled",
+            "row is persisted in exactly the order whose prefix was reserved — the cross-site prefix contract and the",
+            "adjacent-period full-signature contract stay valid.",
+        )
+    ),
 )
 
 
 def _semantic_notes() -> str:
-    """审阅用的候选形态说明（纯静态文本，不含任何开奖真值）。"""
-    return "\n\n".join((*(note for note in _SEMANTIC_NOTES), ""))
+    """审阅用的候选形态说明（纯静态文本，不含任何开奖真值）。
+
+    返回值以换行结尾：渲染器把每个 block 直接作为列表项拼接，末尾多一个 `\\n` 才能让
+    说明段落与清单表格之间**恰好**保留一行空行（与既有生成文档保持一致，避免每次
+    重新生成都产生空白行噪声）。空项会被过滤，历史上 mode 251 的段落是手写进文档的，
+    重新生成会丢。
+    """
+    notes = [note for note in _SEMANTIC_NOTES if note]
+    return "\n\n".join(notes) + "\n"
 
 
 def _outcome_description(rule_id: str) -> str:
@@ -117,8 +152,53 @@ def _outcome_description(rule_id: str) -> str:
     return descriptions.get(rule_id, rule_id)
 
 
+def _dynamic_registered_mode_rows(configs: Iterable[Any]) -> list[tuple[int, str, str, Any]]:
+    """登记了受控规则、但**不在本次配置清单**里的动态玩法。
+
+    `PREDICTION_CONFIGS` 只维护静态玩法；像 `title_116`（10码中特）这样的动态配置由
+    `predict.registry_builder` 在运行时从 `mode_payload_tables` 发现，永远不会出现在
+    静态清单里。如果文档只渲染传入的 configs，这些**已经放行受控生成**的 mode 就会从
+    审阅清单里消失（mode 116 登记前后都是这个状态，审阅者无从发现）。
+
+    这里以 `generation_rules` 的登记表为准补一份清单：只列出「已登记且受控」的 mode，
+    不含任何开奖真值、也不依赖数据库里是否存在该表，因此文档保持确定性。
+    """
+    from .generation_rules import RULE_BY_MODE_ID
+
+    present = {
+        int(getattr(config, "default_modes_id", 0) or 0)
+        for config in configs
+    }
+    present.discard(0)
+    rows: list[tuple[int, str, str, Any]] = []
+    for mode_id, key, title in _DYNAMIC_MODE_METADATA:
+        rule = RULE_BY_MODE_ID.get(mode_id)
+        if rule is None or not rule.supported or mode_id in present:
+            continue
+        rows.append((mode_id, key, title, _dynamic_mode_config(mode_id, key, title)))
+    return rows
+
+
+#: 动态登记表里需要进入审阅文档的 module 元数据（title 允许为空）。
+_DYNAMIC_MODE_METADATA: tuple[tuple[int, str, str], ...] = (
+    (116, "title_116", "10码中特"),
+)
+
+
+def _dynamic_mode_config(mode_id: int, key: str, title: str) -> Any:
+    """只需要 `default_modes_id` / `title` / `key` 的轻量载体。
+
+    渲染器只按 `default_modes_id` 查规则登记表与 assurance，不读 content/labels，
+    因此这里不连数据库也能给出确定性的审阅行。
+    """
+    from types import SimpleNamespace
+
+    return SimpleNamespace(key=key, title=title, default_modes_id=mode_id)
+
+
 def render_prediction_module_rules(configs: Iterable[Any]) -> str:
     """Render the registered rules without exposing any future draw information."""
+    configs = list(configs)
     rows: list[tuple[int, str, str, Any]] = []
     seen: set[tuple[int, str]] = set()
     for config in configs:
@@ -129,6 +209,8 @@ def render_prediction_module_rules(configs: Iterable[Any]) -> str:
             continue
         seen.add(identity)
         rows.append((mode_id, key, str(getattr(config, "title", "") or ""), config))
+
+    rows.extend(_dynamic_registered_mode_rows(configs))
 
     lines = [
         "# Prediction Module Future-Generation Rules",

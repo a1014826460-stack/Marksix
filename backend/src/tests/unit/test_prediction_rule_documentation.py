@@ -116,3 +116,47 @@ def test_rule_document_marks_unordered_number_set_modes():
         )
         assert "unordered number set: no positional rotation; adjacent: display order differs" in row
         assert "full ordered signature" not in row
+
+
+def test_rule_document_lists_dynamic_mode_116_with_registered_rule():
+    """mode 116（10码中特）是动态配置，必须凭规则登记表进入审阅清单。
+
+    `PREDICTION_CONFIGS` 只维护静态玩法，`title_116` 由 `predict.registry_builder` 从
+    `mode_payload_tables` 动态发现，因此旧版渲染器永远看不到它。登记受控规则后必须
+    在文档里出现：`rule=number`、controlled_future、supported。
+    """
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+    row = next(
+        line for line in document.splitlines()
+        if line.startswith("| 116 | title_116 |")
+    )
+    assert "| 10码中特 |" in row
+    assert "| number |" in row
+    assert "special number is in any candidate" in row
+    assert "| controlled_future |" in row
+    assert "| supported |" in row
+    assert "cross-site prefix: 2" in row
+    # 展示顺序契约：无序号码集合不做位置轮转
+    assert "unordered number set: no positional rotation; adjacent: display order differs" in row
+    # 明确写出中文口径（特码号码落入候选号码集合即命中）
+    assert "特码号码落入候选号码集合即命中" in document
+    # 受控行不过展示置换（否则预约前缀与落库内容脱钩）
+    assert "control_plan is None" in document
+
+
+def test_dynamic_registered_mode_rows_never_duplicate_passed_configs():
+    """已传入的配置不得在动态补充清单里重复；且补充项必须仍是受控已登记规则。"""
+    from types import SimpleNamespace
+
+    from domains.prediction.generation_rules import RULE_BY_MODE_ID
+
+    configs = [
+        *PREDICTION_CONFIGS.values(),
+        SimpleNamespace(key="title_116", title="10码中特", default_modes_id=116),
+    ]
+    document = render_prediction_module_rules(configs)
+
+    rows = [line for line in document.splitlines() if line.startswith("| 116 |")]
+    assert len(rows) == 1
+    assert RULE_BY_MODE_ID[116].supported is True

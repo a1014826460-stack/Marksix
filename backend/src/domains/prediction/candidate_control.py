@@ -95,6 +95,51 @@ def _selection_groups(config: Any) -> tuple[tuple[tuple[str, ...], ...], tuple[i
     return normalized, resolved_widths
 
 
+def _loader_row_from_truth(truth: DrawTruth) -> dict[str, Any]:
+    """把 ``DrawTruth`` 适配成 ``config.outcome_loader`` 期望的「开奖行」字典。
+
+    各玩法的 ``outcome_loader`` 历史签名是 ``loader(row, conn)``（例如
+    ``special_number_from_row`` 读 ``row["res_code"]``），而受控生成手里只有
+    ``DrawTruth``。这里按同样的数据口径拼一个最小行：``res_code`` 的最后一个号码是特码，
+    ``res_sx`` / ``res_color`` 分别承载 7 个号码的生肖串与特码波色。
+    只用于解析「真实目标标签」，不落库、不出域、不写日志。
+    """
+    numbers = tuple(str(code) for code in (truth.numbers or ()) if str(code).strip())
+    special = str(truth.special_code or "").strip()
+    codes = list(numbers)
+    if special and (not codes or codes[-1] != special):
+        codes.append(special)
+    zodiacs = tuple(str(value) for value in (truth.draw_zodiacs or ()))
+    return {
+        "res_code": ",".join(codes),
+        "res_sx": ",".join(zodiacs),
+        "res_color": str(truth.special_color or ""),
+        "numbers": codes,
+    }
+
+
+def label_for_truth_outcome(config: Any, truth: DrawTruth, *, conn: Any = None) -> str | None:
+    """把规则的真实命中目标解析成一个候选标签（解析不出来时返回 ``None``）。
+
+    受控生成需要知道「哪个候选标签能让 ``verify_hit`` 成立」。多数玩法可以直接从
+    ``config.outcome_loader`` 得到标签（号码/尾数/头数/生肖/波色…都是标签本身）；
+    ``MIXED`` 之类的复合口径拿不到单一标签，此时返回 ``None``，调用方保持历史行为。
+    """
+    if not callable(getattr(config, "hit_checker", None)):
+        return None
+    loader = getattr(config, "outcome_loader", None)
+    if not callable(loader):
+        return None
+    try:
+        outcome = str(loader(_loader_row_from_truth(truth), conn) or "").strip()
+    except Exception:  # noqa: BLE001 - 口径无法解析时不做定向搜索
+        return None
+    if not outcome:
+        return None
+    available = {str(label) for label in (getattr(config, "labels", ()) or ())}
+    return outcome if outcome in available else None
+
+
 def _candidate_sequences(
     *,
     predicted_labels: tuple[str, ...],
@@ -103,6 +148,8 @@ def _candidate_sequences(
     seed: str,
     max_candidates: int = 32768,
     selection_quotas: tuple[tuple[tuple[str, ...], ...], tuple[int, ...]] | None = None,
+    required_truth: str | None = None,
+    should_hit: bool | None = None,
 ) -> Iterator[tuple[str, ...]]:
     """Yield a deterministic, bounded stream without materializing combinatorics.
 
@@ -113,6 +160,18 @@ def _candidate_sequences(
     配额是「每组取几个」，不是「把整组都取走」：``单双各4尾`` 的单尾域有 5 个尾数，
     必须允许「取哪 4 个单尾」也有选择，否则要求「不中」时（特码尾是奇数尾）会被
     钉死在必然命中的 5 选 4 上，受控候选直接耗尽。
+
+    ``required_truth`` / ``should_hit`` 是**可达性修复**（2026-09-29）：候选是「有序
+    元组」，预算 ``max_candidates`` 又很小（默认 32768），因此当 ``predicted_labels``
+    恰好等于候选宽度时，历史实现会把整个预算花在 baseline 的 ``width!`` 个排列上，
+    一个成员不同的组合都产不出来。于是所有宽号码玩法（mode 34/77/116/481/493/494…）
+    在「需要命中、但真实特码不在 baseline 里」时必然 ``candidate_space_exhausted``：
+    mode 116 实测宽 10 时前 32768 个候选里含特码的数量为 **0**，生成侧只能回落到随机
+    fallback（"strict candidate constraints were relaxed"），所谓「受控」名存实亡。
+
+    这里只在**历史行为必然失败**的那一种情况下重排候选池：要求命中却缺真值，或要求
+    不中却已含真值。其余情况（真值本来就在/不在 baseline 的正确一侧）保持原顺序，
+    因此既有 mode 的候选选择不变。
     """
     limit = max(1, int(max_candidates))
     emitted: set[tuple[str, ...]] = set()
@@ -124,7 +183,10 @@ def _candidate_sequences(
         yield candidate
 
     baseline = _ordered_unique(predicted_labels)
-    if len(baseline) == width:
+
+    def baseline_candidates() -> Iterator[tuple[str, ...]]:
+        if len(baseline) != width:
+            return
         yield from emit(baseline)
         if selection_quotas is not None:
             # 限域模式的 baseline 变体必须「组内重排」，否则会把双尾换进单尾列。
@@ -139,32 +201,113 @@ def _candidate_sequences(
                     return
 
     pool = list(_ordered_unique(available_labels))
-    _rng(seed).shuffle(pool)
-    if selection_quotas is not None:
-        groups, widths = selection_quotas
-        group_permutations: list[Iterator[tuple[str, ...]]] = []
-        for group, group_width in zip(groups, widths):
-            members = [label for label in pool if label in group]
-            if len(members) < group_width:
-                # 某一组的候选不足以填满配额：退回不限域枚举，让命中校验自己去筛。
+    directional = bool(
+        required_truth
+        and should_hit is not None
+        and len(baseline) == width
+        and (required_truth in baseline) != bool(should_hit)
+        # 声明了互斥候选域（单双各4尾等）时不能走定向重排：候选必须满足「每组恰好取出
+        # 本组配额」，而按池首/首号重排会跨组串位（实测 mode 30 直接
+        # `candidate_space_exhausted`）。这类玩法继续走历史配额枚举。
+        and selection_quotas is None
+    )
+    if directional:
+        # 历史预算会被 baseline 的 width! 个排列吃光，导致方向相反的候选永远产不出来。
+        # 池首放真值（要求命中）或把真值移出池（要求不中）：第一个
+        # `combinations(pool, width)` 一定落在正确方向上。
+        if not should_hit:
+            pool = [label for label in pool if label != required_truth]
+        _rng(seed).shuffle(pool)
+        if should_hit:
+            pool = [required_truth, *(label for label in pool if label != required_truth)]
+    else:
+        _rng(seed).shuffle(pool)
+
+    def directional_hit_candidates() -> Iterator[tuple[str, ...]]:
+        """定向命中时，前缀多样化的候选流。
+
+        池首恒为真值，于是 `combinations(pool, width)` 的**每个**组合都以真值开头，
+        其排列也全部以真值开头——前缀签名会退化成 ``(真值, …)`` 一种形状，第二个站点
+        必然拿到重复前缀（`reserve_control` 的 prefix_hash 冲突，或退化为「允许重复
+        前缀」），跨站前缀契约名存实亡。
+
+        这里改为：先给出池首候选，再枚举「首号不同、真值后移」的候选。每个候选都由
+        「首号 + 真值 + ``width-2`` 个肩部号码」组成，因此 `contains_hit` 恒为真；
+        首号逐个取自池中其它号码，前缀签名因此互不相同（49 个号码的候选池可给出
+        48 个互不重复的前缀，足以覆盖同一期的全部启用站点，并留出重试余量）。
+        该分支在历史实现里必然 `candidate_space_exhausted`，所以这些候选不会改变
+        任何既有 mode 的选择结果。
+        """
+        if not should_hit:
+            return
+        ordered_pool = list(pool)
+        combination = ordered_pool[:width]
+        if required_truth not in combination:
+            return
+        yield from emit(tuple(combination))
+
+        leaders = [label for label in ordered_pool if label != required_truth]
+        # 首号 + 真值 + (width-2) 个肩部号码 = width；肩部必须放得下 width-2 个。
+        shoulder_count = width - 2
+        if len(leaders) < 1 or len(ordered_pool) < width or shoulder_count < 1:
+            return
+        shoulders_pool = list(leaders)
+        seed_rng = _rng(f"{seed}:directional-variants")
+        for leader_index, leader in enumerate(leaders):
+            shoulders: list[str] = []
+            offset = 0
+            while len(shoulders) < shoulder_count and offset < len(shoulders_pool):
+                candidate_label = shoulders_pool[(leader_index + offset) % len(shoulders_pool)]
+                offset += 1
+                if candidate_label != leader and candidate_label not in shoulders:
+                    shoulders.append(candidate_label)
+            if len(shoulders) < shoulder_count:
                 return
-            group_permutations.append(
-                itertools.permutations(members, group_width),
-            )
-        # 先枚举每组「取哪几个 + 组内顺序」（partial permutation），再按组顺序拼接；
-        # 配额天然固定，因此任何产出都满足分组候选域。
-        for combination in itertools.product(*group_permutations):
-            ordered = [label for block in combination for label in block]
-            yield from emit(tuple(ordered))
+            if seed_rng.randrange(2):
+                shoulders = shoulders[1:] + shoulders[:1]
+            yield from emit(tuple([leader, required_truth, *shoulders]))
             if len(emitted) >= limit:
                 return
+
+    def pool_candidates() -> Iterator[tuple[str, ...]]:
+        if selection_quotas is not None:
+            groups, widths = selection_quotas
+            group_permutations: list[Iterator[tuple[str, ...]]] = []
+            for group, group_width in zip(groups, widths):
+                members = [label for label in pool if label in group]
+                if len(members) < group_width:
+                    # 某一组的候选不足以填满配额：退回不限域枚举，让命中校验自己去筛。
+                    return
+                group_permutations.append(
+                    itertools.permutations(members, group_width),
+                )
+            # 先枚举每组「取哪几个 + 组内顺序」（partial permutation），再按组顺序拼接；
+            # 配额天然固定，因此任何产出都满足分组候选域。
+            for combination in itertools.product(*group_permutations):
+                ordered = [label for block in combination for label in block]
+                yield from emit(tuple(ordered))
+                if len(emitted) >= limit:
+                    return
+            return
+
+        for combination in itertools.combinations(pool, width):
+            for candidate in itertools.permutations(combination):
+                yield from emit(tuple(candidate))
+                if len(emitted) >= limit:
+                    return
+
+    if directional:
+        # 定向修复只在历史行为必然耗尽时才调整顺序。命中方向用前缀多样化的定向候选流；
+        # 不中方向用「真值已移出候选池」的普通候选流（首个组合就不可能含真值）。
+        # 两个方向都**不要**枚举 `pool_candidates()` 之外的东西，也**不要**枚举
+        # `baseline_candidates()`：baseline 的成员集合固定、方向必然与要求相反。
+        yield from (directional_hit_candidates() if should_hit else pool_candidates())
         return
 
-    for combination in itertools.combinations(pool, width):
-        for candidate in itertools.permutations(combination):
-            yield from emit(tuple(candidate))
-            if len(emitted) >= limit:
-                return
+    yield from baseline_candidates()
+    if len(emitted) >= limit:
+        return
+    yield from pool_candidates()
 
 
 def choose_controlled_labels(
@@ -190,12 +333,16 @@ def choose_controlled_labels(
     width = max(1, int(getattr(config, "label_count", 0) or len(predicted_labels) or 1))
     available_labels = tuple(getattr(config, "labels", ()) or ())
     selection_quotas = _selection_groups(config)
+    # 定向搜索提示：真实目标标签 + 本期要求的方向。缺一不可，否则保持历史枚举顺序。
+    truth_label = label_for_truth_outcome(config, truth, conn=conn)
     for labels in _candidate_sequences(
         predicted_labels=tuple(predicted_labels),
         available_labels=available_labels,
         width=width,
         seed=seed,
         selection_quotas=selection_quotas,
+        required_truth=truth_label,
+        should_hit=bool(should_hit) if truth_label else None,
     ):
         signature = rule.signature(labels)
         prefix = rule.prefix_signature(labels)

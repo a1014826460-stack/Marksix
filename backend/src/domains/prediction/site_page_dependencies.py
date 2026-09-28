@@ -544,8 +544,17 @@ def generation_assurance_for_mode(
 
     # Import lazily to keep the manifest usable by schema migrations without
     # loading dynamic runtime configuration.
-    from domains.prediction.generation_rules import get_generation_rule
+    from domains.prediction.generation_rules import RULE_BY_MODE_ID, get_generation_rule
     from predict.mechanisms import PREDICTION_CONFIGS
+
+    # 规则登记表是受控能力的唯一权威来源：`prediction_generation.service` 只按
+    # `get_generation_rule(config).supported` 决定是否进入受控分支，而**动态发现的**
+    # 配置（例如 `title_116` 10码中特、`title_103`、`title_173`）在 `PREDICTION_CONFIGS`
+    # 里没有静态条目。旧实现只查静态配置，于是这些 mode 即使已经登记规则也会被报成
+    # `history_only`，与真实生成行为相反。这里改为先查登记表，再退回静态配置。
+    registered = RULE_BY_MODE_ID.get(normalized_mode_id)
+    if registered is not None:
+        return "controlled_future" if registered.supported else "history_only"
 
     config = next(
         (

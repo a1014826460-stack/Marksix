@@ -174,6 +174,24 @@ def test_generation_assurance_marks_only_verified_rules_as_controlled_future():
     assert generation_assurance_for_mode(None, blocked_reason="no exact source") == "blocked"
 
 
+def test_generation_assurance_uses_the_rule_registry_for_dynamic_modes():
+    """动态发现的 mode（如 116 10码中特）不在 `PREDICTION_CONFIGS` 里。
+
+    受控能力由 `generation_rules` 登记表决定：`prediction_generation.service` 只看
+    `get_generation_rule(config).supported`。旧实现只查静态配置，会把已登记受控的动态
+    mode 报成 `history_only`，与真实生成行为相反。
+    """
+    from domains.prediction.generation_rules import get_generation_rule
+    from domains.prediction.site_page_dependencies import generation_assurance_for_mode
+    from predict.mechanisms import PREDICTION_CONFIGS
+
+    dynamic_config = type("DynamicConfig", (), {"key": "title_116", "default_modes_id": 116})()
+
+    assert dynamic_config.key not in PREDICTION_CONFIGS
+    assert get_generation_rule(dynamic_config).supported is True
+    assert generation_assurance_for_mode(116) == "controlled_future"
+
+
 def test_twcaibawang_manifest_covers_every_rendered_public_and_vendor_source():
     from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
 
