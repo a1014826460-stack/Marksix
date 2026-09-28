@@ -697,9 +697,26 @@
     return out;
   }
 
+  /**
+   * 按标题找板块。**先精确匹配 `【标题】`**，再退回子串匹配。
+   *
+   * 为什么需要精确优先：面板标题都被包在 `【】` 里，而子串匹配会让短标题
+   * 命中更长的标题 —— 例如 `sectionByTitle("大小")` 在「大小中特」排在
+   * 「大小」之前时会先命中「大小中特」，把数据写进错误的板块。
+   */
   function sectionByTitle(title) {
-    return Array.prototype.filter.call(window.document.querySelectorAll(".lxlm, .tzlb"), function (section) {
-      return String(section.querySelector(".pb-tit") && section.querySelector(".pb-tit").textContent || "").indexOf(title) !== -1;
+    var sections = Array.prototype.filter.call(window.document.querySelectorAll(".lxlm, .tzlb"), function (section) {
+      var head = section.querySelector(".pb-tit");
+      return head && /【[^】]*】/.test(String(head.textContent || ""));
+    });
+    var wanted = String(title || "");
+    var exact = sections.filter(function (section) {
+      var match = /【([^】]*)】/.exec(section.querySelector(".pb-tit").textContent);
+      return match && match[1].trim() === wanted.trim();
+    })[0];
+    if (exact) return exact;
+    return sections.filter(function (section) {
+      return String(section.querySelector(".pb-tit").textContent || "").indexOf(wanted) !== -1;
     })[0] || null;
   }
 
@@ -993,25 +1010,16 @@
   }
 
   function renderDaxiaoYitouHistory(module) {
-    renderRemainingThreeColumnHistory("大小+①头", module, function (row) {
-      // `dxztt1`（大小中特带1头）的 raw 里是 `content: '["大|45"]'` 和
-      // `tou: '["4头"]'`，没有 `daxiao` / `tou_code` 这两个键，
-      // 所以必须从 content / tou 里取，否则只会显示出「大数」、丢掉「+4头」。
+    // 面板已由「大小+①头」改名为「大小」：`dxztt1` 本身只提供大小
+    // （raw.content = `["大|45"]`），原来的「+①头」并没有对应的数据列，
+    // 显示出来的是用预测号码推出来的头数，与标题承诺的「一个头」不是一回事。
+    // 因此这里只显示「大数 / 小数」，与同类面板「大小中特」保持一致。
+    renderRemainingThreeColumnHistory("大小", module, function (row) {
       var size = firstRawItem(rawValue(row, "daxiao")) || firstRawItem(rawValue(row, "content"));
       if (size.indexOf("|") !== -1) size = size.split("|", 2)[0].trim();
       size = size.replace(/^大$/, "大数").replace(/^小$/, "小数");
-      var tou = firstRawItem(rawValue(row, "tou") || rawValue(row, "tou_code"));
-      var touDigits = tou.replace(/\D/g, "");
-      if (touDigits) {
-        // `4头` / `45` 都取头数首位（`09` → `0头`）。
-        tou = (touDigits.length > 1 ? touDigits.charAt(0) : touDigits) + "头";
-      } else {
-        var digits = String(row && row.result && row.result.code || "").replace(/\D/g, "");
-        tou = digits ? (digits.length > 1 ? digits.charAt(0) : "0") + "头" : "";
-      }
-      if (size && tou) return size + "+" + tou;
       if (size) return size;
-      return displayLabels(row, "+").replace(/^大$/, "大数").replace(/^小$/, "小数");
+      return displayLabels(row, "").replace(/^大$/, "大数").replace(/^小$/, "小数");
     });
   }
 

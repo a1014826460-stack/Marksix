@@ -237,7 +237,7 @@ assert(
 // ── 13. 语义标签与号码清单命中 ────────────────────────────────────────────
 // 展示文本会把分隔符换成 `-`（`0-4-3-2头`）、把标签加字（`大` → `大数`）、
 // 把尾数重复三次（`5尾` → `555尾`）。只按展示文本全等匹配时，
-// 大小中特 / 大小+①头 / 梭哈⑦尾 / 火爆④头 / 平特一尾 / 稳中单双 / 单双二肖
+// 大小中特 / 大小 / 梭哈⑦尾 / 火爆④头 / 平特一尾 / 稳中单双 / 单双二肖
 // 实测整块 0 标记（应标未标）。必须再用 payload 的号码清单 + 大小/单双语义判定。
 assert(
   /function candidateCodeList/.test(adapter) && /function normalizeCandidateLabel/.test(adapter),
@@ -271,7 +271,7 @@ const emptyList = emptyBlock[1]
 for (const name of ["一肖一码", "⑤肖⑩码"]) {
   assert(emptyList.includes(`"${name}"`), `有壳无数据清单必须包含 ${name}`)
 }
-for (const keep of ["独家公式", "天地+②肖", "本期输尽光", "双波⑩码", "大小+①头", "六肖六码"]) {
+for (const keep of ["独家公式", "天地+②肖", "本期输尽光", "双波⑩码", "大小", "六肖六码"]) {
   assert(!emptyList.includes(`"${keep}"`), `${keep} 有数据/已修复，不得列入有壳无数据清单`)
 }
 assert(
@@ -283,20 +283,41 @@ assert(
   "DOMContentLoaded 必须先调用 hideEmptyPanels()",
 )
 
-// ── 16. 大小+①头 必须显示「大数+N头」而不是只有「大数」────────────────────
-// `dxztt1` 的 raw 是 `content: '["大|45"]'` 与 `tou: '["4头"]'`，
-// **没有** `daxiao` / `tou_code` 键；只读那两个键会丢掉「+4头」。
+// ── 16. 「大小」面板（原「大小+①头」）────────────────────────────────────
+// `dxztt1` 的 raw 是 `content: '["大|45"]'`，**没有** `daxiao` / `tou_code` 键，
+// 只读那两个键会连「大数」都取不到。面板已改名为「大小」：`dxztt1` 只提供大小，
+// 原来的「+①头」没有对应数据列（显示的只是用预测号码推出来的头数），已去掉。
 assert(
   /function firstRawItem/.test(adapter),
-  "必须能从 JSON 数组 / 逗号串形态的 raw 字段里取第一项",
+  "必须能从 JSON 数组 / 逗号串形态的 raw 字段里取第一项（dxztt1 用 content）",
 )
 assert(
-  /rawValue\(row, "tou"\) \|\| rawValue\(row, "tou_code"\)/.test(adapter),
-  "大小+①头 的头数必须优先读 raw.tou（dxztt1 用的是这个键）",
+  /renderRemainingThreeColumnHistory\("大小", module/.test(adapter),
+  "面板必须按新标题「大小」查找（旧标题「大小+①头」已废弃）",
 )
 assert(
-  /renderDaxiaoYitouHistory[\s\S]{0,1600}return size \+ "\+" \+ tou;/.test(adapter),
-  "大小+①头 必须拼成「大数+N头」",
+  !/renderRemainingThreeColumnHistory\("大小\+①头"/.test(adapter),
+  "适配器里不得再引用旧标题「大小+①头」",
+)
+assert(
+  !index.includes("大小+①头") && !index1.includes("大小+①头"),
+  "index.html / index1.html 里不得再出现旧标题「大小+①头」",
+)
+assert(
+  /【大小】/.test(index) && /【大小】/.test(index1),
+  "index.html / index1.html 必须已改名为【大小】",
+)
+
+// ── 17. sectionByTitle 必须精确优先 ──────────────────────────────────────
+// 面板标题都在【】里。子串匹配会让短标题命中更长的标题：
+// 「大小中特」排在「大小」之前时，sectionByTitle("大小") 会先命中「大小中特」。
+assert(
+  /function sectionByTitle[\s\S]{0,900}\/\u3010\(\[\^\u3011\]\*\)\u3011\/\.exec/.test(adapter),
+  "sectionByTitle 必须先按【标题】精确匹配，避免短标题命中更长的标题",
+)
+assert(
+  /var exact = sections\.filter/.test(adapter) && /if \(exact\) return exact;/.test(adapter),
+  "sectionByTitle 精确匹配命中时必须直接返回，不再退回子串匹配",
 )
 
 console.log("twbst528-display-contract: OK")
