@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import sys
@@ -119,7 +120,7 @@ ROW_SCRIPT = r"""
     cands.push({ el, text });
   }
   const leaves = cands.filter((item) => !cands.some((other) => other.el !== item.el && item.el.contains(other.el)));
-  const moduleOf = (el) => {
+  const containerOf = (el) => {
     let node = el;
     while (node && node !== document.body) {
       if (node.id) return '#' + node.id;
@@ -128,6 +129,24 @@ ROW_SCRIPT = r"""
       node = node.parentElement;
     }
     return '?';
+  };
+  // 容器 id/class 常常是多个模块共用的（twssz 的 .box.pad、twjsz666 的 #yxym 底下挂了十几个玩法）。
+  // 只按容器分组会让 R4/R5 把不同玩法混成一个模块，所以补一段「行内标签」做二级区分：
+  // 取「最后一个期号」之后到第一个【『（《 或 开 之间的短文本；取不到就退回方括号里的短文本。
+  const labelOf = (text) => {
+    const m = text.match(/\d{2,3}\s*期\s*[:：]?\s*([^【『（(《开:：;；]{1,16})/);
+    if (m) {
+      const label = m[1].replace(/[：:\s;；]+$/, '').trim();
+      if (label) return label.slice(0, 16);
+    }
+    const bracket = text.match(/[【『（(《]([^】』）)》]{1,16})[】』）)》]/);
+    if (bracket) return bracket[1].trim().slice(0, 16);
+    return '';
+  };
+  const moduleOf = (el, text) => {
+    const base = containerOf(el);
+    const label = labelOf(text || '');
+    return label ? base + '|' + label : base;
   };
   // 只统计「相对父节点新增的」黄色：容器整体黄底不会被算成本行高亮，
   // 但供应商用 class（.stylesb）、bgcolor 属性或内联 style 造成的黄底都能被抓到。
@@ -207,7 +226,8 @@ ROW_SCRIPT = r"""
       }
     }
     out.push({
-      module: moduleOf(item.el),
+      module: moduleOf(item.el, text),
+      label: labelOf(text),
       text: text,
       html: nodes.map((node) => node.outerHTML).join('').slice(0, 4000),
       highlights: nodes.reduce((sum, node) => sum + countYellow(node), 0),
@@ -327,23 +347,33 @@ def row_highlights(row: dict[str, Any]) -> int:
     return max(computed_count, highlight_count(str(row.get("html") or "")))
 
 
-def extract_display_token(text: str) -> str:
+def extract_display_token(text: str, label: str = "") -> str:
     """取「最后一个期号」到「开/開」之间的展示值（预测内容）。
 
-    若这段文本去掉【…】/［…］/（…）括号内容后什么都不剩，说明它只是模块名/标签
-    （例如 `270期 【逢买必中】 开:…`），没有可比较的展示值，返回空串跳过 R5。
+    取值优先级：
+    1. 去掉行内标签（`270期 双波 【蓝波,绿波】 开:…` 里的 `双波`）之后；
+    2. 若剩余文本里有 `【…】/『…』/（…）`，取括号内容作为展示值
+       （这样 R5 比较的是「本期选了什么」，而不是每期都一样的标签）；
+    3. 否则用剩余文本本身。
+    剩余内容若全是标签/标点（去掉标签后什么都不剩），返回空串跳过 R5。
     """
     opening = re.search(r"开|開", text)
     head = text[: opening.start()] if opening else text
     terms = list(re.finditer(r"\d{2,3}\s*期", head))
     if not terms:
         return ""
-    token = head[terms[-1].end():].strip()
-    token = re.sub(r"^[::\s]+", "", token)[:60]
-    without_labels = re.sub(r"[【\[（(《〈「][^】\]）)》〉」]*[】\]）)》〉」]", "", token)
+    raw = head[terms[-1].end():].strip()
+    raw = re.sub(r"^[::\s]+", "", raw)
+    if label and raw.startswith(label):
+        raw = raw[len(label):].lstrip(":： ")
+    brackets = [part.strip() for part in re.findall(r"[【『（(《]([^】』）)》]*)[】』）)》]", raw)]
+    joined = " / ".join(part for part in brackets if part)
+    if joined:
+        return joined[:40]
+    without_labels = re.sub(r"[【\[（(《〈「][^】\]）)》〉」]*[】\]）)》〉」]", "", raw)
     if not re.sub(r"[\s:：,，、.。·\-—]", "", without_labels):
         return ""
-    return token[:30]
+    return raw[:40]
 
 
 def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
@@ -381,7 +411,9 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
         term_match = re.search(r"(\d{2,3})\s*期", text)
         # 只有含「开/開」的才是真正的预测行；文章列表/导航里的「N期 已更新」不算展示值。
         if term_match and re.search(r"开|開", text):
-            display_seq.append((module, term_match.group(1), extract_display_token(text)))
+            display_seq.append(
+                (module, term_match.group(1), extract_display_token(text, str(row.get("label") or "")))
+            )
 
     # R4 命中却无高亮：按模块分组，仅当同模块其它行确有高亮时才报
     by_module: dict[str, list[dict[str, Any]]] = {}
@@ -390,11 +422,17 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
     for module, module_rows in by_module.items():
         if not any(row_highlights(row) > 0 for row in module_rows):
             continue
+        # 模块级豁免：只要该模块任意一行自报是排除型（杀号）玩法，整模块都不报 R4——
+        # 「准」= 杀掉的集合里没有开奖目标 = 本来就没有可高亮的命中项。
+        # 不能只看当前行：合并后的行常常只剩「N期 开:xx准」，标签在没被并进来的兄弟里。
+        if any(EXCLUDE_MODULE_RE.search(row["text"]) for row in module_rows):
+            continue
+        # 模块归属不明的行（跨行合并拿不到容器 id）无法可靠归因高亮，不报 R4。
+        if module == "?":
+            continue
         for row in module_rows:
             if is_pending(row["text"]):
                 continue
-            if EXCLUDE_MODULE_RE.search(row["text"]):
-                continue  # 杀号类「准」= 没有命中项可高亮
             if verdict_of(row["text"]) in ("准", "对", "赢", "中") and row_highlights(row) == 0:
                 findings.append(Finding(site_key, "R4 highlight_hit", "warn",
                                         f"{module} 该行判定为命中，但本行没有黄色高亮",
@@ -405,16 +443,30 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
     for module, term, token in display_seq:
         by_module_seq.setdefault(module, []).append((term, token))
     for module, seq in by_module_seq.items():
+        # 标签降噪：某个 token 在该模块里出现频率 ≥40%（且至少 3 行）时，它是模块名/列头而不是
+        # 展示值，真正的「相邻 3 期同值」不可能在同一模块里占掉这么大比例。
+        # 只在模块有 ≥6 行时启用，避免小样本整块被跳过。
+        label_tokens: set[str] = set()
+        if len(seq) >= 6:
+            counts = collections.Counter(token for _, token in seq if token)
+            threshold = max(3, len(seq) * 0.4)
+            label_tokens = {token for token, count in counts.items() if count >= threshold}
         run_start = 0
         for index in range(1, len(seq) + 1):
-            same = index < len(seq) and seq[index][1] == seq[run_start][1] and seq[index][1] != ""
+            same = (
+                index < len(seq)
+                and seq[index][1] == seq[run_start][1]
+                and seq[index][1] != ""
+                and seq[index][1] not in label_tokens
+            )
             if same:
                 continue
             run_len = index - run_start
-            if run_len >= 3:
+            token = seq[run_start][1]
+            if run_len >= 3 and token and token not in label_tokens:
                 terms = ",".join(item[0] for item in seq[run_start:index])
                 findings.append(Finding(site_key, "R5 repeat_run", "warn",
-                                        f"{module} 连续 {run_len} 期展示值相同：{seq[run_start][1]!r}",
+                                        f"{module} 连续 {run_len} 期展示值相同：{token!r}",
                                         terms))
             run_start = index
 
