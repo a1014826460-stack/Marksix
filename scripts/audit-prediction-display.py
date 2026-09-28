@@ -166,7 +166,11 @@ ROW_SCRIPT = r"""
   const isYellow = (value) => {
     const s = String(value || '').replace(/\s+/g, '').toLowerCase();
     return s === 'rgb(255,255,0)' || s === 'rgba(255,255,0,1)' ||
-           s === '#ffff00' || s === '#ff0' || s === 'yellow';
+           s === '#ffff00' || s === '#ff0' || s === 'yellow' ||
+           // 供应商候选列 CSS（twbst528 home.css `.mtbl td:nth-child(2) span`）的兜底
+           // 高亮色 #d1be18：任何落在候选格里的 span 都会被染成这个芥末黄，
+           // 与 #FFFF00 同属「命中高亮」口径，必须计入 R3/R4 判定。
+           s === 'rgb(209,190,24)' || s === '#d1be18';
   };
   const countYellow = (el) => {
     let n = 0;

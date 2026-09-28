@@ -433,4 +433,31 @@ for (const key of ["3tou", "3hang"]) {
   )
 }
 
+// ── 13. 拆包残留 marker span（供应商候选列 CSS 兜底芥末黄）──────────────────
+// home.css `.mtbl td:nth-child(2) span { background-color:#d1be18 }` 给候选列里**任何**
+// span 兜底芥末黄（rgb(209,190,24)）。clearMarkers 只清内联 #FFFF00 时模板预埋 marker
+// span 仍在，writeCell 的 leaves[0] 又往往落在它里面，整段候选文本被写回该 span ——
+// 「错」行整行被染成芥末黄（线上实测：代号生肖 268 期、两波突围等 21 个板块 57 处）。
+// 修复：writeCell 路径 clearMarkers(cell, true) 在清样式后**拆包**（子节点前移、删壳）；
+// writeWaveNumbers 复用模板 marker span 存命中底色，不得拆（调用处不传第二参）。
+assert(
+  /function clearMarkers\(cell, unwrapMarkers\)/.test(adapter) &&
+    /if \(unwrapMarkers\) \{[\s\S]{0,200}while \(marker\.firstChild\) marker\.parentNode\.insertBefore\(marker\.firstChild, marker\);[\s\S]{0,80}marker\.parentNode\.removeChild\(marker\);/.test(adapter),
+  "clearMarkers 必须支持拆包：清掉黄底的 marker span 要从 DOM 移除（子节点前移），不能只清样式",
+)
+{
+  const writeCellBody = /function writeCell\(cell, value, hitValues\) \{([\s\S]*?)\n  \}/.exec(adapter)
+  assert(writeCellBody, "必须能定位 writeCell 函数体")
+  assert(
+    /clearMarkers\(cell, true\)/.test(writeCellBody[1]),
+    "writeCell 必须以拆包模式调用 clearMarkers(cell, true)，否则候选文本会落回带 CSS 兜底黄底的 span",
+  )
+  // 全文件只允许 writeCell 这一处拆包调用；其余 clearMarkers 调用保持默认（writeWaveNumbers 复用模板 span）。
+  const unwrapCallSites = adapter.match(/clearMarkers\([^)]*,\s*true\)/g) || []
+  assert(
+    unwrapCallSites.length === 1,
+    `拆包调用只允许出现在 writeCell 一处，实际发现 ${unwrapCallSites.length} 处`,
+  )
+}
+
 console.log("twbst528-display-contract: OK")

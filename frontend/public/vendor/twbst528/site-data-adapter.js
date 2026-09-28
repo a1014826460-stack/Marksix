@@ -44,13 +44,29 @@
     });
   }
 
-  function clearMarkers(cell) {
+  function clearMarkers(cell, unwrapMarkers) {
     // 黄底与命中标记属性**同生共死**：只清背景色会在重置后留下「无黄底却仍带
     // data-prediction-hit」的幽灵标记，让展示契约/审计把未命中行误判成命中。
-    Array.prototype.forEach.call(cell.querySelectorAll("span[style*='background-color'], span[data-prediction-hit]"), function (marker) {
+    var markers = Array.prototype.slice.call(cell.querySelectorAll("span[style*='background-color'], span[data-prediction-hit]"));
+    Array.prototype.forEach.call(markers, function (marker) {
       marker.style.backgroundColor = "";
       marker.removeAttribute("data-prediction-hit");
     });
+    // 只清样式还不够：供应商 CSS（home.css `.mtbl td:nth-child(2) span`）给候选列里
+    // **任何** span 兜底 `background-color:#d1be18`（rgb(209,190,24)）。清掉内联 #FFFF00
+    // 后 marker span 仍在，而 writeCell 的 leaves[0] 往往正好落在它里面，整段候选文本
+    // 被写回这个 span，视觉上整行被染成芥末黄（线上实测：代号生肖 268 期「错」行、
+    // 两波突围/六尾出特/头数单双/家野中特等模板预埋 span 的板块全部中招）。
+    // 拆包（子节点前移、删掉空壳）让候选文本回到单元格层级，命中项由 writeCell
+    // 重建的独立 marker 承载。writeWaveNumbers 复用模板 marker span 存命中底色，
+    // 不能拆，所以拆包只在 writeCell 路径开启。
+    if (unwrapMarkers) {
+      Array.prototype.forEach.call(markers, function (marker) {
+        if (!marker.parentNode) return;
+        while (marker.firstChild) marker.parentNode.insertBefore(marker.firstChild, marker);
+        marker.parentNode.removeChild(marker);
+      });
+    }
   }
 
   // A supplier template may pack several issues into one element and bake its
@@ -156,7 +172,8 @@
     var text = String(value || "");
     if (!cell) return;
     var doc = cell.ownerDocument;
-    clearMarkers(cell);
+    // writeCell 路径拆包残留 marker span：候选列 CSS 会给任何 span 兜底芥末黄底（见 clearMarkers）。
+    clearMarkers(cell, true);
 
     var leaves = textNodes(cell);
     if (leaves.length === 0) return;
@@ -560,14 +577,14 @@
   /**
    * 「开奖目标是否落在**被杀集合**里」——排除型小节的命中判定（命中型语义）。
    *
-   * 口径：被杀集合就是**本行候选自己声明的号码清单**（`土|03,06,…` / `3头|30,…`），
+   * 口径：被杀集合就是**本行候选自己声明的号码清单**（`土|05,06,…` / `3头|30,…`），
    * 所以判定 = 特码号码是否出现在这些清单里。
    *
-   * 为什么不用接口 `is_correct` 直接取反：上游按**号码五行表**（`fixed_data` 五行，
-   * 37→木）判定 mode 53，而供应商正文里的分组是**另一套五行划分**
-   * （`土|03,06,09,…,45,48` 里就含 45，而 fixed_data 的 45 属木）。拿上游判定取反会
-   * 出现「开奖号码明明写在候选【土】组里，却判杀中（对）」的自相矛盾展示。
-   * 按本行清单判定既与展示自洽，也与「杀掉的候选集合是否含开奖目标」的玩法口径一致。
+   * 为什么按清单复算而不是只信接口 `is_correct`：五行正文的分组口径已于 2026-09-28
+   * 统一到 `public.fixed_data` sign='五行'（号码五行，37→木）——与后端 outcome
+   * （`special_element_from_row`）同一套划分，正文清单不再自相矛盾。此函数保留为
+   * **按展示内容复算**的一致性护栏：一旦正文清单与后端口径再次漂移，展示仍与页面上
+   * 列出的候选自洽；两者一致时结果与「接口判定取反」完全相同。
    *
    * 返回 `true`（含＝杀失败）/ `false`（不含＝杀中）/ `null`（拿不到清单或特码，
    * 调用方退回接口判定）。
@@ -1654,9 +1671,10 @@
     // 3tou/3hang 加进全局 KILL_RULE_KEYS（那会连带改掉「五行来料」等命中型面板的口径）。
     //
     // 判定取值：`killedSetContainsTarget()` 按**本行候选自己声明的号码清单**
-    // （`土|03,06,…` / `3头|30,…`）复算「开奖号码 ∈ 被杀集合」，与面板上列出的候选完全
-    // 自洽；清单缺失时才退回接口 `is_correct` 再取反（见 `killedSetContainsTarget` 注释：
-    // 上游 mode 53 用的是 fixed_data 五行表，与本行正文的分组可能不是同一套划分）。
+    // （`土|05,06,…` / `3头|30,…`）复算「开奖号码 ∈ 被杀集合」，与面板上列出的候选完全
+    // 自洽；清单缺失时才退回接口 `is_correct` 再取反。五行正文口径已统一到
+    // `fixed_data` sign='五行'（号码五行，37→木），与后端 outcome 同一套划分，
+    // 两个来源的结果一致（见 `killedSetContainsTarget` 注释）。
     renderCompositeLines("综合绝杀", [
       { key: "juesha2xiao", module: modules.juesha2xiao },
       { key: "juesha1wei", module: modules.juesha1wei },
