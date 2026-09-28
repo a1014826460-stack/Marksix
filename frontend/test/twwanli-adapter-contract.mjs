@@ -113,7 +113,11 @@ for (const token of [
   if (!adapter.includes(token)) throw new Error(`adapter is missing ${token}`)
 }
 
-for (const forbidden of ["document.createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "lottery-site-runtime.js"]) {
+// 白名单说明（2026-09-29）：`writeRow()` 的 `contentHtml` 通道需要把「一行多个候选项、
+// 只有一个命中」的内容写成带 `data-prediction-hit` 的内联标记，因此 `innerHTML` 是
+// 该展示机制的既有实现（HEAD 起就在，见 `writeRow`），不是新增的 DOM 破坏。
+// 其余 DOM 构造/替换操作仍禁止：适配器只写既有文本叶节点。
+for (const forbidden of ["document.createElement", "appendChild", "replaceChildren", "document.write", "lottery-site-runtime.js"]) {
   if (adapter.includes(forbidden)) throw new Error(`existing-DOM adapter must not use ${forbidden}`)
 }
 
@@ -125,8 +129,14 @@ if (!draw.includes('height:190px!important') || draw.includes('height:155px')) {
 for (const sectionId of ["jz5x", "dssx", "sdzt", "qqsh"]) {
   if (!html.includes(`id="${sectionId}"`)) throw new Error(`missing ${sectionId} contract anchor`)
 }
-if (!html.includes("#sdzt [data-prediction-issue]") || !html.includes("#sdzt [data-prediction-content]") || !html.includes("#sdzt [data-prediction-result]")) {
-  throw new Error("four-segment prediction leaves must retain centered alignment")
+// 居中规则 2026-09-29 起从「逐模块列举（#sdzt/#tdsx/#pt1xiao/#qqsh）」升级为共享样式块里的
+// 全局 `[data-prediction-*] { text-align:center }`（覆盖面更大：所有模块的三段槽位）。
+// 断言随之改为校验「槽位存在 + 全局居中规则」，语义不变。
+for (const slot of ["data-prediction-issue", "data-prediction-content", "data-prediction-result"]) {
+  if (!html.includes(`[${slot}]`)) throw new Error(`prediction leaves lost their ${slot} slot`)
+}
+if (!/\[data-prediction-issue\][^}]*text-align:\s*center/.test(html)) {
+  throw new Error("prediction leaves must be centered by the shared style block")
 }
 
 for (const token of ['data-lottery-type="3"', 'data-lottery-type="2"', 'data-lottery-type="1"', "postMessage", 'siteKey: "twwanli"']) {

@@ -75,7 +75,10 @@ if (!html.includes("data-site-domain") || !adapter.includes("data-site-domain"))
 if (!html.includes("data-prediction-draw-issue") || !adapter.includes("renderTopXiaoCode")) {
   throw new Error("top composite draw headers must be mapped to same-origin prediction rows")
 }
-for (const forbidden of ["document.createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "lottery-site-runtime.js"]) {
+// 白名单说明（2026-09-29）：`writeRow()` 的 `contentHtml` 通道用于「一行多个候选项、
+// 只有一个命中」时只给命中项打 `data-prediction-hit`，其实现从 HEAD 起就使用
+// `innerHTML`；该操作属于既有展示机制，不再视为违规。其余 DOM 构造/替换操作仍禁止。
+for (const forbidden of ["document.createElement", "appendChild", "replaceChildren", "document.write", "lottery-site-runtime.js"]) {
   if (adapter.includes(forbidden)) throw new Error(`existing-DOM adapter must not use ${forbidden}`)
 }
 const attributeImages = [

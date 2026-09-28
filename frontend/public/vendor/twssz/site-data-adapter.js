@@ -1433,6 +1433,40 @@
     return nodes.length && nodes[0].parentElement ? nodes[0].parentElement : root;
   }
 
+  // 天地肖固定分组（与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致）。
+  var TIANDI_GROUPS = {
+    "天肖": ["兔", "马", "猴", "猪", "牛", "龙"],
+    "地肖": ["鼠", "虎", "蛇", "羊", "鸡", "狗"]
+  };
+
+  function tiandiGroup(sideLabel) {
+    var value = String(sideLabel || "");
+    if (value.indexOf("天") === 0) return TIANDI_GROUPS["天肖"];
+    if (value.indexOf("地") === 0) return TIANDI_GROUPS["地肖"];
+    return [];
+  }
+
+  // 本期候选肖 = `raw.xiao` 的 2 肖；兼容载荷缺该列时退回 tokens 里天地分组之后的肖。
+  function tiandiPair(row) {
+    var raw = row && row.raw && row.raw.xiao;
+    var values = [];
+    if (Array.isArray(raw)) values = raw.map(String);
+    else if (typeof raw === "string") values = raw.split(/[,，、|\s]+/);
+    values = values.map(function (value) { return String(value).trim(); }).filter(function (value) {
+      return /^[鼠牛虎兔龙蛇马羊猴鸡狗猪]$/.test(value);
+    });
+    return values.length ? values : zodiacValues(row).slice(1, 3);
+  }
+
+  // 站点既有的命中助手是 `markHitLeaf`（只写内联 `#FFFF00`，页面靠可见黄底呈现）。
+  // 这里在同一个节点上补跨站标准标记 `data-prediction-hit="true"`，让「只标命中项」
+  // 既可看见又可被契约/审计断言；复用既有 span，不新增任何元素。
+  function appendTiandiSpan(root, text, hit) {
+    var span = appendValueSpan(root, text, hit);
+    if (hit) span.setAttribute("data-prediction-hit", "true");
+    return span;
+  }
+
   function renderTiandiHistory(mapping, module) {
     var table = tableAfterHeading("精准天地+两肖");
     if (!table) return;
@@ -1443,23 +1477,36 @@
       if (!cell) return;
       tr.setAttribute("data-prediction-row", String(index));
       var nature = firstValue(predictionTokens(row)[0] || "");
-      var pair = row && row.raw && row.raw.xiao ? String(row.raw.xiao).split(/[,，]/).join("") : zodiacValues(row).slice(1, 3).join("");
+      var pair = tiandiPair(row);
       var valueRoot = slot(cell, "tiandi-value", firstTextParent);
-      // 天地生肖（mode 5）的后端规则仍是 blocked_pending_rule（未定稿），所以高亮
-      // 以本行自己的判定为前提，只把「判定为命中」且真的等于特肖的那一肖标黄：
-      // 判定为「错」的期一律不留黄底，未命中的肖与分类标签也不高亮。
-      var rowHit = isHitRow(row);
       clearRowHighlight(tr);
       clearNodeChildren(valueRoot);
       if (!row) return;
+      // 天地生肖（mode 5）的候选是双维度：`content` 的天地组（6 肖）+ `xiao` 的
+      // 本期 2 个候选肖。vendor/接口的 `is_correct` 只比对那 2 肖（后端 `title_5`
+      // 是 contains_hit），天地组永远不参与判定 → 270 期「天肖+兔鸡」开 37 马，
+      // 组里明明含马却显示「错」。这里本地复算并集：特肖 ∈ 天地组 ∪ 两肖 任一
+      // 即命中，与 twwanli `#tdsx` / twsyw `#nannv` 同口径；未开奖或拿不到特肖的
+      // 行不做判定，也绝不标黄。
       var draw = drawnAtoms(row);
+      var decided = Boolean(draw.opened && draw.zodiac);
+      var inGroup = decided && tiandiGroup(nature).indexOf(draw.zodiac) >= 0;
+      var inPair = decided && pair.indexOf(draw.zodiac) >= 0;
+      var hit = inGroup || inPair;
+      var verdict = decided ? (hit ? "对" : "错") : "";
+      var drawn = drawValue(row);
       appendTextNode(valueRoot, termValue(row) + ": 天地 【");
-      appendValueSpan(valueRoot, nature, false);
+      // 只点亮真正命中的那一项：命中两肖 → 点亮那个生肖；命中天地组 → 点亮组名；
+      // 两项都命中时优先点亮生肖（与 twwanli `renderHeavenEarth` 一致）。
+      appendTiandiSpan(valueRoot, nature, inGroup && !inPair);
       appendTextNode(valueRoot, "+");
-      pair.split("").forEach(function (zodiac) {
-        appendValueSpan(valueRoot, zodiac, rowHit && isSpecialZodiac(draw, zodiac));
+      pair.forEach(function (zodiac) {
+        appendTiandiSpan(valueRoot, zodiac, inPair && zodiac === draw.zodiac);
       });
-      appendTextNode(valueRoot, "】 开:" + openedResult(row));
+      appendTextNode(
+        valueRoot,
+        "】 开:" + (draw.opened && drawn && drawn !== "待开奖" ? drawn + verdict : "待开奖")
+      );
     });
   }
 

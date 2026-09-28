@@ -45,8 +45,11 @@
   }
 
   function clearMarkers(cell) {
-    Array.prototype.forEach.call(cell.querySelectorAll("span[style*='background-color']"), function (marker) {
+    // 黄底与命中标记属性**同生共死**：只清背景色会在重置后留下「无黄底却仍带
+    // data-prediction-hit」的幽灵标记，让展示契约/审计把未命中行误判成命中。
+    Array.prototype.forEach.call(cell.querySelectorAll("span[style*='background-color'], span[data-prediction-hit]"), function (marker) {
       marker.style.backgroundColor = "";
+      marker.removeAttribute("data-prediction-hit");
     });
   }
 
@@ -56,6 +59,11 @@
   // stale #FFFF00 marker on the way to it is cleared before the line is written.
   var YELLOW_MARKER = /#ffff00|rgb\(\s*255\s*,\s*255\s*,\s*0\s*\)/i;
   var LINE_HOST_ATTRIBUTE = "data-prediction-line";
+  // 命中标记的标准属性（《预测模块展示规范》：`[data-prediction-hit="true"]` 即命中项）。
+  // 本站历史实现只写内联 `background-color:#FFFF00`，模板里**没有**预埋该属性，
+  // 于是展示契约/审计无法把「命中项」与「模板残留黄底」区分开。自建 marker 时补上属性，
+  // 视觉不变，但让「只有命中项带黄底」可被机器校验。
+  var HIT_MARKER_ATTRIBUTE = "data-prediction-hit";
 
   function hasYellowMarker(node) {
     if (!node || node.nodeType !== 1 || !node.getAttribute) return false;
@@ -124,6 +132,7 @@
     var doc = host.ownerDocument;
     var marker = doc.createElement("span");
     marker.style.backgroundColor = "#FFFF00";
+    marker.setAttribute(HIT_MARKER_ATTRIBUTE, "true");
     marker.appendChild(doc.createTextNode(token));
     host.textContent = text.slice(0, index);
     host.appendChild(marker);
@@ -179,6 +188,7 @@
 
     var marker = doc.createElement("span");
     marker.style.backgroundColor = "#FFFF00";
+    marker.setAttribute(HIT_MARKER_ATTRIBUTE, "true");
     marker.appendChild(doc.createTextNode(matchingValue));
 
     leaves.forEach(function (leaf) { leaf.nodeValue = ""; });
@@ -500,13 +510,28 @@
     });
   }
 
-  function resultValue(row) {
+  /**
+   * 「开:38蛇对」开奖段。
+   *
+   * `invert` 只给**展示层按排除型重做的模块**用（见 `renderZongheJushaHistory`）：
+   * 这些小节在「综合绝杀」面板里按杀号语义展示，而后端 `is_correct` 是**命中型**
+   * （`true` = 开奖目标落在候选集合里 = 杀失败）。取反后：
+   *   · 接口 `true`  → 杀失败 → 「错」
+   *   · 接口 `false` → 杀中   → 「对」
+   *   · 未开奖 / 接口没有判定值 → 不给判定文字。
+   * 不传 `invert` 的老调用（含其它面板）行为完全不变。
+   */
+  function resultValue(row, invert) {
     var result = row && row.result || {};
     if (!result.isOpened) return "开:待开奖";
     var number = resultToken(result.code, true);
     var zodiac = resultToken(result.zodiac, false);
     var drawn = number && zodiac ? number + zodiac : String(result.text || "");
-    return "开:" + drawn + (result.isCorrect === true ? "对" : result.isCorrect === false ? "错" : "");
+    var correct = result.isCorrect;
+    if (invert === true) {
+      correct = result.isCorrect === true ? false : result.isCorrect === false ? true : result.isCorrect;
+    }
+    return "开:" + drawn + (correct === true ? "对" : correct === false ? "错" : "");
   }
 
   function resultToken(value, padNumber) {
@@ -752,7 +777,12 @@
 
   // Shared low-level writer for the identical three-column supplier topology.
   // Each public module below owns its selector and value formatter.
-  function renderThreeColumnRows(section, module, formatter, moduleKey, hitResolver) {
+  //
+  // `resultResolver(row)` 是**可选**的第六个钩子：接口的 `is_correct` 口径与展示口径
+  // 不一致时（见 `tiandiJudgement`），由模块本地复算并返回一个带覆盖后 `result` 的行；
+  // 返回假值时沿用原始行（`null` 行也原样透传）。既有调用方只传 ≤5 个参数，
+  // 因此该钩子对它们是**完全无行为变化**的。
+  function renderThreeColumnRows(section, module, formatter, moduleKey, hitResolver, resultResolver) {
     if (!section) return;
     var resolveRow = makeRowResolver(module);
     var rule = highlightRuleFor(moduleKey);
@@ -768,7 +798,7 @@
         : [];
       writeCell(cells[0], row ? termValue(row) : "暂无后端资料");
       writeCell(cells[1], value, tokensToMark);
-      writeResultCell(cells[2], row);
+      writeResultCell(cells[2], resultResolver ? (resultResolver(row) || row) : row);
       tr.setAttribute("data-prediction-row", String(index));
     });
   }
@@ -842,6 +872,62 @@
     });
   }
 
+  // ── 天地生肖固定分组（权威口径）────────────────────────────────────────
+  // 来源：`public.fixed_data` sign='天地肖'，与 twwanli/twsyw/twcaibawang 各站的
+  // `sx.html` 一致。天肖 6 肖 + 地肖 6 肖 = 12 生肖，不重不漏。
+  var TIANDI_GROUPS = {
+    "天肖": ["兔", "马", "猴", "猪", "牛", "龙"],
+    "地肖": ["鼠", "虎", "蛇", "羊", "鸡", "狗"]
+  };
+
+  function tiandiGroup(sideLabel) {
+    var value = String(sideLabel || "");
+    if (value.indexOf("天") === 0) return TIANDI_GROUPS["天肖"];
+    if (value.indexOf("地") === 0) return TIANDI_GROUPS["地肖"];
+    return [];
+  }
+
+  /**
+   * 天地两肖（mode 5 / `title_5`）的**本地**判定；返回 `null` = 「不做本地判定」。
+   *
+   * 为什么要本地复算：供应商/接口的 `is_correct` 只比对 mode 5 的 `xiao` 那 2 肖
+   * （后端 `mechanisms.py` 里 `title_5` 的 `hit_checker=contains_hit`，候选就是
+   * 「生肖选 2」），**天地组（6 肖）永远不参与判定** —— 于是「天肖里含开奖特肖」
+   * 的期会显示「错」（270 期「天肖+兔鸡」开 37 马：马 ∈ 天肖，接口却给 false）。
+   *
+   * 正确口径（与 twwanli `#tdsx`、twsyw `#nannv`、twcaibawang 一致）：特肖落在
+   * **天地组 ∪ 本期 2 个候选肖** 任一即命中。未开奖、拿不到特肖、或缺天地组/两肖
+   * 资料时返回 `null`，沿用既有接口判定，不凭空造「错」。
+   */
+  function tiandiJudgement(row) {
+    var result = row && row.result || {};
+    var zodiac = resultToken(result.zodiac, false);
+    var picked = String(rawValue(row, "tiandi") || "");
+    var group = tiandiGroup(picked);
+    var pair = valueList(rawValue(row, "xiao_pair"));
+    if (!result.isOpened || !zodiac || !group.length || !pair.length) return null;
+    var inGroup = group.indexOf(zodiac) >= 0;
+    var inPair = pair.indexOf(zodiac) >= 0;
+    return {
+      correct: inGroup || inPair,
+      // 只点亮真正命中的那一项：命中两肖 → 点亮那个生肖；命中天地组 → 点亮组名。
+      // 两项都命中时优先点亮生肖（与 twwanli / twsyw 的 `inGroup && !inChosen` 分支一致）。
+      token: inPair ? zodiac : inGroup ? picked : ""
+    };
+  }
+
+  /** 复制一行并覆盖 `result.isCorrect`，把本地判定交给 `writeResultCell`（不改原 payload 行）。 */
+  function withTiandiCorrect(row, correct) {
+    if (!row) return null;
+    var copy = {};
+    Object.keys(row).forEach(function (key) { copy[key] = row[key]; });
+    var result = {};
+    Object.keys(row.result || {}).forEach(function (key) { result[key] = row.result[key]; });
+    result.isCorrect = correct;
+    copy.result = result;
+    return copy;
+  }
+
   function renderTiandiErxiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("天地+②肖"), module, function (row) {
       var tiandi = String(rawValue(row, "tiandi") || "");
@@ -850,6 +936,12 @@
       var labels = displayLabels(row, "");
       var picks = valueList(rawValue(row, "xiao")).slice(0, 2).join("");
       return labels && picks ? labels + "+" + picks : labels;
+    }, null, function (row) {
+      var judged = tiandiJudgement(row);
+      return judged && judged.token ? [judged.token] : [];
+    }, function (row) {
+      var judged = tiandiJudgement(row);
+      return judged ? withTiandiCorrect(row, judged.correct) : null;
     });
   }
 
@@ -1407,8 +1499,10 @@
         writeLineGroup(group, "");
         return;
       }
-      var text = formatter(row, moduleIndex);
-      writeLineGroup(group, text, highlightTokens(row, highlightRuleFor(entry.key), allowMarkedTokens(text)));
+      var text = formatter(row, moduleIndex, entry);
+      // 标黄口径按**小节**决定：`entry.rule` 显式指定时优先（`{key:"3tou", rule:"kill"}`
+      // 这类「面板内按排除型重做」的小节），否则沿用按 key 查规则表的老口径。
+      writeLineGroup(group, text, highlightTokens(row, entry.rule || highlightRuleFor(entry.key), allowMarkedTokens(text)));
       rowIndex += 1;
     });
   }
@@ -1468,14 +1562,28 @@
   }
 
   function renderZongheJueshaHistory(modules) {
-    // 「综合绝杀」四个小节全部是排除型：杀失败那期标黄被杀中的那一项，杀中不给标记。
+    // 「综合绝杀」面板：四个小节统一按排除型（杀号）口径展示与判定。
+    // 口径依据（backend/docs/prediction-module-rules.md）：
+    //   · juesha2xiao(mode 473) / juesha1wei(mode 20) 后端本身就是 excludes_hit：
+    //     杀掉的集合里没有开奖目标 → is_correct=true → 「对」。接口判定直接用，不取反。
+    //   · 3tou(3头中特 mode 12) / 3hang(3行中特 mode 53) 后端是命中型
+    //     （特码头 / 特码五行落入候选 → is_correct=true），而本面板把它们作为「稳杀」
+    //     展示（文案是 NNN期稳杀【…】）。按面板口径必须取反：
+    //     被杀集合不含开奖目标（特码头 / 特码五行）→ 「对」，含 → 「错」。
+    // 取反只做在展示层（invertVerdict + resultValue(row, true)）：后端 is_correct
+    // 是 mode 12/53 的公共语义，还被别的面板/站点使用（本站「五行来料」面板就把 3hang
+    // 当命中型渲染），不能为这个面板改后端。
+    // 高亮：排除型一律零黄底 ——「对」= 没有可高亮的命中项；「错」= 开奖目标正落在被杀的
+    // 集合里，属于 S3 明令禁止标黄的情形。故这两个小节显式传 rule:"kill"，而不能把
+    // 3tou/3hang 加进全局 KILL_RULE_KEYS（那会连带改掉「五行来料」等命中型面板的口径）。
     renderCompositeLines("综合绝杀", [
       { key: "juesha2xiao", module: modules.juesha2xiao },
       { key: "juesha1wei", module: modules.juesha1wei },
-      { key: "3tou", module: modules["3tou"] },
-      { key: "3hang", module: modules["3hang"] }
-    ], function (row) {
-      return termValue(row).replace(/^第/, "") + "稳杀【" + displayLabels(row, "") + "】" + resultValue(row);
+      { key: "3tou", module: modules["3tou"], rule: "kill", invertVerdict: true },
+      { key: "3hang", module: modules["3hang"], rule: "kill", invertVerdict: true }
+    ], function (row, moduleIndex, entry) {
+      return termValue(row).replace(/^第/, "") + "稳杀【" + displayLabels(row, "") + "】" +
+        resultValue(row, Boolean(entry && entry.invertVerdict));
     });
   }
 

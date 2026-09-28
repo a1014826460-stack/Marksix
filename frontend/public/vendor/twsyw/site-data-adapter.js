@@ -99,12 +99,18 @@
         : escapeHtml(text);
     }).join(joiner == null ? "" : joiner);
   }
-  function renderHistory(id, module, formatter) {
+  // `verdict(row) -> { hit, html }` 可选：给了就按**本单元格展示的候选**复算判定与高亮
+  // （`html` 里只包命中项），不再透传 `result.isCorrect`；不给则沿用整份资料的既有口径。
+  function renderHistory(id, module, formatter, verdict) {
     var source = distinctRows(module);
     historyRows(section(id)).forEach(function (row, index) {
       var current = source[index];
       if (!current) return writeRow(row, "", "暂无后端资料", "", false);
-      writeRow(row, issueOf(current) + "期", formatter(current) || "暂无后端资料", resultText(current), current.result && current.result.isCorrect === true);
+      var content = formatter(current) || "暂无后端资料";
+      if (!verdict) return writeRow(row, issueOf(current) + "期", content, resultText(current), current.result && current.result.isCorrect === true);
+      var outcome = verdict(current) || {};
+      var hit = outcome.hit === true;
+      writeRow(row, issueOf(current) + "期", content, displayedResultText(current, hit), hit, outcome.html || "");
     });
   }
   function domesticWild(row) {
@@ -147,29 +153,137 @@
     return { code: code, zodiac: last(result.zodiac) };
   }
 
+  // ── 「展示即候选」判定工具（2026-09-29）──────────────────────────────
+  // 凡是一行只展示某份资料的一部分的单元格，判定必须只用**展示出来的那一份**：
+  // 展示子集就是候选集，判定字也按展示候选本地复算、不再透传 `result.isCorrect`。
+  // 旧写法的两种症状都源于此：
+  //   · 「显示对却没有黄底」——展示被裁到前 N 个，判定却用整份资料（命中落在被裁掉的部分）；
+  //   · 「另一个维度命中却显示错」——一行展示多路候选，判定只取第一路（或多路里的第一份）。
+  var WAVE_LABELS = ["红波", "蓝波", "绿波"];
+  // 与 backend `predict.number_maps.WAVE_COLOR_NUMBER_MAP` / `public.fixed_data` sign='波色' 一致。
+  var WAVE_NUMBERS = {
+    "红波": ["01", "02", "07", "08", "12", "13", "18", "19", "23", "24", "29", "30", "34", "35", "40", "45", "46"],
+    "蓝波": ["03", "04", "09", "10", "14", "15", "20", "25", "26", "31", "36", "37", "41", "42", "47", "48"],
+    "绿波": ["05", "06", "11", "16", "17", "21", "22", "27", "28", "32", "33", "38", "39", "43", "44", "49"]
+  };
+  function inList(list, value) { return Boolean(value) && (list || []).indexOf(value) >= 0; }
+  // 固定词表的候选标签：兼容 tokens 被拆成单字（`合双` → `合`、`双`）与整串两种形状。
+  function vocabularyLabels(row, vocabulary) {
+    var rest = labels(row).join("");
+    var found = [];
+    while (rest) {
+      var bestAt = -1, bestLabel = "";
+      vocabulary.forEach(function (label) {
+        var at = rest.indexOf(label);
+        if (at < 0) return;
+        if (bestAt < 0 || at < bestAt || (at === bestAt && label.length > bestLabel.length)) { bestAt = at; bestLabel = label; }
+      });
+      if (bestAt < 0) break;
+      found.push(bestLabel);
+      rest = rest.slice(bestAt + bestLabel.length);
+    }
+    return found;
+  }
+  // 特码派生属性（与 backend `predict.categories.size_parity` / `number` 一致）：
+  // 头 = 十位（01-09 记 0头）；尾 = 个位；段 = 每 7 码一段（1段=01-07 … 7段=43-49）；
+  // 合数 = 十位 + 个位之和（≥7 合数大，否则合数小；奇 合单，偶 合双）。
+  function specialAttributes(row) {
+    var parts = specialParts(row);
+    var digits = String(parts.code || "").replace(/[^0-9]/g, "");
+    var number = digits ? parseInt(digits, 10) : -1;
+    var tens = digits ? Number(digits.charAt(0)) : -1;
+    var tail = digits ? Number(digits.charAt(digits.length - 1)) : -1;
+    var combined = tens >= 0 && tail >= 0 ? tens + tail : -1;
+    var wave = "";
+    if (digits.length >= 2) {
+      WAVE_LABELS.forEach(function (label) { if (!wave && WAVE_NUMBERS[label].indexOf(digits) >= 0) wave = label; });
+    }
+    return {
+      code: digits.length >= 2 ? digits.slice(-2) : (digits ? ("0" + digits).slice(-2) : ""),
+      zodiac: parts.zodiac,
+      head: number > 0 ? (number < 10 ? "0头" : Math.floor(number / 10) + "头") : "",
+      tail: tail >= 0 ? tail + "尾" : "",
+      segment: number > 0 ? Math.floor((number - 1) / 7) + 1 + "段" : "",
+      combinedParity: combined >= 0 ? (combined % 2 === 1 ? "合单" : "合双") : "",
+      combinedSize: combined >= 0 ? (combined >= 7 ? "合数大" : "合数小") : "",
+      wave: wave
+    };
+  }
+  // 判定字：未开奖 → 待开奖；特码与特肖都拿不到（无从复算）时才回退到后端文本。
+  function displayedResultText(row, hit) {
+    var result = row && row.result || {};
+    if (!result.isOpened) return "开:待开奖";
+    var parts = specialParts(row);
+    if (!parts.code && !parts.zodiac) return resultText(row);
+    return "开:" + parts.code + parts.zodiac + (hit ? "对" : "错");
+  }
+
   function renderFslx(modules) { renderHistory("fslx", modules.title_14, domesticWild); }
   function renderM24(modules) { renderHistory("m24", modules.ma24, function (row) { return selectedCodes(row, 24); }); }
   function renderDaxiao(modules) { renderHistory("daxiao", modules.daxiao, function (row) { return labels(row).slice(0, 1).join(""); }); }
   function renderJiaye(modules) { renderHistory("jiaye", modules.title_14, domesticWild); }
-  function renderQixiao(modules) { renderHistory("qixiao", modules["9xzt"], function (row) { return xiaoCodes(row, 7); }); }
+  // 七肖中特：只展示 9 肖的前 7 肖 —— 判定只用这 7 肖（第 8、9 肖被裁掉，不算候选）。
+  function renderQixiao(modules) {
+    renderHistory("qixiao", modules["9xzt"], function (row) { return xiaoCodes(row, 7); }, function (row) {
+      var shown = labels(row).slice(0, 7);
+      var zodiac = specialParts(row).zodiac;
+      var hit = inList(shown, zodiac);
+      return { hit: hit, html: highlightOnly(shown, hit ? zodiac : "", "") };
+    });
+  }
   function renderJiaye4xiao(modules) { renderHistory("jiaye4xiao", modules.sixiao_sima, function (row) { return contentWithLabel("四肖四码", xiaoCodes(row, 4)); }); }
+  // 黄金六肖：展示 = 九肖资料前 6 肖 + 平特一肖资料前 1 肖（两路候选，任一命中即「对」，
+  // 只点亮真正命中的那一路的那一项）。旧写法只拿九肖那一份的 isCorrect，平特一肖命中时显示错。
   function renderGold6xiao(modules) {
     var nine = distinctRows(modules["9xzt"]), flat = distinctRows(modules.pt1xiao);
     historyRows(section("gold6xiao")).forEach(function (row, index) {
       var source = nine[index] || flat[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      writeRow(row, issueOf(source) + "期", "九肖资料：" + xiaoCodes(nine[index], 6) + "；平特一肖资料：" + xiaoCodes(flat[index], 1), resultText(source), source.result && source.result.isCorrect === true);
+      var six = labels(nine[index]).slice(0, 6), one = labels(flat[index]).slice(0, 1);
+      var zodiac = specialParts(source).zodiac;
+      var sixHit = inList(six, zodiac), oneHit = inList(one, zodiac);
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "九肖资料：" + six.join("") + "；平特一肖资料：" + one.join(""),
+        displayedResultText(source, sixHit || oneHit),
+        false,
+        "九肖资料：" + highlightOnly(six, sixHit ? zodiac : "", "") +
+          "；平特一肖资料：" + highlightOnly(one, oneHit ? zodiac : "")
+      );
     });
   }
   function renderPt1wei(modules) { renderHistory("pt1wei", modules.title_66, function (row) { return contentWithLabel("五尾", tailLabels(row).join(" ")); }); }
-  function renderWinner12(modules) { renderHistory("winner12", modules.selected_22_codes, function (row) { return contentWithLabel("精选22码", selectedCodes(row, 12)); }); }
+  // 赢钱12码：只展示精选22码的前 12 码 —— 判定只用这 12 码（第 13-22 码被裁掉）。
+  function renderWinner12(modules) {
+    renderHistory("winner12", modules.selected_22_codes, function (row) { return contentWithLabel("精选22码", selectedCodes(row, 12)); }, function (row) {
+      var shown = numbers(row).slice(0, 12);
+      var code = specialParts(row).code;
+      var hit = inList(shown, code);
+      return { hit: hit, html: contentWithLabel("精选22码", highlightOnly(shown, hit ? code : "", ".")) };
+    });
+  }
   function renderJiuxiao(modules) { renderHistory("jiuxiao", modules["9xzt"], function (row) { return xiaoCodes(row, 9); }); }
+  // 复试连码：展示 = 24码资料前 12 码 + 四段资料的四段（两路候选，任一命中即「对」）。
   function renderLianma(modules) {
     var code = distinctRows(modules.ma24), segment = distinctRows(modules.siduanzhongte);
     historyRows(section("lianma")).forEach(function (row, index) {
       var source = code[index] || segment[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      writeRow(row, issueOf(source) + "期", "24码资料：" + selectedCodes(code[index], 12) + "；四段资料：" + groupLabels(segment[index]).join(" "), resultText(source), source.result && source.result.isCorrect === true);
+      var shownCodes = numbers(code[index]).slice(0, 12);
+      var shownSegments = groupLabels(segment[index]);
+      var attributes = specialAttributes(source);
+      var codeHit = inList(shownCodes, attributes.code);
+      var segmentHit = inList(shownSegments, attributes.segment);
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "24码资料：" + shownCodes.join(".") + "；四段资料：" + shownSegments.join(" "),
+        displayedResultText(source, codeHit || segmentHit),
+        false,
+        "24码资料：" + highlightOnly(shownCodes, codeHit ? attributes.code : "", ".") +
+          "；四段资料：" + highlightOnly(shownSegments, segmentHit ? attributes.segment : "", " ")
+      );
     });
   }
   // 天地肖固定分组（与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致）。
@@ -220,28 +334,67 @@
       );
     });
   }
+  // 单双中特：一行两路候选（合数单双 + 合数大小），任一维度命中即「对」，
+  // 只点亮命中的那一个维度。旧写法只取第一份资料（title_132）的 isCorrect，
+  // 于是「合数大小命中、合数单双没中」的期显示错。
   function renderDanshuang(modules) {
     var parity = distinctRows(modules.title_132), size = distinctRows(modules.title_279);
     historyRows(section("danshuang")).forEach(function (row, index) {
       var source = parity[index] || size[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      writeRow(row, issueOf(source) + "期", "合数单双资料：" + predictionText(parity[index]) + "；合数大小资料：" + predictionText(size[index]), resultText(source), source.result && source.result.isCorrect === true);
+      var parityShown = vocabularyLabels(parity[index], ["合单", "合双"]);
+      var sizeShown = vocabularyLabels(size[index], ["合数大", "合数小"]);
+      var attributes = specialAttributes(source);
+      var parityHit = inList(parityShown, attributes.combinedParity);
+      var sizeHit = inList(sizeShown, attributes.combinedSize);
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "合数单双资料：" + parityShown.join("") + "；合数大小资料：" + sizeShown.join(""),
+        displayedResultText(source, parityHit || sizeHit),
+        false,
+        "合数单双资料：" + highlightOnly(parityShown, parityHit ? attributes.combinedParity : "", "") +
+          "；合数大小资料：" + highlightOnly(sizeShown, sizeHit ? attributes.combinedSize : "")
+      );
     });
   }
   function renderDssx(modules) { renderHistory("dssx", modules.danshuang4xiao, function (row) { return xiaoCodes(row, 8); }); }
+  // 红蓝绿肖：一行两路候选（双波 + 一波），任一维度命中即「对」，只点亮命中的那一项。
+  // 双波只展示 3 波里的 2 波：命中落在被裁掉的第 3 波时，只有一波那一路能救回来。
   function renderHblvxiao(modules) {
     var doubleWave = distinctRows(modules.shuangbo), singleWave = distinctRows(modules.title_143);
     historyRows(section("hblvxiao")).forEach(function (row, index) {
       var source = doubleWave[index] || singleWave[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      writeRow(row, issueOf(source) + "期", "双波资料：" + labels(doubleWave[index]).slice(0, 2).join(" ") + "；一波资料：" + predictionText(singleWave[index]), resultText(source), source.result && source.result.isCorrect === true);
+      var doubleShown = vocabularyLabels(doubleWave[index], WAVE_LABELS).slice(0, 2);
+      var singleShown = vocabularyLabels(singleWave[index], WAVE_LABELS).slice(0, 1);
+      var attributes = specialAttributes(source);
+      var doubleHit = inList(doubleShown, attributes.wave);
+      var singleHit = inList(singleShown, attributes.wave);
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "双波资料：" + doubleShown.join(" ") + "；一波资料：" + singleShown.join(""),
+        displayedResultText(source, doubleHit || singleHit),
+        false,
+        "双波资料：" + highlightOnly(doubleShown, doubleHit ? attributes.wave : "", " ") +
+          "；一波资料：" + highlightOnly(singleShown, singleHit ? attributes.wave : "")
+      );
     });
   }
   function headLabels(row, count) { var values = groupLabels(row); return (values.length ? values : labels(row)).slice(0, count); }
   function renderSantou(modules) { renderHistory("santou", modules["3tou"], function (row) { return headLabels(row, 3).join("."); }); }
   function renderQiw(modules) { renderHistory("qiw", modules.title_66, function (row) { return contentWithLabel("五尾", tailLabels(row).join(" ")); }); }
   function renderKill4xiao(modules) { renderHistory("kill4xiao", modules.sixiao_sima, function (row) { return contentWithLabel("四肖", xiaoCodes(row, 4)); }); }
-  function renderKill3wei(modules) { renderHistory("kill3wei", modules.title_66, function (row) { return contentWithLabel("五尾", tailLabels(row).slice(0, 3).join(" ")); }); }
+  // 绝杀三尾：只展示五尾资料的前 3 尾 —— 判定只用这 3 尾（第 4、5 尾被裁掉）。
+  function renderKill3wei(modules) {
+    renderHistory("kill3wei", modules.title_66, function (row) { return contentWithLabel("五尾", tailLabels(row).slice(0, 3).join(" ")); }, function (row) {
+      var shown = tailLabels(row).slice(0, 3);
+      var tail = specialAttributes(row).tail;
+      var hit = inList(shown, tail);
+      return { hit: hit, html: contentWithLabel("五尾", highlightOnly(shown, hit ? tail : "", " ")) };
+    });
+  }
   function renderChengyu(modules) { renderHistory("chengyu", modules.qinqi, function (row) { return contentWithLabel("琴棋书画", xiaoCodes(row, 9)); }); }
   function renderShuangbo(modules) { renderHistory("shuangbo", modules.shuangbo, function (row) { return labels(row).slice(0, 2).join(""); }); }
   function renderKill1tou(modules) {
@@ -265,7 +418,20 @@
       writeRow(row, issueOf(source) + "期", "", resultText(source), false, contentWithLabel("三头", body));
     });
   }
-  function renderFiveNoHit(modules) { renderHistory("five_no_hit", modules.selected_22_codes, function (row) { return contentWithLabel("五码", selectedCodes(row, 5)); }); }
+  // 平特5不中：只展示精选22码的前 5 码 —— 判定只用这 5 码（第 6-22 码被裁掉）。
+  function renderFiveNoHit(modules) {
+    renderHistory("five_no_hit", modules.selected_22_codes, function (row) { return contentWithLabel("五码", selectedCodes(row, 5)); }, function (row) {
+      var shown = numbers(row).slice(0, 5);
+      var code = specialParts(row).code;
+      var hit = inList(shown, code);
+      return { hit: hit, html: contentWithLabel("五码", highlightOnly(shown, hit ? code : "", ".")) };
+    });
+  }
+  // 综合绝杀：四路候选（绝杀三肖 / 五尾 / 三头 / 合数单双）分别按**展示出来的那一份**复算，
+  // 任一路命中即整格「对」，并且只点亮真正命中的那一项。旧实现只取第一个可用 source 的
+  // isCorrect（即绝杀三肖那一路），「五尾/三头/合数单双命中而绝杀三肖没中」的期一律显示错。
+  // 绝杀三肖是排除型玩法（backend `juesha3xiao`：hit_checker=excludes_hit）：特肖**不在**
+  // 展示的三肖里才算这一路杀中；杀中没有可点亮的候选项（与 twbst528「杀中不给标记」一致）。
   function renderCompositeKill(modules) {
     var kill = distinctRows(modules.juesha3xiao);
     var tail = distinctRows(modules.title_66);
@@ -274,8 +440,27 @@
     historyRows(section("composite_kill")).forEach(function (row, index) {
       var source = kill[index] || tail[index] || head[index] || parity[index];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      var content = "绝杀三肖：" + xiaoCodes(kill[index], 3) + "；五尾资料：" + tailLabels(tail[index]).join(" ") + "；三头资料：" + headLabels(head[index], 3).join(" ") + "；合数单双：" + predictionText(parity[index]);
-      writeRow(row, issueOf(source) + "期", content, resultText(source), source.result && source.result.isCorrect === true);
+      var killShown = labels(kill[index]).slice(0, 3);
+      var tailShown = tailLabels(tail[index]);
+      var headShown = headLabels(head[index], 3);
+      var parityShown = vocabularyLabels(parity[index], ["合单", "合双"]);
+      var attributes = specialAttributes(source);
+      var killHit = Boolean(attributes.zodiac) && !inList(killShown, attributes.zodiac);
+      var tailHit = inList(tailShown, attributes.tail);
+      var headHit = inList(headShown, attributes.head);
+      var parityHit = inList(parityShown, attributes.combinedParity);
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "绝杀三肖：" + killShown.join("") + "；五尾资料：" + tailShown.join(" ") +
+          "；三头资料：" + headShown.join(" ") + "；合数单双：" + parityShown.join(""),
+        displayedResultText(source, killHit || tailHit || headHit || parityHit),
+        false,
+        "绝杀三肖：" + escapeHtml(killShown.join("")) +
+          "；五尾资料：" + highlightOnly(tailShown, tailHit ? attributes.tail : "", " ") +
+          "；三头资料：" + highlightOnly(headShown, headHit ? attributes.head : "", " ") +
+          "；合数单双：" + highlightOnly(parityShown, parityHit ? attributes.combinedParity : "")
+      );
     });
   }
   function renderPredictionImage(moduleKey, module) {
@@ -286,6 +471,9 @@
     image.setAttribute("src", url);
     if (url) image.removeAttribute("hidden"); else image.setAttribute("hidden", "hidden");
   }
+  // 特码开奖结果（56 行 = 8 组 × 7 格）：每组用同一份 9 肖 / 24 码，但 7 个格子只展示其中
+  // 前 8/5/3/1 肖与前 10/6/1 码 —— 判定必须逐格用**该格展示的那几个候选**，
+  // 旧写法 7 个格子共用整份 9 肖 / 24 码的 isCorrect（命中落在被裁掉的部分就「显示对却没有黄底」）。
   function renderTopXiaoCode(modules) {
     var xiao = distinctRows(modules["9xzt"]), ma = distinctRows(modules.ma24), names = ["八肖", "五肖", "三肖", "一肖", "10码", "6码", "1码"];
     var headerIssues = document.querySelectorAll("[data-prediction-draw-issue]");
@@ -294,8 +482,20 @@
     historyRows(section("top_xiao_code")).forEach(function (row, index) {
       var group = Math.floor(index / 7), slot = index % 7, source = slot < 4 ? xiao[group] : ma[group];
       if (!source) return writeRow(row, "", "暂无后端资料", "", false);
-      var content = slot < 4 ? xiaoCodes(source, [8, 5, 3, 1][slot]) : selectedCodes(source, [10, 6, 1][slot - 4]);
-      writeRow(row, issueOf(source) + "期 " + names[slot], content || "暂无后端资料", resultText(source), source.result && source.result.isCorrect === true);
+      var isXiao = slot < 4;
+      var shown = isXiao ? labels(source).slice(0, [8, 5, 3, 1][slot]) : numbers(source).slice(0, [10, 6, 1][slot - 4]);
+      var target = isXiao ? specialParts(source).zodiac : specialParts(source).code;
+      var hit = inList(shown, target);
+      var joiner = isXiao ? "" : ".";
+      var content = shown.join(joiner);
+      writeRow(
+        row,
+        issueOf(source) + "期 " + names[slot],
+        content || "暂无后端资料",
+        displayedResultText(source, hit),
+        false,
+        content ? highlightOnly(shown, hit ? target : "", joiner) : ""
+      );
     });
   }
   function renderPredictions(envelope) {

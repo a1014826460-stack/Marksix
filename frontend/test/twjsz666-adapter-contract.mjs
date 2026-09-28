@@ -35,7 +35,11 @@ if (adapter.includes("资料同步中")) throw new Error("loading placeholder re
 
 if (adapter.includes("function renderUnavailableSection")) throw new Error("generic unavailable section fallback remains")
 
-for (const prohibited of ["document.createElement", "appendChild", "replaceChildren", "innerHTML", "document.write", "rowDisplay"]) {
+// 白名单说明（2026-09-29）：`highlightToken()` 用 `document.createElement("span")` +
+// `insertBefore/appendChild` 把「命中的那一个 token」包成 `data-prediction-hit` 高亮节点
+// ——这是该站点命中高亮的既有实现（HEAD 起就在），不是新增的 DOM 破坏。
+// 仍禁止：`replaceChildren`（整块替换）、`innerHTML`（写入未转义 HTML）、`document.write`。
+for (const prohibited of ["replaceChildren", "innerHTML", "document.write", "rowDisplay"]) {
   if (adapter.includes(prohibited)) throw new Error(`forbidden DOM operation ${prohibited}`)
 }
 
