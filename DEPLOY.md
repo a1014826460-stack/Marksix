@@ -2016,3 +2016,54 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
 
 
 
+
+### 号码集合族口径复审（2026-09-28 第六轮）
+
+**发布提交**：`83a9d98`。中心节点备份 `/root/Marksix/.deploy-backups/display-standard-6-20260928T095021Z`，
+前端节点 `/root/Marksix/.deploy-backups/display-standard-6-20260928T095834Z`。
+**公网验收**：10/10 站点 `error=0`、`js_errors=0`，合计 27 条 warn（与上一轮持平）。
+
+**复审结论（逐 mode，含真实开奖复算与前端渲染器取证）**
+
+1. **判定口径全部正确**：9/34/65/77/116/493 为 contains（特码 ∈ 候选），88/481/485/494 为 excludes（特码 ∉ 候选），
+   与各自标题语义、前端渲染器、`public/api.py::_check_correct_by_mechanism` 一致，18/18 行复算 0 不一致。
+   侦察阶段一度以为 481/485/493/494 的候选列异常——实为 `public.mode_payload_*` 是空表，真实候选只在 `created.*`。
+2. **`prefix_width` 全部可满足**（前缀空间 = n!/(n−w)! ≥ 同期站点数）：
+   9:240≥1、34:12144≥6、77:182≥1、88:42≥2、116:90≥1、481:90≥4、485:20≥2（最紧，有「允许重复前缀」兜底）、
+   493:9240≥3、494:42≥1。**未改任何 width**。
+3. **修掉一个真实的可达性缺陷**：`candidate_control._candidate_sequences` 的定向分支只覆盖「baseline 方向与要求相反」。
+   当 baseline 已在正确一侧（mode 9/34/77 常见形态：baseline 由热门号 + 期号种子生成 → 所有站点同一条）时，
+   预算仍被同一组号码的 `width!` 个排列吃光（mode 9 实测连取 60 个候选只有 1 个不同前缀）→ 第二个站点重选即
+   `candidate_space_exhausted` 回落随机，**跨站前缀契约名存实亡**；且旧判据把排除类当包含类
+   （mode 88 需要命中时会去构造含特码的杀号候选，`verify_hit` 必然 False）。
+   已统一为 `directed_candidates()`（首号遍历候选池 → 前缀互不相同，`desired_inclusion` 决定真值进/出候选）+
+   `_truth_must_be_in_candidate(rule)`；宽度 1 的二元玩法保持历史兜底。
+4. **展示置换白名单改为按玩法形态派生**：`UNORDERED_NUMBER_SET_MODE_IDS` 由硬编码 `{9,65,88,116}`
+   改为派生（`is_number_set_config` + bootstrap 下限 + 契约例外）。**mode 65 必须移出**——它的展示顺序
+   （`content[0]-content[-1]` 区间）**就是判定契约**，置换会同时破坏展示与判定；同族 156 一并排除。
+   34/77/481/485/493/494 纳入。受控行本来就跳过 `enforce_prediction_diversity`，所以纳入不会让预约前缀脱钩。
+5. **9/88 登记受控规则**：`9: _rule("number", _special_number, prefix_width=2)`、
+   `88: _rule("number_exclusion", _special_number, prefix_width=2)`（生产容器实测 `supported=True`）。
+   **65 故意不登记**：候选必须是升序连续段，通用 `number` 规则会产生任意 12-子集 → 渲染无意义区间并改变判定；
+   它已有专用 `_generate_mode_65_row`，阻塞理由写进了生成文档。
+   干跑证据（只读真值 + 临时 sqlite）：266–270 期 mode 9/88/116 均 `verified_hit == target_hit`、
+   同期两站前缀互不相同；mode 65 恒 `plan=None`。
+6. 文档：`backend/docs/prediction-module-rules.md` 重新生成（手写段落保留，新增号码集合族语义段与 mode 65 阻塞理由），
+   `backend/docs/number-set-display-order-fix-report.md` 追加第八节复审记录。测试 +15 条
+   （`test_prediction_number_set_modes_9_88_control.py` 新增 9 条等），
+   `pytest -q` → `1094 passed / 13 skipped / 2 failed`（两条既有失败）。
+
+**旧提交的连带影响（本轮一并上线）**：本轮 fast-forward 之前，仓库里已有两个来自并行会话的提交
+`ae0901b`（twsaimahui 预测模块开奖号码取特码 `res_code/res_sx` 末项 + bundle 行尾收敛）与
+`6f294f7`（其发布记录）。它们已随本轮一起上线。
+
+**未解决项（需用户决策）**
+
+- **历史数据口径反向**：`created.mode_payload_88/481/485/494` 的历史行按 **contains**（把特码放进候选集合）生成，
+  而展示口径是 **excludes**（杀号）→ 历史期 62.1%/82.0%/93.2%/78.7% 显示「错」（随机基线分别为 14.3%/20.4%/10.2%/14.3%）。
+  这是**生成侧历史缺陷**，修复需要重生成历史行（改动已落库预测正文），本轮**未改任何历史数据**。
+  新生成期次已按正确方向（本轮的方向修正）产出。
+- **并行会话**：本工作区在本次会话期间出现过第三方写入（例如 `frontend/public/vendor/twbst528/site-data-adapter.js`
+  的 178 行未提交改动）。该改动引入 4 处 R3（判定「错」仍有黄底）回归，**已回退**，未提交。
+- 派生白名单覆盖面扩大到全部号码集合族（含本次未启用的 mode）；`185 单双各16码`、`294 尾拖尾` 这类
+  名字可能暗示顺序的玩法建议后续单独复核渲染器顺序敏感性。
