@@ -383,6 +383,107 @@
         return clean.substring(0, 60);
     }
 
+    // ---- 四艺（琴棋书画）标签展示 ----
+    // 该模块 `title` 存预测标签原文（如 `画,棋,书`），`content`/`prediction_text` 是按标签
+    // 展开的候选值（9 个生肖）。固定分组与 public.fixed_data sign='四艺生肖'、后端
+    // public/api.py::_QQSH_ZODIAC_MAP、frontend/lib/twjinniu-articles.ts 一致：
+    // 琴=兔蛇鸡 / 棋=鼠牛狗 / 书=虎龙马 / 画=羊猴猪。
+    var QINQI_ART_BY_ZODIAC = {
+        '兔': '琴', '蛇': '琴', '鸡': '琴',
+        '鼠': '棋', '牛': '棋', '狗': '棋',
+        '虎': '书', '龙': '书', '马': '书',
+        '羊': '画', '猴': '画', '猪': '画'
+    };
+    var QINQI_ART_NAMES = ['琴', '棋', '书', '画'];
+    // 只有「短标签 CSV」形态的 title 才当作标签原文，避免把一字玄机（整句标题）、
+    // 四不像图 / 跑马图解（图片标题）这类值当成预测标签上屏。
+    function isLabelShaped(value) {
+        var text = String(value == null ? '' : value).replace(/^[\[\]"']+|[\]"']+$/g, '').trim();
+        if (!text) { return false; }
+        var items = text.split(/[,，]/);
+        if (items.length > 4) { return false; }
+        for (var i = 0; i < items.length; i++) {
+            var label = items[i].trim();
+            if (!label || label.length > 2) { return false; }
+            if (/[\s|。！？；：、（）()]/.test(label)) { return false; }
+        }
+        return true;
+    }
+    function splitLabelTokens(value) {
+        var text = String(value == null ? '' : value).replace(/^[\[\]"']+|[\]"']+$/g, '').trim();
+        if (!text) { return []; }
+        var items = text.split(/[,，、\s]+/);
+        var tokens = [];
+        for (var i = 0; i < items.length; i++) { var item = items[i].trim(); if (item) { tokens.push(item); } }
+        return tokens;
+    }
+    // 行自带 qinqi_reference（`琴:兔蛇鸡　棋:鼠牛狗\n书:虎龙马　画:羊猴猪`）时以它为准。
+    function qinqiArtByZodiac(row) {
+        var reference = String((row && row.raw && row.raw.qinqi_reference) || '').trim();
+        if (!reference) { return QINQI_ART_BY_ZODIAC; }
+        var mapping = {};
+        var parts = reference.split(/[\s\u3000]+/);
+        var found = false;
+        for (var i = 0; i < parts.length; i++) {
+            var pieces = parts[i].split(/[:：]/);
+            if (pieces.length < 2) { continue; }
+            var art = pieces[0].trim();
+            if (QINQI_ART_NAMES.indexOf(art) === -1) { continue; }
+            var zodiacs = pieces[1].trim();
+            for (var j = 0; j < zodiacs.length; j++) { mapping[zodiacs.charAt(j)] = art; found = true; }
+        }
+        return found ? mapping : QINQI_ART_BY_ZODIAC;
+    }
+    function isFourArtsLabel(tokens) {
+        if (!tokens || !tokens.length) { return false; }
+        for (var i = 0; i < tokens.length; i++) {
+            if (QINQI_ART_NAMES.indexOf(tokens[i]) === -1) { return false; }
+        }
+        return true;
+    }
+    function artsFromZodiacs(zodiacs, artByZodiac) {
+        var arts = [];
+        for (var i = 0; i < zodiacs.length; i++) {
+            var art = artByZodiac[zodiacs[i]];
+            if (art && arts.indexOf(art) === -1) { arts.push(art); }
+        }
+        return arts;
+    }
+    // 特肖来源与 formatResult 一致：raw.res_sx 的最后一项。
+    function specialZodiacOf(row) {
+        var raw = (row && row.raw) || {};
+        var zodiacs = String(raw.res_sx || '').split(',');
+        return (zodiacs[zodiacs.length - 1] || '').trim();
+    }
+    // 上屏艺名（如 画棋书），只把特肖命中的那一个艺标黄；未命中 / 未开奖零高亮。
+    function renderFourArtsLabel(tokens, row) {
+        var hit = '';
+        if (row && row.is_opened && row.is_correct) {
+            var special = specialZodiacOf(row);
+            hit = special ? (qinqiArtByZodiac(row)[special] || '') : '';
+        }
+        var html = '';
+        for (var i = 0; i < tokens.length; i++) {
+            html += hit && tokens[i] === hit
+                ? '<span style=background-color:#FFFF00>' + escapeHtml(tokens[i]) + '</span>'
+                : escapeHtml(tokens[i]);
+        }
+        return html;
+    }
+    // 每期上屏标签：只有四艺模块改走艺名，其余模块完全沿用原口径。
+    function renderArticleLabel(row) {
+        var raw = (row && row.raw) || {};
+        var tokens = isLabelShaped(raw.title) ? splitLabelTokens(raw.title) : [];
+        if (isFourArtsLabel(tokens)) { return renderFourArtsLabel(tokens, row); }
+        // title 缺失但行带四艺分组说明（后端只为琴棋书画挂 qinqi_reference）时，由候选
+        // 生肖反查艺名，避免退回展开后的 9 个生肖。
+        if (String(raw.qinqi_reference || '').trim()) {
+            var mapped = artsFromZodiacs(splitLabelTokens(row.prediction_text), qinqiArtByZodiac(row));
+            if (mapped.length) { return renderFourArtsLabel(mapped, row); }
+        }
+        return escapeHtml(formatPredictionLabel(row.prediction_text));
+    }
+
     // Extract result code+zodiac from raw data
     function formatResult(row) {
         if (!row || !row.is_opened) { return '??????'; }
@@ -429,7 +530,7 @@
         var rowsHtml = '';
         for (var r = 0; r < historyRows.length; r++) {
             var row = historyRows[r];
-            var predLabel = formatPredictionLabel(row.prediction_text);
+            var predLabelHtml = renderArticleLabel(row);
             var resultCode = formatResult(row);
             var resultHtml = '';
             if (row.is_opened) {
@@ -444,7 +545,7 @@
             rowsHtml += '<p style=margin:4px 0;text-align:center>' +
                 '<span style=color:#0000FF>' + escapeHtml(row.issue) + '期</span> ' +
                 escapeHtml(item.title) +
-                ' 【<span style=color:#2ecc71>' + escapeHtml(predLabel) + '</span>】' +
+                ' 【<span style=color:#2ecc71>' + predLabelHtml + '</span>】' +
                 ' 开 ' + resultHtml +
                 '</p>';
         }

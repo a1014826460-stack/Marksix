@@ -329,11 +329,79 @@ function elementLabels(row: PublicHistoryRow) {
   return splitPredictionTokens(row.prediction_text || raw.content).filter(Boolean)
 }
 
-function qinqiLabels(row: PublicHistoryRow) {
+/**
+ * 琴棋书画（mode 26）的四艺固定分组：琴、棋、书、画各占 3 个生肖。
+ *
+ * 唯一权威来源是 `public.fixed_data` sign='四艺生肖'，三处口径必须一致：后端
+ * `public/api.py::_QQSH_ZODIAC_MAP`、各站同口径渲染（twwanli / twbst528 / twjsz666 /
+ * twcaibawang），以及这里的兜底常量：琴=兔蛇鸡、棋=鼠牛狗、书=虎龙马、画=羊猴猪。
+ * 线上每行还带 `raw.qinqi_reference`（同一份 fixed_data 的展示串），存在时优先用它
+ * 反查，避免库内分组与常量表漂移。
+ */
+const QINQI_ART_FALLBACK: Record<string, string> = {
+  兔: "琴",
+  蛇: "琴",
+  鸡: "琴",
+  鼠: "棋",
+  牛: "棋",
+  狗: "棋",
+  虎: "书",
+  龙: "书",
+  马: "书",
+  羊: "画",
+  猴: "画",
+  猪: "画",
+}
+
+const QINQI_ARTS = new Set(["琴", "棋", "书", "画"])
+
+/** 解析 `raw.qinqi_reference`（`琴:兔蛇鸡　棋:鼠牛狗\n书:虎龙马　画:羊猴猪`）为 生肖→艺。 */
+function parseQinqiReference(value: unknown) {
+  const mapping: Record<string, string> = {}
+  for (const part of String(value ?? "").split(/[\s　]+/)) {
+    const [labelRaw = "", valuesRaw = ""] = part.split(/[:：]/, 2)
+    const label = labelRaw.trim()
+    if (!QINQI_ARTS.has(label)) continue
+    for (const zodiac of Array.from(valuesRaw.trim())) {
+      const normalized = normalizeZodiac(zodiac)
+      if (normalized) mapping[normalized] = label
+    }
+  }
+  return mapping
+}
+
+/** 本期行的 生肖→艺 映射：优先用行自带 fixed_data 说明，缺失时退回站点同口径常量表。 */
+function qinqiZodiacArtMap(row: PublicHistoryRow) {
+  const reference = parseQinqiReference((row.raw || {}).qinqi_reference)
+  return Object.keys(reference).length ? reference : QINQI_ART_FALLBACK
+}
+
+/**
+ * mode 26 的上屏值必须是**艺名**（琴 / 棋 / 书 / 画），不能把 `content` 里的 9 个
+ * 候选生肖直接展示给用户。
+ *
+ * `raw.title` 存的就是按本期顺序排列的艺名（如 `画,琴,书`），`raw.content` 是同一
+ * 顺序展开的 9 个候选生肖。少数历史/厂商行的 `title` 可能为空（此时
+ * `prediction_text` 只剩 9 个生肖），因此做两级兜底：
+ * 1. `raw.title` 能解析出艺名 → 直接用（保持数据原文顺序，不自己排序）；
+ * 2. 否则按 生肖→艺 分组反查，取每个艺首次出现的顺序。
+ */
+function qinqiArtLabels(row: PublicHistoryRow) {
   const raw = row.raw || {}
-  const title = String(raw.title || "").trim()
-  if (title) return splitPredictionTokens(title)
-  return splitPredictionTokens(row.prediction_text || raw.content)
+  const fromTitle = splitPredictionTokens(raw.title).flatMap((token) =>
+    QINQI_ARTS.has(token) ? [token] : Array.from(token).filter((char) => QINQI_ARTS.has(char))
+  )
+  if (fromTitle.length) return fromTitle
+
+  const artByZodiac = qinqiZodiacArtMap(row)
+  const contentTokens = splitPredictionTokens(raw.content)
+  const source = contentTokens.length ? contentTokens : splitPredictionTokens(row.prediction_text)
+  const arts: string[] = []
+  for (const token of source) {
+    const art = artByZodiac[normalizeZodiac(token)]
+    if (art && !arts.includes(art)) arts.push(art)
+  }
+  return arts
 }
 
 /**
@@ -468,8 +536,14 @@ function renderPredictionInner(article: ArticleDefinition, row: PublicHistoryRow
       const hit = row.is_correct === true ? resolveCombinedOddEven(row, draw) : ""
       return hit === label ? highlightText(label, label) : escapeHtml(label)
     }
-    case 26:
-      return renderJoinedTokens(qinqiLabels(row), "", "")
+    case 26: {
+      // 上屏艺名（如 画琴书），只把特肖命中的那个艺高亮；未开奖 / 未命中一律零高亮
+      // （未开奖时 is_correct 为 null，不参与高亮，与本站其它模块口径一致）。
+      const arts = qinqiArtLabels(row)
+      const special = row.is_correct === true ? resolveSpecialZodiac(row, draw) : ""
+      const hitArt = special ? qinqiZodiacArtMap(row)[special] || "" : ""
+      return renderJoinedTokens(arts, "", hitArt)
+    }
     case 480: {
       // 吉凶六肖的正文是 `吉美|兔,龙,蛇,马,羊,鸡`。原实现只上屏组名「吉美」，
       // 把 6 个候选肖整个丢掉，用户看不到任何预测内容（违反 S6）。
