@@ -234,4 +234,31 @@ assert(
   "配对卡片无后端行时必须把**每一行**都写成占位，不能只写第一行（旧模板码会残留在其余行）",
 )
 
+// ── 13. 语义标签与号码清单命中 ────────────────────────────────────────────
+// 展示文本会把分隔符换成 `-`（`0-4-3-2头`）、把标签加字（`大` → `大数`）、
+// 把尾数重复三次（`5尾` → `555尾`）。只按展示文本全等匹配时，
+// 大小中特 / 大小+①头 / 梭哈⑦尾 / 火爆④头 / 平特一尾 / 稳中单双 / 单双二肖
+// 实测整块 0 标记（应标未标）。必须再用 payload 的号码清单 + 大小/单双语义判定。
+assert(
+  /function candidateCodeList/.test(adapter) && /function normalizeCandidateLabel/.test(adapter),
+  "必须能用 payload 的号码清单（`5尾|05,15,25,35,45`）判定命中，并归一化 `777尾`/`大数`/`4头单`",
+)
+assert(
+  /function semanticHit[\s\S]{0,400}value >= 25[\s\S]{0,200}value >= 1 && value <= 24/.test(adapter),
+  "大/小 必须按号码区间判定（大 25-49、小 01-24），否则大小中特永远标不出来",
+)
+assert(
+  /semanticHit\(candidate, digits\)/.test(adapter),
+  "highlightTokens 必须调用 semanticHit",
+)
+assert(
+  /if \(code && candidateCodeList\(row, candidate\)\.indexOf\(code\) !== -1\) return true;/.test(adapter),
+  "highlightTokens 必须用号码清单判定命中（头/尾/段/五行/尾数面板都依赖它）",
+)
+// 单双只对纯单双候选生效，不能把 `4头单` 这类带后缀的候选当成单双标签。
+assert(
+  /label = String\(candidate \|\| ""\)\.trim\(\)\.replace\(\/\[\\s数肖\]\/g, ""\);[\s\S]{0,120}label\.length !== 1/.test(adapter),
+  "单双语义只能匹配纯「单/双」候选，避免 `4头单` 被误判",
+)
+
 console.log("twbst528-display-contract: OK")

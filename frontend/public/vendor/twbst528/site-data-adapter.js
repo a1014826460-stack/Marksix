@@ -566,6 +566,54 @@
     return WAVE_LABELS[raw] || "";
   }
 
+  /**
+   * 归一化候选标签，消除「展示加字 / 重复 / 单双后缀」造成的差异：
+   *   `777尾` → `7尾`、`大数` → `大`、`4头单` → `4头`、`5尾` → `5尾`。
+   */
+  function normalizeCandidateLabel(value) {
+    var label = String(value || "").replace(/[\[\]"'\s]/g, "");
+    label = label.replace(/(.)\1+/g, "$1");
+    if (label.length > 1 && /[头尾]$/.test(label)) {
+      var body = label.slice(0, -1).replace(/[单双]$/, "");
+      label = body + label.slice(-1);
+    }
+    return label;
+  }
+
+  /**
+   * 候选所属的号码清单：候选 token 常写作 `5尾|05,15,25,35,45`、`大|25,…,49`、
+   * `4头|40,…,49`。号码清单比展示文本更可靠 —— 展示文本会把分隔符换成 `-`
+   * （`0-4-3-2头`）或把标签加字（`大` → `大数`、`7` → `777尾`），
+   * 只按展示文本全等匹配会整块标不出黄底。
+   */
+  function candidateCodeList(row, candidate) {
+    var want = normalizeCandidateLabel(candidate);
+    if (!want) return [];
+    var found = [];
+    tokens(row).forEach(function (value) {
+      var parts = String(value).replace(/[\[\]"]/g, "").split("|");
+      if (parts.length < 2) return;
+      if (normalizeCandidateLabel(parts[0]) !== want) return;
+      parts.slice(1).join("|").split(/[,，\s]+/).forEach(function (item) {
+        var code = String(item).trim();
+        if (code) found.push(code);
+      });
+    });
+    return found;
+  }
+
+  /** 大/小按号码区间；单/双只对纯单双候选判定（避免 `4头单` 被当成单双）。 */
+  function semanticHit(candidate, digits) {
+    var label = String(candidate || "").trim().replace(/[\s数肖]/g, "");
+    if (!digits || label.length !== 1) return false;
+    var value = Number(digits);
+    if (label === "大") return value >= 25;
+    if (label === "小") return value >= 1 && value <= 24;
+    if (label === "单") return value % 2 === 1;
+    if (label === "双") return value % 2 === 0;
+    return false;
+  }
+
   /** 该模块本期允许标黄的 token；不在此列表里的文字一律不标黄。 */
   function highlightTokens(row, rule, candidates) {
     if (!row || !row.result || !row.result.isOpened) return [];
@@ -595,6 +643,13 @@
       if (headMatch && headDigit && headMatch[1] === headDigit) return true;
       var tailMatch = /^(\d)\s*尾/.exec(candidate);
       if (tailMatch && tailDigit && tailMatch[1] === tailDigit) return true;
+      // `777尾` / `555尾`：模板把尾数重复了三次，取重复的数字再比尾数。
+      var repeatTail = /^(\d)\1+\s*尾/.exec(candidate);
+      if (repeatTail && tailDigit && repeatTail[1] === tailDigit) return true;
+      // 大/小、单/双 这类语义标签按号码区间 / 奇偶判定。
+      if (semanticHit(candidate, digits)) return true;
+      // `5尾|05,15,25,35,45`、`大|25,…,49` 直接用号码清单命中判定。
+      if (code && candidateCodeList(row, candidate).indexOf(code) !== -1) return true;
       // 「一肖一码」「四肖四码」这类候选写作 `生肖|号码`，按生肖命中。
       return Boolean(zodiac) && candidate.split("|")[0].trim() === zodiac;
     });
