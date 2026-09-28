@@ -172,8 +172,24 @@
       writeRow(row, issueOf(source) + "期", "24码资料：" + selectedCodes(code[index], 12) + "；四段资料：" + groupLabels(segment[index]).join(" "), resultText(source), source.result && source.result.isCorrect === true);
     });
   }
-  // 男女中特（`#nannv`）由 mode 5（天地生肖）供数：展示「天肖/地肖 + 本期 2 个候选生肖」，
-  // 与后端判定所用字段一致；命中时只给命中的那个生肖上黄底。
+  // 天地肖固定分组（与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致）。
+  var TIANDI_GROUPS = {
+    "天肖": ["兔", "马", "猴", "猪", "牛", "龙"],
+    "地肖": ["鼠", "虎", "蛇", "羊", "鸡", "狗"]
+  };
+  function tiandiGroup(sideLabel) {
+    var value = String(sideLabel || "");
+    if (value.indexOf("天") === 0) return TIANDI_GROUPS["天肖"];
+    if (value.indexOf("地") === 0) return TIANDI_GROUPS["地肖"];
+    return [];
+  }
+
+  // 男女中特（`#nannv`）由 mode 5（天地生肖）供数：展示「天肖/地肖 + 本期 2 个候选生肖」。
+  // 该机制的候选是双维度：`content` 的天地分组（天肖/地肖各 6 肖）+ `xiao` 列的 2 个候选肖。
+  // vendor/接口的 `is_correct` 只比对 `xiao`（`mechanisms.py` 的 hit_checker=contains_hit），
+  // 天地组永远不参与判定，于是「天肖里含开奖特肖」的期会显示「错」（270 期「天肖+兔鸡」
+  // 开 37 马）。这里本地复算并集：特肖 ∈ 天地组 ∪ 两肖 任一即命中，与 twwanli /
+  // twcaibawang 的天地两肖口径一致；未开奖不做判定也不高亮。
   function renderNannv(modules) {
     var sourceRows = distinctRows(modules.title_5);
     historyRows(section("nannv")).forEach(function (row, index) {
@@ -182,18 +198,25 @@
       var side = labels(source).slice(0, 1).join("") || "天地肖";
       var chosen = chosenZodiacs(source);
       if (!chosen.length) return writeRow(row, "", "暂无后端资料", "", false);
-      var isHit = source.result && source.result.isCorrect === true;
-      var hitZodiac = isHit ? specialParts(source).zodiac : "";
-      var body = hitZodiac && chosen.indexOf(hitZodiac) >= 0
-        ? highlightOnly(chosen, hitZodiac)
-        : chosen.map(escapeHtml).join("");
+      var parts = specialParts(source);
+      // 未开奖 / 拿不到特肖时不做本地复算，沿用既有口径（待开奖或原始判定）。
+      var opened = Boolean(source.result && source.result.isOpened && parts.zodiac);
+      var inGroup = opened && tiandiGroup(side).indexOf(parts.zodiac) >= 0;
+      var inChosen = opened && chosen.indexOf(parts.zodiac) >= 0;
+      var hit = inGroup || inChosen;
+      // 只点亮真正命中的那一项：命中两肖 → 点亮那个生肖；命中天地组 → 点亮组名。
+      // 两项都命中时优先点亮生肖（与 twwanli `renderHeavenEarth` 一致）。
+      var sideHtml = inGroup && !inChosen
+        ? '<span data-prediction-hit="true">' + escapeHtml(side) + "</span>"
+        : escapeHtml(side);
+      var chosenHtml = highlightOnly(chosen, inChosen ? parts.zodiac : "", "");
       writeRow(
         row,
         issueOf(source) + "期",
         "",
-        resultText(source),
+        opened ? "开:" + (parts.code ? parts.code : "") + parts.zodiac + (hit ? "对" : "错") : resultText(source),
         false,
-        "天地生肖资料：【" + escapeHtml(side) + "+" + body + "】"
+        "天地生肖资料：【" + sideHtml + "+" + chosenHtml + "】"
       );
     });
   }

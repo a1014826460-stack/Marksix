@@ -691,7 +691,28 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 | 模块 | 站点 | 现状 |
 | --- | --- | --- |
 | 五行（mode 53 / `3hang`） | 所有走接口 `is_correct` 的站点（twbst528 150.html、twwanli、twjinniu 蓝图、tw8800 `013shzt.js`、twsaimahui `025sanhang.js` …） | **本轮后端修正一次性覆盖**（判定读时复算）。旧站 legacy 脚本（tw8800/twsaimahui）对 mode 53 不输出判定字，无需另改 |
-| 天地生肖（mode 5 / `title_5`） | twcaibawang（已本地并集判定）、**twwanli（本轮已修）**、twsyw `#nannv`（**同缺陷未修**）、twssz / twbst528 的天地资料卡 | twsyw `site-data-adapter.js:185` 仍 `isHit = source.result.isCorrect` → 天地组命中会显示「错」；twssz/twbst528 同样依赖接口判定。**待修**（同 twwanli 口径，各自需要契约） |
+| 天地生肖（mode 5 / `title_5`） | twcaibawang（已本地并集判定）、**twwanli（本轮已修）**、**twsyw `#nannv`（本轮已修 + 新增契约）**、twssz / twbst528 的天地资料卡 | twsyw 原先 `isHit = source.result.isCorrect` → 天地组命中显示「错」；已改为「天地组(6肖) ∪ 两肖」并集判定，只标命中项，契约 `frontend/test/twsyw-display-contract.py`（含反向验证：改回旧口径会 4 项 FAIL）。twssz / twbst528 的天地卡仍依赖接口判定，**待修** |
+
+### 新发现的一类缺陷：展示候选 ⊂ 判定候选（twsyw 全站扫描，2026-09-29）
+
+「展示的候选是某份资料的**子集**，判定却用**整份**资料」——命中落在被裁掉的那部分时，会出现
+「显示对却没有黄底」或「另一个维度命中却显示错」。twsyw 适配器扫出以下位置（**尚未修**）：
+
+| 位置 | 展示的候选 | 判定所用候选 |
+| --- | --- | --- |
+| `renderTopXiaoCode`（`#top_xiao_code`） | 9xzt 取前 8/5/3/1 肖、ma24 取前 10/6/1 码 | 9xzt=9 肖 / ma24=24 码（56 行共用整份） |
+| `renderQixiao`（`#qixiao`） | 9xzt 前 7 肖 | 9xzt=9 肖 |
+| `renderGold6xiao` | 9xzt 前 6 肖 + pt1xiao 前 1 肖 | 只取 9 肖 |
+| `renderWinner12` / `renderFiveNoHit` | selected_22_codes 前 12 / 前 5 码 | 22 码 |
+| `renderLianma` | ma24 前 12 码 + 四段 | 只取 24 码 |
+| `renderKill3wei` | title_66 前 3 尾 | 5 尾 |
+| `renderDanshuang` | 合数单双 + 合数大小（双维度展示） | 只取 title_132 |
+| `renderHblvxiao` | 双波 + 一波（双维度展示） | 只取双波 |
+| `renderCompositeKill` | 绝杀三肖+五尾+三头+合数单双（四路） | 只取第一个可用 source |
+
+已核对**一致、无问题**：`#fslx`/`#jiaye`（title_14 展示的 jia∪ye 两列即判定候选集，与 twwanli
+`#msks` 的「分类二选一」语义不同，**不应**照搬家禽/野兽全组口径）、`#m24`、`#jiuxiao`、`#dssx`、
+`#santou`、`#kill1tou`、`#pt1wei`、`#qiw`、`#shuangbo`、`#daxiao`、`#chengyu`、`#jiaye4xiao`、`#kill4xiao`。
 | 家禽/野兽（mode 14 / `title_14`） | twwanli `#msks`（本轮已修）、twwjsz666 `156.html`、twbst528 `144.html`、twjinniu | 其它站点的卡片语义若是「8 肖候选」而非「分类二选一」，则应按机制自身口径（特肖 ∈ 8 肖）判定，**不能**照搬家禽/野兽全组口径 —— 需按站点卡片语义逐个确认 |
 
 ---
