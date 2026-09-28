@@ -176,17 +176,28 @@ def all_tails_from_row(row: Any, conn: Any) -> str:
     return ",".join(f"{int(code) % 10}尾" for code in codes)
 
 def _tail_digits(value: Any) -> set[str]:
-    """把 "1尾"、"1"、"13" 这类取值归一到尾数字（多位数取最后一位）。"""
+    """把 "1尾"、"1"、"13" 这类取值归一到尾数字（多位数取最后一位）。
+
+    ``value`` 既可能是 outcome 字符串（``9尾,4尾``），也可能是候选标签元组
+    （``("1尾,3尾,5尾",)``）：**两者都要先按分隔符拆成 token 再逐个解析**。
+    供应商正文经常把一个标签写成逗号串（``["9尾,4尾,3尾,7尾,8尾,0尾,1尾|"]``），
+    若对元组元素整串只做一次匹配，就只会拿到第一个尾，于是「第一个尾不中、
+    后面某个尾命中」的期次会被判「错」—— 那是平特尾口径下的漏判
+    （规则是「开奖 7 码尾集合 ∩ 预测尾集合 ≠ ∅」）。
+    """
     if isinstance(value, (tuple, list, set, frozenset)):
-        tokens = [str(item) for item in value]
+        raw_tokens = [str(item) for item in value]
     else:
-        tokens = re.split(r"[,|，、\s]+", str(value or ""))
+        raw_tokens = [str(value or "")]
+    tokens = [token for raw in raw_tokens for token in re.split(r"[,|，、\s]+", raw)]
     digits: set[str] = set()
     for token in tokens:
+        if not token:
+            continue
         if "尾" in token:
-            match = re.search(r"(\d)\s*尾", token)
-        else:
-            match = re.search(r"(\d)(?!.*\d)", token)
+            digits.update(re.findall(r"(\d)\s*尾", token))
+            continue
+        match = re.search(r"(\d)(?!.*\d)", token)
         if match:
             digits.add(match.group(1))
     return digits

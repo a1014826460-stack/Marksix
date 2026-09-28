@@ -30,11 +30,23 @@
 
 * 不再把 ``title``（模块名）当候选 —— 「画龙点睛」「九攻九距」这类静态文案不是候选项；
 * 不再从 ``xiao``/``code``/``jiexi`` 等列自行拼候选 —— 那是后端 ``content_loader`` 的
-  职责，工具绕过去就会得到后端看不到的候选集合。
+  职责，工具绕过去就会得到后端看不到的候选集合；
+* 平特尾（``flat_tail``：mode 54/55/173）在机制解析器之后**再过一遍 ``tail_atom_labels``**，
+  把「一个 item 里逗号串了多个尾标签」的正文摊平成 ``N尾`` 原子。生产库 twbst528
+  ``--limit 200`` 的 ``["9尾,4尾,3尾,7尾,8尾,0尾,1尾|"]`` 就是这种形态：
+  ``parse_pipe_label_content`` 只取 ``|`` 左侧且不拆逗号，会返回一个整串标签，工具按整串
+  判定必然「未命中」→ 5 条假 ``false_hit``。摊平成原子后与后端 ``flat_tail_hit``
+  的尾数取值空间一致。对已经是单个 ``N尾`` 的正文，该步骤是恒等变换（本地 1301 行
+  flat_tail 数据零差异）。
 
 独立真值仍然独立：真值来自机制自己的 ``outcome_loader``（或平特/五行/号码等口径），
 判定用**精确集合成员**，而后端标准 contains/excludes 走的是复合 outcome 串的**子串**
 匹配 —— 两者不一致本身就是本工具要报的东西。
+
+平特尾的一处**有意不对齐**：后端 ``predict.common._tail_digits`` 收到 *tuple* 时对每个元素
+整串只做一次 ``re.search(r"(\\d)\\s*尾")``，即 ``('1尾,3尾,5尾',)`` 只得到 ``{1}``（只读
+**第一个**尾）。因此「第一个尾不中、后面某个尾命中」时后端会漏判，本工具按文档口径判「对」
+→ 报 ``false_miss``。这是**后端的真实漏判**，工具不复刻，只以 ``tail_multi_label`` 记账。
 
 判定结果
 --------
@@ -69,6 +81,10 @@
 * ``element_content_drift`` —— 五行玩法（mode 53/482/98 等）正文里给每个元素列出的号码
   与该元素的**权威号码五行**不一致时记账。这是**真数据问题**（正文用的是「五行肖」即
   生肖五行分组，判定用的是号码五行），本脚本只报告、不改数据、也不放宽判定规则。
+* ``title_fallback`` —— 候选文本只来自模块名 ``title`` 的行数（含按机制拆分）。mode 39/68
+  的标题本身就是预测正文；mode 336 这类数字成语里偶然出现生肖字时后端会从模块名算准/错。
+* ``tail_multi_label`` —— 平特尾里「一个标签串了多个尾原子」的行数（含按机制拆分）。
+  这是后端 ``_tail_digits`` 只读第一个尾的高风险形态（见上文「有意不对齐」）。
 * ``coverage`` —— 工具覆盖的 mode 与后端受控登记表
   ``domains.prediction.generation_rules.RULE_BY_MODE_ID`` 的差集，防止受控玩法漏审。
 
@@ -257,6 +273,9 @@ class SiteReport:
     title_fallback: int = 0
     #: 上述记账按机制拆分（``机制 key`` → 行数）。
     title_fallback_by_mode: dict[str, int] = field(default_factory=dict)
+    #: 平特尾里「一个标签串了多个尾原子」的行数（后端只读第一个尾的高风险形态，只记账）。
+    tail_multi_label: int = 0
+    tail_multi_label_by_mode: dict[str, int] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -275,6 +294,8 @@ class SiteReport:
             "element_drift_samples": self.drift_samples,
             "title_fallback": self.title_fallback,
             "title_fallback_by_mode": self.title_fallback_by_mode,
+            "tail_multi_label": self.tail_multi_label,
+            "tail_multi_label_by_mode": self.tail_multi_label_by_mode,
             "findings": [item.as_dict() for item in self.findings],
         }
 
@@ -429,6 +450,10 @@ LABEL_SPACE_SEGMENT = "segment"  # 段位：1段…7段
 LABEL_SPACE_PARITY = "parity"    # 单双
 LABEL_SPACE_SIZE = "size"        # 大小
 LABEL_SPACE_ELEMENT = "element"  # 五行
+#: 平特尾（``flat_tail``：mode 54/55/173 等）。后端 ``flat_tail_hit`` 的取值空间是
+#: **尾数字**（``predict.common._tail_digits``），所以候选必须归一到 ``N尾`` 原子，
+#: 不能把「一个 item 里的多个尾标签」当成一整串去比对（见 ``tail_atom_labels``）。
+LABEL_SPACE_FLAT_TAIL = "flat_tail"
 LABEL_SPACE_RAW = "raw"          # 无法归类：直接用原始标签
 
 _PARSER_LABEL_SPACE: dict[str, str] = {
@@ -588,6 +613,68 @@ def candidate_text_from_title_only(
         return False
     title = str(row.get("title") or "").strip()
     return bool(title) and str(check_text or "").strip() == title
+
+
+#: 尾标签之间的分隔符；与后端 ``predict.common._tail_digits`` 的
+#: ``re.split(r"[,|，、\s]+")`` 保持同一套（另加 ``;`` / ``/`` 两个常见写法）。
+_TAIL_LABEL_SEPARATORS = __import__("re").compile(r"[,，、;；/|\s]+")
+
+
+def tail_atom_labels(labels: list[str]) -> list[str]:
+    """把平特尾的候选标签归一到 ``N尾`` **原子**集合。
+
+    背景（生产库 twbst528 ``--limit 200`` 暴露，2026-09-28）：mode 54（平特1尾）的深层
+    历史正文长这样 —— ``["9尾,4尾,3尾,7尾,8尾,0尾,1尾|"]``：多个尾标签用逗号串在 ``|``
+    **左侧**、右侧号码清单为空。``parse_pipe_label_content`` 只取 ``|`` 左侧、且**不拆逗号**，
+    于是它返回一个整串标签 ``9尾,4尾,…,1尾``；工具按整串做集合成员判定 → 与真值
+    ``{9尾,4尾,…}`` 无交集 → 恒判「未命中」→ 5 条假 ``false_hit``。
+
+    归一规则（与 ``predict.common._tail_digits`` 同取值空间，逐 token 而不是逐字符）：
+      · ``N尾`` → 尾数 ``N``（例 ``9尾`` → ``9尾``）；
+      · 逗号/顿号/斜杠等分隔的一段里出现多个 ``N尾`` → 每个都算一个原子；
+      · 纯 1~2 位号码 token（无 ``尾``）→ 取**末位**（``13`` → ``3尾``），
+        与 ``_tail_digits`` 的「多位数取最后一位」一致；
+      · 其它 token（中文、诗句、``后落码`` 这类分组名）→ 不产出候选。
+
+    这里只把「一个 item 里的多个标签」摊平成原子，**不改变**判定规则
+    （仍是「开奖 7 码尾集合 ∩ 候选尾集合 ≠ ∅」），所以不是放宽 error 判定。
+
+    与后端的一处**有意的不对齐**（不复制后端缺陷）：``_tail_digits`` 收到 *tuple* 时对
+    每个元素整串只做一次 ``re.search(r"(\\d)\\s*尾")``，即 ``('1尾,3尾,5尾',)`` 只得到 ``{1}``
+    （**只读第一个尾**）。因此当正文里第一个尾不中、而后面某个尾命中时，后端会判「错」、
+    本工具按文档口径判「对」→ 工具会报 ``false_miss``。这是**后端的真实漏判**，工具不复刻，
+    只在报告里以 ``tail_multi_label`` 记账，便于口径负责人决定是否修后端。
+    """
+    out: list[str] = []
+    for label in labels:
+        for token in _TAIL_LABEL_SEPARATORS.split(str(label or "")):
+            token = token.strip()
+            if not token:
+                continue
+            matches = __import__("re").findall(r"(\d)\s*尾", token)
+            if not matches and token.isdigit() and len(token) <= 2:
+                matches = [token[-1]]
+            for digit in matches:
+                atom = f"{int(digit)}尾"
+                if atom not in out:
+                    out.append(atom)
+    return out
+
+
+def tail_label_carries_multiple_atoms(raw_labels: list[str]) -> bool:
+    """某个**原始**标签里是否同时带了 ≥2 个尾原子（``9尾,4尾,…``）。
+
+    只用于记账（``tail_multi_label``）：这一类正文是后端 ``_tail_digits`` 只读第一个尾的
+    高风险区，工具在这里与后端可能给出相反的结论（工具判「对」、后端判「错」），
+    需要口径负责人知道有多少行落在该形态上。
+    """
+    pattern = __import__("re").compile(r"(\d)\s*尾")
+    for label in raw_labels:
+        if len(set(pattern.findall(str(label or "")))) > 1:
+            return True
+    return False
+
+
 def parse_content_labels(
     content: str,
     label_space: str,
@@ -607,10 +694,15 @@ def parse_content_labels(
 
     ``split_outcome_atoms`` 机制（如「三头四尾」）尤其必须走机制解析器：它的候选是
     ``头:2头`` / ``尾:6尾`` 这种带维度前缀的标签，通用解析器拿不到。
+
+    ``label_space == LABEL_SPACE_FLAT_TAIL``（平特尾，mode 54/55/173）时，机制解析器的
+    输出会再过一遍 ``tail_atom_labels``：把「一个 item 里逗号串起来的多个尾标签」摊平成
+    ``N尾`` 原子。否则 ``["9尾,4尾,…,1尾|"]`` 这类正文只会得到一个整串标签，判定恒不命中。
     """
     text = str(content or "").strip()
     if not text:
         return []
+    labels: list[str] = []
     if prefer_mechanism_parser and config is not None:
         parser = getattr(config, "content_parser", None)
         if callable(parser):
@@ -618,13 +710,26 @@ def parse_content_labels(
                 labels = [str(item).strip() for item in parser(text) if str(item).strip()]
             except Exception:
                 labels = []
-            if labels:
-                return labels
+    if labels:
+        if label_space == LABEL_SPACE_FLAT_TAIL:
+            return tail_atom_labels(labels) or labels
+        return labels
     try:
         from predict.common import parse_json_or_plain_content
         from predict.mechanisms import parse_number_content, parse_pipe_label_content, parse_zodiac_content
         from predict.categories.content_columns import parse_tail_digit_content, parse_zodiac_chars
 
+        if label_space == LABEL_SPACE_FLAT_TAIL:
+            # 机制解析器不可用时的兜底：直接对原文做尾原子归一（先按 `|` 左侧取正文，
+            # 与 parse_pipe_label_content 的取值侧一致）。
+            left = text
+            try:
+                items = list(parse_json_or_plain_content(text))
+            except Exception:
+                items = []
+            if items:
+                left = "|".join(items)
+            return tail_atom_labels([left.split("|", 1)[0] if "|" in left else left])
         if label_space == LABEL_SPACE_TAIL:
             return list(parse_tail_digit_content(text))
         if label_space == LABEL_SPACE_NUMBER:
@@ -1053,12 +1158,31 @@ def audit_site(
                 # （历史噪音：把 ``title`` 当候选、从 ``xiao``/``jiexi`` 自行拼候选）。
                 loader_text = content_loader_text(config, row)
                 check_text = loader_text or summarize_prediction_text(row)
+                # 平特尾的候选必须归一到 `N尾` 原子（后端 flat_tail_hit 的取值空间），
+                # 其它玩法沿用机制自己的 label_space。
+                effective_label_space = (
+                    LABEL_SPACE_FLAT_TAIL if mechanism.flat_tail else mechanism.label_space
+                )
                 content_labels = parse_content_labels(
                     check_text,
-                    mechanism.label_space,
+                    effective_label_space,
                     config,
                     prefer_mechanism_parser=True,
                 )
+                # 平特尾「一个标签串了多个尾原子」的取证（后端只读第一个尾，只记账）。
+                if mechanism.flat_tail:
+                    raw_tail_labels = parse_content_labels(
+                        check_text,
+                        mechanism.label_space,
+                        config,
+                        prefer_mechanism_parser=True,
+                    )
+                    if tail_label_carries_multiple_atoms(raw_tail_labels):
+                        report.tail_multi_label += 1
+                        tkey = str(mechanism.key)
+                        report.tail_multi_label_by_mode[tkey] = (
+                            report.tail_multi_label_by_mode.get(tkey, 0) + 1
+                        )
                 truth_pair = truth_label(
                     mechanism=mechanism,
                     config=config,
@@ -1760,11 +1884,13 @@ def main() -> int:
     total_missing = sum(item.missing_res_code for item in reports)
     total_drift = sum(item.element_drift for item in reports)
     total_title_fallback = sum(item.title_fallback for item in reports)
+    total_tail_multi = sum(item.tail_multi_label for item in reports)
     print(
         f"== 合计 rows={total_rows} judged={total_judged} error={total_error} "
         f"warn={total_warn} info={total_info} | pending={total_pending} "
         f"not_judgeable={total_not_judgeable} missing_res_code={total_missing} "
-        f"element_drift={total_drift} title_fallback={total_title_fallback}"
+        f"element_drift={total_drift} title_fallback={total_title_fallback} "
+        f"tail_multi_label={total_tail_multi}"
     )
     if total_judged:
         print(f"== 误差率 error/judged = {total_error}/{total_judged} "
@@ -1806,6 +1932,22 @@ def main() -> int:
         for key, value in top[:12]:
             print(f"     {key}: {value} 行")
 
+    # ── 平特尾多尾标签的取证（后端只读第一个尾的高风险形态，未修）──────
+    if total_tail_multi:
+        tail_agg: dict[str, int] = {}
+        for item in reports:
+            for key, value in item.tail_multi_label_by_mode.items():
+                tail_agg[key] = tail_agg.get(key, 0) + int(value)
+        top_tail = sorted(tail_agg.items(), key=lambda pair: -pair[1])
+        print(
+            f"== [后端口径风险·未修] 平特尾里「一个标签串了多个尾原子」：{total_tail_multi} 行"
+            f"（{len(tail_agg)} 个机制）。工具已按文档口径摊平成 N尾 原子；"
+            "后端 predict.common._tail_digits 对 tuple 元素整串只取**第一个** N尾，"
+            "所以当第一个尾不中、后面某个尾命中时后端会漏判（工具报 false_miss = 真漏判）。"
+        )
+        for key, value in top_tail[:12]:
+            print(f"     {key}: {value} 行")
+
     missing_report = None
     if args.check_missing_res_code:
         missing_report = audit_missing_res_code(conn, draw_index, web_ids=set(targets))
@@ -1842,6 +1984,7 @@ def main() -> int:
             "missing_res_code": total_missing,
             "element_drift": total_drift,
             "title_fallback": total_title_fallback,
+            "tail_multi_label": total_tail_multi,
             "coverage": coverage,
             "sites": [item.as_dict() for item in reports],
         }
