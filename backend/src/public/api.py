@@ -167,7 +167,9 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
     # 而 `蓝波` 里没有 `蓝双` 子串，缺了这个原子会让 excludes_hit 恒等于 True（判定写死「对」）。
     # 与 fixed_data `波色单双` 的映射一致（见 predict.categories.size_parity.special_half_wave_from_row）。
     half_wave = f"{wave.removesuffix('波')}{'双' if number % 2 == 0 else '单'}" if wave else ""
-    # 五行元素映射（与 public.fixed_data 中 "五行肖" sign 一致）
+    # 五行元素映射：取**号码五行**（与 public.fixed_data sign='五行' 一致），
+    # 唯一权威 = predict.common.ELEMENT_NUMBER_GROUPS / canonical_element_number_map()。
+    # 注意不要用 sign='五行肖' 的生肖五行（48 码，24∈土/37∈火/04∈木）。
     element = _ELEMENT_MAP.get(code, "")
     # 琴棋书画映射
     _QQSH_ZODIAC_MAP = {
