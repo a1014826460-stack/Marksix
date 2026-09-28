@@ -166,6 +166,31 @@ Host liuhecai-frontend
 
 
 
+#### twsaimahui 开奖号码取特码修正（提交 `ae0901b`，2026-09-28）
+
+- 现象：【三头中特】【绝杀三尾】等 12 个预测模块展示的开奖号码不是特码，而是**第一个平码**。
+- 根因：这 12 个模块读 `res_code` / `res_sx` 的**第 1 项**，并附了一条自相矛盾的注释
+  「第 1 项 = 本期特码/特肖（已交叉验证）」。本项目口径是**最后一项**才是特码/特肖
+  （`res_code` 与 `lottery_draws.numbers` 同序）。同期其余 47 个模块一直用 `[length-1]`，未被波及。
+  实例（2026 第 190 期）：正确 `狗45`，错误实现渲染成 `猪20`。
+- 附带修掉一个会让发布白做的坑：本机 `core.autocrlf=true`，14 个模块源文件（含本次 12 个）
+  在磁盘上是 CRLF。旧 `bundle-twsaimahui-modules.py` 按原始字节拼接，产出 CRLF bundle，
+  而 `git add` 归一成 LF → **落库正文与内容哈希文件名失配**（浏览器长缓存按文件名取资源，
+  哈希对不上就拿不到新代码）。现改为按 LF 归一拼接；`twsaimahui-bundle-contract` 的
+  逐字节核对也同步做了行尾归一。
+- 备份目录：中心 `.deploy-backups/twsaimahui-special-code-20260928T091956Z`（部署前 `94d28e3`）；
+  前端 `.deploy-backups/twsaimahui-special-code-20260928T092929Z`（部署前 `94d28e3`）。
+  两节点均 `git merge --ff-only` 到 `ae0901b`，中心重建 `python-api`/`scheduler-worker`/`frontend`，
+  前端仅重建 `frontend`，`nginx -t` 均通过；`/tmp` 临时脚本已清理。
+- 验收：
+  - 十站首页 **200**；`https://www.twsaimahui.com/health` **200**；两节点容器 `(healthy)`。
+  - 新 bundle `bundle-823ff3282a9b98f2.js` 公网 **200**，与本地提交**逐字节一致**
+    （sha256 `da99f027…`，CR 字节 0）；旧 bundle `bundle-ddb2aa74d145ec30.js` **404**。
+  - 线上 bundle 内容：`codeSplit[codeSplit.length-1]` × 53、`sxSplit[sxSplit.length-1]` × 53，
+    `codeSplit[0]` / `sxSplit[0]` **各 0**。
+  - 接口复算（`/api/kaijiang/getTou`、`getShaWei`，web=6/type=3）：第 270 期 deployed 得 `马37`，
+    与 `lottery_draws` 末项 37 一致；旧规则会显示 `兔28`。第 269 期同理（`鸡46` vs 旧 `龙39`）。
+
 ## 密钥管理与轮换
 
 - `DATABASE_URL`、`POSTGRES_PASSWORD`、`FRP_AUTH_TOKEN` 只能通过部署平台 Secret、受限环境变量或被 Git 忽略的本地文件注入；不得写入脚本、TOML、文档示例或日志。
