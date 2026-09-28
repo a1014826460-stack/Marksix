@@ -261,4 +261,34 @@ assert(
   "单双语义只能匹配纯「单/双」候选，避免 `4头单` 被误判",
 )
 
+// ── 14. 无数据源板块必须整块隐藏 ──────────────────────────────────────────
+// 这些板块在 `site_page_dependencies` / `homepage_modules` 里有后端实现，但 payload
+// 里没有对应 moduleKey。留着只能显示「暂无后端资料」，或者丢掉适配器后仍显示供应商
+// 快照里烤死的旧期号（本期输尽光 233/323/322 期、双波⑩码旧波色码表），会误导用户。
+// 清单字面量按字符串匹配，不要用正则（`天地+②肖` 含 `+` 会被当成量词）。
+const unavailableBlock = /var UNAVAILABLE_PANEL_TITLES = \[([\s\S]{0,400}?)\]/.exec(adapter)
+assert(unavailableBlock, "必须维护无数据源板块清单 UNAVAILABLE_PANEL_TITLES")
+const unavailableList = unavailableBlock[1]
+for (const name of ["一肖一码", "天地+②肖", "18码中特", "⑤肖⑩码", "本期输尽光", "双波⑩码"]) {
+  assert(unavailableList.includes(`"${name}"`), `无数据源板块清单必须包含 ${name}`)
+}
+assert(
+  /data-prediction-unavailable/.test(adapter),
+  "隐藏无数据源板块时必须打 data-prediction-unavailable 标记，便于验收与日后还原",
+)
+// 供应商样式表可能给 .lxlm/.tzlb 设了带 !important 的 display，
+// 内联 display:none 会被压过去，必须用 setProperty(..., "important")。
+assert(
+  /style\.setProperty\("display", "none", "important"\)/.test(adapter),
+  "隐藏必须用 setProperty(display, none, important)，否则会被供应商样式表压过去",
+)
+// 有数据源的板块不得被误伤（尤其 独家公式 是后端 blocked 但当前期号/标黄正常）。
+for (const keep of ["独家公式", "六肖六码", "8肖16码", "六肖十八码", "大小+①头"]) {
+  assert(!unavailableList.includes(`"${keep}"`), `${keep} 有数据源，不得列入隐藏清单`)
+}
+assert(
+  /hideUnavailablePanels\(\);/.test(adapter),
+  "DOMContentLoaded 必须先调用 hideUnavailablePanels()",
+)
+
 console.log("twbst528-display-contract: OK")

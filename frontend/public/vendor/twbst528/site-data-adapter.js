@@ -1536,6 +1536,37 @@
     renderDoubleWaveHistory(modules.shuangbo_12ma);
   }
 
+  // ── 无数据源板块：整块隐藏 ────────────────────────────────────────────
+  // 这些板块在 `site_page_dependencies` / `homepage_modules` 里有后端实现，但
+  // `/api/sites/twbst528/prediction-modules` 的 payload 里**没有**对应 moduleKey，
+  // 适配器只能渲染「暂无后端资料」，或者丢掉适配器后仍然显示供应商快照里烤死的
+  // 旧期号（如「本期输尽光」的 233/323/322 期、「双波⑩码」的旧波色码表）。
+  // 留着会误导用户，因此整块隐藏（保留 DOM 与后端引用，便于数据源恢复后直接还原）。
+  //
+  // 关联缺口：
+  //   一肖一码   ← public_yixiao_yima   ⑤肖⑩码 ← wuxiao_wuma
+  //   天地+②肖   ← tiandi_2xiao        18码中特 ← site_module_blueprints 标记 blocked
+  //   本期输尽光 ← shujinguang         双波⑩码 ← shuangbo_12ma
+  var UNAVAILABLE_PANEL_TITLES = [
+    "一肖一码", "天地+②肖", "18码中特", "⑤肖⑩码", "本期输尽光", "双波⑩码",
+  ];
+
+  function hideUnavailablePanels() {
+    var hidden = 0;
+    Array.prototype.forEach.call(window.document.querySelectorAll(".lxlm, .tzlb"), function (section) {
+      var title = String(section.querySelector(".pb-tit") && section.querySelector(".pb-tit").textContent || "");
+      var matched = UNAVAILABLE_PANEL_TITLES.filter(function (name) { return title.indexOf(name) !== -1; })[0];
+      if (!matched) return;
+      section.setAttribute("data-prediction-unavailable", matched);
+      // 供应商样式表可能对 .lxlm/.tzlb 设了带 !important 的 display，
+      // 只用内联 display:none 会被压过去，所以用 setProperty(..., "important")。
+      section.hidden = true;
+      section.style.setProperty("display", "none", "important");
+      hidden += 1;
+    });
+    return hidden;
+  }
+
   function activateDrawPanel(item) {
     // Re-dispatch to the supplier KJTB handler so it owns iframe creation and
     // the supplied tab/panel DOM remains the only draw UI.
@@ -1584,6 +1615,8 @@
 
   window.Twbst528SiteData = { selectLottery: selectLottery };
   window.addEventListener("DOMContentLoaded", function () {
+    // 先隐藏无数据源板块，再渲染其余板块。
+    hideUnavailablePanels();
     bindLotteryTabs();
     selectLottery(activeLottery.lotteryType);
   });
