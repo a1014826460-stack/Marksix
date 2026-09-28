@@ -2239,3 +2239,44 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
 3. `#kill3wei` / `#five_no_hit` 底层是 `contains` 极性（「对」= 目标 ∈ 展示候选），本轮只收窄候选集、
    未翻转极性；若按「绝杀」语义改排除极性属口径变更，需另行确认。
 4. twssz 全站高亮仍是内联 `#FFFF00`（仅天地模块补了标准标记）；全站标记制属站点级迁移。
+
+### hllx 分类玩法判定修复 + 综合绝杀排除型重做（2026-09-28 第十一轮）
+
+**发布提交**：`361a529`。中心 / 前端节点备份 `display-standard-11-*`，两节点均为 `361a529`。
+**公网验收**：10/10 站点 `error=0`、`js_errors=0`。
+
+**任务 A：分类玩法（hllx 红蓝绿肖等）判定恒「错」——后端读时复算缺原子**
+
+- 根因：`hllx`(mode 8) 的 `hit_checker=contains_hit`，而 `public/api.py::_compute_outcome_from_row` 拼出的通用复合串
+  **没有「特肖所属分类」原子**（正文候选是 `红肖|…`/`蓝肖|…`，outcome 里只有 `蓝波/蓝双/野兽/…`），
+  子串判定 `any(label in outcome …)` 永远不成立 → `is_correct` 恒 False。机制自己的 `outcome_loader` 口径是对的
+  （`contains_hit('蓝肖',('红肖','蓝肖'))=True`），逐期打印 10 期：修复前口径 7/10 不一致、机制口径 0/10。
+- 修法：**不动** `_check_correct_by_mechanism`（分支逻辑没错，错在喂进去的 outcome 缺原子），
+  在 `predict/common.py` 新增 `zodiac_category_labels()`（从**本行正文自己声明的生肖分组**取分类，拆分口径与
+  `build_pipe_value_map`/`outcome_loader` 同源；成员含数字的分组整组不认），`_compute_outcome_from_row` 把该原子并入复合串。
+- 覆盖面：mode 8 hllx、3 rcca、61 siji3，以及 10/141/144/147/149/150/152/155/157/158/480 等分类玩法。
+  10 站 29817 行 verdict-truth：**error 93→93（0 新增）、warn 5667→3765（−1902）**，逐桶 diff 无 `+NEW`；
+  全站 family 的 `verdict_contract` **1902 → 0**（twbst528 的 hllx 49→0、siji3 52→0）。
+- **生效范围**：`is_correct` 不落库（`created.*` 无该列），是 `serialize_public_history_row` 读时复算 →
+  修复对**全部期次（含历史期）同时生效**，不需要也无法回写历史行；部署后第一次请求即生效（需重启 API 进程，本次发布已重启）。
+- 公网复核（hllx）：`270期 开:37马 对`🟡、`269期 开:46鸡 对`🟡、`268期 开:11猴 错`（零黄底）、
+  `267期 开:24羊 对`🟡、`266期 开:10鸡 错`（零黄底）——不再恒错，且只有命中行有黄底。
+- 测试：新增 `backend/src/tests/unit/test_category_zodiac_verdict.py`（12 例）；
+  `pytest -q` → **1116 passed / 13 skipped / 1 failed**（既有 nginx 契约用例）。
+
+**任务 B：twbst528「综合绝杀」面板 `3tou`/`3hang` 按排除型重做（展示层）**
+
+- 该面板是杀号语义（`NNN期稳杀【…】`），`juesha2xiao`(473)/`juesha1wei`(20) 后端本就是 `excludes_hit`；
+  `3tou`(12)/`3hang`(53) 后端是命中型 → 在此面板**展示层取反**：被杀集合不含开奖目标 →「对」，含 →「错」。
+  **不改后端**（mode 12/53 是公共语义，本站「五行来料」面板仍按命中型渲染这两个键），也不进全局 `KILL_RULE_KEYS`。
+- 判定优先用**本行候选自己声明的号码清单**复算（清单缺失才退回接口值取反）：mode 53 上游用 `fixed_data` 五行（37→木），
+  正文用生肖五行（37→火）推出的号码清单，直接取反会出现「45 明写在候选【土】里却判『对』」的自相矛盾。
+- 高亮：`rule:"kill"` → 恒零黄底（准＝没有可高亮的命中项）；未开奖不给判定不高亮；逐期独立。
+- 公网复核：`270期稳杀【猴龙】开:37马 对`（零黄底）等；`188期稳杀【3头2头1头】开:38蛇` 由「对+1 黄底」改为「错+零黄底」。
+- 验收：本地 `rows=383 js_errors=0 error=0 warn=2`（与基线一致）；逐期复算 10/10 期 0 不一致；
+  三个 twbst528 契约测试 + 新增 Playwright 契约 `twbst528-zonghe-juesha-contract.py` 全部通过。
+
+**遗留（既有，未动）**：mode 53/482 的两套五行划分（后端 `fixed_data` sign='五行' vs 正文生肖五行）导致
+`audit-verdict-truth.py --site twbst528` 的 11 条 `false_hit` 与 25/13 条 `verdict_contract` 仍在；
+该脚本的 `ELEMENT_BY_GROUP` 旧表也未同步到 `predict.common.ELEMENT_NUMBER_GROUPS`。红蓝绿肖面板仍原样显示
+`标签|值` 原始串（S5 观感，非 error）。
