@@ -4,6 +4,7 @@ import { promises as fs } from "fs"
 import path from "path"
 
 import { getPublicSitePageData } from "@/lib/backend-api"
+import { elementOfCode, normalizeElementLabel } from "@/lib/element-number-groups"
 import { getSiteConfig } from "@/lib/sites"
 import type { PublicHistoryRow } from "@/lib/site-page"
 
@@ -207,55 +208,19 @@ function parsePipeValue(text: string) {
   }
 }
 
-/**
- * 号码 → 五行（**号码五行**）——「精准五行 / 三行中特 / 4行4头」的唯一权威口径。
- *
- * 抄自 `backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
- * （= `public.fixed_data` 的 `sign='五行'`；后端 `public/api.py::_ELEMENT_MAP` 同源）。
- * 01-49 全覆盖、互不重叠：
- *   金 03,04,11,12,25,26,33,34,41,42
- *   木 07,08,15,16,23,24,37,38,45,46
- *   水 13,14,21,22,29,30,43,44
- *   火 01,02,09,10,17,18,31,32,39,40,47,48
- *   土 05,06,19,20,27,28,35,36,49
- *
- * ⚠️ `fixed_data` 里另有一份 `sign='五行肖'`，那是**生肖五行**（虎兔为木、蛇马为火…）。
- * 本站 mode 53/482 的历史正文清单就是按生肖五行拼的（`火|01,02,13,14,25,26,37,38,49`
- * 这种只覆盖 48 码的形态），于是 37 马被算成「火」（号码五行应为「木」）、
- * 24 羊被算成「土」（号码五行应为「木」）。号码五行只能由**特码号码**推导，
- * 禁止回退到生肖五行，也禁止用正文清单反推命中行。
- */
-const ELEMENT_NUMBER_GROUPS: Record<string, readonly string[]> = {
-  金: ["03", "04", "11", "12", "25", "26", "33", "34", "41", "42"],
-  木: ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"],
-  水: ["13", "14", "21", "22", "29", "30", "43", "44"],
-  火: ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"],
-  土: ["05", "06", "19", "20", "27", "28", "35", "36", "49"],
-}
-
-const ELEMENT_BY_CODE: Record<string, string> = Object.keys(ELEMENT_NUMBER_GROUPS).reduce<
-  Record<string, string>
->((map, element) => {
-  ELEMENT_NUMBER_GROUPS[element].forEach((code) => {
-    map[code] = element
-  })
-  return map
-}, {})
-
-/** 特码号码 → 号码五行；号码缺失/非法返回空串（**绝不**回退到生肖五行）。 */
-function elementOfCode(code: string) {
-  const digits = String(code || "").replace(/[^0-9]/g, "")
-  if (!digits) return ""
-  return ELEMENT_BY_CODE[digits.padStart(2, "0")] || ""
-}
-
-/** 正文标签归一化：去掉引号/括号/空白与后缀「行」（`土行` → `土`）。 */
-function normalizeElementLabel(label: string) {
-  return String(label || "")
-    .replace(/[[\]"'　\s]/g, "")
-    .replace(/行$/, "")
-    .trim()
-}
+// 号码 → 五行（**号码五行**）——「精准五行 / 三行中特 / 4行4头」的唯一权威口径。
+//
+// ⚠️ 本文件**不再自带常量表**：`ELEMENT_NUMBER_GROUPS` / `elementOfCode` /
+// `normalizeElementLabel` 均取自唯一权威前端共享源 `@/lib/element-number-groups`
+// （权威来源 = `backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
+//  = `public.fixed_data` 的 `sign='五行'`，01-49 全覆盖、互不重叠）。
+//
+// `fixed_data` 里另有一份 `sign='五行肖'`（**生肖五行**：虎兔为木、蛇马为火…，只覆盖
+// 48 码），本站 mode 53/482 的历史正文清单就是按它拼的（`火|01,02,13,14,25,26,37,38,49`
+// 这种形态），于是 37 马被算成「火」（号码五行应为「木」）、24 羊被算成「土」
+// （号码五行应为「木」）。号码五行只能由**特码号码**推导，禁止回退到生肖五行，
+// 也禁止用正文清单反推命中行。表结构改由
+// `frontend/test/element-number-groups-contract.mjs` 从后端权威值逐项比对。
 
 function getOpenedResultZodiac(row: PublicHistoryRow) {
   if (!row.is_opened) {

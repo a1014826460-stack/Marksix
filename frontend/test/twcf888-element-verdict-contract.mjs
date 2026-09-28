@@ -23,6 +23,14 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import ts from "typescript"
 
+import {
+  ELEMENT_GROUPS_TS,
+  assertSameGroups,
+  hasElementGroupsDeclaration,
+  parseBackendGroups,
+  parseLibGroups,
+} from "./lib/element-authority.mjs"
+
 function compileModule(path) {
   return ts.transpileModule(fs.readFileSync(path, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -47,11 +55,15 @@ const sitesStub = toDataModule(
   "export function getSiteConfig() { return { siteKey: 'twcf888', defaultWebId: 8, defaultLotteryTypeId: 3 } }"
 )
 
+// 号码五行分组来自唯一权威前端共享源（`twcf888-articles.ts` 改为从它 import）。
+const elementGroupsStub = toDataModule(compileModule(ELEMENT_GROUPS_TS))
+
 const articlesModule = toDataModule(
   compileModule("frontend/lib/twcf888-articles.ts")
     .replace('import "server-only";', "")
     .replace(/"@\/lib\/backend-api"/g, JSON.stringify(backendStub))
     .replace(/"@\/lib\/sites"/g, JSON.stringify(sitesStub))
+    .replace(/"@\/lib\/element-number-groups"/g, JSON.stringify(elementGroupsStub))
 )
 
 const { getTwcf888ArticleDetail } = await import(articlesModule)
@@ -260,13 +272,21 @@ assert.deepEqual(
 )
 
 // ── 5. 静态不变量：不得再用正文号码清单定位五行命中行 ─────────────────
-const source = fs.readFileSync("frontend/lib/twcf888-articles.ts", "utf8")
+const ARTICLES_TS = "frontend/lib/twcf888-articles.ts"
+const source = fs.readFileSync(ARTICLES_TS, "utf8")
+// 号码五行表自本轮起**不再**在本文件里另抄一份：唯一权威前端共享源是
+// `frontend/lib/element-number-groups.ts`（上面已真跑它），逐项比对交给
+// `frontend/test/element-number-groups-contract.mjs`。
 assert.ok(
-  /const ELEMENT_NUMBER_GROUPS[\s\S]*?土: \["05", "06", "19", "20", "27", "28", "35", "36", "49"\]/.test(
-    source,
-  ),
-  "必须自带与后端 predict.common.ELEMENT_NUMBER_GROUPS 一致的号码五行常量",
+  !hasElementGroupsDeclaration(source),
+  `${ARTICLES_TS} 不得再自带号码五行常量表（应 import ${ELEMENT_GROUPS_TS}）`,
 )
+assert.ok(
+  /import\s*\{[^}]*\belementOfCode\b[^}]*\}\s*from\s*"@\/lib\/element-number-groups"/.test(source),
+  `${ARTICLES_TS} 必须从 @/lib/element-number-groups 取 elementOfCode`,
+)
+// 共享源必须与后端权威常量逐项一致（期望值取自后端，不手抄）。
+assertSameGroups(parseLibGroups(), parseBackendGroups(), ELEMENT_GROUPS_TS)
 assert.ok(source.includes("elementOfCode"), "五行命中行必须由特码号码推导（elementOfCode）")
 assert.ok(
   !/matchedElement\s*=\s*pickMatchedPipeLabel/.test(source),

@@ -1636,8 +1636,9 @@ function renderSihangzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 |
       // 这里刻意**不**用正文条目里的号码清单：该清单历史上是生肖五行
       //（如 `木|04,05,16,17,28,29,40,41`，17 虎被算成木，而号码五行 17 = 火；
       // 37 马被算成火 + 只覆盖 48 码），用它落黄会把生肖五行当成号码五行。
-      // 号码五行分组见 frontend/lib/twcaibawang-elements.ts
-      //（权威来源 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS）。
+      // 号码五行分组见唯一权威前端共享源 frontend/lib/element-number-groups.ts
+      //（twcaibawang-elements.ts 现在只是它的再导出；权威来源
+      // backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS）。
       const predictedLabels = entries.map((entry) => entry.label)
       const hitElement = row.isOpened ? elementOfCode(hitCode) : ""
       const computed = row.isOpened ? elementHitJudgement(predictedLabels, hitCode) : null

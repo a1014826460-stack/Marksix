@@ -1,6 +1,6 @@
 // 五行口径契约（twsaimahui 「三行中特」 mode 53）
 //
-// 回归背景：`static/js/025sanhang.js`（及打包镜像 `static/js/bundle-823ff3282a9b98f2.js`）
+// 回归背景：`static/js/025sanhang.js`（及打包镜像 `static/js/bundle-<内容哈希>.js`）
 // 是本站三行中特的**唯一**判定与高亮来源（`/api/kaijiang/getXingte` 不返回 `is_correct`）。
 // 旧实现两件事都读**正文里每个五行标签后的号码清单**：
 //     if (code && xiaoV[i].indexOf(code) !== -1) { zj = true; 黄底 }
@@ -24,21 +24,28 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import vm from "node:vm"
 
+import {
+  assertSameGroups,
+  extractGroupsDeclaration,
+  parseBackendGroups,
+  twsaimahuiBundlesFor,
+} from "./lib/element-authority.mjs"
+
 const SANHANG_FILE = "frontend/public/vendor/twsaimahui/static/js/025sanhang.js"
-const BUNDLE_FILE = "frontend/public/vendor/twsaimahui/static/js/bundle-823ff3282a9b98f2.js"
+// 打包镜像是**内容哈希命名**（`scripts/bundle-twsaimahui-modules.py`：任何源文件改动都会改名），
+// 所以镜像路径只能按 `bundles.json` 清单反查，不能硬编码。
+const BUNDLE_FILES = twsaimahuiBundlesFor("static/js/025sanhang.js")
+assert.ok(
+  BUNDLE_FILES.length > 0,
+  "bundles.json 里必须存在包含 static/js/025sanhang.js 的打包镜像",
+)
 
 const YELLOW = '<span style="background-color: #FFFF00">'
 
-// ── 1. 号码五行分组必须与后端权威常量逐字一致 ────────────────────────
-// 期望值刻意写成字面量（抄自 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS），
-// 避免从源码常量读回来导致测试跟着一起错。
-const EXPECTED_ELEMENT_GROUPS = {
-  金: [3, 4, 11, 12, 25, 26, 33, 34, 41, 42],
-  木: [7, 8, 15, 16, 23, 24, 37, 38, 45, 46],
-  水: [13, 14, 21, 22, 29, 30, 43, 44],
-  火: [1, 2, 9, 10, 17, 18, 31, 32, 39, 40, 47, 48],
-  土: [5, 6, 19, 20, 27, 28, 35, 36, 49],
-}
+// ── 1. 号码五行分组必须与后端权威常量逐项一致 ────────────────────────
+// 期望值唯一来源 = 后端权威常量（backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS），
+// 本契约不再另抄 49 码表。
+const AUTHORITY_GROUPS = parseBackendGroups()
 
 /** 取出「三行中特」那一块源码（从 getXingte 请求到写入 .l56 为止）。 */
 function sanhangBlock(source) {
@@ -49,20 +56,14 @@ function sanhangBlock(source) {
   return source.slice(start, end)
 }
 
-for (const file of [SANHANG_FILE, BUNDLE_FILE]) {
+for (const file of [SANHANG_FILE, ...BUNDLE_FILES]) {
   const source = fs.readFileSync(file, "utf8")
   const block = sanhangBlock(source)
 
-  // 1a. 权威号码五行分组必须逐个出现在该模块里（49 码全覆盖）。
-  const declared = block.match(/ELEMENT_NUMBER_GROUPS\s*=\s*\{([\s\S]*?)\}/)
-  assert.ok(declared, `${file}: 三行中特必须自带号码五行分组常量`)
-  const numbers = (declared[1].match(/\d+/g) || []).map(Number)
-  const expectedFlat = Object.values(EXPECTED_ELEMENT_GROUPS).flat().sort((a, b) => a - b)
-  assert.deepEqual(
-    [...new Set(numbers)].sort((a, b) => a - b),
-    expectedFlat,
-    `${file}: 号码五行分组必须 01-49 全覆盖且与后端 ELEMENT_NUMBER_GROUPS 一致`,
-  )
+  // 1a. 权威号码五行分组必须与该模块里**真写的那份**逐项一致（49 码全覆盖、互不重叠）。
+  const declared = extractGroupsDeclaration(block, file)
+  assert.ok(declared.found && declared.groups, `${file}: 三行中特必须自带号码五行分组常量`)
+  assertSameGroups(declared.groups, AUTHORITY_GROUPS, `${file} 三行中特号码五行分组`)
 
   // 1b. 高亮/判定必须走特码号码五行，不得再拿正文号码清单定位。
   assert.ok(
@@ -192,11 +193,13 @@ function stripComments(block) {
     .join("\n")
     .trim()
 }
-assert.equal(
-  stripComments(sanhangBlock(fs.readFileSync(BUNDLE_FILE, "utf8"))),
-  stripComments(sanhangBlock(fs.readFileSync(SANHANG_FILE, "utf8"))),
-  `${BUNDLE_FILE}: 三行中特块必须与 ${SANHANG_FILE} 同源（仅注释差异）`,
-)
+for (const bundleFile of BUNDLE_FILES) {
+  assert.equal(
+    stripComments(sanhangBlock(fs.readFileSync(bundleFile, "utf8"))),
+    stripComments(sanhangBlock(fs.readFileSync(SANHANG_FILE, "utf8"))),
+    `${bundleFile}: 三行中特块必须与 ${SANHANG_FILE} 同源（仅注释差异）`,
+  )
+}
 
 // ── 4. 反例：生肖五行 ∈ 三行，但号码五行 ∉ 三行 → 必须判「错」且零黄底 ──
 // 特码 04：号码五行 = 金（不在«土木水»里）；旧正文把 04 写在【木】组

@@ -18,21 +18,24 @@ import fs from "node:fs"
 import path from "node:path"
 import vm from "node:vm"
 
+import {
+  assertSameGroups,
+  codeToElement,
+  parseBackendGroups,
+  parseVendorGroups,
+} from "./lib/element-authority.mjs"
+
 const JS_DIR = "frontend/public/vendor/shengshi8800/static/js"
 const VERDICT_FILE = `${JS_DIR}/legacy-prediction-verdict.js`
 const RENDER_FILE = `${JS_DIR}/013shzt.js`
 
 const YELLOW = '<span style="background-color: #FFFF00">'
 
-// ── 1. 号码五行常量必须与后端权威分组逐字一致 ──────────────────
-// 期望值抄自 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS（= fixed_data sign='五行'）。
-const EXPECTED_ELEMENT_GROUPS = {
-  金: ["03", "04", "11", "12", "25", "26", "33", "34", "41", "42"],
-  木: ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"],
-  水: ["13", "14", "21", "22", "29", "30", "43", "44"],
-  火: ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"],
-  土: ["05", "06", "19", "20", "27", "28", "35", "36", "49"],
-}
+// ── 1. 号码五行常量必须与后端权威分组逐项一致 ──────────────────
+// 期望值唯一来源 = 后端权威常量 `backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
+// （= fixed_data sign='五行'）；本契约不再另抄 49 码表。
+const AUTHORITY_GROUPS = parseBackendGroups()
+const AUTHORITY_BY_CODE = codeToElement(AUTHORITY_GROUPS)
 
 const verdictSandbox = { window: {} }
 vm.createContext(verdictSandbox)
@@ -41,28 +44,14 @@ const verdictApi = verdictSandbox.window.legacyPredictionVerdict
 
 assert.ok(verdictApi, `${VERDICT_FILE} 必须导出 window.legacyPredictionVerdict`)
 
+// 文件里的常量块（文本解析）与运行期导出（vm 真跑）都要与权威值一致。
+assertSameGroups(parseVendorGroups(VERDICT_FILE), AUTHORITY_GROUPS, `${VERDICT_FILE} 常量块`)
 const groups = verdictApi.elementNumberGroups
-assert.deepEqual(
-  Object.keys(groups).sort(),
-  Object.keys(EXPECTED_ELEMENT_GROUPS).sort(),
-  "号码五行分组必须是 金/木/水/火/土 五组",
-)
-for (const [element, codes] of Object.entries(EXPECTED_ELEMENT_GROUPS)) {
-  assert.deepEqual([...groups[element]], codes, `号码五行分组【${element}】必须与后端 ELEMENT_NUMBER_GROUPS 一致`)
-}
-
-// 49 码全覆盖、互不重叠。
-const seen = new Map()
-for (const [element, codes] of Object.entries(groups)) {
-  for (const code of codes) {
-    assert.ok(!seen.has(code), `${code} 同时属于 ${seen.get(code)} 与 ${element}`)
-    seen.set(code, element)
-  }
-}
-assert.deepEqual(
-  [...seen.keys()].sort(),
-  Array.from({ length: 49 }, (_, index) => String(index + 1).padStart(2, "0")),
-  "号码五行必须 49 码全覆盖",
+assertSameGroups(
+  // vm 里的对象来自另一个 realm，先 JSON 往返成本地普通对象。
+  JSON.parse(JSON.stringify(groups)),
+  AUTHORITY_GROUPS,
+  `${VERDICT_FILE} 运行期 elementNumberGroups`,
 )
 
 // 号码五行 vs 生肖五行：这三组是用户报障里的关键分歧点。
@@ -71,6 +60,15 @@ assert.equal(verdictApi.specialElement("37"), "木", "37 的号码五行是木�
 assert.equal(verdictApi.specialElement("45"), "木", "45 的号码五行是木（生肖狗 → 生肖五行土：不得混用）")
 assert.equal(verdictApi.specialElement("04"), "金", "04 的号码五行是金")
 assert.equal(verdictApi.specialElement("49"), "土", "49 的号码五行是土")
+// 全 49 码逐一比对后端权威值（判定 API 必须与权威分组同源）。
+for (let number = 1; number <= 49; number += 1) {
+  const code = String(number).padStart(2, "0")
+  assert.equal(
+    verdictApi.specialElement(code),
+    AUTHORITY_BY_CODE[code],
+    `${VERDICT_FILE}: specialElement("${code}") 必须与后端权威值一致`,
+  )
+}
 
 // ── 2. 真跑渲染器（注入站点 util.js 与统一判定模块，与既有契约同一模式）──
 function renderShzt(rows) {

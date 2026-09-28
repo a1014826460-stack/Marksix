@@ -16,6 +16,13 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import vm from "node:vm"
 
+import {
+  assertSameGroups,
+  codeToElement,
+  executableSource,
+  parseBackendGroups,
+} from "./lib/element-authority.mjs"
+
 const TSX = "frontend/components/twcaibawang/TwcaibawangHomeClient.tsx"
 const source = fs.readFileSync(TSX, "utf8")
 
@@ -157,16 +164,28 @@ const tiandiSource = tiandiMatch[0].replace(
   "const TIANDI_ZODIACS ="
 )
 
-// 该站号码五行分组（四行中特 mode 482 的判定/标黄口径）。这里**真跑**它，而不是
-// 在测试里另抄一份表，保证「改回生肖五行」必定 FAIL。
+// 该站号码五行分组（四行中特 mode 482 的判定/标黄口径）。这里**真跑**唯一权威前端共享源
+// `frontend/lib/element-number-groups.ts`（`twcaibawang-elements.ts` 现在只是它的再导出
+// shim），而不是在测试里另抄一份表，保证「改回生肖五行」必定 FAIL。
 const ELEMENTS_TS = "frontend/lib/twcaibawang-elements.ts"
-const elementsSource = stripTs(
-  fs.readFileSync(ELEMENTS_TS, "utf8").replace(/^export\s+/gm, "")
+const ELEMENT_GROUPS_TS = "frontend/lib/element-number-groups.ts"
+const elementsShimSource = fs.readFileSync(ELEMENTS_TS, "utf8")
+assert.ok(
+  /from\s+["'](?:@\/lib\/element-number-groups|\.\/element-number-groups)["']/.test(
+    elementsShimSource,
+  ) &&
+    elementsShimSource.includes("ELEMENT_NUMBER_GROUPS") &&
+    elementsShimSource.includes("elementHitJudgement"),
+  `${ELEMENTS_TS} 必须从 ${ELEMENT_GROUPS_TS} 再导出号码五行分组与命中判定`,
 )
 assert.ok(
-  elementsSource.includes("ELEMENT_NUMBER_GROUPS") && elementsSource.includes("elementHitJudgement"),
-  `${ELEMENTS_TS} 必须导出号码五行分组与命中判定`,
+  !/\bELEMENT_NUMBER_GROUPS\b[\w:,[\]<>()| '"=.]{0,100}\{/.test(elementsShimSource),
+  `${ELEMENTS_TS} 不得再自带号码五行常量表`,
 )
+const elementsSource = executableSource(fs.readFileSync(ELEMENT_GROUPS_TS, "utf8"))
+// 期望值唯一来源 = 后端权威常量（不在本契约里另抄 49 码表）。
+const AUTHORITY_GROUPS = parseBackendGroups()
+const AUTHORITY_BY_CODE = codeToElement(AUTHORITY_GROUPS)
 
 const harness = [
   stripTs(section(source, "mapColorToWave")),
@@ -288,24 +307,29 @@ function plainText(html) {
   return html.replace(/<[^>]*>/g, "")
 }
 
-// 6.1 号码五行分组：01-49 全覆盖、互不重叠、与后端权威常量一致
-const groupedCodes = Object.keys(api.ELEMENT_NUMBER_GROUPS).flatMap((element) => [
-  ...api.ELEMENT_NUMBER_GROUPS[element],
-])
-assert.equal(groupedCodes.length, 49, "号码五行必须覆盖 49 码")
-assert.equal(new Set(groupedCodes).size, 49, "号码五行不得重叠")
-assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["木"]], ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"])
-assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["火"]], ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"])
-assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["土"]], ["05", "06", "19", "20", "27", "28", "35", "36", "49"])
-for (const [code, element] of [["24", "木"], ["37", "木"], ["01", "火"], ["05", "土"], ["13", "水"], ["03", "金"]]) {
-  assert.equal(api.elementOfCode(code), element, `${code} 的号码五行应为 ${element}`)
+// 6.1 号码五行分组：与后端权威常量逐项一致（键顺序 / 每组顺序 / 49 码全覆盖 / 不重叠）
+const PROBE_CODES = ["24", "37", "01", "05", "13", "03"]
+assertSameGroups(
+  // vm 里的对象来自另一个 realm，先 JSON 往返成本地普通对象。
+  JSON.parse(JSON.stringify(api.ELEMENT_NUMBER_GROUPS)),
+  AUTHORITY_GROUPS,
+  `${ELEMENTS_TS}（四行中特口径）`,
+)
+assert.equal(Object.keys(api.ELEMENT_BY_CODE).length, 49, "号码 → 五行索引必须覆盖 49 码")
+for (const code of PROBE_CODES) {
+  assert.equal(
+    api.elementOfCode(code),
+    AUTHORITY_BY_CODE[code],
+    `${code} 的号码五行应为 ${AUTHORITY_BY_CODE[code]}（后端权威值）`,
+  )
 }
 assert.equal(api.elementOfCode(""), "", "空号码不得回退到生肖五行")
 assert.equal(api.elementHitJudgement([], "37"), null, "没有预测标签时不可判定")
 assert.equal(api.elementHitJudgement(["木"], ""), null, "没有特码时不可判定")
 
 // 6.2 需求②：号码五行 ∈ 四行 → 判「对」，且只标黄那一行
-for (const [code, element] of [["24", "木"], ["37", "木"], ["01", "火"], ["05", "土"], ["13", "水"], ["03", "金"]]) {
+for (const code of PROBE_CODES) {
+  const element = AUTHORITY_BY_CODE[code]
   const excluded = ALL_ELEMENTS.find((item) => item !== element)
   const predicted = ALL_ELEMENTS.filter((item) => item !== excluded)
   assert.ok(predicted.includes(element), `${code} 样例必须把 ${element} 排进预测四行`)
@@ -319,11 +343,12 @@ for (const [code, element] of [["24", "木"], ["37", "木"], ["01", "火"], ["05
 // 6.3 需求①：生肖五行 ∈ 四行、号码五行 ∉ 四行 → 必须判「错」，零黄底
 // 17 虎：生肖五行 = 木（旧正文 `木|…,17,…`），号码五行 = 火
 // 24 羊：旧正文把 24 放进「土」；号码五行 = 木
-for (const [code, zodiac, zodiacElement, numberElement, predicted] of [
-  ["17", "虎", "木", "火", ["木", "金", "水", "土"]],
-  ["24", "羊", "土", "木", ["土", "金", "水", "火"]],
+for (const [code, zodiac, zodiacElement, predicted] of [
+  ["17", "虎", "木", ["木", "金", "水", "土"]],
+  ["24", "羊", "土", ["土", "金", "水", "火"]],
 ]) {
-  assert.equal(api.elementOfCode(code), numberElement, `${code} 号码五行应为 ${numberElement}`)
+  const numberElement = AUTHORITY_BY_CODE[code]
+  assert.equal(api.elementOfCode(code), numberElement, `${code} 号码五行应为 ${numberElement}（后端权威值）`)
   assert.ok(
     LEGACY_ZODIAC_ELEMENT_GROUPS[zodiacElement].includes(Number(code)),
     `前提：供应商旧正文把 ${code} 归到 ${zodiacElement}（生肖五行）`,

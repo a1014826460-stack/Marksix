@@ -38,11 +38,16 @@ const sitesStub = toDataModule(
   "export function getSiteConfig() { return { siteKey: 'twcf888', defaultWebId: 8, defaultLotteryTypeId: 3 } }"
 )
 
+// 号码五行表已收敛到唯一权威前端共享源（`frontend/lib/element-number-groups.ts`，
+// `twcf888-articles.ts` 从它 import），必须一并注入，否则 `@/lib/...` 解析不到。
+const elementGroupsStub = toDataModule(compileModule("frontend/lib/element-number-groups.ts"))
+
 const articlesModule = toDataModule(
   compileModule("frontend/lib/twcf888-articles.ts")
     .replace('import "server-only";', "")
     .replace(/"@\/lib\/backend-api"/g, JSON.stringify(backendStub))
     .replace(/"@\/lib\/sites"/g, JSON.stringify(sitesStub))
+    .replace(/"@\/lib\/element-number-groups"/g, JSON.stringify(elementGroupsStub))
 )
 
 const { getTwcf888ArticleDetail } = await import(articlesModule)

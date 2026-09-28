@@ -16,6 +16,8 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import vm from "node:vm"
 
+import { assertSameGroups, codeToElement, parseBackendGroups } from "./lib/element-authority.mjs"
+
 const SHELL = "frontend/public/vendor/twcf888.com/index.html"
 const source = fs.readFileSync(SHELL, "utf8")
 
@@ -33,35 +35,19 @@ const groups = sandbox.ELEMENT_NUMBER_GROUPS
 const elementOfCode = sandbox.elementOfCode
 assert.equal(typeof elementOfCode, "function", `${SHELL}: 必须导出 elementOfCode`)
 
-const EXPECTED = {
-  金: [3, 4, 11, 12, 25, 26, 33, 34, 41, 42],
-  木: [7, 8, 15, 16, 23, 24, 37, 38, 45, 46],
-  水: [13, 14, 21, 22, 29, 30, 43, 44],
-  火: [1, 2, 9, 10, 17, 18, 31, 32, 39, 40, 47, 48],
-  土: [5, 6, 19, 20, 27, 28, 35, 36, 49],
-}
-assert.deepEqual(Object.keys(groups).sort(), Object.keys(EXPECTED).sort(), "必须是金/木/水/火/土五组")
-for (const [element, codes] of Object.entries(EXPECTED)) {
-  assert.deepEqual(
-    [...groups[element]],
-    codes,
-    `号码五行分组【${element}】必须与后端 predict.common.ELEMENT_NUMBER_GROUPS 一致`,
-  )
-}
+// 期望值唯一来源 = 后端权威常量（不在本契约里另抄 49 码表）。
+const AUTHORITY_GROUPS = parseBackendGroups()
+const AUTHORITY_BY_CODE = codeToElement(AUTHORITY_GROUPS)
 
-// 49 码全覆盖、互不重叠。
-const seen = new Map()
-for (const [element, codes] of Object.entries(groups)) {
-  for (const code of codes) {
-    assert.ok(!seen.has(code), `${code} 同时属于 ${seen.get(code)} 与 ${element}`)
-    seen.set(code, element)
-  }
-}
-assert.deepEqual(
-  [...seen.keys()].sort((a, b) => a - b),
-  Array.from({ length: 49 }, (_, index) => index + 1),
-  "号码五行必须 01-49 全覆盖",
+// 首页壳里写的是数字数组（`金: [3, 4, …]`），归一成两位字符串后与权威值逐项比对
+// （键顺序 / 每组顺序 / 49 码全覆盖 / 不重叠由 assertSameGroups 一并锁定）。
+const shellGroups = Object.fromEntries(
+  Object.entries(groups).map(([element, codes]) => [
+    element,
+    codes.map((code) => String(code).padStart(2, "0")),
+  ]),
 )
+assertSameGroups(shellGroups, AUTHORITY_GROUPS, `${SHELL}（首页内联脚本）`)
 
 // 用户报障的关键分歧点：这三个号码的生肖五行与号码五行不同。
 assert.equal(elementOfCode("24"), "木", "24 的号码五行是木（生肖羊 → 生肖五行 土）")
@@ -72,6 +58,15 @@ assert.equal(elementOfCode("49"), "土", "49 的号码五行是土")
 assert.equal(elementOfCode("5"), "土", "单位数号码必须补零后匹配")
 assert.equal(elementOfCode(""), "", "缺失号码不得给出五行（绝不回退生肖五行）")
 assert.equal(elementOfCode("50"), "", "非法号码不得给出五行")
+// 全 49 码逐一比对后端权威值（首页壳的 elementOfCode 必须与权威分组同源）。
+for (let number = 1; number <= 49; number += 1) {
+  const code = String(number).padStart(2, "0")
+  assert.equal(
+    elementOfCode(code),
+    AUTHORITY_BY_CODE[code],
+    `${SHELL}: elementOfCode("${code}") 必须与后端权威值一致`,
+  )
+}
 
 // ── 2. 命中行必须由特码号码推导，且只对命中语义的五行玩法生效 ────────────
 assert.ok(
