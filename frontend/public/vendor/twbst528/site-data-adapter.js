@@ -130,33 +130,64 @@
     if (index + token.length < text.length) host.appendChild(doc.createTextNode(text.slice(index + token.length)));
   }
 
+  /**
+   * 写入一个候选单元格，并只把 `hitValues` 里命中的那一段标黄。
+   *
+   * 旧实现的「markerLeaf + leaves[0] + suffix」三段式还原是**不可靠**的：上一次渲染
+   * 留下的 marker span 会成为下一次渲染的 markerLeaf，它的文本只有上一期标黄的那一项，
+   * 于是整个候选串会被截断在那一项上（线上实测：`鼠,牛,狗,兔,蛇,鸡,虎,龙,马` 只剩 `蛇`）。
+   *
+   * 现在固定为「前缀文本 → marker → 后缀文本」的结构，三者**平级插在同一个宿主**里：
+   *   `<cell> …前缀… <span 黄底>命中项</span> …后缀… </cell>`
+   * 之所以不再复用模板预埋的 marker：`clearMarkers()` 只清掉背景色、span 仍在，
+   * 而它往往嵌在别的 font 里、文档顺序也不在候选文本之后，复用它会让元素/文本叶子
+   * 的顺序错位（出现换行丢失、候选被截断）。每次重建一个干净的 marker 更稳。
+   */
   function writeCell(cell, value, hitValues) {
-    var leaves = textNodes(cell);
-    var marker = cell.querySelector("span[style*='background-color']");
-    var markerLeaf = marker && textNodes(marker)[0];
     var text = String(value || "");
+    if (!cell) return;
+    var doc = cell.ownerDocument;
     clearMarkers(cell);
-    if (!markerLeaf || !hitValues || !hitValues.length) {
-      if (leaves[0]) leaves[0].nodeValue = text;
-      clearLeaves(cell, leaves[0] ? [leaves[0]] : []);
-      return;
-    }
 
-    var matchingValue = hitValues.filter(function (value) { return value && text.indexOf(value) !== -1; })[0];
-    if (!matchingValue || !leaves[0]) {
-      leaves[0].nodeValue = text;
-      clearLeaves(cell, [leaves[0]]);
+    var leaves = textNodes(cell);
+    if (leaves.length === 0) return;
+
+    var matchingValue = (hitValues || []).filter(function (item) {
+      return item && text.indexOf(item) !== -1;
+    })[0];
+
+    if (!matchingValue) {
+      // 没有可标黄项：整段纯文本，清掉其它叶子与残留 marker。
+      var plain = leaves[0];
+      leaves.forEach(function (leaf) { if (leaf !== plain) leaf.nodeValue = ""; });
+      plain.nodeValue = text;
       return;
     }
 
     var index = text.indexOf(matchingValue);
-    var markerIndex = leaves.indexOf(markerLeaf);
-    var suffix = leaves[markerIndex + 1];
-    leaves[0].nodeValue = text.slice(0, index);
-    markerLeaf.nodeValue = matchingValue;
-    if (suffix) suffix.nodeValue = text.slice(index + matchingValue.length);
-    clearLeaves(cell, suffix ? [leaves[0], markerLeaf, suffix] : [leaves[0], markerLeaf]);
+    var prefix = text.slice(0, index);
+    var suffix = text.slice(index + matchingValue.length);
+
+    // 宿主：优先沿用第一个叶子所在的元素（常见是 font），否则退回 cell。
+    var host = leaves[0].parentNode || cell;
+
+    // 清空既有文本，并移除本单元格内所有旧的黄底/空 marker，保证结构可预测。
+    Array.prototype.forEach.call(cell.querySelectorAll("span"), function (span) {
+      var style = String(span.getAttribute("style") || "");
+      if (!span.textContent && !YELLOW_MARKER.test(style)) span.parentNode.removeChild(span);
+    });
+
+    var marker = doc.createElement("span");
     marker.style.backgroundColor = "#FFFF00";
+    marker.appendChild(doc.createTextNode(matchingValue));
+
+    leaves.forEach(function (leaf) { leaf.nodeValue = ""; });
+    var anchor = leaves[0];
+    anchor.nodeValue = prefix;
+    if (anchor.parentNode !== host) host.appendChild(anchor);
+    if (anchor.nextSibling) host.insertBefore(marker, anchor.nextSibling);
+    else host.appendChild(marker);
+    host.insertBefore(doc.createTextNode(suffix), marker.nextSibling);
   }
 
   function writeResultCell(cell, row) {
@@ -214,6 +245,48 @@
     return term ? "第" + term + "期" : "";
   }
 
+  // ── 按期号配对（不要把不同期数挤在一起）────────────────────────────────
+  // 供应商模板把**静态样例期号**烤进 DOM（233/323/322…），适配器过去按「行号 index」
+  // 把数据写进第 N 行；只要模板期号列表与接口期号列表的长度或顺序不完全一致，
+  // 后一行就会串到别的期号位置（线上实测「码友来料参考」第 3 张卡出现 271/0/269/0/267/0）。
+  // 现在统一改成**按「年+期」配对**：先读该行模板里的期号，再用它去接口数据里找同一期。
+  function templateTermKey(text) {
+    var source = String(text || "");
+    var match = /(\d{6})\s*期/.exec(source);
+    if (match) return match[1].slice(0, 4) + "|" + String(Number(match[1].slice(4)));
+    match = /(\d{3})\s*期/.exec(source);
+    return match ? "*|" + String(Number(match[1])) : "";
+  }
+
+  function rowTermKey(row) {
+    var issue = String(row && row.issue || "").replace(/\D/g, "");
+    if (issue.length >= 6) return issue.slice(0, 4) + "|" + String(Number(issue.slice(4)));
+    var year = String(row && row.year || "").replace(/\D/g, "");
+    var term = String(row && (row.term || issue) || "").replace(/\D/g, "");
+    if (!term) return "";
+    return year ? year + "|" + String(Number(term)) : "*|" + String(Number(term));
+  }
+
+  /** 返回「模板期号 → 数据行」的解析器；模板里读不到期号时退回按行号。 */
+  function makeRowResolver(module) {
+    var rows = distinctRows(module);
+    var byKey = {};
+    rows.forEach(function (row) {
+      var key = rowTermKey(row);
+      if (key && !byKey[key]) byKey[key] = row;
+    });
+    return function (templateText, index) {
+      var key = templateTermKey(templateText);
+      if (key && byKey[key]) return byKey[key];
+      return rows[index] || null;
+    };
+  }
+
+  /** 单元格当前可见文本，用于读出模板里的期号。 */
+  function cellText(cell) {
+    return String(cell && cell.textContent || "");
+  }
+
   function tokens(row) {
     var values = row && row.prediction && row.prediction.tokens;
     if (Array.isArray(values) && values.length) return values.map(String).filter(Boolean);
@@ -268,6 +341,93 @@
     return (Array.isArray(values) ? values : []).map(function (value) {
       return String(value).replace(/[\[\]"]/g, "").split("|", 1)[0].trim();
     }).filter(Boolean).join(separator === undefined ? "" : separator);
+  }
+
+
+  // ── 固定分组（来源：public.fixed_data，权威口径）──────────────────────
+  // 四艺生肖 / 大小胆肖 / 凶丑吉美生肖。用于第 4/5/6 项的语义展示。
+  var SIYI_ZODIAC_ORDER = ["琴", "棋", "书", "画"];
+  var SIYI_ZODIAC = {
+    "琴": ["兔", "蛇", "鸡"],
+    "棋": ["鼠", "牛", "狗"],
+    "书": ["虎", "龙", "马"],
+    "画": ["羊", "猴", "猪"],
+  };
+  var DANXIAO_GROUP = { "胆大": ["牛", "虎", "马", "猴", "狗", "猪"], "胆小": ["鼠", "兔", "龙", "蛇", "羊", "鸡"] };
+  var XIONGJI_GROUP = { "吉美肖": ["兔", "龙", "蛇", "马", "羊", "鸡"], "丑凶肖": ["鼠", "牛", "虎", "猴", "狗", "猪"] };
+
+  function zodiactsOf(row) {
+    return tokens(row).map(function (value) {
+      return String(value).replace(/[\[\]"]/g, "").split("|")[0].trim();
+    }).filter(Boolean);
+  }
+
+  function matchesAny(zodiacs, group) {
+    var set = {};
+    group.forEach(function (z) { set[z] = true; });
+    return zodiacs.some(function (z) { return set[z]; });
+  }
+
+  /** 第 4 项：候选生肖 → 四艺里出现的艺，取三种组成「书棋琴」这样的三字串。 */
+  function siyiTriple(row) {
+    var present = siyiArtsOf(row);
+    if (!present.length) return "";
+    // 必须始终是三个字：不足时按 琴→棋→书→画 固定顺序回补。
+    var result = present.slice(0, 3);
+    for (var i = 0; result.length < 3 && i < SIYI_ZODIAC_ORDER.length; i += 1) {
+      if (result.indexOf(SIYI_ZODIAC_ORDER[i]) === -1) result.push(SIYI_ZODIAC_ORDER[i]);
+    }
+    return result.join("");
+  }
+
+  /** 候选生肖命中的四艺（按 琴棋书画 固定顺序）。 */
+  function siyiArtsOf(row) {
+    var zodiacs = zodiactsOf(row);
+    if (!zodiacs.length) return [];
+    return SIYI_ZODIAC_ORDER.filter(function (art) {
+      return matchesAny(zodiacs, SIYI_ZODIAC[art]);
+    });
+  }
+
+  /**
+   * 第 4 项的标黄：展示的是艺名（不是生肖），所以要标黄**开奖特肖所属的那个艺**，
+   * 例如开奖是「狗」→ 狗属「棋」→ 标黄三字串里的「棋」。
+   */
+  function siyiHitArts(row) {
+    if (!row || !row.result || !row.result.isOpened || row.result.isCorrect !== true) return [];
+    var zodiac = resultToken(row.result.zodiac, false);
+    if (!zodiac) return [];
+    return siyiArtsOf(row).filter(function (art) {
+      return SIYI_ZODIAC[art].indexOf(zodiac) !== -1;
+    });
+  }
+
+  /** 第 5/6 项：候选生肖 → 所属分组标签（如 胆大 / 胆小 / 吉美肖 / 丑凶肖）。 */
+  /**
+   * 第 5/6 项：候选生肖 → 所属分组标签（胆大 / 胆小 / 吉美肖 / 丑凶肖）。
+   *
+   * 候选可能跨两个分组（如「龙兔虎」里 龙兔 属吉美、虎 属凶丑），此时按**多数**归属；
+   * 平票时取候选里更靠前的那一项所属的分组，保证结果与候选顺序一致。
+   */
+  function groupLabelFor(row, groups, fallback) {
+    var zodiacs = zodiactsOf(row);
+    if (!zodiacs.length) return fallback || "";
+    var labels = Object.keys(groups);
+    var bestLabel = "";
+    var bestScore = -1;
+    labels.forEach(function (label) {
+      var score = 0;
+      zodiacs.forEach(function (zodiac, index) {
+        if (groups[label].indexOf(zodiac) === -1) return;
+        // 越靠前的候选权重越高，用于平票时打破僵局。
+        score += zodiacs.length - index;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        bestLabel = label;
+      }
+    });
+    return bestLabel || fallback || "";
   }
 
   function unavailableThreeColumn(title) {
@@ -347,9 +507,129 @@
     return padNumber && /^\d{1,2}$/.test(token) ? token.padStart(2, "0") : token;
   }
 
-  function hitValues(row) {
-    if (!row || !row.result || !row.result.isOpened || row.result.isCorrect !== true) return [];
-    return [resultToken(row.result.code, true), resultToken(row.result.zodiac, false), resultToken(row.result.color, false)].filter(Boolean);
+  // ── 标黄口径 ─────────────────────────────────────────────────────────
+  // 规则：**只有预测命中的生肖 / 号码 / 波色 / 文字可以标黄，其余文字一律不标黄。**
+  //
+  // 命中型（HIT_RULES）：判定为「对」时，把候选里**真正被开出的那一项**标黄
+  //   （不是整组候选都标）。
+  // 绝杀/排除型（KILL_RULES）：**杀失败**那一期，把「被杀中的那一项」标黄；
+  //   杀中（判定为「对」）那一期开奖值本就不在候选里 → 整行零黄底。
+  //
+  // 依据：仓库《预测模块展示规范》S2/S3，与 twcf888 已确认的同口径实现。
+  var HIT_RULE_KEYS = [
+    "yijuzhenyan", "shuangbo", "shuangbo_12ma", "7xiao7ma", "pt2xiao", "pt1wei",
+    "daxiao", "4xiao8ma", "pt1xiao", "title_5", "title_47", "pt3xiao", "danshuangtema",
+    "juesha1wei", "3tou", "qinqi", "9xzt", "title_15", "title_74", "6xzt",
+    "liuxiao18ma", "hllx", "9xiao12ma", "heibai3xiao", "title_48", "3zxt", "title_197",
+    "dxztt1", "qianhou_texiao", "sihangzhongte", "siji3", "siduanzhongte", "wuzhong5ma",
+    "daimingxiao", "liuweichute", "toudanshuang", "liuxiaoliuma", "gongshi_siw",
+    "title_198", "title_14", "title_279", "title_66", "3hang", "title_132", "dujia_gongshi",
+  ];
+  var KILL_RULE_KEYS = [
+    "juesha3xiao", "juesha1xiao", "juesha2xiao", "wensha10ma", "shaliangbanbo",
+    "jueshabanbo", "shujinguang",
+  ];
+  var HIT_RULES = {};
+  var KILL_RULES = {};
+  HIT_RULE_KEYS.forEach(function (key) { HIT_RULES[key] = true; });
+  KILL_RULE_KEYS.forEach(function (key) { KILL_RULES[key] = true; });
+
+  function highlightRuleFor(moduleKey) {
+    if (moduleKey && KILL_RULES[moduleKey]) return "kill";
+    return "hit";
+  }
+
+  function drawnTokens(row) {
+    var result = row && row.result || {};
+    return [
+      resultToken(result.code, true),
+      resultToken(result.zodiac, false),
+      resultToken(result.color, false),
+    ].filter(Boolean);
+  }
+
+  /** 接口的波色是 `red/blue/green`，而候选展示的是 `红波/蓝波/绿波`。 */
+  var WAVE_LABELS = { red: "红波", blue: "蓝波", green: "绿波" };
+
+  function drawnWave(row) {
+    var raw = String(resultToken((row && row.result || {}).color, false) || "").toLowerCase();
+    return WAVE_LABELS[raw] || "";
+  }
+
+  /** 该模块本期允许标黄的 token；不在此列表里的文字一律不标黄。 */
+  function highlightTokens(row, rule, candidates) {
+    if (!row || !row.result || !row.result.isOpened) return [];
+    if (rule === "kill") {
+      // 杀失败才有「被杀中的那一项」；判「对」（杀中）不给任何标记。
+      return row.result.isCorrect === false ? drawnTokens(row) : [];
+    }
+    // 命中型的候选是**候选集合**：开奖值落在集合里就是命中项，与后端是否回填
+    // `isCorrect` 无关（部分模块该字段为空，例如 六肖十八码 / ⑤肖⑩码，
+    // 若以它为门槛会导致整块永远标不出黄底）。
+    var code = resultToken(row.result.code, true);
+    var zodiac = resultToken(row.result.zodiac, false);
+    var wave = drawnWave(row);
+    var digits = String(code || "").replace(/\D/g, "");
+    var tailDigit = digits ? digits.charAt(digits.length - 1) : "";
+    // 一位数（如 09）的头数是 0，`0头` 必须能匹配上。
+    var headDigit = digits ? (digits.length > 1 ? digits.charAt(0) : "0") : "";
+    return (Array.isArray(candidates) ? candidates : []).map(String).filter(function (candidate) {
+      if (!candidate) return false;
+      // 只有真正被开出的那一项可以标黄，不能把整组候选都标上。
+      if (code && candidate === code) return true;
+      if (zodiac && candidate === zodiac) return true;
+      if (wave && candidate === wave) return true;
+      // 头/尾候选写作 `4头` / `4头单` / `7尾` / `2尾双`，
+      // 与开奖号码的头数 / 尾数比较（候选里还带单双后缀，所以用正则取头尾数字）。
+      var headMatch = /^(\d)\s*头/.exec(candidate);
+      if (headMatch && headDigit && headMatch[1] === headDigit) return true;
+      var tailMatch = /^(\d)\s*尾/.exec(candidate);
+      if (tailMatch && tailDigit && tailMatch[1] === tailDigit) return true;
+      // 「一肖一码」「四肖四码」这类候选写作 `生肖|号码`，按生肖命中。
+      return Boolean(zodiac) && candidate.split("|")[0].trim() === zodiac;
+    });
+  }
+
+  /**
+   * 从**已经格式化好的展示文本**里回推候选，避免二次猜测。
+   *
+   * 参数写法与内容声明（`红单|01,…` 的标签、`黑肖：` 这类分组说明）不是候选，
+   * 必须排除，否则会把说明文字标黄。
+   *
+   * 注意：展示文本里生肖常常**连写**（`天肖+龙狗`、`猪鸡龙猴蛇鼠马狗`、`牛鸡`），
+   * 如果只按分隔符切，会把 `龙狗` 当成一个候选，导致 `candidate === "狗"` 永远不成立、
+   * 命中项标不出黄底。因此这里把「纯生肖串」再拆成单字。
+   */
+  var ZODIAC_CHARS = "鼠牛虎兔龙蛇马羊猴鸡狗猪";
+  var ZODIAC_CHAR_SET = {};
+  ZODIAC_CHARS.split("").forEach(function (char) { ZODIAC_CHAR_SET[char] = true; });
+
+  function splitCandidateToken(item) {
+    var token = String(item).split("|")[0].trim();
+    if (!token) return [];
+    if (token.length < 2) return [token];
+    // 只有当整串都由生肖字组成时才拆成单字（`龙狗` → 龙、狗）；
+    // 含数字/五行/艺名的候选（`4头单`、`土`、`琴棋书`）保持原样。
+    var chars = token.split("");
+    var allZodiac = chars.every(function (char) { return ZODIAC_CHAR_SET[char]; });
+    return allZodiac ? chars : [token];
+  }
+
+  function allowMarkedTokens(text) {
+    var source = String(text || "");
+    var bracket = /【([^】]*)】/.exec(source);
+    var scope = bracket ? bracket[1] : source;
+    var parts = scope.replace(/[\[\]"]/g, "")
+      .split(/[+＋,，、.\-–—/\s]+/)
+      .map(function (item) { return item.split("|")[0].trim(); })
+      .filter(function (item) { return Boolean(item) && !/[:：]/.test(item); });
+    var out = [];
+    parts.forEach(function (part) {
+      splitCandidateToken(part).forEach(function (token) {
+        if (token && out.indexOf(token) === -1) out.push(token);
+      });
+    });
+    return out;
   }
 
   function sectionByTitle(title) {
@@ -366,14 +646,22 @@
 
   // Shared low-level writer for the identical three-column supplier topology.
   // Each public module below owns its selector and value formatter.
-  function renderThreeColumnRows(section, module, formatter) {
+  function renderThreeColumnRows(section, module, formatter, moduleKey, hitResolver) {
     if (!section) return;
-    var data = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
+    var rule = highlightRuleFor(moduleKey);
+    var render = formatter || function (row) {
+      return String(row.prediction.text || tokens(row).join(" ")).replace(/\|/g, " ");
+    };
     rowsFor(section).forEach(function (tr, index) {
       var cells = tr.querySelectorAll(":scope > td");
-      var row = data[index];
-      writeCell(cells[0], row ? termValue(row) : "");
-      writeCell(cells[1], row ? formatter(row) : "暂无后端资料", row ? hitValues(row) : []);
+      var row = resolveRow(cellText(cells[0]), index);
+      var value = row ? render(row) : "暂无后端资料";
+      var tokensToMark = row
+        ? (hitResolver ? hitResolver(row, value) : highlightTokens(row, rule, allowMarkedTokens(value)))
+        : [];
+      writeCell(cells[0], row ? termValue(row) : "暂无后端资料");
+      writeCell(cells[1], value, tokensToMark);
       writeResultCell(cells[2], row);
       tr.setAttribute("data-prediction-row", String(index));
     });
@@ -392,7 +680,7 @@
     if (section) section.setAttribute("data-prediction-section", "shuangbo");
     renderThreeColumnRows(section, module, function (row) {
       return tokens(row).join("+");
-    });
+    }, "shuangbo");
   }
 
   function renderBaxiaoLaixiHistory(module) {
@@ -400,7 +688,7 @@
     if (section) section.setAttribute("data-prediction-section", "7xiao7ma");
     renderThreeColumnRows(section, module, function (row) {
       return tokens(row).join("");
-    });
+    }, "7xiao7ma");
   }
 
   function renderJiayeZhongteHistory(module) {
@@ -477,30 +765,32 @@
     renderPredictionImage("tw_pmt_image", module);
   }
 
+  // 第 5 项：【四肖中特】改名【胆大胆小】，展示“胆大”或“胆小”。
   function renderSizhongteHistory(module) {
-    renderThreeColumnRows(sectionByTitle("四肖中特"), module, function (row) {
-      return tokens(row).join("");
-    });
+    renderThreeColumnRows(sectionByTitle("胆大胆小"), module, function (row) {
+      return groupLabelFor(row, DANXIAO_GROUP, "胆大");
+    }, "title_47");
   }
 
+  // 第 6 项：【三肖六码】改名【吉美丑凶】，展示“吉美肖”或“丑凶肖”+ 三个生肖。
   function renderSanxiaoLiumaHistory(module) {
-    var section = sectionByTitle("三肖六码");
+    var section = sectionByTitle("吉美丑凶");
     if (!section) return;
-    var data = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
     rowsFor(section).forEach(function (tr, index) {
       var cells = tr.querySelectorAll(":scope > td");
-      var row = data[index];
+      var row = resolveRow(cellText(cells[0]), index);
       var values = row ? tokens(row) : [];
-      var firstLine = values.slice(0, 3).join("");
-      var secondLine = values.slice(3, 9).join("-");
-      writeCell(cells[0], row ? termValue(row) : "");
+      // 第 6 项：显示「吉美肖【龙猪鼠】」/「丑凶肖【虎猪鼠】」。
+      var firstLine = row ? groupLabelFor(row, XIONGJI_GROUP, "") + "【" + zodiactsOf(row).slice(0, 3).join("") + "】" : "";      var secondLine = values.slice(3, 9).join("-");
+      writeCell(cells[0], row ? termValue(row) : "暂无后端资料");
       var lineLeaves = textNodes(cells[1]);
       clearMarkers(cells[1]);
       if (!row) {
         if (lineLeaves[0]) lineLeaves[0].nodeValue = "暂无后端资料";
         clearLeaves(cells[1], lineLeaves[0] ? [lineLeaves[0]] : []);
       } else {
-        if (lineLeaves[0]) lineLeaves[0].nodeValue = "【" + firstLine + "】";
+        if (lineLeaves[0]) lineLeaves[0].nodeValue = firstLine;
         if (lineLeaves[1]) lineLeaves[1].nodeValue = secondLine ? "【" + secondLine + "】" : "";
         clearLeaves(cells[1], lineLeaves.slice(0, 2));
       }
@@ -525,10 +815,14 @@
     renderThreeColumnRows(sectionByTitle("绝杀一肖一尾"), module, function (row) { return tokens(row).join(""); });
   }
 
-  function renderRemainingThreeColumnHistory(title, module, formatter) {
-    renderThreeColumnRows(sectionByTitle(title), module, formatter || function (row) {
-      return String(row.prediction.text || tokens(row).join(" ")).replace(/\|/g, " ");
-    });
+  function renderRemainingThreeColumnHistory(title, module, formatter, moduleKey, hitResolver) {
+    // `hitResolver(row, displayedText)` 允许模块自定义「展示文本里哪些片段可标黄」，
+    // 例如【琴棋书画】展示的是艺名（琴棋书画）而不是生肖，需要把特肖映射成艺名再标黄。
+    if (hitResolver) {
+      renderThreeColumnRows(sectionByTitle(title), module, formatter, moduleKey, hitResolver);
+      return;
+    }
+    renderThreeColumnRows(sectionByTitle(title), module, formatter, moduleKey);
   }
 
   function renderDaimingXiaoHistory(module) {
@@ -615,15 +909,16 @@
   }
 
   function renderQiweiSixingHistory(tailModule, lineModule) {
-    var tailRows = distinctRows(tailModule);
-    var lineRows = distinctRows(lineModule);
+    var resolveTailRow = makeRowResolver(tailModule);
+    var resolveLineRow = makeRowResolver(lineModule);
     var section = sectionByTitle("七尾四行");
     if (!section) return;
     rowsFor(section).forEach(function (tr, index) {
       var cells = tr.querySelectorAll(":scope > td");
-      var tailRow = tailRows[index];
-      var lineRow = lineRows[index];
-      writeCell(cells[0], tailRow ? termValue(tailRow) : "");
+      var templateText = cellText(cells[0]);
+      var tailRow = resolveTailRow(templateText, index);
+      var lineRow = resolveLineRow(templateText, index);
+      writeCell(cells[0], tailRow ? termValue(tailRow) : "暂无后端资料");
       var tails = tailRow ? tokens(tailRow).map(function (value) {
         return String(value).replace(/尾.*/, "").replace(/\D/g, "");
       }).filter(Boolean).slice(0, 7) : [];
@@ -638,14 +933,15 @@
   }
 
   function renderSijiJiuxiaoHistory(seasonModule, zodiacModule) {
-    var seasonRows = distinctRows(seasonModule);
-    var zodiacRows = distinctRows(zodiacModule);
+    var resolveSeasonRow = makeRowResolver(seasonModule);
+    var resolveZodiacRow = makeRowResolver(zodiacModule);
     var section = sectionByTitle("四季九肖");
     if (!section) return;
     rowsFor(section).forEach(function (tr, index) {
       var cells = tr.querySelectorAll(":scope > td");
-      var seasonRow = seasonRows[index];
-      var zodiacRow = zodiacRows[index];
+      var templateText = cellText(cells[0]);
+      var seasonRow = resolveSeasonRow(templateText, index);
+      var zodiacRow = resolveZodiacRow(templateText, index);
       writeCell(cells[0], seasonRow ? termValue(seasonRow) : "");
       writeCell(cells[1], seasonRow && zodiacRow
         ? displayLabels(seasonRow, "")
@@ -697,10 +993,11 @@
   function renderPairedCardHistory(title, module, formatter) {
     var section = sectionByTitle(title);
     if (!section) return;
-    var data = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
     cardRows(section).forEach(function (tr, index) {
-      var row = data[index];
       var cell = tr.querySelector("td");
+      var header = cell && cell.querySelector("p b");
+      var row = resolveRow(String(header && header.textContent || cellText(cell)), index);
       writeCardHeader(cell, row);
       var detail = cell && cell.querySelector(":scope > span");
       if (detail) writeLineValues(detail, row ? formatter(row) : ["暂无后端资料"]);
@@ -708,6 +1005,7 @@
     });
   }
 
+  // 第 3 项：六肖六码用 `-` 分隔生肖对，不要把文字挤在一起。
   function renderLiuxiaoLiumaHistory(module) {
     renderPairedCardHistory("六肖六码", module, function (row) {
       var xiao = valueList(rawValue(row, "xiao"));
@@ -716,7 +1014,7 @@
         var pairs = xiao.map(function (label, index) {
           return label + String(code[index] || "").padStart(2, "0");
         });
-        return [pairs.slice(0, 3).join(""), pairs.slice(3, 6).join("")];
+        return [pairs.slice(0, 3).join("-"), pairs.slice(3, 6).join("-")];
       }
       return ["暂无后端资料"];
     });
@@ -734,25 +1032,60 @@
     });
   }
 
+  // 第 3 项：③肖防③码 = 「三个生肖 + 三个防码」。候选是两个模块的行：
+  // 生肖用 `+` 与码组分开，码之间用 `.` 分隔，避免 `虎猪鼠+虎,猪,鼠` 这种重复挤在一起的输出。
   function renderSanxiaoFangSanmaHistory(zodiacModule, codeModule) {
-    var zodiacRows = distinctRows(zodiacModule);
-    var codeRows = distinctRows(codeModule);
+    var resolveZodiacRow = makeRowResolver(zodiacModule);
+    var resolveCodeRow = makeRowResolver(codeModule);
     var section = sectionByTitle("③肖防③码");
     cardRows(section).forEach(function (tr, index) {
-      var row = zodiacRows[index];
-      var codeRow = codeRows[index];
       var cell = tr.querySelector("td");
+      var header = cell && cell.querySelector("p b");
+      var templateText = String(header && header.textContent || cellText(cell));
+      var row = resolveZodiacRow(templateText, index);
+      var codeRow = resolveCodeRow(templateText, index);
       writeCardHeader(cell, row || codeRow);
       var detail = cell && cell.querySelector(":scope > span");
-      if (detail) writeLineValues(detail, row && codeRow
-        ? [predictionText(row, "") + "+" + predictionText(codeRow, ",")]
-        : ["暂无后端资料"]);
+      if (!detail) return;
+      if (!row) {
+        writeLineValues(detail, ["暂无后端资料"]);
+        return;
+      }
+      var zodiacs = displayLabels(row, "");
+      var codes = tokens(codeRow || {}).map(function (value) {
+        var digits = String(value).replace(/[^\d]/g, "");
+        return digits ? digits.padStart(2, "0") : "";
+      }).filter(Boolean);
+      // 码组取前三个有效号码；拿不到号码时退化为原有的 `生肖+号码` 文本。
+      var codeText = codes.length ? codes.slice(0, 3).join(".") : predictionText(codeRow || row, ",");
+      writeLineValues(detail, [zodiacs + "+" + codeText]);
     });
   }
 
+  // 第 3 项：8肖16码 / 六肖十八码 一类的正文是「N 个生肖 + 每肖 2~3 个号码」
+  // （`raw.xiao` 与 `raw.code` 两列对齐）。展示成 `猪08.10鸡01.09鼠20.22`，
+  // 即「生肖 + 该肖号码、组内用 `.`」；生肖之间靠号码尾巴自然分隔，不再挤成一团。
   function renderBaxiaoShiliumaHistory(module) {
     renderPairedCardHistory("8肖16码", module, function (row) {
-      return splitCardLines(row, 2, "");
+      var groups = zodiacCodeGroups(row);
+      if (!groups.length) return ["暂无后端资料"];
+      var half = Math.ceil(groups.length / 2);
+      return [groups.slice(0, half).join(""), groups.slice(half).join("")];
+    });
+  }
+
+  /** 把 `raw.xiao` / `raw.code` 两列对齐成 `生肖` + 该肖号码（每肖 2~3 码）。 */
+  function zodiacCodeGroups(row) {
+    var xiao = valueList(rawValue(row, "xiao"));
+    var code = valueList(rawValue(row, "code"));
+    if (!xiao.length || !code.length) return [];
+    var per = Math.max(1, Math.round(code.length / xiao.length));
+    return xiao.map(function (label, index) {
+      var codes = code.slice(index * per, (index + 1) * per).map(function (value) {
+        var digits = String(value).replace(/\D/g, "");
+        return digits ? digits.padStart(2, "0") : "";
+      }).filter(Boolean);
+      return codes.length ? label + codes.join(".") : label;
     });
   }
 
@@ -796,10 +1129,11 @@
 
   function renderLiuxiaoShibamaHistory(module) {
     var section = sectionByTitle("六肖十八码");
-    var data = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
     Array.prototype.forEach.call(section ? section.querySelectorAll("table tbody > tr") : [], function (tr, index) {
-      var row = data[index];
       var cell = tr.querySelector("td");
+      var header = cell && cell.querySelector("p b");
+      var row = resolveRow(String(header && header.textContent || cellText(cell)), index);
       writeInlineCardHeader(cell, row);
       var directFonts = cell ? cell.querySelectorAll(":scope > font") : [];
       var xiao = row ? rawValue(row, "xiao") : null;
@@ -814,9 +1148,10 @@
 
   function renderYixiaoYimaHistory(module) {
     var section = sectionByTitle("一肖一码");
-    var data = distinctRows(module);
-    Array.prototype.forEach.call(section ? section.querySelectorAll("table.mtbl") : [], function (table, issueIndex) {
-      var row = data[issueIndex];
+    var resolveRow = makeRowResolver(module);
+    Array.prototype.forEach.call(section ? section.querySelectorAll("table.mtbl") : [], function (table, tableIndex) {
+      var firstCell = table.querySelector("tbody > tr > td");
+      var row = resolveRow(cellText(firstCell), tableIndex);
       var codes = valueList(rawValue(row, "code"));
       var xiaos = valueList(rawValue(row, "xiao"));
       Array.prototype.forEach.call(table.querySelectorAll("tbody > tr"), function (tr, stageIndex) {
@@ -832,18 +1167,32 @@
     });
   }
 
+  // 「码友来料参考」：每期一行，且必须给出开奖与判定
+  // （用户要求：不要把不同期数挤在一起；每期显示「开xxx」和「对/错」）。
   function renderMayouLailiaoHistory(modules) {
     var section = sectionByTitle("码友来料参考");
-    var moduleList = [modules["3zxt"] || modules.sanxiaozhongte, modules.title_47, modules["6xzt"]];
+    var moduleList = [
+      { key: "3zxt", module: modules["3zxt"] || modules.sanxiaozhongte },
+      { key: "title_47", module: modules.title_47 },
+      { key: "6xzt", module: modules["6xzt"] }
+    ];
     Array.prototype.forEach.call(section ? section.querySelectorAll("table tbody > tr td") : [], function (cell, cardIndex) {
-      var data = distinctRows(moduleList[cardIndex]);
+      var entry = moduleEntryAt(moduleList, cardIndex);
+      var resolveRow = makeRowResolver(entry && entry.module);
+      var rule = highlightRuleFor(entry && entry.key);
       var groups = lineGroups(cell);
       var issueGroups = groups.filter(function (group) {
         return /\d+期/.test(group.map(function (leaf) { return leaf.nodeValue; }).join(""));
       });
       issueGroups.forEach(function (group, index) {
-        var row = data[index];
-        writeLineGroup(group, row ? termValue(row).replace(/^第/, "") + "【" + predictionText(row, "") + "】" : "暂无后端资料");
+        var templateText = group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join("");
+        var row = resolveRow(templateText, index);
+        if (!row) {
+          writeLineGroup(group, "暂无后端资料");
+          return;
+        }
+        var text = termValue(row).replace(/^第/, "") + "【" + predictionText(row, "") + "】" + resultValue(row);
+        writeLineGroup(group, text, highlightTokens(row, rule, allowMarkedTokens(text)));
       });
     });
   }
@@ -868,7 +1217,8 @@
   // moduleList 必须与小节**一一对应**：越界的小节（站点没有该玩法的授权模块）一律
   // 渲染成「暂无后端资料」，绝不允许回退到上一小节的数据，否则同一个小节序列会把同一个
   // 模块的行重复写多份（线上实测 twbst528「三期计划」的 271 期出现三条一模一样的行）。
-  function moduleAt(moduleList, index) {
+  // `moduleList` 的每一项是 `{key, module}`：key 用来选标黄口径，module 提供行。
+  function moduleEntryAt(moduleList, index) {
     return index >= 0 && index < moduleList.length ? moduleList[index] : null;
   }
 
@@ -887,9 +1237,16 @@
         return;
       }
       if (!/\d+(?:-\d+)?期/.test(current)) return;
-      var rows = distinctRows(moduleAt(moduleList, moduleIndex));
-      var row = rows[rowIndex];
-      writeLineGroup(group, row ? formatter(row, moduleIndex) : "暂无后端资料", row ? hitValues(row) : []);
+      var entry = moduleEntryAt(moduleList, moduleIndex);
+      if (!entry) return;   // 越界小节不渲染任何东西（不回退到上一小节的数据）
+      var row = makeRowResolver(entry.module)(current, rowIndex);
+      if (!row) {
+        // 模板里多出来的静态样例期号（如 233期）必须清掉，避免与真实期号挤在一起。
+        writeLineGroup(group, "");
+        return;
+      }
+      var text = formatter(row, moduleIndex);
+      writeLineGroup(group, text, highlightTokens(row, highlightRuleFor(entry.key), allowMarkedTokens(text)));
       rowIndex += 1;
     });
   }
@@ -897,7 +1254,7 @@
   function renderDujiaGongshiHistory(module) {
     var section = sectionByTitle("独家公式");
     if (!section) return;
-    var rows = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
     var blocks = Array.prototype.slice.call(section.querySelectorAll("td > p > b > font[face]")).filter(function (font) {
       return String(font.textContent || "").indexOf("独家") >= 0 || String(font.textContent || "").indexOf("公式四尾") >= 0;
     });
@@ -908,7 +1265,8 @@
         return /\d+期/.test(group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join(""));
       });
       groups.forEach(function (group, rowIndex) {
-        var row = rows[rowIndex];
+        var templateText = group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join("");
+        var row = resolveRow(templateText, rowIndex);
         var formula = row && rawValue(row, "formula");
         var entry = formula && formula[kind];
         var labels = entry && Array.isArray(entry.labels) ? entry.labels : [];
@@ -918,11 +1276,15 @@
           : firstLabel.split("|", 1)[0].trim() + "数";
         var rawCodes = valueList(rawValue(row, "res_code"));
         var opened = Boolean(row && row.result && row.result.isOpened);
+        // `res_code` 是本期完整开奖串（前 6 个平码 + 末位特码），与 lottery_draws.numbers 同序。
+        // 部分模块行里 res_code 为空，此时至少把特码显示出来，不要留空。
         var prefix = opened
-          ? rawCodes.slice(0, 6).join("-") + " T" + resultToken(row.result.code, true)
+          ? (rawCodes.length >= 6 ? rawCodes.slice(0, 6).join("-") : "---------------------") +
+            " T" + resultToken(row.result.code, true)
           : "--------------------- T--";
         var marker = !opened ? "?" : row.result.isCorrect === true ? "√" : "x";
-        writeLineGroup(group, row ? termValue(row).replace(/^第/, "") + " " + prefix + " 【" + value + "】" + marker : "暂无后端资料");
+        var line = row ? termValue(row).replace(/^第/, "") + " " + prefix + " 【" + value + "】" + marker : "暂无后端资料";
+        writeLineGroup(group, line, row ? highlightTokens(row, "hit", allowMarkedTokens(line)) : []);
       });
     });
   }
@@ -932,19 +1294,25 @@
     // 「必出3码」站点没有授权任何 3 码玩法，用 null 占位（渲染「暂无后端资料」），
     // 不能省掉这一位——省掉会让「平尾计划」错位拿到「3.肖中特」的数据。
     renderCompositeLines("三期计划", [
-      modules.shuangbo,
-      modules.danshuangtema,
-      modules.pt1xiao,
-      modules["3zxt"] || modules.sanxiaozhongte,
-      null,
-      modules.pt1wei
+      { key: "shuangbo", module: modules.shuangbo },
+      { key: "danshuangtema", module: modules.danshuangtema },
+      { key: "pt1xiao", module: modules.pt1xiao },
+      { key: "3zxt", module: modules["3zxt"] || modules.sanxiaozhongte },
+      { key: null, module: null },
+      { key: "pt1wei", module: modules.pt1wei }
     ], function (row) {
       return termValue(row).replace(/^第/, "") + "【" + displayLabels(row, "") + "】" + resultValue(row);
     });
   }
 
   function renderZongheJueshaHistory(modules) {
-    renderCompositeLines("综合绝杀", [modules.juesha2xiao, modules.juesha1wei, modules["3tou"], modules["3hang"]], function (row) {
+    // 「综合绝杀」四个小节全部是排除型：杀失败那期标黄被杀中的那一项，杀中不给标记。
+    renderCompositeLines("综合绝杀", [
+      { key: "juesha2xiao", module: modules.juesha2xiao },
+      { key: "juesha1wei", module: modules.juesha1wei },
+      { key: "3tou", module: modules["3tou"] },
+      { key: "3hang", module: modules["3hang"] }
+    ], function (row) {
       return termValue(row).replace(/^第/, "") + "稳杀【" + displayLabels(row, "") + "】" + resultValue(row);
     });
   }
@@ -977,12 +1345,13 @@
     var section = sectionByTitle("双波⑩码");
     if (!section) return;
     section.setAttribute("data-prediction-section", "shuangbo_12ma");
-    var data = distinctRows(module);
+    var resolveRow = makeRowResolver(module);
     Array.prototype.forEach.call(section.querySelectorAll("table tbody > tr"), function (tr, index) {
-      var row = data[index];
       var headerFonts = tr.querySelectorAll("td p b > font");
+      var templateText = String(headerFonts[0] && headerFonts[0].textContent || cellText(tr));
+      var row = resolveRow(templateText, index);
       if (headerFonts.length >= 3) {
-        writeLeaf(headerFonts[0], row ? termValue(row) : "");
+        writeLeaf(headerFonts[0], row ? termValue(row) : "暂无后端资料");
         writeLeaf(headerFonts[1], "【双波⑩码】");
         writeCell(headerFonts[2], row ? resultValue(row) : "暂无后端资料");
       }
@@ -1028,7 +1397,13 @@
     renderJueshaYixiaoYiweiHistory(modules.juesha1wei);
     renderRemainingThreeColumnHistory("杀肖杀码", modules.juesha3xiao);
     renderToudanshuangHistory(modules.toudanshuang);
-    renderRemainingThreeColumnHistory("琴棋书画", modules.qinqi);
+    // 第 4 项：【琴棋书画】显示四艺中的三种（如「书棋琴」），而不是直接显示生肖；
+    // 标黄也改成「开奖特肖所属的艺」。
+    renderRemainingThreeColumnHistory("琴棋书画", modules.qinqi, function (row) {
+      return siyiTriple(row);
+    }, "qinqi", function (row) {
+      return siyiHitArts(row);
+    });
     renderRemainingThreeColumnHistory("本期输尽光", modules.shujinguang);
     renderForumHistory(modules);
     renderDaimingXiaoHistory(modules.daimingxiao);

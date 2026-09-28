@@ -231,9 +231,11 @@ def main() -> None:
 
             # All reviewed three-column modules must replace supplier terms,
             # values and result placeholders from their own API module.
+            # 注：「四肖中特」已按需求改名为「胆大胆小」、「三肖六码」改名为「吉美丑凶」，
+            # 板块名以站点当前文案为准。
             for title in (
                 "两波突围", "八肖来袭", "家野中特", "杀两半波", "平特一尾", "大小中特",
-                "暴富⑦肖", "平特①肖", "四肖中特", "三肖六码",
+                "暴富⑦肖", "平特①肖", "胆大胆小", "吉美丑凶",
                 "绝杀①肖", "绝杀①波", "单双二肖", "绝杀一肖一尾",
             ):
                 if title == "杀两半波":
