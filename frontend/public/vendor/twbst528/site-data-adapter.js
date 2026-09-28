@@ -1556,7 +1556,11 @@
     } else {
       predictions = client.loadPredictions({
         lotteryType: selectedType,
-        historyLimit: HISTORY_LIMIT
+        historyLimit: HISTORY_LIMIT,
+        // 必须带上 includeVendor：共享数据客户端在缺这个标记时会强制 include_vendor=0，
+        // 于是「独家公式 / 一肖一码 / 本期输尽光 / 双波⑩码 / ⑤肖⑩码 / 天地+②肖」
+        // 这些**供应商模块**根本不会返回，面板只能显示「暂无后端资料」或模板旧数据。
+        includeVendor: true
       }).then(function (result) {
         historyByLottery[selectedType] = result;
         return result;
