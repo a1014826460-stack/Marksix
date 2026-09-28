@@ -187,4 +187,51 @@ assert(
   "命中型不得以 result.isCorrect === true 为门槛（该字段可能为空）",
 )
 
+// ── 10. 展示源必须唯一：不得跨模块兜底 ────────────────────────────────────
+// `moduleWithRows(primary, fallback)` 会在 primary 缺失时改用**另一个模块**，
+// 于是「一肖一码」画出了 9肖12码的 12 个号码、「⑤肖⑩码」画出了 4肖8码、
+// 「天地+②肖」画出了天地生肖。缺失就该显示「暂无后端资料」。
+for (const [primary, wrong] of [
+  ["public_yixiao_yima", "9xiao12ma"],
+  ["wuxiao_wuma", "4xiao8ma"],
+  ["tiandi_2xiao", "title_5"],
+]) {
+  assert(
+    !new RegExp(`moduleWithRows\\(\\s*modules\\.${primary}\\s*,\\s*modules(?:\\.|\\[")${wrong}`).test(adapter),
+    `${primary} 不得跨模块兜底到 ${wrong}（会把别的板块数据画进来）`,
+  )
+}
+assert(
+  /renderBaxiaoShiliumaHistory\(modules\["9xiao12ma"\]\)/.test(adapter),
+  "8肖16码 的数据源是 mode_id 60 = 9xiao12ma，不得复用六肖十八码（会让两个面板显示同一组 18 码）",
+)
+assert(
+  /renderShibamaHistory\(null\)/.test(adapter),
+  "18码中特 在 site_module_blueprints 里是 blocked_requires_backend_work，必须渲染空态而不是借别人的数据",
+)
+
+// ── 11. 「代号生肖」标黄：代号要能反查回生肖 ───────────────────────────────
+// 候选是「生肖|代号」（狗|狗牙），单元格只显示代号，命中项却是开奖特肖。
+// 不反查就会整块 0 标记（线上实测 4 期命中一个都没标出来）。
+assert(
+  /function daimingDrawnNames/.test(adapter) && /function daimingPairName/.test(adapter),
+  "代号生肖 必须把「生肖|代号」反查成代号再标黄，否则整块标不出来",
+)
+assert(
+  /renderRemainingThreeColumnHistory\("代号生肖",\s*module,\s*function \(row\) \{\s*return tokens\(row\)\.map\(daimingPairName\)/.test(adapter),
+  "代号生肖 的展示与标黄都必须走 daimingPairName 反查",
+)
+
+// ── 12. 空态必须清干净模板里烤死的样例数据 ────────────────────────────────
+// 配对卡片模板把行内容放在占位 span **之后**（`<span data-prediction-line=""></span>龙蛇兔马牛<br>`）。
+// 只写 host.textContent 会把内容留在 span 外面，出现「暂无后端资料」和旧模板码并存。
+assert(
+  /var next = host\.nextSibling;[\s\S]{0,220}next\.nodeValue = "";/.test(adapter),
+  "writeLineGroup 必须把紧随占位 span 的文本节点并进 host，否则旧模板号码永远清不掉",
+)
+assert(
+  /groups\.forEach\(function \(group\) \{ writeLineGroup\(group, "暂无后端资料"\); \}\)/.test(adapter),
+  "配对卡片无后端行时必须把**每一行**都写成占位，不能只写第一行（旧模板码会残留在其余行）",
+)
+
 console.log("twbst528-display-contract: OK")

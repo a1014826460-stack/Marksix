@@ -479,6 +479,16 @@
       group[0].nodeValue = text;
       return;
     }
+    // 配对卡片模板把行内容放在**占位 span 之后**：
+    //   <span data-prediction-line=""></span>龙蛇兔马牛<br>
+    // 只写 host.textContent 会把内容留在 span 外面（旧模板数字因此清不掉，
+    // 实测「⑤肖⑩码」出现「暂无后端资料」+ 48.17.36… 同时存在）。
+    // 这里把紧随其后的同一个文本节点并进 host，host 从此独占该行文本。
+    var next = host.nextSibling;
+    if (next && next.nodeType === 3) {
+      next.nodeValue = "";
+      group.push(next);
+    }
     host.textContent = text;
     markLineHit(host, text, hitTokens);
   }
@@ -825,11 +835,28 @@
     renderThreeColumnRows(sectionByTitle(title), module, formatter, moduleKey);
   }
 
+  // 「代号生肖」的候选是「生肖|代号」成对出现的（`狗|狗牙`），但单元格只显示代号本身
+  // （狗牙）。命中项是**开奖特肖**，所以标黄必须按「代号 → 所属生肖」反查，
+  // 否则 allowMarkedTokens 只会拿到代号串，`candidate === "狗"` 永不成立、整个板块 0 标记。
+  function daimingPairName(value) {
+    var parts = String(value || "").split("|");
+    return (parts.length > 1 ? parts[1] : parts[0]).replace(/[\[\]"]/g, "").trim();
+  }
+
+  function daimingDrawnNames(row) {
+    var zodiac = String(row && row.result && row.result.zodiac || "").trim();
+    if (!zodiac) return [];
+    return tokens(row).filter(function (value) {
+      var parts = String(value || "").split("|");
+      return parts.length > 1 && parts[0].replace(/[\[\]"]/g, "").trim() === zodiac;
+    }).map(daimingPairName);
+  }
+
   function renderDaimingXiaoHistory(module) {
     renderRemainingThreeColumnHistory("代号生肖", module, function (row) {
-      return tokens(row).map(function (value) {
-        return String(value).indexOf("|") >= 0 ? String(value).split("|", 2)[1] : String(value);
-      }).join("、");
+      return tokens(row).map(daimingPairName).join("、");
+    }, "daimingxiao", function (row) {
+      return daimingDrawnNames(row);
     });
   }
 
@@ -1000,7 +1027,17 @@
       var row = resolveRow(String(header && header.textContent || cellText(cell)), index);
       writeCardHeader(cell, row);
       var detail = cell && cell.querySelector(":scope > span");
-      if (detail) writeLineValues(detail, row ? formatter(row) : ["暂无后端资料"]);
+      if (detail) {
+        var groups = lineGroups(detail);
+        if (row) {
+          writeLineValues(detail, formatter(row));
+        } else {
+          // 没有后端行时必须把**每一行**都清掉再写占位：过去只写第一行，
+          // 模板里烤死的样例号码会留在第二/第三行（实测「⑤肖⑩码」显示
+          // 「暂无后端资料」后面还跟着 48.17.36… 的旧模板码）。
+          groups.forEach(function (group) { writeLineGroup(group, "暂无后端资料"); });
+        }
+      }
       tr.setAttribute("data-prediction-row", String(index));
     });
   }
@@ -1384,7 +1421,7 @@
     renderBaofuQixiaoHistory(modules["7xiao7ma"]);
     renderHuobaoSitourHistory(modules.sitouzhongte);
     renderPingteYixiaoHistory(modules.pt1xiao);
-    renderTiandiErxiaoHistory(moduleWithRows(modules.tiandi_2xiao, modules.title_5));
+    renderTiandiErxiaoHistory(modules.tiandi_2xiao);
 
     renderTaiwanPmtImage(modules.tw_pmt_image);
     renderPredictionImage("sxztu", modules.sxztu);
@@ -1410,7 +1447,9 @@
     renderDujiaGongshiHistory(modules.dujia_gongshi);
     renderLiuweiChuteHistory(modules.liuweichute);
     renderLiuxiaoLiumaHistory(modules.liuxiaoliuma);
-    renderYixiaoYimaHistory(moduleWithRows(modules.public_yixiao_yima, modules["9xiao12ma"]));
+    // 不给跨模块兜底：`public_yixiao_yima` 缺失时应显示「暂无后端资料」，
+    // 过去兜到 `9xiao12ma` 会把「9肖12码」的 12 个号码画进「一肖一码」面板（实测 11 行/期）。
+    renderYixiaoYimaHistory(modules.public_yixiao_yima);
     renderMayouLailiaoHistory(modules);
     renderShuhaQiweiHistory(modules.title_74);
     renderLiuxiaoShibamaHistory(modules.liuxiao18ma);
@@ -1421,11 +1460,15 @@
     renderLiuxiaoShiermaHistory(modules["9xiao12ma"]);
     renderHeibaiSanxiaoHistory(moduleWithRows(modules.heibai3xiao, modules.title_45));
     renderCategoryHistory("阴阳⑧码中特", modules.title_48, {});
-    renderShibamaHistory(modules.liuxiao18ma);
+    // 18码中特 在 site_module_blueprints 里是 blocked_requires_backend_work：
+    // 后端没有确认 mechanism/mode_id，所以不能拿六肖十八码的数据顶上。
+    renderShibamaHistory(null);
     renderSanxiaoFangSanmaHistory(modules.pt3xiao, modules.pt3xiao);
-    renderBaxiaoShiliumaHistory(modules.liuxiao18ma);
+    // site_page_dependencies 把「8肖16码」面板绑到 mode_id 60 = `9xiao12ma`
+    // （不是 `liuxiao18ma`；后者属于「六肖十八码」面板，复用会让两个面板显示同一组 18 码）。
+    renderBaxiaoShiliumaHistory(modules["9xiao12ma"]);
     renderSanqiJihuaHistory(modules);
-    renderWuxiaoShimaHistory(moduleWithRows(modules.wuxiao_wuma, modules["4xiao8ma"]));
+    renderWuxiaoShimaHistory(modules.wuxiao_wuma);
     renderWenzhongDanshuangHistory(modules.danshuangtema);
     renderZongheJueshaHistory(modules);
     renderDaxiaoYitouHistory(modules.dxztt1);
