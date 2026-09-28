@@ -2144,3 +2144,45 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
 杀号/排除类玩法「准」表示没有可高亮的命中项（应零黄底），命中期只标真正命中的那一项；
 未开奖期不给判定、不高亮。验收：`python scripts\audit-prediction-display.py twbst528`
 必须回到 `error=0`、`js_errors=0`。
+
+### twbst528 五处 R3 接管修复（2026-09-28 第九轮）
+
+**发布提交**：`08ffb53`。中心节点 `/root/Marksix/.deploy-backups/display-standard-9-*`（先），
+前端节点 `display-standard-9-*`（后）。两节点均为 `08ffb53`。
+
+**根因（全在前端渲染层，`highlightTokens()` 是唯一高亮出口）**
+1. 高亮完全不看本期判定，只按「值出现在候选串里」——而候选串常同时列出本期没命中的另一组
+   （红蓝绿肖两组、头数单双五个组合），于是「错」行带黄底（主因）。
+2. 7 个排除型渲染入口没把 kill 键交给 `highlightRuleFor`，退回默认「命中型」口径；
+   另 `juesha1wei` 被误列进 `HIT_RULE_KEYS`（后端实为 `excludes_hit`）。
+3. 旧 kill 分支本身就是 R3：`isCorrect === false ? drawnTokens(row) : []`（「杀失败就标黄开奖值」）。
+
+**修法**：加 S3 硬门槛 `isCorrect === false → 零黄底`（刻意用 `=== false` 而非 `!== true`，
+否则 `isCorrect=null` 的 `liuxiao18ma`/`liuxiaoliuma`/`shuangbo_12ma`/`dujia_gongshi` 会整块标不出黄底）；
+排除型一律零黄底并删除 `drawnTokens()`；新增 `parityHit()` 让 `4头单`/`2尾双` 的单双后缀参与命中判定；
+补全 7 个 kill 键。**顺带抓到审计报不出的第 6 处真实缺陷**：toudanshuang 269 期是「对」行却把 `4头单` 标黄
+（开 46 是 4头**双**，命中项应为 `4头双`）。
+
+**验收**
+
+| 口径 | rows | error | warn | js_errors |
+| --- | ---: | ---: | ---: | ---: |
+| 本地 before | 383 | 21 | 2 | 0 |
+| 本地 after | 383 | **0** | 2 | 0 |
+| 线上 before（只读） | 383 | 5 | 1 | 0 |
+| **线上 after（部署后实测）** | 383 | **0** | **1** | **0** |
+
+- warn 未增加且内容逐字相同；消失的 21 条全是 R3，新增 0。
+- 容器探针：黄底元素 100→79，**落在「错」行上的 21→0**；把 HEAD 版适配器换回去得到完全相同的 100 元素集合
+  （证明前后同口径可比）。
+- 逐期独立复算（真值取 `lottery_draws` + `fixed_data`，不用接口 `is_correct`）覆盖每模块 10 期 / 共 60 行：
+  S2/S3 不变量 0 不一致（错行 0 黄底、未开奖期无判定无黄底、对行恰好只有命中项黄底）。
+- 契约测试 `twbst528-display-contract.mjs` 通过；其中 3 处断言写的就是本次判定为错的旧口径，已**收紧**
+  （非放宽），并用 HEAD 适配器做了负向验证（立即失败）。twbst528 无 bundle，不需要 `--rebuild`。
+
+**遗留（未自行决定）**
+1. `hllx`（红蓝绿肖）判定**恒「错」**属后端/数据问题（本地 6/6、线上 6/6 期 `is_correct=false`，
+   按 `contains_hit` 与按排除类两种口径都解释不了恒错），`audit-verdict-truth.py --site twbst528`
+   对其报 49 条 `verdict_contract`。本轮只按「本期判定」决定高亮；后端修好后前端会自动正确标黄。
+2. 「综合绝杀」面板把命中型 `3tou`/`3hang` 渲染成「稳杀」属既有文案/口径问题（非本轮 R3）。
+3. 既有预存项：truth 审计 twbst528 `error=11`（mode 53/482 五行 false_hit）改动前即存在。
