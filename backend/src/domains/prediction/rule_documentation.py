@@ -28,23 +28,34 @@ def _unordered_set_note(mode_id: int) -> str:
     这些 mode 的 content 是 01-49 号码集合，展示顺序没有语义；旧的“前二唯一”轮转
     在纯号码串上本来就是空转，且会让同一批号码固定占住前几位。
     """
-    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+    from prediction_generation.diversity import is_unordered_number_set_mode
 
-    if int(mode_id or 0) not in UNORDERED_NUMBER_SET_MODE_IDS:
+    if not is_unordered_number_set_mode(mode_id):
         return ""
     return "unordered number set: no positional rotation; adjacent: display order differs"
 
 
 def _unordered_set_legend() -> str:
-    """图例：说明无序号码集合模式的展示顺序契约（由白名单直接生成）。"""
-    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+    """图例：说明无序号码集合模式的展示顺序契约（由派生白名单生成）。"""
+    from prediction_generation.diversity import (
+        UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS,
+        unordered_number_set_mode_ids,
+    )
 
-    modes = " / ".join(str(mode_id) for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS))
+    modes = " / ".join(str(mode_id) for mode_id in sorted(unordered_number_set_mode_ids()))
+    excluded = " / ".join(
+        str(mode_id) for mode_id in sorted(UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS)
+    )
     return (
         f"Unordered number-set modules (mode {modes}) never use positional rotation: their `content` "
         "is a set of 01-49 numbers, so the display order is a per-issue permutation of the same "
         "members and the adjacent-period contract is `display order differs` instead of "
-        "`full ordered signature`."
+        "`full ordered signature`. The set is **derived** from the prediction-config shape "
+        "(`parse_number_content` + `contains_hit`/`excludes_hit` + `labels == 01..49`), not hard-coded, "
+        "so a newly discovered number-set module is covered without editing a whitelist. "
+        f"Contract exceptions (mode {excluded}) keep their stored order because the order itself is the "
+        "contract: mode 65 码段12 renders and judges the segment as the inclusive range "
+        "`content[0]-content[-1]`."
     )
 
 
@@ -108,10 +119,43 @@ _SEMANTIC_NOTES: tuple[str, ...] = (
             "so future issues were generated as a silent random 10/49 draw with no rule verification and no rolling",
             "hit-rate control. Cross-site prefix width is **2** (same family shape as mode 77 14码中特; mode 34 24码 uses 3):",
             "10 ordered pairs = 90 distinct prefixes, which is satisfiable for the handful of sites enabled per issue.",
-            "Mode 116 is also in `prediction_generation.diversity.UNORDERED_NUMBER_SET_MODE_IDS`, but the display",
-            "permutation is applied **only when `control_plan is None`** (`prediction_generation.service`), so a controlled",
-            "row is persisted in exactly the order whose prefix was reserved — the cross-site prefix contract and the",
-            "adjacent-period full-signature contract stay valid.",
+            "Mode 116 is also an unordered number-set module, but the display permutation is applied **only when",
+            "`control_plan is None`** (`prediction_generation.service`), so a controlled row is persisted in exactly the",
+            "order whose prefix was reserved — the cross-site prefix contract and the adjacent-period full-signature",
+            "contract stay valid.",
+        )
+    ),
+    "\n".join(
+        (
+            "Number-set modules (mode 9 16码 / 34 24码 / 77 14码中特 / 88 杀7码 / 116 10码中特 / 481 稳杀10码 /",
+            "485 内幕5不中 / 493 精选22码 / 494 稳杀7码) store `content` as a comma-separated set of `01`-`49` numbers.",
+            "Their display order carries no semantics — every renderer judges by set membership (`contains` for the",
+            "inclusion family, `excludes` for the 杀/不中 family) and highlights the matching number by membership, so a",
+            "permutation of the same members cannot change any verdict. `prediction_generation.diversity` therefore",
+            "**derives** the module set from the config shape (`parse_number_content` + `contains_hit`/`excludes_hit` +",
+            "`labels == 01..49` + `label_count` inside the label space) instead of maintaining a hand-written whitelist;",
+            "`UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS` holds the contract exceptions, currently mode 65",
+            "码段12 and mode 156 杀码段（13连码）: their front end renders and judges the candidate as the inclusive range",
+            "`content[0]-content[-1]`, so permuting the members would break both the displayed segment and its verdict.",
+            "Controlled rows (`control_plan is not None`) skip `enforce_prediction_diversity` entirely, so a reserved",
+            "cross-site `prefix_signature` always equals the first `cross_site_prefix_width` numbers of the persisted row.",
+        )
+    ),
+    "\n".join(
+        (
+            "Mode 65 码段12 / 特码段 is **deliberately left unregistered** in `generation_rules._RULE_BY_MODE_ID`.",
+            "It looks like the sibling number-set family (`mode_payload_65`, 12 candidates, `parse_number_content`,",
+            "`contains_hit`, `label_count=12`), but its candidate is a **contiguous ascending segment** (`01`-`12`,",
+            "`13`-`24`, `25`-`36`, `37`-`49`) because the front end renders and judges it as the inclusive range",
+            "`content[0]-content[-1]` (`shengshi8800/static/js/016teduan.js` and",
+            "`legacy-prediction-verdict.js::verdictOf(65, …)`, which is order-sensitive and therefore also listed in",
+            "`UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS`). The generic `number` rule would let",
+            "`candidate_control` emit any 12-subset of `01`-`49`, which would render a meaningless range",
+            "(e.g. `01-42` covering numbers that are not candidates) and would change the verdict; registering it",
+            "would therefore make the displayed segment inconsistent with the verified rule. Mode 65 is instead served",
+            "by its dedicated row generator `prediction_generation.service._generate_mode_65_row`, which already derives",
+            "the segment from the truth and honours the target hit/miss decision, so future rows are correct without a",
+            "generic rule.",
         )
     ),
 )
@@ -181,6 +225,8 @@ def _dynamic_registered_mode_rows(configs: Iterable[Any]) -> list[tuple[int, str
 
 #: 动态登记表里需要进入审阅文档的 module 元数据（title 允许为空）。
 _DYNAMIC_MODE_METADATA: tuple[tuple[int, str, str], ...] = (
+    (9, "title_9", "16码"),
+    (88, "title_88", "杀7码"),
     (116, "title_116", "10码中特"),
 )
 

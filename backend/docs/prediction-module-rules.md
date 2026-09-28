@@ -2,7 +2,7 @@
 
 This document is generated from the internal rule manifest. It documents candidate semantics only and never contains future draw values.
 
-Unordered number-set modules (mode 9 / 65 / 88 / 116) never use positional rotation: their `content` is a set of 01-49 numbers, so the display order is a per-issue permutation of the same members and the adjacent-period contract is `display order differs` instead of `full ordered signature`.
+Unordered number-set modules (mode 9 / 34 / 77 / 88 / 116 / 481 / 485 / 493 / 494) never use positional rotation: their `content` is a set of 01-49 numbers, so the display order is a per-issue permutation of the same members and the adjacent-period contract is `display order differs` instead of `full ordered signature`. The set is **derived** from the prediction-config shape (`parse_number_content` + `contains_hit`/`excludes_hit` + `labels == 01..49`), not hard-coded, so a newly discovered number-set module is covered without editing a whitelist. Contract exceptions (mode 65 / 156) keep their stored order because the order itself is the contract: mode 65 码段12 renders and judges the segment as the inclusive range `content[0]-content[-1]`.
 
 Wave-label modules (mode 38 双波中特 / mode 143 一波中特) store the candidate as the **wave label** itself
 (`蓝波,绿波`, or `["蓝波|03,04,…","绿波|05,06,…"]`), so their `content_parser` must be
@@ -46,16 +46,44 @@ so it never appears in the static `PREDICTION_CONFIGS` manifest. Semantics: **�
 so future issues were generated as a silent random 10/49 draw with no rule verification and no rolling
 hit-rate control. Cross-site prefix width is **2** (same family shape as mode 77 14码中特; mode 34 24码 uses 3):
 10 ordered pairs = 90 distinct prefixes, which is satisfiable for the handful of sites enabled per issue.
-Mode 116 is also in `prediction_generation.diversity.UNORDERED_NUMBER_SET_MODE_IDS`, but the display
-permutation is applied **only when `control_plan is None`** (`prediction_generation.service`), so a controlled
-row is persisted in exactly the order whose prefix was reserved — the cross-site prefix contract and the
-adjacent-period full-signature contract stay valid.
+Mode 116 is also an unordered number-set module, but the display permutation is applied **only when
+`control_plan is None`** (`prediction_generation.service`), so a controlled row is persisted in exactly the
+order whose prefix was reserved — the cross-site prefix contract and the adjacent-period full-signature
+contract stay valid.
+
+Number-set modules (mode 9 16码 / 34 24码 / 77 14码中特 / 88 杀7码 / 116 10码中特 / 481 稳杀10码 /
+485 内幕5不中 / 493 精选22码 / 494 稳杀7码) store `content` as a comma-separated set of `01`-`49` numbers.
+Their display order carries no semantics — every renderer judges by set membership (`contains` for the
+inclusion family, `excludes` for the 杀/不中 family) and highlights the matching number by membership, so a
+permutation of the same members cannot change any verdict. `prediction_generation.diversity` therefore
+**derives** the module set from the config shape (`parse_number_content` + `contains_hit`/`excludes_hit` +
+`labels == 01..49` + `label_count` inside the label space) instead of maintaining a hand-written whitelist;
+`UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS` holds the contract exceptions, currently mode 65
+码段12 and mode 156 杀码段（13连码）: their front end renders and judges the candidate as the inclusive range
+`content[0]-content[-1]`, so permuting the members would break both the displayed segment and its verdict.
+Controlled rows (`control_plan is not None`) skip `enforce_prediction_diversity` entirely, so a reserved
+cross-site `prefix_signature` always equals the first `cross_site_prefix_width` numbers of the persisted row.
+
+Mode 65 码段12 / 特码段 is **deliberately left unregistered** in `generation_rules._RULE_BY_MODE_ID`.
+It looks like the sibling number-set family (`mode_payload_65`, 12 candidates, `parse_number_content`,
+`contains_hit`, `label_count=12`), but its candidate is a **contiguous ascending segment** (`01`-`12`,
+`13`-`24`, `25`-`36`, `37`-`49`) because the front end renders and judges it as the inclusive range
+`content[0]-content[-1]` (`shengshi8800/static/js/016teduan.js` and
+`legacy-prediction-verdict.js::verdictOf(65, …)`, which is order-sensitive and therefore also listed in
+`UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS`). The generic `number` rule would let
+`candidate_control` emit any 12-subset of `01`-`49`, which would render a meaningless range
+(e.g. `01-42` covering numbers that are not candidates) and would change the verdict; registering it
+would therefore make the displayed segment inconsistent with the verified rule. Mode 65 is instead served
+by its dedicated row generator `prediction_generation.service._generate_mode_65_row`, which already derives
+the segment from the truth and honours the target hit/miss decision, so future rows are correct without a
+generic rule.
 
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
 | 3 | rcca | 肉菜草肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 5 | title_5 | 天地生肖（天地选1，生肖选2） | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 8 | hllx | 红蓝绿肖（3选2） | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
+| 9 | title_9 | 16码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 12 | 3tou | 3头中特 | head | special number head is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 14 | title_14 | 家禽野兽 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 15 | title_15 | 单双公式 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
@@ -64,7 +92,7 @@ adjacent-period full-signature contract stay valid.
 | 28 | danshuangtema | 单双中特（单双码） | parity | special number parity is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
 | 30 | title_30 | 单双各4尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 31 | danshuang4xiao | 单双四肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
-| 34 | ma24 | 24码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
+| 34 | ma24 | 24码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; unordered number set: no positional rotation; adjacent: display order differs |
 | 38 | shuangbo | 双波中特 | wave | special number wave is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 42 | juesha3xiao | 绝杀3肖 | zodiac_exclusion | special zodiac is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 43 | pt2xiao | 平特2肖 | zodiac_flat | any drawn number's zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
@@ -90,9 +118,10 @@ adjacent-period full-signature contract stay valid.
 | 69 | 3zxt | 3肖中特 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 72 | sanxiao15ma | 三肖15码中特 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 74 | title_74 | 必中7尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
-| 77 | shisi_mazhong | 14码中特 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 77 | shisi_mazhong | 14码中特 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 78 | sixiao_sima | 四肖四码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 81 | shiwu_mazhong | 15码中特 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 88 | title_88 | 杀7码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 108 | dxztt1 | 大小中特带1头 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
 | 116 | title_116 | 10码中特 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 117 | sanxiao_siwei_xiao | 三肖四尾 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
@@ -113,11 +142,11 @@ adjacent-period full-signature contract stay valid.
 | 478 | tw_pmt_image | 台湾跑马图（带图） | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 479 | siduanzhongte | 四段中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 480 | xiongjiliuxiao | 凶吉六肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
-| 481 | wensha10ma | 稳杀10码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 481 | wensha10ma | 稳杀10码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 482 | sihangzhongte | 四行中特 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 483 | sitouzhongte | 四头中特 | head | special number head is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 484 | liuxiao18ma | 六肖十八码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
-| 485 | wuzhong5ma | 内幕5不中 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 485 | wuzhong5ma | 内幕5不中 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 486 | daimingxiao | 代号生肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 487 | liuweichute | 六尾出特 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 488 | toudanshuang | 头数单双 | head_parity | head_parity | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
@@ -125,6 +154,6 @@ adjacent-period full-signature contract stay valid.
 | 490 | shaliangbanbo | 杀两半波 | half_wave_exclusion | special half-wave is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 491 | gongshi_siw | 公式四尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 492 | three_head_four_tail | 三头四尾 | head_tail | special number head OR tail is in its candidate group (mixed: any dimension) | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 493 | selected_22_codes | 精选22码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
-| 494 | steady_kill_7_codes | 稳杀7码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
+| 493 | selected_22_codes | 精选22码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; unordered number set: no positional rotation; adjacent: display order differs |
+| 494 | steady_kill_7_codes | 稳杀7码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 495 | expert_publications | 精准台湾高手资料 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |

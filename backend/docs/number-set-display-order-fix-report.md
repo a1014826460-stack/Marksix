@@ -267,3 +267,79 @@ python -m pytest -q
 | `backend/src/tests/unit/test_prediction_rule_documentation.py` | 修改 | +1 条：文档必须标注无序号码集合 |
 
 未执行：`git add` / `git commit` / `git push`；任何服务器连接、部署、迁移、数据库写入。
+
+---
+
+## 八、2026-09-29 复审（宽号码集合口径复审，覆盖并修订第六节的部分结论）
+
+本节记录对**全部号码集合类玩法**口径的复审结果，修正上文的两个遗留判断。
+
+### 8.1 白名单从「硬编码」改为「配置形状派生」
+
+- 原实现：`UNORDERED_NUMBER_SET_MODE_IDS = frozenset({9, 65, 88, 116})`，人工维护。
+- 复审发现：号码集合玩法可以从 **配置形状** 判定，不需要白名单——
+  `content_parser is parse_number_content` 且 `hit_checker ∈ {contains_hit, excludes_hit}`
+  且 `labels == 01..49` 且 `label_count` 在号码全域内（`diversity.is_number_set_config`）。
+- 新实现：
+  - `unordered_number_set_mode_ids()` 由 `predict.mechanisms.PREDICTION_CONFIGS`（含启动时合并进来的
+    动态 `title_*` 配置）派生；
+  - `UNORDERED_NUMBER_SET_BOOTSTRAP_MODE_IDS = {9,34,77,88,116,481,485,493,494}` 只作**下限兜底**
+    （配置清单不可用/未加载时行为与旧白名单一致，绝不引入派生判据之外的 mode）；
+  - `UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS = {65, 156}` 是**合同例外**；
+  - `UNORDERED_NUMBER_SET_MODE_IDS` 保留为兼容别名（导入时的派生快照）。
+- 因此 **mode 34/77/481/485/493/494 现在也获得展示顺序修复**（这正是上文 6.2 第 1 条
+  「留给主线决策」的事项）。上文「故意不含 34」的结论被本复审**推翻**，理由见 8.3。
+
+### 8.2 mode 65（码段12）从白名单移出——它是合同例外，不是号码集合玩法
+
+- `shengshi8800/static/js/016teduan.js:25` 用 `${content[0]}-${content[content.length-1]}` 渲染段区间；
+- `static/js/legacy-prediction-verdict.js:400-404` 用 first/last 做**区间**判定
+  （`value >= parseInt(first) && value <= parseInt(last)`）。
+- 置换会同时破坏区间文本与判定（置换后 `first > last` 时判定恒为 miss），
+  所以旧白名单里的 65 是**错误成员**，已移入例外集合。
+- 同族 mode 156（杀码段13连码）语义相同，一并排除（本部署未启用）。
+
+### 8.3 跨站前缀契约与展示顺序的真实关系
+
+- 受控行（`control_plan is not None`）**跳过** `enforce_prediction_diversity`
+  （`prediction_generation/service.py:2310`），因此预约的 `prefix_signature` 恒等于落库正文前 N 位；
+  展示置换只作用于**非受控/兜底行**（港澳台非 3 型、以及台湾未来期的兜底行）。
+- 因此把 34/77/481/485/493/494 纳入置换**不会**让已预约前缀与展示前缀脱钩；
+  上文 6.2 第 1 条担心的「契约变更」在本实现下不成立。
+- 需要单独评审的只有一件事：这些 mode 的**非受控**展示在前几位会发生历史性变化
+  （`created` 里已落库行不回填，符合「不修改已落库历史预测数据」约束）。
+
+### 8.4 新发现的候选可达性缺陷（已修）
+
+`domains.prediction.candidate_control._candidate_sequences` 的定向修复只覆盖
+「baseline 方向与要求相反」的情形；**baseline 已在正确一侧**时仍然只枚举同一组号码的
+`width!` 个排列，于是首号恒为 baseline 首号：
+
+- 实测 mode 9（宽 16，baseline 含特码）连取 60 个候选只有 **1** 个不同前缀；
+- 同一期第二个站点带 forbidden 前缀重选 → `candidate_space_exhausted` →
+  生成侧回落「strict candidate constraints were relaxed」随机 fallback，
+  跨站前缀契约名存实亡（与 mode 116 修复前的症状同源）。
+- 修复：定向分支改为统一的 `directed_candidates()`，候选形状 `[首号, 真值?, 肩部…]`，
+  **首号遍历候选池**（每个候选前缀互不相同），同时按规则口径决定真值进入/离开候选
+  （`_truth_must_be_in_candidate`：`number_exclusion`/`zodiac_exclusion`/`tail_exclusion`/
+  `half_wave_exclusion` 属于排除类，需要命中时真值必须**离开**候选）。
+- 宽度 1 的玩法（大/小、单/双）保持历史「允许重复前缀」兜底，不进入定向分支。
+- 修复前 mode 88/481/485/494 这类杀号玩法在「需要命中」时被喂进含真值的候选
+  （`verify_hit` 必然 False），定向修复对它们从未生效。
+
+### 8.5 新登记受控规则（与 mode 116 同族）
+
+| mode | rule | prefix_width | 前缀空间 | 本部署同期站点数 | 结论 |
+|---:|---|---:|---:|---:|---|
+| 9（16码） | `number` | 2 | 16×15=240 | 1（web 6） | 登记 |
+| 88（杀7码） | `number_exclusion` | 2 | 7×6=42 | 2（web 6/8） | 登记 |
+| 65（码段12） | 不登记 | — | — | 1（web 4） | 保持 `blocked_pending_rule`（段区间契约） |
+
+### 8.6 历史数据的口径反向（只报告，不修改）
+
+对 `created.mode_payload_*` 全量历史逐期复算：**首次开奖号码**落入候选集合的比例与宽度随机基线
+一致，但**特码**落入候选集合的比例显著偏高（mode 485 93.2% vs 10.2% 基线、481 82.0% vs 20.4%、
+494 78.7% vs 14.3%、88 62.1% vs 14.3%）。即历史行是按「把特码放进候选集合」写的，
+对 `excludes_hit` 的杀号类玩法而言正是**反方向**，因此这些 mode 的历史展示在 62%~93% 的期次上显示「错」。
+最近生成的少数期次已部分纠正（mode 481 最新 8 行为真实杀号列表）。
+**本次不修改任何已落库历史预测数据**；该问题需要单独立项（重新生成历史 / 或按口径修订展示契约）。

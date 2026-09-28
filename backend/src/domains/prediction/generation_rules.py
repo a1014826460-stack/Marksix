@@ -261,6 +261,26 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     ),
     493: _rule("number", _special_number, prefix_width=3),
     494: _rule("number_exclusion", _special_number, prefix_width=2),
+    # 16码（mode 9 / 动态 key `title_9` / 表 `mode_payload_9` /
+    # 站点 twsaimahui `035ma16.js` → `/api/kaijiang/getCode?num=16`）。登记日期 2026-09-29。
+    # 口径：`content` 是 16 个逗号分隔号码，**特码号码落入候选集合即命中**
+    # （`outcome_loader=special_number_from_row`、`content_parser=parse_number_content`、
+    # `hit_checker=contains_hit`、`label_count=16`），与 mode 116 完全同族。
+    # 登记前 `get_generation_rule()` 返回 `blocked_pending_rule`，未来期走 silent fallback
+    # （纯随机 16/49、无规则校验、无滚动窗口控制）。
+    # `prefix_width=2`：16 个号码的有序前两位 = 16*15 = 240 种；本部署同期启用站点数 ≤ 6，
+    # 240 > 6，跨站前缀契约可满足。与 mode 77/116（同为 2）保持一致，不采用 mode 34 的 3，
+    # 避免在没有既有预约记录的情况下引入比同族更紧的约束。
+    9: _rule("number", _special_number, prefix_width=2),
+    # 杀7码（mode 88 / 动态 key `title_88` / 站点 twsaimahui `056s7m.js` → `getShama`）。
+    # 口径：`content` 是 7 个**排除**号码，**特码号码不在候选集合内才算命中**
+    # （`hit_checker=excludes_hit`）。前台判定与之一致：`056s7m.js` 的
+    # `zj = opened && !hitAny`（特码不出现在杀号里 = 准），
+    # `frontend/.../legacy-prediction-verdict.js` 对 mode 88 同样按排除口径。
+    # 登记前该 mode 也是 `blocked_pending_rule`。
+    # `prefix_width=2`：7 个号码的有序前两位 = 7*6 = 42 种；本部署同期启用站点数为 2
+    # （web 6 twsaimahui / web 8 twcf888），42 > 2 可满足。
+    88: _rule("number_exclusion", _special_number, prefix_width=2),
 }
 
 #: 只读别名：受控能力审计（规则文档 / 站点清单 assurance）需要按 mode_id 直接查询登记表。

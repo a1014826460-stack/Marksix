@@ -140,6 +140,32 @@ def label_for_truth_outcome(config: Any, truth: DrawTruth, *, conn: Any = None) 
     return outcome if outcome in available else None
 
 
+#: 排除（杀号/不中）口径的规则 id：**命中**要求真实目标*离开*候选集合。
+_EXCLUSION_RULE_IDS: frozenset[str] = frozenset(
+    {
+        "number_exclusion",
+        "zodiac_exclusion",
+        "tail_exclusion",
+        "half_wave_exclusion",
+    }
+)
+
+
+def _truth_must_be_in_candidate(rule: PredictionGenerationRule) -> bool:
+    """「命中」是否要求真实目标**进入**候选集合。
+
+    - 包含类规则（`number` / `zodiac` / `tail` / `head` …）：命中 = truth ∈ candidate → ``True``；
+    - 排除类规则（`number_exclusion` / `zodiac_exclusion` / …）：命中 = truth ∉ candidate → ``False``；
+    - 无法判定的规则（`blocked_pending_rule`、复合 `head_tail` 等，此时
+      `label_for_truth_outcome` 通常也拿不到单一目标）：按包含类处理，与历史行为一致。
+
+    方向判断必须按规则口径，而不是「真值是否在 baseline 里」——后者会把排除类玩法
+    当成包含类，让 `_candidate_sequences` 的定向修复永远落在错误方向上
+    （mode 88/481/485/494 实测 `candidate_space_exhausted`）。
+    """
+    return str(getattr(rule, "rule_id", "")) not in _EXCLUSION_RULE_IDS
+
+
 def _candidate_sequences(
     *,
     predicted_labels: tuple[str, ...],
@@ -150,6 +176,7 @@ def _candidate_sequences(
     selection_quotas: tuple[tuple[tuple[str, ...], ...], tuple[int, ...]] | None = None,
     required_truth: str | None = None,
     should_hit: bool | None = None,
+    truth_must_be_in_candidate: bool = True,
 ) -> Iterator[tuple[str, ...]]:
     """Yield a deterministic, bounded stream without materializing combinatorics.
 
@@ -161,17 +188,22 @@ def _candidate_sequences(
     必须允许「取哪 4 个单尾」也有选择，否则要求「不中」时（特码尾是奇数尾）会被
     钉死在必然命中的 5 选 4 上，受控候选直接耗尽。
 
-    ``required_truth`` / ``should_hit`` 是**可达性修复**（2026-09-29）：候选是「有序
-    元组」，预算 ``max_candidates`` 又很小（默认 32768），因此当 ``predicted_labels``
-    恰好等于候选宽度时，历史实现会把整个预算花在 baseline 的 ``width!`` 个排列上，
-    一个成员不同的组合都产不出来。于是所有宽号码玩法（mode 34/77/116/481/493/494…）
-    在「需要命中、但真实特码不在 baseline 里」时必然 ``candidate_space_exhausted``：
-    mode 116 实测宽 10 时前 32768 个候选里含特码的数量为 **0**，生成侧只能回落到随机
-    fallback（"strict candidate constraints were relaxed"），所谓「受控」名存实亡。
+    ``required_truth`` / ``should_hit`` / ``truth_must_be_in_candidate`` 是**可达性修复**
+    （2026-09-29）：候选是「有序元组」，预算 ``max_candidates`` 又很小（默认 32768），
+    因此当 ``predicted_labels`` 恰好等于候选宽度时，历史实现会把整个预算花在 baseline 的
+    ``width!`` 个排列上，一个成员不同的组合都产不出来。于是所有宽号码玩法
+    （mode 9/34/77/88/116/481/485/493/494…）会以两种方式「受控名存实亡」：
 
-    这里只在**历史行为必然失败**的那一种情况下重排候选池：要求命中却缺真值，或要求
-    不中却已含真值。其余情况（真值本来就在/不在 baseline 的正确一侧）保持原顺序，
-    因此既有 mode 的候选选择不变。
+    1. 「需要命中、但真实特码不在 baseline 里」：mode 116 实测宽 10 时前 32768 个候选里
+       含特码的数量为 **0**，必然 ``candidate_space_exhausted``；
+    2. 「baseline 已在正确一侧」：预算同样被同一组号码的排列吃光，首号恒为 baseline 首号，
+       mode 9 实测宽 16 时连取 60 个候选只有 **1** 个不同前缀；同一期第二个站点带
+       forbidden 前缀重选会直接 ``candidate_space_exhausted``，跨站前缀契约名存实亡。
+
+    两种情况都会让生成侧回落到随机 fallback（"strict candidate constraints were relaxed"）。
+    因此定向分支（``directed``，宽度 ≥ 2 且未声明互斥候选域）统一改用
+    ``directed_candidates()``：真值按规则口径进入/离开候选，首号遍历候选池，
+    前缀签名互不相同。其余情况（含宽度 1 的二元玩法、限域玩法）保持历史枚举顺序。
     """
     limit = max(1, int(max_candidates))
     emitted: set[tuple[str, ...]] = set()
@@ -201,59 +233,84 @@ def _candidate_sequences(
                     return
 
     pool = list(_ordered_unique(available_labels))
-    directional = bool(
+    #: 「命中」到底要求真值**进入**候选还是**离开**候选，取决于规则口径：
+    #: `number` / `zodiac`（包含类）要求 candidate ∋ truth；
+    #: `number_exclusion` / `zodiac_exclusion`（排除/杀号类）要求 candidate ∌ truth。
+    #: 旧实现只按「真值是否已在 baseline 里」判断方向，等于把排除类玩法当成包含类，
+    #: 于是 mode 88/481/485/494 这类杀号玩法在需要命中时被喂进含真值的候选
+    #: （`verify_hit` 必然 False，直接 `candidate_space_exhausted`），
+    #: 在需要不中时又拿不到含真值的候选——定向修复对它们从来没生效过。
+    required_truth_in_candidate = bool(truth_must_be_in_candidate)
+    desired_inclusion = bool(should_hit) == required_truth_in_candidate
+    directed = bool(
         required_truth
         and should_hit is not None
         and len(baseline) == width
-        and (required_truth in baseline) != bool(should_hit)
+        # 宽度 1 的玩法（大/小、单/双、绝杀一肖…）候选域本身就只有 1 个位，展示顺序
+        # 与前缀都没有变化空间：这类玩法继续走历史的「允许重复前缀」兜底
+        # （`test_control_plan_reuses_prefix_when_binary_future_mode_is_exhausted`）。
+        and width >= 2
         # 声明了互斥候选域（单双各4尾等）时不能走定向重排：候选必须满足「每组恰好取出
         # 本组配额」，而按池首/首号重排会跨组串位（实测 mode 30 直接
         # `candidate_space_exhausted`）。这类玩法继续走历史配额枚举。
         and selection_quotas is None
     )
-    if directional:
-        # 历史预算会被 baseline 的 width! 个排列吃光，导致方向相反的候选永远产不出来。
-        # 池首放真值（要求命中）或把真值移出池（要求不中）：第一个
-        # `combinations(pool, width)` 一定落在正确方向上。
-        if not should_hit:
+    if directed:
+        # 历史预算会被 baseline 的 width! 个排列吃光，导致成员/前缀完全固定的候选流。
+        # 两个方向都要重排：
+        #   1. 要求真值**进入**候选（包含类命中 / 排除类不中）：池首放真值，
+        #      保证 `combinations(pool, width)` 的每个组合都含真值；
+        #   2. 要求真值**离开**候选（包含类不中 / 排除类命中）：把真值移出池。
+        if not desired_inclusion:
             pool = [label for label in pool if label != required_truth]
         _rng(seed).shuffle(pool)
-        if should_hit:
+        if desired_inclusion:
             pool = [required_truth, *(label for label in pool if label != required_truth)]
     else:
         _rng(seed).shuffle(pool)
 
-    def directional_hit_candidates() -> Iterator[tuple[str, ...]]:
-        """定向命中时，前缀多样化的候选流。
+    def directed_candidates() -> Iterator[tuple[str, ...]]:
+        """定向分支下「前缀多样化」的候选流（真值位置固定、首号遍历候选池）。
 
-        池首恒为真值，于是 `combinations(pool, width)` 的**每个**组合都以真值开头，
-        其排列也全部以真值开头——前缀签名会退化成 ``(真值, …)`` 一种形状，第二个站点
-        必然拿到重复前缀（`reserve_control` 的 prefix_hash 冲突，或退化为「允许重复
-        前缀」），跨站前缀契约名存实亡。
+        为什么不能直接用 `baseline_candidates()` + `pool_candidates()`：
 
-        这里改为：先给出池首候选，再枚举「首号不同、真值后移」的候选。每个候选都由
-        「首号 + 真值 + ``width-2`` 个肩部号码」组成，因此 `contains_hit` 恒为真；
-        首号逐个取自池中其它号码，前缀签名因此互不相同（49 个号码的候选池可给出
-        48 个互不重复的前缀，足以覆盖同一期的全部启用站点，并留出重试余量）。
-        该分支在历史实现里必然 `candidate_space_exhausted`，所以这些候选不会改变
-        任何既有 mode 的选择结果。
+        - **需要命中但 baseline 缺真值**（mode 116 的线上形态）：`baseline` 的成员集合
+          与目标方向相反，`width!` 个排列把预算（默认 32768）吃光，一个含真值的候选都
+          产不出来 → `candidate_space_exhausted`。
+        - **需要命中且 baseline 已含真值**（mode 9/34/77 的线上形态）：`baseline` 的成员
+          集合是对的，但 `pool_candidates()` 会先枚举同一组号码的 `width!` 个排列，
+          于是首号恒为 baseline 首号——实测 mode 9 连取 60 个候选只有 **1** 个不同前缀，
+          第二个站点必然拿到重复 `prefix_hash`：`_plan_persisted_future_control` 带
+          forbidden 前缀重选会直接 `candidate_space_exhausted`，生成侧回落到
+          「strict candidate constraints were relaxed」的随机 fallback。跨站前缀契约
+          同样名存实亡。
+
+        这里的候选形状统一为：``[首号, 真值?, 肩部…]``。
+        - 要求真值进入候选（包含类命中 / 排除类不中）：``首号 + 真值 + (width-2)`` 个
+          肩部号码；
+        - 要求真值离开候选（包含类不中 / 排除类命中）：``首号 + (width-1)`` 个肩部号码
+          （池里已经没有真值）。
+
+        首号逐个取自池中其它号码，因此前缀签名互不相同（49 个号码的池可给出 48 个互不
+        重复的前缀），足以覆盖同一期的全部启用站点并留出重试余量。
+
+        该函数只在「历史实现必然失败/失焦」的定向分支被调用：既有 mode 的候选选择不变，
+        新增的只是「以前拿不到」的那些方向正确的候选。
         """
-        if not should_hit:
-            return
         ordered_pool = list(pool)
-        combination = ordered_pool[:width]
-        if required_truth not in combination:
+        #: 首号与肩部都取自池中真值以外的号码：**每个候选的首号都不同**，因此同一期的
+        #: 两个站点必然拿到不同的前缀签名——首个候选就能通过 `reserve_control` 的
+        #: prefix_hash 校验，不会像「池首组合优先」那样让第二个站点直接
+        #: `candidate_space_exhausted`（mode 9 实测：池首优先时 60 个候选只有 1 个前缀）。
+        #: 要求真值进入候选时，真值固定落在第二个位置（`desired_inclusion`）。
+        shoulders_pool = [label for label in ordered_pool if label != required_truth]
+        if len(ordered_pool) < width or not shoulders_pool:
             return
-        yield from emit(tuple(combination))
-
-        leaders = [label for label in ordered_pool if label != required_truth]
-        # 首号 + 真值 + (width-2) 个肩部号码 = width；肩部必须放得下 width-2 个。
-        shoulder_count = width - 2
-        if len(leaders) < 1 or len(ordered_pool) < width or shoulder_count < 1:
-            return
-        shoulders_pool = list(leaders)
         seed_rng = _rng(f"{seed}:directional-variants")
-        for leader_index, leader in enumerate(leaders):
+        shoulder_count = width - 1 - (1 if desired_inclusion else 0)
+        if shoulder_count < 1:
+            return
+        for leader_index, leader in enumerate(shoulders_pool):
             shoulders: list[str] = []
             offset = 0
             while len(shoulders) < shoulder_count and offset < len(shoulders_pool):
@@ -265,7 +322,8 @@ def _candidate_sequences(
                 return
             if seed_rng.randrange(2):
                 shoulders = shoulders[1:] + shoulders[:1]
-            yield from emit(tuple([leader, required_truth, *shoulders]))
+            body = [required_truth, *shoulders] if desired_inclusion else list(shoulders)
+            yield from emit(tuple([leader, *body]))
             if len(emitted) >= limit:
                 return
 
@@ -296,12 +354,15 @@ def _candidate_sequences(
                 if len(emitted) >= limit:
                     return
 
-    if directional:
-        # 定向修复只在历史行为必然耗尽时才调整顺序。命中方向用前缀多样化的定向候选流；
-        # 不中方向用「真值已移出候选池」的普通候选流（首个组合就不可能含真值）。
-        # 两个方向都**不要**枚举 `pool_candidates()` 之外的东西，也**不要**枚举
-        # `baseline_candidates()`：baseline 的成员集合固定、方向必然与要求相反。
-        yield from (directional_hit_candidates() if should_hit else pool_candidates())
+    if directed:
+        # 定向修复只在历史行为必然失败/失焦时才接管候选流。
+        # 两个方向都用 `directed_candidates()`：真值位置固定（进入/离开候选），
+        # 首号遍历候选池，因此跨站前缀互不相同。
+        # **不要**枚举 `baseline_candidates()`：baseline 的成员集合（在「需要命中但缺真值」
+        # 情形下）与目标方向相反，而且它的 `width!` 个排列会把预算吃光；
+        # **也不要**直接枚举 `pool_candidates()`：它先产出同一组号码的排列，
+        # 首号被 baseline 钉死（mode 9 实测 60 个候选只有 1 个前缀）。
+        yield from directed_candidates()
         return
 
     yield from baseline_candidates()
@@ -333,7 +394,7 @@ def choose_controlled_labels(
     width = max(1, int(getattr(config, "label_count", 0) or len(predicted_labels) or 1))
     available_labels = tuple(getattr(config, "labels", ()) or ())
     selection_quotas = _selection_groups(config)
-    # 定向搜索提示：真实目标标签 + 本期要求的方向。缺一不可，否则保持历史枚举顺序。
+    # 定向搜索提示：真实目标标签 + 本期要求的方向 + 规则口径（包含/排除）。
     truth_label = label_for_truth_outcome(config, truth, conn=conn)
     for labels in _candidate_sequences(
         predicted_labels=tuple(predicted_labels),
@@ -343,6 +404,7 @@ def choose_controlled_labels(
         selection_quotas=selection_quotas,
         required_truth=truth_label,
         should_hit=bool(should_hit) if truth_label else None,
+        truth_must_be_in_candidate=_truth_must_be_in_candidate(rule),
     ):
         signature = rule.signature(labels)
         prefix = rule.prefix_signature(labels)

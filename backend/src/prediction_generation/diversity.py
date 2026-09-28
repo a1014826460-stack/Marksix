@@ -42,10 +42,42 @@ CONTENT_DIVERSITY_EXEMPT_MODE_IDS = {197}
 #   2. 展示顺序改为“按 (mode, 年, 期, 站点) 决定的一次性置换”，保证每期位置都不同，
 #      同时**完全不改变号码成员**，命中/不中判定保持等价。
 #
-# 说明：mode 34（24码）同样是号码集合，但其在 `domains.prediction.generation_rules`
-# 中登记了 `cross-site prefix: 3` 的跨站前缀契约（受控未来期生成），先不改动它的
-# 展示顺序，避免让已落库/已预约的前缀签名与展示内容脱钩。
-UNORDERED_NUMBER_SET_MODE_IDS: frozenset[int] = frozenset({9, 65, 88, 116})
+# 说明（2026-09-29 复审修订）：**白名单不再靠人工维护**。
+# 「是不是号码集合玩法」可以从配置形状直接判定（见 `is_number_set_config`），
+# 因此原 `frozenset({9, 65, 88, 116})` 被替换为
+# 「配置派生 + 契约例外」两层：
+#
+#   1. `unordered_number_set_mode_ids()` 由 `predict.mechanisms` 的配置清单派生：
+#      `content_parser is parse_number_content` 且 `hit_checker` 是 contains/excludes
+#      且 `labels` 恰好是 `01`..`49` 全域。落库形态确实是 01-49 号码集合时才允许置换。
+#      这样 mode 34（24码）/ 77（14码中特）/ 481（稳杀10码）/ 485（内幕5不中）/
+#      493（精选22码）/ 494（稳杀7码）自动获得修复，不需要再手工加白名单。
+#   2. `UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS` 是**契约例外**：
+#      配置形状像号码集合，但展示顺序本身承载语义，置换会改变页面判定或版面。
+#      目前只有 mode 65（码段12/特码段）：前台 `016teduan.js` 用
+#      `${content[0]}-${content[content.length-1]}` 渲染「段区间」，判定也按
+#      `value >= parseInt(first) && value <= parseInt(last)` 计算（含区间内全部号码），
+#      置换后区间语义与判定同时被破坏（`unordered_set: no positional rotation` 不成立）。
+#      同族 mode 156（杀码段13连码）虽未在本部署启用，语义相同，一并排除。
+#
+# `UNORDERED_NUMBER_SET_MODE_IDS` 保留为**兼容别名**：取值来自派生函数，
+# 静态配置缺失时退回 bootstrap 集合（下限，绝不比派生结果更宽）。
+UNORDERED_NUMBER_SET_BOOTSTRAP_MODE_IDS: frozenset[int] = frozenset({9, 34, 77, 88, 116, 481, 485, 493, 494})
+
+#: 契约例外：内容形态是号码集合，但展示顺序承载语义（段区间/位置切片），不得置换。
+UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS: frozenset[int] = frozenset({65, 156})
+
+#: `predict.mechanisms` 里号码类玩法使用的 content_parser 名称（延迟绑定，避免循环导入）。
+_NUMBER_CONTENT_PARSER_NAME = "parse_number_content"
+
+#: 号码类玩法的候选全域（`labels` 必须恰好等于该集合才算号码集合玩法）。
+_NUMBER_LABEL_SPACE: tuple[str, ...] = tuple(f"{number:02d}" for number in range(1, 50))
+
+#: `is_number_set_config` 的缓存：决定该 mode 是否为号码集合玩法（避免重复判定）。
+_NUMBER_SET_CONFIG_STATUS: dict[int, bool | None] = {}
+
+#: `unordered_number_set_mode_ids()` 的结果缓存（按配置清单规模失效）。
+_NUMBER_SET_MODE_IDS_CACHE: tuple[int, frozenset[int]] | None = None
 
 #: `01`-`49` 的两位号码
 _NUMBER_SET_ITEM_RE = re.compile(r"^\d{2}$")
@@ -85,13 +117,118 @@ def display_unique_window(mode_id: int) -> int:
     return max(2, int(window))
 
 
+# ---------- 号码集合玩法：按配置形状派生，不再人工维护白名单 ----------
+
+
+def is_number_set_config(config: Any) -> bool:
+    """配置形状是否为「01-49 号码集合」玩法（与具体 mode 无关）。
+
+    判据（全部满足才算）：
+    1. `content_parser` 是 `parse_number_content`（按 `\\d{2}` 抽取号码，
+       因此 `["家禽|牛,马"]` 这类有序标签序列不会被误判）；
+    2. `hit_checker` 是 `contains_hit` 或 `excludes_hit`（号码类玩法只有包含/排除两向，
+       复合口径 `head_tail` / 平特口径等一律排除）；
+    3. `labels` 恰好是 `01`..`49` 全域（候选维度就是号码本身，不是生肖/尾数/波色）；
+    4. `label_count` 是正数且不超过号码全域（候选宽度必须落在可枚举范围内）。
+
+    满足以上四条时，落库 `content` 就是「一组 01-49 号码」，位置没有语义。
+    """
+    parser = getattr(config, "content_parser", None)
+    if getattr(parser, "__name__", "") != _NUMBER_CONTENT_PARSER_NAME:
+        return False
+    checker = getattr(config, "hit_checker", None)
+    if getattr(checker, "__name__", "") not in {"contains_hit", "excludes_hit"}:
+        return False
+    labels = tuple(str(label) for label in (getattr(config, "labels", ()) or ()))
+    if labels != _NUMBER_LABEL_SPACE:
+        return False
+    label_count = int(getattr(config, "label_count", 0) or 0)
+    return 0 < label_count < len(_NUMBER_LABEL_SPACE)
+
+
+def _prediction_configs() -> tuple[tuple[int, Any], ...]:
+    """返回本地配置清单的 (mode_id, config) 对；配置不可用时返回空元组。
+
+    `predict.mechanisms.PREDICTION_CONFIGS` 在服务启动时由
+    `ensure_prediction_configs_loaded()` 合并静态与动态（`title_*`）配置，
+    因此这里读到的是**运行时真实生效**的清单。导入失败（循环导入/精简环境/未初始化）
+    时静默退回空清单：调用方一律有 bootstrap 下限兜底，不会因此放宽任何约束。
+    """
+    try:
+        from predict.mechanisms import PREDICTION_CONFIGS
+    except Exception:  # noqa: BLE001 - 配置层不可用时退回 bootstrap 下限
+        return ()
+    pairs: list[tuple[int, Any]] = []
+    for config in PREDICTION_CONFIGS.values():
+        try:
+            mode_id = int(getattr(config, "default_modes_id", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if mode_id:
+            pairs.append((mode_id, config))
+    return tuple(pairs)
+
+
+def reload_number_set_mode_ids() -> None:
+    """清空派生缓存（配置清单重新加载后调用；测试也用它验证派生逻辑）。"""
+    global _NUMBER_SET_MODE_IDS_CACHE
+    _NUMBER_SET_MODE_IDS_CACHE = None
+    _NUMBER_SET_CONFIG_STATUS.clear()
+
+
+def unordered_number_set_mode_ids() -> frozenset[int]:
+    """派生「号码集合玩法」的 mode 集合：配置派生的号码集合玩法。
+
+    结果 = 配置派生的号码集合 mode ∪ `UNORDERED_NUMBER_SET_BOOTSTRAP_MODE_IDS`，
+    再减去 `UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS`。
+
+    bootstrap 的角色是**下限兜底**（动态配置尚未加载、精简环境里没有
+    `predict.mechanisms` 时，行为与历史白名单一致），绝不引入派生判据之外的 mode；
+    例外集合的角色是**收紧**（内容形态是号码集合，但展示顺序本身是契约，不能置换）。
+    """
+    global _NUMBER_SET_MODE_IDS_CACHE
+    pairs = _prediction_configs()
+    cache_key = len(pairs)
+    if _NUMBER_SET_MODE_IDS_CACHE is not None and _NUMBER_SET_MODE_IDS_CACHE[0] == cache_key:
+        return _NUMBER_SET_MODE_IDS_CACHE[1]
+
+    derived: set[int] = set()
+    for mode_id, config in pairs:
+        known = _NUMBER_SET_CONFIG_STATUS.get(mode_id)
+        if known is None:
+            known = is_number_set_config(config)
+            _NUMBER_SET_CONFIG_STATUS[mode_id] = known
+        if known:
+            derived.add(mode_id)
+
+    resolved = frozenset(
+        (derived | set(UNORDERED_NUMBER_SET_BOOTSTRAP_MODE_IDS))
+        - set(UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS)
+    )
+    _NUMBER_SET_MODE_IDS_CACHE = (cache_key, resolved)
+    return resolved
+
+
+def is_unordered_number_set_mode(mode_id: int) -> bool:
+    """该 mode 是否按「无序号码集合」处理（派生白名单成员，且不在契约例外内）。"""
+    resolved_mode_id = int(mode_id or 0)
+    if resolved_mode_id in UNORDERED_NUMBER_SET_DISPLAY_ORDER_EXCLUDED_MODE_IDS:
+        return False
+    return resolved_mode_id in unordered_number_set_mode_ids()
+
+
+#: 兼容别名（取值来自派生函数；导入时机不影响正确性，因为 `frozenset` 已展开）。
+#: 需要审阅/断言时请优先使用 `unordered_number_set_mode_ids()`。
+UNORDERED_NUMBER_SET_MODE_IDS: frozenset[int] = unordered_number_set_mode_ids()
+
+
 def resolve_diversity_policy(mode_id: int, config: Any | None = None) -> str:
     """
     根据 mode_id 与外部配置，解析出最终使用的多样性策略名称。
 
     优先级：
     1. 配置对象中的 ``diversity_policy`` 属性（非空字符串）
-    2. 无序号码集合模式（``UNORDERED_NUMBER_SET_MODE_IDS``）→
+    2. 无序号码集合模式（``is_unordered_number_set_mode``）→
        ``UNORDERED_SET_DIVERSITY_POLICY``（不做位置轮转）
     3. 如果 mode_id 在豁免列表中，返回 ``WINDOW_SHARED_DIVERSITY_POLICY``
     4. 兜底返回 ``DEFAULT_DIVERSITY_POLICY``
@@ -102,7 +239,7 @@ def resolve_diversity_policy(mode_id: int, config: Any | None = None) -> str:
         return policy
     resolved_mode_id = int(mode_id or 0)
     # 集合语义的号码类玩法不做位置轮转，改用一次性展示置换
-    if resolved_mode_id in UNORDERED_NUMBER_SET_MODE_IDS:
+    if is_unordered_number_set_mode(resolved_mode_id):
         return UNORDERED_SET_DIVERSITY_POLICY
     # 三期规则托管模式不使用旧的“前二唯一”旋转策略
     if resolved_mode_id in _THREE_PERIOD_MANAGED_MODE_IDS:
@@ -250,7 +387,8 @@ def unordered_number_set_display_order(
     """给无序号码集合生成“本期展示顺序”，成员一个都不改。
 
     行为：
-    - mode 不在白名单，或 content 不是纯号码集合 → 原样返回（绝不误改有序标签序列）；
+    - mode 不是派生白名单成员（或属于契约例外，如 mode 65 码段区间），
+      或 content 不是纯号码集合 → 原样返回（绝不误改有序标签序列 / 段区间）；
     - 否则用 ``(mode, year, term, web)`` 派生的种子对成员做一次性置换；
     - 若置换结果与最近一期**成员完全相同**的展示顺序仍然一致，则再错开一位，
       保证相邻期展示顺序不同（“相邻期唯一性”在这里落到展示顺序上）。
@@ -258,7 +396,7 @@ def unordered_number_set_display_order(
     只影响展示顺序，不影响集合本身，因此命中/不中判定保持等价。
     """
     row = dict(row_data)
-    if int(mode_id or 0) not in UNORDERED_NUMBER_SET_MODE_IDS:
+    if not is_unordered_number_set_mode(mode_id):
         return row
 
     items = number_set_members(row.get("content"))
@@ -309,7 +447,7 @@ def enforce_prediction_diversity(
     返回：
         处理后的 row_data 字典。如果启用了多样性限制且当前内容与
         近期记录的前缀重复，则会尝试通过旋转元素顺序来修复。
-        无序号码集合玩法（``UNORDERED_NUMBER_SET_MODE_IDS``）不参与位置轮转，
+        无序号码集合玩法（``unordered_number_set_mode_ids()`` 派生集合）不参与位置轮转，
         只把展示顺序换成按期号决定的一次性置换（成员不变）。
         若 5 次尝试后仍无法解决冲突，会在结果中附加 ``_diversity_warning`` 键。
     """

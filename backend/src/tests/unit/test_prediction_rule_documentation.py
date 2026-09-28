@@ -89,14 +89,23 @@ def test_rule_document_keeps_single_item_modes_flagged():
 
 
 def test_rule_document_marks_unordered_number_set_modes():
-    """无序号码集合玩法必须标注“不做位置轮转 + 相邻期展示顺序不同”。"""
+    """无序号码集合玩法必须标注“不做位置轮转 + 相邻期展示顺序不同”。
+
+    图例与逐行标注都改为从**派生集合**读取（`unordered_number_set_mode_ids()`），
+    并显式列出合同例外（mode 65/156），避免审阅者以为段区间玩法也被置换。
+    """
     from types import SimpleNamespace
 
-    from prediction_generation.diversity import UNORDERED_NUMBER_SET_MODE_IDS
+    from prediction_generation.diversity import unordered_number_set_mode_ids
 
     document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
-    assert "Unordered number-set modules (mode 9 / 65 / 88 / 116)" in document
+    derived = sorted(unordered_number_set_mode_ids())
+    assert "Unordered number-set modules (mode " + " / ".join(str(m) for m in derived) + ")" in document
     assert "never use positional rotation" in document
+    # 图例必须写明派生来源与合同例外，否则审阅者无从判断新增 mode 是否已覆盖
+    assert "derived" in document
+    assert "Contract exceptions (mode 65 / 156)" in document
+    assert "content[0]-content[-1]" in document
 
     configs = [
         SimpleNamespace(
@@ -106,16 +115,60 @@ def test_rule_document_marks_unordered_number_set_modes():
             labels=(),
             label_count=10,
         )
-        for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS)
+        for mode_id in derived
     ]
     document = render_prediction_module_rules(configs)
-    for mode_id in sorted(UNORDERED_NUMBER_SET_MODE_IDS):
+    for mode_id in derived:
         row = next(
             line for line in document.splitlines()
             if line.startswith(f"| {mode_id} |") and f"number-set-{mode_id}" in line
         )
         assert "unordered number set: no positional rotation; adjacent: display order differs" in row
         assert "full ordered signature" not in row
+
+
+def test_rule_document_does_not_mark_segment_modes_as_unordered_sets():
+    """mode 65（码段12）不得被标成无序号码集合：它的展示顺序就是契约。"""
+    from types import SimpleNamespace
+
+    document = render_prediction_module_rules(
+        [
+            *PREDICTION_CONFIGS.values(),
+            SimpleNamespace(key="title_65", title="码段12", default_modes_id=65, labels=(), label_count=12),
+        ]
+    )
+    row = next(line for line in document.splitlines() if line.startswith("| 65 | title_65 |"))
+    assert "unordered number set" not in row
+    assert "full ordered signature" in row
+    # 语义说明里必须给出“不登记 number 规则”的理由（段区间契约）
+    assert "Mode 65 码段12" in document
+    assert "_generate_mode_65_row" in document
+
+
+def test_rule_document_lists_modes_9_and_88_with_registered_rules():
+    """复审新增登记：mode 9（16码，contains）与 mode 88（杀7码，excludes）。
+
+    两者都是动态配置，必须凭规则登记表进入审阅清单，且判定方向不能写反。
+    """
+    document = render_prediction_module_rules(PREDICTION_CONFIGS.values())
+
+    row_9 = next(line for line in document.splitlines() if line.startswith("| 9 | title_9 |"))
+    assert "| 16码 |" in row_9
+    assert "| number |" in row_9
+    assert "special number is in any candidate" in row_9
+    assert "| controlled_future |" in row_9
+    assert "| supported |" in row_9
+    assert "cross-site prefix: 2" in row_9
+
+    row_88 = next(line for line in document.splitlines() if line.startswith("| 88 | title_88 |"))
+    assert "| 杀7码 |" in row_88
+    assert "| number_exclusion |" in row_88
+    assert "special number is absent from every candidate" in row_88
+    assert "| controlled_future |" in row_88
+    assert "| supported |" in row_88
+    assert "cross-site prefix: 2" in row_88
+    # 反向语义绝不能出现
+    assert "special number is in any candidate" not in row_88
 
 
 def test_rule_document_lists_dynamic_mode_116_with_registered_rule():
