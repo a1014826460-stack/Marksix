@@ -2,7 +2,8 @@
  * twbst528 六项改造契约（源码级）
  * ---------------------------------------------------------------------------
  * 覆盖本轮改动中「可从源码稳定断言」的部分：
- *   1. 标黄口径：命中型 / 绝杀型两张规则表，且绝杀型只在杀失败时标黄；
+ *   1. 标黄口径：命中型 / 绝杀型两张规则表；**判定「错」的期次零黄底（S3）**，
+ *      排除型一律零黄底；头/尾候选的单双后缀必须参与命中判定；
  *   2. 展示文本里的候选回推必须能把连写生肖（`天肖+龙狗`、`猪鸡龙猴蛇鼠马狗`）拆成单字，
  *      否则命中项永远匹配不到（曾导致 `天地+②肖` 标黄回归）；
  *   3. `writeCell` 必须能在模板**没有**预埋黄底 span 时自建 marker
@@ -31,7 +32,7 @@ function assert(condition, message) {
 // ── 1. 标黄规则表 ─────────────────────────────────────────────────────────
 for (const token of [
   "var HIT_RULE_KEYS", "var KILL_RULE_KEYS", "function highlightRuleFor",
-  "function highlightTokens", "function drawnTokens", "function allowMarkedTokens",
+  "function highlightTokens", "function parityHit", "function allowMarkedTokens",
 ]) {
   assert(adapter.includes(token), `标黄引擎缺少 ${token}`)
 }
@@ -41,10 +42,42 @@ for (const key of ["juesha1xiao", "juesha2xiao", "juesha3xiao", "wensha10ma", "s
     `绝杀型规则表必须包含 ${key}`,
   )
 }
-// 绝杀型只有「杀失败」那期才给标记（isCorrect === false）。
+// 绝杀一尾（juesha1wei）是排除型（后端 excludes_hit）：开奖号码落在被杀尾数里 = 错。
+// 曾误列进命中型，导致「错」的那一期把开奖值当命中项标黄。
+const hitBlock = /var HIT_RULE_KEYS = \[([\s\S]*?)\];/.exec(adapter)
+const killBlock = /var KILL_RULE_KEYS = \[([\s\S]*?)\];/.exec(adapter)
+assert(hitBlock, "必须能定位 HIT_RULE_KEYS 数组字面量")
+assert(killBlock, "必须能定位 KILL_RULE_KEYS 数组字面量")
 assert(
-  /rule === "kill"[\s\S]{0,200}isCorrect === false[\s\S]{0,80}drawnTokens\(row\)[\s\S]{0,20}:\s*\[\]/.test(adapter),
-  "绝杀型必须只在杀失败（isCorrect === false）时标黄，杀中零黄底",
+  killBlock[1].includes('"juesha1wei"'),
+  "juesha1wei（绝杀一尾）必须归入排除型",
+)
+assert(
+  !hitBlock[1].includes('"juesha1wei"'),
+  "juesha1wei 不得再留在命中型规则表里",
+)
+
+// ── 1b. S3 硬门槛：判定为「错」的整期零黄底 ───────────────────────────────
+// 这是线上 twbst528 5 处 R3 的根因：候选串里常常同时列着本期**没有**命中的另一组
+// （红蓝绿肖两组、头数单双五个组合、绝杀类被杀集合…），只按「值出现在候选串里」
+// 就标黄，会让判定「错」的行带黄底。
+assert(
+  /if \(row\.result\.isCorrect === false\) return \[\];/.test(adapter),
+  "highlightTokens 必须先把判定为「错」的期次整体拦掉（S3：错行零黄底）",
+)
+// 排除型（杀号）没有「可高亮的命中项」：杀中时开奖值不在被杀集合里，
+// 杀失败时开奖值确实落在被杀集合里 —— 但 S3 明令禁止标黄。故一律返回空。
+assert(
+  /rule === "kill"[\s\S]{0,400}?return \[\];/.test(adapter),
+  "排除型必须一律零黄底（杀中 / 杀失败都不给标记）",
+)
+assert(
+  !/isCorrect === false[\s\S]{0,80}drawnTokens\(/.test(adapter),
+  "不得再按「杀失败（isCorrect === false）就标黄开奖值」标黄（S3 违规）",
+)
+assert(
+  !/function drawnTokens/.test(adapter),
+  "drawnTokens()（专为「杀失败标黄开奖值」而生）必须删除，避免被重新接回高亮链路",
 )
 // 命中型：只标黄「真正被开出的那一项」，且**不依赖 result.isCorrect**
 // （部分模块该字段为空：六肖十八码 / ⑤肖⑩码；以它为门槛会导致整块永远标不出黄底）。
@@ -164,17 +197,32 @@ assert(
 )
 
 // ── 9. 头/尾候选与「候选集合」命中口径 ───────────────────────────────────
-// 头数候选写作 `4头` / `4头单`（带单双后缀），尾数写作 `7尾` / `2尾双`，
-// 必须用正则取头/尾数字后比较，不能只做全等匹配
-// （线上实测 `头数单双` 整块 5 期一个都标不出来）。
+// 头数候选写作 `4头` / `4头单`（带单双后缀），尾数写作 `7尾` / `2尾双`，必须用正则取头/尾数字。
 assert(
-  /headMatch = \/\^\(\\d\)\\s\*头\/\.exec\(candidate\)/.test(adapter),
-  "头数候选必须用正则取头数字（候选可能带单双后缀，如 `4头单`）",
+  /headMatch = \/\^\(\\d\)\\s\*头\(\[单双\]\?\)\/\.exec\(candidate\)/.test(adapter),
+  "头数候选必须用正则取头数字与单双后缀（候选如 `4头单`）",
 )
 assert(
-  /tailMatch = \/\^\(\\d\)\\s\*尾\/\.exec\(candidate\)/.test(adapter),
-  "尾数候选必须用正则取尾数字（候选可能带单双后缀，如 `2尾双`）",
+  /tailMatch = \/\^\(\\d\)\\s\*尾\(\[单双\]\?\)\/\.exec\(candidate\)/.test(adapter),
+  "尾数候选必须用正则取尾数字与单双后缀（候选如 `2尾双`）",
 )
+assert(
+  /repeatTail = \/\^\(\\d\)\\1\+\\s\*尾\(\[单双\]\?\)\/\.exec\(candidate\)/.test(adapter),
+  "重复尾数候选（`555尾`）同样必须带单双后缀匹配",
+)
+// 单双后缀必须参与命中判定：只比头/尾数字会把**同头数的另一个组合**标黄
+// （线上实测：开 42 = `4头双`，却把候选里排在前面的 `4头单` 标黄）。
+assert(
+  /function parityHit[\s\S]{0,500}flag === "单"[\s\S]{0,120}% 2 === 1/.test(adapter) &&
+    /flag === "双"[\s\S]{0,120}% 2 === 0/.test(adapter),
+  "parityHit 必须按开奖号码奇偶校验单双后缀（单=奇数、双=偶数）",
+)
+for (const name of ["headMatch", "tailMatch", "repeatTail"]) {
+  assert(
+    new RegExp(`${name}[\\s\\S]{0,120}parityHit\\(${name}\\[2\\], digits\\)`).test(adapter),
+    `${name} 的命中判定必须调用 parityHit 校验单双后缀`,
+  )
+}
 // 一位数号码（09）的头数是 0，`0头` 必须能匹配。
 assert(
   /digits\.length > 1 \? digits\.charAt\(0\) : "0"/.test(adapter),
@@ -186,6 +234,20 @@ assert(
   !/if \(row\.result\.isCorrect !== true\) return \[\];/.test(adapter),
   "命中型不得以 result.isCorrect === true 为门槛（该字段可能为空）",
 )
+// 排除型模块的渲染入口必须显式把 kill 键交给 highlightRuleFor。
+// 不传键会退回默认的「命中型」口径 → 判定「错」（杀失败）时开奖值恰好等于候选，
+// 会被当成命中项标黄（线上 `?|狗` / `?|本期` / `?|蓝单` 等 R3 的根因）。
+for (const [pattern, where] of [
+  [/renderThreeColumnRows\(sectionByTitle\("绝杀①肖"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "juesha1xiao"\)/, "绝杀①肖"],
+  [/renderThreeColumnRows\(sectionByTitle\("绝杀①波"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "jueshabanbo"\)/, "绝杀①波"],
+  [/renderThreeColumnRows\(sectionByTitle\("绝杀一肖一尾"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "juesha1wei"\)/, "绝杀一肖一尾"],
+  [/renderThreeColumnRows\(sectionByTitle\("杀两半波"\), module, function \(row\) \{[\s\S]{0,120}\}, "shaliangbanbo"\)/, "杀两半波"],
+  [/renderRemainingThreeColumnHistory\("杀肖杀码", modules\.juesha3xiao, null, "juesha3xiao"\)/, "杀肖杀码"],
+  [/renderRemainingThreeColumnHistory\("本期输尽光", modules\.shujinguang, null, "shujinguang"\)/, "本期输尽光"],
+  [/renderRemainingThreeColumnHistory\("绝杀⑩码", module, function \(row\) \{[\s\S]{0,120}\}, "wensha10ma"\)/, "绝杀⑩码"],
+]) {
+  assert(pattern.test(adapter), `${where} 必须显式传排除型模块键（否则退回命中型口径 → 错行标黄）`)
+}
 
 // ── 10. 展示源必须唯一：不得跨模块兜底 ────────────────────────────────────
 // `moduleWithRows(primary, fallback)` 会在 primary 缺失时改用**另一个模块**，

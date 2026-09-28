@@ -522,22 +522,30 @@
   //
   // 命中型（HIT_RULES）：判定为「对」时，把候选里**真正被开出的那一项**标黄
   //   （不是整组候选都标）。
-  // 绝杀/排除型（KILL_RULES）：**杀失败**那一期，把「被杀中的那一项」标黄；
-  //   杀中（判定为「对」）那一期开奖值本就不在候选里 → 整行零黄底。
+  // 绝杀/排除型（KILL_RULES）：**一律零黄底** —— 杀中（判定「对」）时开奖值本就不在
+  //   被杀集合里，没有可高亮的命中项；杀失败（判定「错」）时开奖值正落在被杀集合里，
+  //   但那属于 S3 明令禁止标黄的情形（判定「错」的整期必须零黄底）。
+  //
+  // S3 是硬门槛：**判定为「错」的那一期整期零黄底**，命中型也不能靠「值出现在候选串里」
+  //   绕过本期判定 —— 候选串常常同时列出本期**没有**命中的另一组/另一个组合
+  //   （红蓝绿肖两组、头数单双五个「N头X」组合、绝杀类被杀集合…），
+  //   只按「值出现」标黄正是 twbst528 线上 5 处 R3 的根因。
   //
   // 依据：仓库《预测模块展示规范》S2/S3，与 twcf888 已确认的同口径实现。
   var HIT_RULE_KEYS = [
     "yijuzhenyan", "shuangbo", "shuangbo_12ma", "7xiao7ma", "pt2xiao", "pt1wei",
     "daxiao", "4xiao8ma", "pt1xiao", "title_5", "title_47", "pt3xiao", "danshuangtema",
-    "juesha1wei", "3tou", "qinqi", "9xzt", "title_15", "title_74", "6xzt",
+    "3tou", "qinqi", "9xzt", "title_15", "title_74", "6xzt",
     "liuxiao18ma", "hllx", "9xiao12ma", "heibai3xiao", "title_48", "3zxt", "title_197",
     "dxztt1", "qianhou_texiao", "sihangzhongte", "siji3", "siduanzhongte", "wuzhong5ma",
     "daimingxiao", "liuweichute", "toudanshuang", "liuxiaoliuma", "gongshi_siw",
     "title_198", "title_14", "title_279", "title_66", "3hang", "title_132", "dujia_gongshi",
   ];
+  // 绝杀/稳杀/输尽光全是排除型（后端 `excludes_hit`）：杀中才显示「对」，开奖值落在
+  // 被杀集合里显示「错」。`juesha1wei`（绝杀一尾）原先被误列进命中型，本轮归位。
   var KILL_RULE_KEYS = [
-    "juesha3xiao", "juesha1xiao", "juesha2xiao", "wensha10ma", "shaliangbanbo",
-    "jueshabanbo", "shujinguang",
+    "juesha3xiao", "juesha1xiao", "juesha2xiao", "juesha1wei", "wensha10ma",
+    "shaliangbanbo", "jueshabanbo", "shujinguang",
   ];
   var HIT_RULES = {};
   var KILL_RULES = {};
@@ -549,13 +557,22 @@
     return "hit";
   }
 
-  function drawnTokens(row) {
-    var result = row && row.result || {};
-    return [
-      resultToken(result.code, true),
-      resultToken(result.zodiac, false),
-      resultToken(result.color, false),
-    ].filter(Boolean);
+  /**
+   * `4头单` / `2尾双` 这类候选自带**单双后缀**，后缀必须与开奖号码的奇偶一致才算命中。
+   *
+   * 旧实现只比头/尾数字，于是同一个头数的**另一个组合**会被抢先标黄
+   * （线上实测：开 42 = `4头双`，却把候选里排在前面的 `4头单` 标黄）。
+   * 没有后缀的候选（`7尾` / `2头`）行为不变。
+   */
+  function parityHit(suffix, digits) {
+    var flag = String(suffix || "").trim();
+    if (!flag) return true;
+    if (!digits) return false;
+    var value = Number(digits);
+    if (!isFinite(value)) return false;
+    if (flag === "单") return value % 2 === 1;
+    if (flag === "双") return value % 2 === 0;
+    return true;
   }
 
   /** 接口的波色是 `red/blue/green`，而候选展示的是 `红波/蓝波/绿波`。 */
@@ -617,13 +634,19 @@
   /** 该模块本期允许标黄的 token；不在此列表里的文字一律不标黄。 */
   function highlightTokens(row, rule, candidates) {
     if (!row || !row.result || !row.result.isOpened) return [];
+    // S3：判定为「错」的那一期整期零黄底。开奖值出现在候选串里**不等于**本期命中
+    // （候选串会同时列出本期没命中的另一组/另一个组合），所以判定「错」时
+    // 无论命中型还是排除型都不给任何标记。
+    if (row.result.isCorrect === false) return [];
     if (rule === "kill") {
-      // 杀失败才有「被杀中的那一项」；判「对」（杀中）不给任何标记。
-      return row.result.isCorrect === false ? drawnTokens(row) : [];
+      // 排除型没有「可高亮的命中项」：杀中（对）时开奖值本就不在被杀集合里，
+      // 杀失败（错）已由上面的 S3 分支拦掉 —— 故排除型一律零黄底。
+      return [];
     }
-    // 命中型的候选是**候选集合**：开奖值落在集合里就是命中项，与后端是否回填
-    // `isCorrect` 无关（部分模块该字段为空，例如 六肖十八码 / ⑤肖⑩码，
-    // 若以它为门槛会导致整块永远标不出黄底）。
+    // 命中型的候选是**候选集合**：开奖值落在集合里就是命中项。这里只用
+    // `isCorrect === false` 做否定门槛，**不能**改成 `isCorrect !== true`
+    // （部分模块该字段为空，例如 六肖十八码 / ⑤肖⑩码，以 true 为门槛会导致整块
+    // 永远标不出黄底）。
     var code = resultToken(row.result.code, true);
     var zodiac = resultToken(row.result.zodiac, false);
     var wave = drawnWave(row);
@@ -638,14 +661,15 @@
       if (zodiac && candidate === zodiac) return true;
       if (wave && candidate === wave) return true;
       // 头/尾候选写作 `4头` / `4头单` / `7尾` / `2尾双`，
-      // 与开奖号码的头数 / 尾数比较（候选里还带单双后缀，所以用正则取头尾数字）。
-      var headMatch = /^(\d)\s*头/.exec(candidate);
-      if (headMatch && headDigit && headMatch[1] === headDigit) return true;
-      var tailMatch = /^(\d)\s*尾/.exec(candidate);
-      if (tailMatch && tailDigit && tailMatch[1] === tailDigit) return true;
+      // 与开奖号码的头数 / 尾数比较（候选里还带单双后缀，所以用正则取头尾数字，
+      // 并让后缀参与判定，避免把同头数的另一个单双组合标黄）。
+      var headMatch = /^(\d)\s*头([单双]?)/.exec(candidate);
+      if (headMatch && headDigit && headMatch[1] === headDigit && parityHit(headMatch[2], digits)) return true;
+      var tailMatch = /^(\d)\s*尾([单双]?)/.exec(candidate);
+      if (tailMatch && tailDigit && tailMatch[1] === tailDigit && parityHit(tailMatch[2], digits)) return true;
       // `777尾` / `555尾`：模板把尾数重复了三次，取重复的数字再比尾数。
-      var repeatTail = /^(\d)\1+\s*尾/.exec(candidate);
-      if (repeatTail && tailDigit && repeatTail[1] === tailDigit) return true;
+      var repeatTail = /^(\d)\1+\s*尾([单双]?)/.exec(candidate);
+      if (repeatTail && tailDigit && repeatTail[1] === tailDigit && parityHit(repeatTail[2], digits)) return true;
       // 大/小、单/双 这类语义标签按号码区间 / 奇偶判定。
       if (semanticHit(candidate, digits)) return true;
       // `5尾|05,15,25,35,45`、`大|25,…,49` 直接用号码清单命中判定。
@@ -782,7 +806,7 @@
   function renderShaliangbanboHistory(module) {
     renderThreeColumnRows(sectionByTitle("杀两半波"), module, function (row) {
       return tokens(row).join("+");
-    });
+    }, "shaliangbanbo");
   }
 
   function renderPingteYiweiHistory(module) {
@@ -881,12 +905,15 @@
     });
   }
 
+  // 「绝杀①肖 / 绝杀①波 / 绝杀一肖一尾」都是**排除型**：必须显式把模块键交给
+  // highlightRuleFor，否则会退回默认的「命中型」口径 —— 判定为「错」（杀失败）时
+  // 开奖值恰好等于候选，会被当成命中项标黄（线上 twbst528 `?|狗` 一处 R3 的根因）。
   function renderJueshaYixiaoHistory(module) {
-    renderThreeColumnRows(sectionByTitle("绝杀①肖"), module, function (row) { return tokens(row).join(""); });
+    renderThreeColumnRows(sectionByTitle("绝杀①肖"), module, function (row) { return tokens(row).join(""); }, "juesha1xiao");
   }
 
   function renderJueshaYiboHistory(module) {
-    renderThreeColumnRows(sectionByTitle("绝杀①波"), module, function (row) { return tokens(row).join(""); });
+    renderThreeColumnRows(sectionByTitle("绝杀①波"), module, function (row) { return tokens(row).join(""); }, "jueshabanbo");
   }
 
   function renderDanshuangErxiaoHistory(module) {
@@ -894,7 +921,7 @@
   }
 
   function renderJueshaYixiaoYiweiHistory(module) {
-    renderThreeColumnRows(sectionByTitle("绝杀一肖一尾"), module, function (row) { return tokens(row).join(""); });
+    renderThreeColumnRows(sectionByTitle("绝杀一肖一尾"), module, function (row) { return tokens(row).join(""); }, "juesha1wei");
   }
 
   function renderRemainingThreeColumnHistory(title, module, formatter, moduleKey, hitResolver) {
@@ -965,7 +992,7 @@
   function renderJueshaShimaHistory(module) {
     renderRemainingThreeColumnHistory("绝杀⑩码", module, function (row) {
       return predictionText(row, ".");
-    });
+    }, "wensha10ma");
   }
 
   function renderHeibaiSanxiaoHistory(module) {
@@ -1530,7 +1557,7 @@
     renderJueshaYiboHistory(modules.jueshabanbo);
     renderDanshuangErxiaoHistory(modules.danshuangtema);
     renderJueshaYixiaoYiweiHistory(modules.juesha1wei);
-    renderRemainingThreeColumnHistory("杀肖杀码", modules.juesha3xiao);
+    renderRemainingThreeColumnHistory("杀肖杀码", modules.juesha3xiao, null, "juesha3xiao");
     renderToudanshuangHistory(modules.toudanshuang);
     // 第 4 项：【琴棋书画】显示四艺中的三种（如「书棋琴」），而不是直接显示生肖；
     // 标黄也改成「开奖特肖所属的艺」。
@@ -1539,7 +1566,7 @@
     }, "qinqi", function (row) {
       return siyiHitArts(row);
     });
-    renderRemainingThreeColumnHistory("本期输尽光", modules.shujinguang);
+    renderRemainingThreeColumnHistory("本期输尽光", modules.shujinguang, null, "shujinguang");
     renderForumHistory(modules);
     renderDaimingXiaoHistory(modules.daimingxiao);
     renderDujiaGongshiHistory(modules.dujia_gongshi);
