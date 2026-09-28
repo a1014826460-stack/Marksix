@@ -1886,3 +1886,57 @@ warn 全部是 R4（命中却没高亮，含杀号类「准=没有可高亮项�
 真正的 R5 只剩 3 条，均为**生成侧相邻期唯一性**问题，已落库历史期无法靠渲染修复
 （其中 twcaibawang mode 52 已修代码，下期起生效）。
 
+### 用户报障修复：twcaibawang 判定降级 + twsaimahui 六项（2026-09-28 第四轮）
+
+**发布提交**：`8098426`（twcaibawang 大小+2头）、`44b3a5e`（twsaimahui 四项）、
+`95afd17`（tw8800 三期中特/绝杀半波、twjinniu、twcf888 及配套测试）。已推送 `origin/main`。
+中心节点备份 `/root/Marksix/.deploy-backups/display-standard-4-20260928T082043Z`，
+前端节点 `/root/Marksix/.deploy-backups/display-standard-4-20260928T082744Z`。
+
+**twcaibawang「大小+2头」全错 —— 不是生成问题，是判定被降级**
+
+- 后端聚合接口本来就对：270/269 期 `is_correct=true`（口径：大/小 命中 **或** 头码命中），
+  268~264 期 false。
+- 但 `frontend/lib/prediction-contract.ts::verifyVerdictAgainstCandidates()` 把它当普通玩法做
+  「特码/特肖 ∈ 候选集合」交叉校验，而它的 `tokens` 是 `['【大数','32】']`（不是号码/生肖集合）
+  → 判为 `contradicted` → `reconcileVerdict()` 把 `true` 强制改写成 `false`。
+- 修复：新增候选口径识别（`size` / `tail` / `head_parity` / `size_head`）与精确复算，
+  **没有把握时返回 `unverifiable` 放行上游判定**，不再降级；`generic`、排除型、平特型、
+  三头四尾分支一行未改，`prediction.tokens`/`extra` 形状未变。同类缺陷全站共 39 行
+  （`daxiao_2tou`、`dxztt1`、`toudanshuang`、`gongshi_siw`、`liuweichute`）一并修好。
+- 公网复核：`270期【大数+32】开 37马 对`、`269期【大数+37】开 46鸡 对`（命中维度标黄），
+  `268期【大数+36】开 11猴 错`（零黄底）。
+
+**twsaimahui 六项**
+
+1. **【家禽+野兽】**：该 mode 表没有 `content` 列，映射层用 `xiao` 列硬拼了假结构 `肖|`
+   （竖线后为空），丢掉组名并把 6 肖渲染两遍。修法：`content = 组名|组成员`（来自 `title`）、
+   `xiao = 两肖`；生成侧宽度改按 `xiao` 列推断（=2，与厂商原始数据一致）。
+   公网复核：`270期家畜野兽:【野兽+虎马】开:马37准`🟡马、`269期【家禽+马虎】开:鸡46准`🟡家禽、
+   `268期【家禽+虎马】开:猴11错`（零黄底）。
+2. **单双四尾**：确认数据违规（`dan` 含 0、`shuang` 含 1）。已把 mode 30 纳入受控生成规则，
+   候选按分组限额枚举（单尾只取 {1,3,5,7,9}、双尾只取 {0,2,4,6,8}，各 4 个）。**新生成期号起生效**，
+   已落库历史行不改（线上 264~271 仍是旧值）。
+3. **合数中特**：`content` 只有 `合单`/`合双` 纯标签、无号码表 → 空串 `indexOf` 恒「不中」。
+   新增只读接口 `GET /api/public/fixed-data-groups?sign=合单双`（读 `public.fixed_data`，
+   前端不硬编码号码表），判定改**集合精确匹配**。公网复核：
+   `270期【合双】开马37中`、`268期【合单】开猴11不中`、`266期【合双】开鸡10不中`（合数=各位数字之和的奇偶）。
+4. **四肖三期内必出**：旧映射只保留「窗口内最新已开奖一行」，另两期空白，且误取
+   `res_code[0]/res_sx[0]`（把平码当特码）。映射**只新增** `periods` 字段（窗口内逐期开奖），
+   渲染器逐期渲染。公网复核：`271期 开:待开奖 / 270期 开:马37错 / 269期 开:鸡46错`（三期各自显示）。
+5. **10码中特「全错」**：判定无错——逐期复核线上 262~270 共 9 期，特码确实都不在 10 个候选里；
+   生成侧历史期前两位固定 `01.17`（上一轮已修，**271 期起已无固定前缀**：实测 `02,12,35,17,27,05,31,41,28,01`）。
+   mode 116 未纳入受控生成规则（纯随机 10/49，连 9 期不中≈13%）。
+6. **成语平特肖**：判定正确（平特看全部 7 个号码）。`270期 守株待兔(含兔) 开奖生肖 兔,猴,蛇,虎,牛,兔,马`
+   → 28、04 都是兔 → 准；`264/262 期` 候选肖不在 7 肖里 → 错。
+
+**公网验收（Playwright 实开，`scripts/audit-prediction-display.py`，2026-09-28）**：
+10/10 站点 `error=0`、`js_errors=0`，合计 4114 行 / 27 条 warn（shengshi8800 1、twcaibawang 3、
+twsaimahui 5、twjinniu 0、twcf888 5、twssz 5、twbst528 2、twjsz666 0、twwanli 1、twsyw 6）。
+**生产判定真值校验**：`rows=22024 error=0`。
+**回归**：后端 `pytest -q` → `1063 passed, 13 skipped, 2 failed`（两条既有无失败）；
+前端契约测试（token 形状 20 模块、判定真值、twcf888×3、twjinniu×2、shengshi8800×3、
+twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract.mjs` 因新增
+`sanqiWindowPeriods` 抽取缺失被修好。
+
+
