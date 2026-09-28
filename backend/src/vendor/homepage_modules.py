@@ -563,17 +563,28 @@ def _extract_two_xiao(row: dict[str, Any]) -> list[str]:
 
 def _build_tiandi_2xiao(ctx: VendorModuleContext, db_path: str | Any) -> dict[str, Any]:
     td_rows = _load_mode_rows(db_path, modes_id=5, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
+    # mode 251（天地二肖）在这台站点上**一行都没有**（实测 0 行），
+    # 但 mode 5 的 `xiao` 列本来就带当期那 2 个生肖（如 2026190 → `龙,狗`）。
+    # 过去强制要求两路都在，导致「天地+②肖」整块 rows=0（有壳无数据）。
     x2_rows = _load_mode_rows(db_path, modes_id=251, web_id=ctx.web_id, lottery_type=ctx.lottery_type, limit=ctx.history_limit)
     bytd = _rows_by_issue(td_rows)
     byx2 = _rows_by_issue(x2_rows)
+
+    def two_xiao_for(issue: str, td_row: dict[str, Any]) -> list[str]:
+        x2_row = byx2.get(issue)
+        labels = _extract_two_xiao(x2_row) if x2_row else []
+        if labels:
+            return labels
+        # 回退：直接取 mode 5 自己的 `xiao` 列。
+        return _split_labels(td_row.get("xiao"))[:2]
+
     history: list[dict[str, Any]] = []
     for issue in _history_window(td_rows, x2_rows, limit=ctx.history_limit):
         td_row = bytd.get(issue)
-        x2_row = byx2.get(issue)
-        if not td_row or not x2_row:
+        if not td_row:
             continue
         result = _pick_result(td_row)
-        labels = _extract_two_xiao(x2_row)
+        labels = two_xiao_for(issue, td_row)
         tiandi = _extract_tiandi_label(td_row)
         is_correct = None
         if result["is_opened"] and result["res_sx"]:
@@ -589,7 +600,7 @@ def _build_tiandi_2xiao(ctx: VendorModuleContext, db_path: str | Any) -> dict[st
                 "result": result,
                 "is_opened": result["is_opened"],
                 "is_correct": is_correct,
-                "raw": {"source_mode_ids": [5, 251]},
+                "raw": {"source_mode_ids": [5, 251], "xiao": ",".join(labels)},
             }
         )
     return {

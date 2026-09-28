@@ -974,8 +974,43 @@
     });
   }
 
+  /** 取 raw 字段里可能以 JSON 数组 / 逗号串形式存放的值，返回第一项。 */
+  function firstRawItem(value) {
+    if (Array.isArray(value)) return String(value[0] || "").trim();
+    var text = String(value || "").trim();
+    if (!text) return "";
+    if (text.charAt(0) === "[") {
+      try {
+        var parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length) return String(parsed[0] || "").trim();
+      } catch (error) {
+        var quoted = /"([^"]*)"/.exec(text);
+        if (quoted) return quoted[1].trim();
+      }
+    }
+    if (text.indexOf("|") !== -1) text = text.split("|", 2)[1];
+    return text.split(/[,，]/)[0].trim();
+  }
+
   function renderDaxiaoYitouHistory(module) {
     renderRemainingThreeColumnHistory("大小+①头", module, function (row) {
+      // `dxztt1`（大小中特带1头）的 raw 里是 `content: '["大|45"]'` 和
+      // `tou: '["4头"]'`，没有 `daxiao` / `tou_code` 这两个键，
+      // 所以必须从 content / tou 里取，否则只会显示出「大数」、丢掉「+4头」。
+      var size = firstRawItem(rawValue(row, "daxiao")) || firstRawItem(rawValue(row, "content"));
+      if (size.indexOf("|") !== -1) size = size.split("|", 2)[0].trim();
+      size = size.replace(/^大$/, "大数").replace(/^小$/, "小数");
+      var tou = firstRawItem(rawValue(row, "tou") || rawValue(row, "tou_code"));
+      var touDigits = tou.replace(/\D/g, "");
+      if (touDigits) {
+        // `4头` / `45` 都取头数首位（`09` → `0头`）。
+        tou = (touDigits.length > 1 ? touDigits.charAt(0) : touDigits) + "头";
+      } else {
+        var digits = String(row && row.result && row.result.code || "").replace(/\D/g, "");
+        tou = digits ? (digits.length > 1 ? digits.charAt(0) : "0") + "头" : "";
+      }
+      if (size && tou) return size + "+" + tou;
+      if (size) return size;
       return displayLabels(row, "+").replace(/^大$/, "大数").replace(/^小$/, "小数");
     });
   }
@@ -1574,6 +1609,27 @@
     return Promise.all([draw, predictions]);
   }
 
+  // ── 有壳无数据板块：整块隐藏 ──────────────────────────────────────────
+  // 这两个面板对应的供应商模块**在 payload 里存在但一行数据都没有**：
+  //   public_yixiao_yima（公开一肖一码）← 依赖 mode 151，该 mode 全表 0 行
+  //   wuxiao_wuma      （五肖五码）    ← 依赖 mode 151，同上
+  // 直接调用 `_build_*` 实测 history = 0 行（不是渲染问题，是没数据）。
+  // 按「有壳无数据 → 删」处理；保留 DOM 与后端引用，便于数据源补齐后还原。
+  var EMPTY_PANEL_TITLES = ["一肖一码", "⑤肖⑩码"];
+
+  function hideEmptyPanels() {
+    Array.prototype.forEach.call(window.document.querySelectorAll(".lxlm, .tzlb"), function (section) {
+      var title = String(section.querySelector(".pb-tit") && section.querySelector(".pb-tit").textContent || "");
+      var matched = EMPTY_PANEL_TITLES.filter(function (name) { return title.indexOf(name) !== -1; })[0];
+      if (!matched) return;
+      section.setAttribute("data-prediction-empty", matched);
+      section.hidden = true;
+      // 供应商样式表可能给 .lxlm/.tzlb 设了带 !important 的 display，
+      // 内联 display:none 会被压过去，所以用 setProperty(..., "important")。
+      section.style.setProperty("display", "none", "important");
+    });
+  }
+
   function bindLotteryTabs() {
     Array.prototype.forEach.call(window.document.querySelectorAll(".KJ-TabBox li"), function (item) {
       item.addEventListener("click", function (event) {
@@ -1588,6 +1644,8 @@
 
   window.Twbst528SiteData = { selectLottery: selectLottery };
   window.addEventListener("DOMContentLoaded", function () {
+    // 先隐藏有壳无数据的板块，再渲染其余板块。
+    hideEmptyPanels();
     bindLotteryTabs();
     selectLottery(activeLottery.lotteryType);
   });

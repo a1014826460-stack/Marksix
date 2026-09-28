@@ -261,4 +261,42 @@ assert(
   "单双语义只能匹配纯「单/双」候选，避免 `4头单` 被误判",
 )
 
+// ── 15. 有壳无数据板块隐藏（区别于「缺数据源」）─────────────────────────────
+// `public_yixiao_yima` / `wuxiao_wuma` 在 payload 里存在，但直接调用对应
+// `_build_*` 实测 history = 0 行（两者都依赖 mode 151，该 mode 全表 0 行）。
+// 按「有壳无数据 → 删」处理；有数据的板块不得被误伤。
+const emptyBlock = /var EMPTY_PANEL_TITLES = \[([\s\S]{0,300}?)\]/.exec(adapter)
+assert(emptyBlock, "必须维护有壳无数据板块清单 EMPTY_PANEL_TITLES")
+const emptyList = emptyBlock[1]
+for (const name of ["一肖一码", "⑤肖⑩码"]) {
+  assert(emptyList.includes(`"${name}"`), `有壳无数据清单必须包含 ${name}`)
+}
+for (const keep of ["独家公式", "天地+②肖", "本期输尽光", "双波⑩码", "大小+①头", "六肖六码"]) {
+  assert(!emptyList.includes(`"${keep}"`), `${keep} 有数据/已修复，不得列入有壳无数据清单`)
+}
+assert(
+  /data-prediction-empty/.test(adapter),
+  "隐藏有壳无数据板块时必须打 data-prediction-empty 标记，便于验收与还原",
+)
+assert(
+  /hideEmptyPanels\(\);/.test(adapter),
+  "DOMContentLoaded 必须先调用 hideEmptyPanels()",
+)
+
+// ── 16. 大小+①头 必须显示「大数+N头」而不是只有「大数」────────────────────
+// `dxztt1` 的 raw 是 `content: '["大|45"]'` 与 `tou: '["4头"]'`，
+// **没有** `daxiao` / `tou_code` 键；只读那两个键会丢掉「+4头」。
+assert(
+  /function firstRawItem/.test(adapter),
+  "必须能从 JSON 数组 / 逗号串形态的 raw 字段里取第一项",
+)
+assert(
+  /rawValue\(row, "tou"\) \|\| rawValue\(row, "tou_code"\)/.test(adapter),
+  "大小+①头 的头数必须优先读 raw.tou（dxztt1 用的是这个键）",
+)
+assert(
+  /renderDaxiaoYitouHistory[\s\S]{0,1600}return size \+ "\+" \+ tou;/.test(adapter),
+  "大小+①头 必须拼成「大数+N头」",
+)
+
 console.log("twbst528-display-contract: OK")
