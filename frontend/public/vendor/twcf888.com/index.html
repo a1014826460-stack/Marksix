@@ -1177,9 +1177,40 @@
         return "";
     }
 
+    // 号码 → 五行（**号码五行**，唯一权威口径）。
+    //
+    // 抄自 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS
+    // （= public.fixed_data 的 sign='五行'；后端 public/api.py::_ELEMENT_MAP 同源）。
+    // 01-49 全覆盖、互不重叠。⚠️ fixed_data 里另有一份 sign='五行肖'（生肖五行），
+    // 本站 mode 53/482 的历史正文清单就是按生肖五行拼的，于是 24（羊）被算成「土」、
+    // 37（马）被算成「火」，而它们的号码五行都是「木」。五行命中行只能由特码**号码**
+    // 推导，绝不能用正文清单（= 生肖五行）反推。
+    var ELEMENT_NUMBER_GROUPS = {
+        金: [3, 4, 11, 12, 25, 26, 33, 34, 41, 42],
+        木: [7, 8, 15, 16, 23, 24, 37, 38, 45, 46],
+        水: [13, 14, 21, 22, 29, 30, 43, 44],
+        火: [1, 2, 9, 10, 17, 18, 31, 32, 39, 40, 47, 48],
+        土: [5, 6, 19, 20, 27, 28, 35, 36, 49]
+    };
+    var ELEMENT_ORDER = ["金", "木", "水", "火", "土"];
+    /** 特码号码 → 号码五行；号码缺失/非法返回空串（**绝不**回退到生肖五行）。 */
+    function elementOfCode(value) {
+        var parsed = parseInt(String(value == null ? "" : value).replace(/[^0-9]/g, ""), 10);
+        if (!(parsed >= 1 && parsed <= 49)) return "";
+        for (var g = 0; g < ELEMENT_ORDER.length; g++) {
+            var group = ELEMENT_NUMBER_GROUPS[ELEMENT_ORDER[g]];
+            for (var k = 0; k < group.length; k++) {
+                if (group[k] === parsed) return ELEMENT_ORDER[g];
+            }
+        }
+        return "";
+    }
+
     var HEAD_MODES = [12, 41, 483];
     var TAIL_MODES = [2, 20, 54, 66, 74, 95];
     var ELEMENT_MODES = [53, 98, 482];
+    // 命中语义 = 「特码号码五行落在预测行里」的五行玩法（98 绝杀一行是排除语义，不在此列）。
+    var ELEMENT_HIT_MODES = [53, 482];
     var ZODIAC_CONCAT_MODES = [27, 180];
     var LABEL_ONLY_MODES = [28, 38, 57, 132, 143, 198, 279];
     var ZODIAC_KILL_MODES = [42, 472, 473];
@@ -1371,7 +1402,7 @@
             if (isZodiacConcat && resultZodiac) {
                 matchedLabel = resultZodiac;
             } else if (resultCode) {
-                matchedLabel = pickMatchedLabel(list, resultCode);
+                matchedLabel = ELEMENT_HIT_MODES.indexOf(meta.modeId) !== -1 ? elementOfCode(resultCode) : pickMatchedLabel(list, resultCode);
             }
             // Fallback: match resultZodiac or resultCode in list items
             if (!matchedLabel) {

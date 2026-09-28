@@ -20,20 +20,32 @@ $.ajax({
                 let code = codeSplit[codeSplit.length-1]||'';
                 let sx = sxSplit[sxSplit.length-1]||'';
                 let xiao = [];
-                let ma = [];
-                let maValue = [];
                 // content 兜底解析：后端 content 在部分 mode/期次上不是 JSON（纯中文串 / `标签|值` / 逗号串），
                 // 旧写法 JSON.parse 抛错会中断 success 回调，让整个模块容器保持空白。改用 util.js 的 parseContentList。
+                // 只取标签（= 预测的三行）：标签后的号码清单不参与判定与高亮，
+                // 历史遗留行的清单是按生肖五行拼的（见下面的判定注释）。
                 let content = parseContentList(d.content);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
-                    maValue[i] = c[1] || '';
-                    ma.push(...(c[1] || '').split(','));
                 }
                 let c = [];
+                // 判定与高亮必须同源，且**只按特码号码的五行**（mode 53 = 三行中特 /
+                // 灭庄三行）：命中 = 特码号码所属五行 ∈ 预测三行；高亮只点亮命中的那一行。
+                // 不得再拿生肖五行判定，也不得再用正文里每个标签后的号码清单点行 ——
+                // 历史遗留的 mode 53 正文号码清单是按**生肖五行**拼的（`土|03,06,…,24,…`
+                // 里含 24，而 24 的号码五行是木），照它点行会点错行、判定会误「准」。
+                // 权威口径见 legacy-prediction-verdict.js 的 ELEMENT_NUMBER_GROUPS
+                // （= backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS）。
+                let __verdict = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictOf(53, d) : 'unknown';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
+                let __hitElement = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.hitElementOf(53, d) : '';
+                // 与判定层用同一个标签归一化，避免「判了准却一行都没点亮」。
+                let __normalize = window.legacyPredictionVerdict && window.legacyPredictionVerdict.normalizeElementLabel
+                    ? window.legacyPredictionVerdict.normalizeElementLabel
+                    : function (value) { return String(value == null ? '' : value).trim(); };
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && maValue[i].indexOf(code) !== -1) {
+                    if (__hitElement && __normalize(xiao[i]) === __hitElement) {
                         c.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c.push(`${xiao[i]}`)
@@ -42,7 +54,6 @@ $.ajax({
 
                 // let wei = parseInt()
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(53, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
     
      

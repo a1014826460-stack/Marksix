@@ -16,6 +16,39 @@
     'use strict';
 
     var ZODIAC = '鼠牛虎兔龙蛇马羊猴鸡狗猪';
+
+    /**
+     * 号码五行 —— 五行玩法（53 三行中特 / 灭庄三行）的**唯一权威口径**。
+     *
+     * ⚠️ 与「生肖五行」是两套划分，禁止混用（对同一个号码会给出不同的五行）：
+     *     37：号码五行 = 木；37 的生肖是马（火肖）→ 生肖五行 = 火。
+     *     45：号码五行 = 木；45 的生肖是狗（土肖）→ 生肖五行 = 土。
+     *     24：号码五行 = 木；24 的生肖是羊（土肖）→ 生肖五行 = 土。
+     * 历史遗留的 mode 53 正文（`public.mode_payload_53` 等未修复行）里，每个五行
+     * 标签后的号码清单就是按**生肖五行**拼出来的（`土|03,06,…,24,…,45,48`），
+     * 因此判定与高亮都**不得**再读正文里的号码清单，只能读这里的号码五行。
+     *
+     * 后端权威实现：`backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
+     * （= `canonical_element_number_map()`，= `public.fixed_data` sign='五行'，
+     * 49 码全覆盖、互不重叠）。改这里必须与后端同步，避免两处漂移。
+     */
+    var ELEMENT_NUMBER_GROUPS = {
+        '金': ['03', '04', '11', '12', '25', '26', '33', '34', '41', '42'],
+        '木': ['07', '08', '15', '16', '23', '24', '37', '38', '45', '46'],
+        '水': ['13', '14', '21', '22', '29', '30', '43', '44'],
+        '火': ['01', '02', '09', '10', '17', '18', '31', '32', '39', '40', '47', '48'],
+        '土': ['05', '06', '19', '20', '27', '28', '35', '36', '49'],
+    };
+    var ELEMENT_ORDER = ['金', '木', '水', '火', '土'];
+    var ELEMENT_BY_CODE = (function () {
+        var map = {};
+        for (var e = 0; e < ELEMENT_ORDER.length; e++) {
+            var codes = ELEMENT_NUMBER_GROUPS[ELEMENT_ORDER[e]];
+            for (var n = 0; n < codes.length; n++) map[codes[n]] = ELEMENT_ORDER[e];
+        }
+        return map;
+    })();
+
     var COLOR_BY_CODE = (function () {
         var map = {};
         // 与库内 res_color 一致的标准六合彩波色分组（红 17 / 蓝 16 / 绿 16）
@@ -65,6 +98,29 @@
         if (zodiacs.length) return zodiacs[zodiacs.length - 1];
         var sx = text(row && row.sx).trim();
         return sx ? sx.charAt(0) : '';
+    }
+
+    /** 特码**号码**的五行（不是生肖五行）。取不到（非法号码）返回 ''。 */
+    function elementOfCode(code) {
+        var padded = pad(code);
+        return padded ? (ELEMENT_BY_CODE[padded] || '') : '';
+    }
+
+    /** 正文五行标签归一化：去掉引号/括号/空白与后缀「行」，只留五行名本身。
+     *  判定层与渲染层必须用同一个归一化，否则会出现「判了准但一行都没点亮」。
+     */
+    function normalizeElementLabel(value) {
+        return text(value).replace(/[[\](){}「」【】"'“”‘’　\s]/g, '').replace(/行$/, '');
+    }
+
+    /** 五行候选行的标签（`["木|07,08,…"]` -> ['木']）——只认五个五行名，顺序按正文。 */
+    function elementLabels(groupList) {
+        var labels = [];
+        for (var i = 0; i < groupList.length; i++) {
+            var label = normalizeElementLabel(groupList[i].label);
+            if (ELEMENT_ORDER.indexOf(label) !== -1 && labels.indexOf(label) === -1) labels.push(label);
+        }
+        return labels;
     }
 
     /** 解析 `["标签|号码或生肖", ...]` 形态，返回 [{label, codes, pool, raw}]。
@@ -470,7 +526,6 @@
             case 48:
             case 49:
             case 51:
-            case 53:
             case 61:
             case 63:
             case 151:
@@ -481,6 +536,19 @@
                 if (hasCode && code && numberInGroups(groupList, code) === true) return 'ok';
                 if (hasZodiac || hasCode) return 'miss';
                 return 'unknown';
+            }
+            // ── 五行玩法（53 三行中特 / 灭庄三行）────────────────
+            // 口径：**只看特码号码的五行**（见本文件 ELEMENT_NUMBER_GROUPS）是否落在
+            // 预测的三行里；与生肖无关，也**不读正文里的号码清单** —— 历史遗留的
+            // mode 53 正文号码清单是按生肖五行拼的（`土|…,24,…` 里含 24，而 24 的
+            // 号码五行是木），照它判定会把「生肖五行 ∈ 三行但号码五行 ∉ 三行」的
+            // 期次误判为「准」，且高亮会点到错误的那一行。
+            case 53: {
+                var element53 = elementOfCode(code);
+                var labels53 = elementLabels(groupList);
+                if (!element53) return 'pending';
+                if (!labels53.length) return 'unknown';
+                return labels53.indexOf(element53) !== -1 ? 'ok' : 'miss';
             }
             case 34: {
                 var numbers = csv(content);
@@ -584,14 +652,29 @@
     function verdictHit(verdict) {        return verdict === 'ok';
     }
 
+    /**
+     * 渲染层的「命中行」标签 —— 与 verdictOf 同源，避免判定与高亮两处口径漂移。
+     * mode 53（三行中特 / 灭庄三行）：命中时返回特码**号码五行**；未命中/未开奖返回 ''。
+     */
+    function hitElementOf(modeId, row) {
+        if ((parseInt(modeId, 10) || 0) !== 53) return '';
+        if (verdictOf(modeId, row) !== 'ok') return '';
+        return elementOfCode(specialCode(row, row && row.res_code));
+    }
+
     global.legacyPredictionVerdict = {
         verdictOf: verdictOf,
         verdictText: verdictText,
         verdictHit: verdictHit,
+        hitElementOf: hitElementOf,
         groups: groups,
         zodiacsOf: zodiacsOf,
         specialCode: specialCode,
         specialZodiac: specialZodiac,
+        specialElement: elementOfCode,
+        elementLabels: elementLabels,
+        normalizeElementLabel: normalizeElementLabel,
+        elementNumberGroups: ELEMENT_NUMBER_GROUPS,
         drawnCodes: drawnCodes,
         drawnZodiacs: drawnZodiacs,
         tailLabel: tailLabel,

@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getXingte?web=${web}&type=${type}&num=3`,
     type: 'GET',
     dataType: 'json',
@@ -8,6 +8,40 @@
         let data = response.data
         let yinx = '';
         let yangx = '';
+        // ── 特码**号码五行**（唯一权威口径）───────────────────────────────
+        // 与 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS（= public.fixed_data
+        // sign='五行'）逐项一致：01-49 全覆盖、互不重叠。
+        //
+        // 「三行中特」(mode 53) 的判定与高亮**只能**看特码号码的五行。历史落库正文里
+        // 每个五行标签后的号码清单是按**生肖五行**（fixed_data sign='五行肖'）拼出来的，
+        // 两者对同一号码会给出不同的五行，例如 24 → 号码五行「木」而生肖（羊）五行「土」、
+        // 37 马 → 号码五行「木」而生肖五行「火」、45 狗 → 号码五行「木」而生肖五行「土」。
+        // 旧实现用 `xiaoV[i].indexOf(code)`（正文清单）同时决定黄底与「准/错」，
+        // 于是「生肖五行 ∈ 三行、号码五行 ∉ 三行」的期会被判成「准」并把黄底点在错行上。
+        var ELEMENT_NUMBER_GROUPS = {
+            金: [3, 4, 11, 12, 25, 26, 33, 34, 41, 42],
+            木: [7, 8, 15, 16, 23, 24, 37, 38, 45, 46],
+            水: [13, 14, 21, 22, 29, 30, 43, 44],
+            火: [1, 2, 9, 10, 17, 18, 31, 32, 39, 40, 47, 48],
+            土: [5, 6, 19, 20, 27, 28, 35, 36, 49]
+        };
+        var ELEMENT_ORDER = ['金', '木', '水', '火', '土'];
+        /** 正文标签归一化：去掉引号/括号/空白与后缀「行」。 */
+        function normalizeElementLabel(value) {
+            return String(value == null ? '' : value).replace(/[[\]"'　\s]/g, '').replace(/行$/, '');
+        }
+        /** 特码号码 → 号码五行；号码缺失/非法返回空串（**绝不**回退到生肖五行）。 */
+        function specialElementOfCode(value) {
+            var parsed = parseInt(String(value == null ? '' : value).replace(/[^0-9]/g, ''), 10);
+            if (!(parsed >= 1 && parsed <= 49)) return '';
+            for (var g = 0; g < ELEMENT_ORDER.length; g++) {
+                var group = ELEMENT_NUMBER_GROUPS[ELEMENT_ORDER[g]];
+                for (var k = 0; k < group.length; k++) {
+                    if (group[k] === parsed) return ELEMENT_ORDER[g];
+                }
+            }
+            return '';
+        }
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -26,10 +60,13 @@
                     ma.push(...c[1].split(','));
                 }
 
+                // 命中行 = 特码号码五行所在的那一行（与判定同源），
+                // 不再拿正文里的号码清单定位黄底。
+                let hitElement = specialElementOfCode(code);
                 let c1 = [];
                 let zj = false;
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                    if (hitElement && normalizeElementLabel(xiao[i]) === hitElement) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {

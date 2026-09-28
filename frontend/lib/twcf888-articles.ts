@@ -207,6 +207,56 @@ function parsePipeValue(text: string) {
   }
 }
 
+/**
+ * 号码 → 五行（**号码五行**）——「精准五行 / 三行中特 / 4行4头」的唯一权威口径。
+ *
+ * 抄自 `backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
+ * （= `public.fixed_data` 的 `sign='五行'`；后端 `public/api.py::_ELEMENT_MAP` 同源）。
+ * 01-49 全覆盖、互不重叠：
+ *   金 03,04,11,12,25,26,33,34,41,42
+ *   木 07,08,15,16,23,24,37,38,45,46
+ *   水 13,14,21,22,29,30,43,44
+ *   火 01,02,09,10,17,18,31,32,39,40,47,48
+ *   土 05,06,19,20,27,28,35,36,49
+ *
+ * ⚠️ `fixed_data` 里另有一份 `sign='五行肖'`，那是**生肖五行**（虎兔为木、蛇马为火…）。
+ * 本站 mode 53/482 的历史正文清单就是按生肖五行拼的（`火|01,02,13,14,25,26,37,38,49`
+ * 这种只覆盖 48 码的形态），于是 37 马被算成「火」（号码五行应为「木」）、
+ * 24 羊被算成「土」（号码五行应为「木」）。号码五行只能由**特码号码**推导，
+ * 禁止回退到生肖五行，也禁止用正文清单反推命中行。
+ */
+const ELEMENT_NUMBER_GROUPS: Record<string, readonly string[]> = {
+  金: ["03", "04", "11", "12", "25", "26", "33", "34", "41", "42"],
+  木: ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"],
+  水: ["13", "14", "21", "22", "29", "30", "43", "44"],
+  火: ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"],
+  土: ["05", "06", "19", "20", "27", "28", "35", "36", "49"],
+}
+
+const ELEMENT_BY_CODE: Record<string, string> = Object.keys(ELEMENT_NUMBER_GROUPS).reduce<
+  Record<string, string>
+>((map, element) => {
+  ELEMENT_NUMBER_GROUPS[element].forEach((code) => {
+    map[code] = element
+  })
+  return map
+}, {})
+
+/** 特码号码 → 号码五行；号码缺失/非法返回空串（**绝不**回退到生肖五行）。 */
+function elementOfCode(code: string) {
+  const digits = String(code || "").replace(/[^0-9]/g, "")
+  if (!digits) return ""
+  return ELEMENT_BY_CODE[digits.padStart(2, "0")] || ""
+}
+
+/** 正文标签归一化：去掉引号/括号/空白与后缀「行」（`土行` → `土`）。 */
+function normalizeElementLabel(label: string) {
+  return String(label || "")
+    .replace(/[[\]"'　\s]/g, "")
+    .replace(/行$/, "")
+    .trim()
+}
+
 function getOpenedResultZodiac(row: PublicHistoryRow) {
   if (!row.is_opened) {
     return ""
@@ -521,11 +571,30 @@ function buildArticlePredictionHtml(
         )
       return buildPredictionSpan(labels.join(""))
     }
+    case 53:
+    case 482: {
+      // 精准五行（6104）/ 三行中特（6111）/ 4行4头（7623 的五行部分，mode 482）。
+      //
+      // 判定取接口 `is_correct`（后端 `_compute_outcome_from_row` 的 element 原子 =
+      // 号码五行）；**高亮必须同源**：命中行 = 特码号码的号码五行所对应的那一行。
+      // 旧实现用 `pickMatchedPipeLabel`（正文里每个五行标签后的号码清单）定位命中行，
+      // 而历史正文清单是**生肖五行**口径，于是「号码五行命中却零黄底」或
+      // 「黄底落在生肖五行那一行」——正是用户报障的 24/37/45 一类错判。
+      const specialElement = row.is_opened && row.is_correct === true ? elementOfCode(resultCode) : ""
+      const labels = predictionList
+        .map((item) => {
+          const label = parsePipeValue(item).label.trim()
+          if (!label) return ""
+          return specialElement && normalizeElementLabel(label) === specialElement
+            ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
+            : escapeHtml(label)
+        })
+        .filter(Boolean)
+      return buildPredictionSpan(labels.join("-"))
+    }
     case 74:
-    case 482:
     case 483:
     case 12:
-    case 53:
     case 66: {
       const matchedLabel = pickMatchedPipeLabel(predictionList, resultCode)
       const labels = predictionList
@@ -761,7 +830,10 @@ function buildFourLineFourHeadRows(
 
       const resultCode = getOpenedResultCode(elementRow)
       const matchedHead = pickMatchedPipeLabel(parsePredictionList(headRow), resultCode)
-      const matchedElement = pickMatchedPipeLabel(parsePredictionList(elementRow), resultCode)
+      // 五行部分（mode 482）只认**特码号码五行**：正文清单是生肖五行口径，
+      // 拿它定位命中行会点错行（4行4头 7623）。
+      const matchedElement =
+        elementRow.is_opened && resultCode ? elementOfCode(resultCode) : ""
       const elementLabels = parsePredictionList(elementRow)
         .map((item) => parsePipeValue(item).label.trim())
         .filter(Boolean)
@@ -773,7 +845,7 @@ function buildFourLineFourHeadRows(
       const isCorrect = isOpened ? Boolean(matchedHead || matchedElement) : null
       const elementHtml = elementLabels
         .map((label) =>
-          isOpened && !matchedHead && matchedElement === label
+          isOpened && !matchedHead && normalizeElementLabel(label) === matchedElement
             ? `<span style="background-color: #FFFF00">${escapeHtml(label)}</span>`
             : escapeHtml(label)
         )

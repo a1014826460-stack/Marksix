@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { PublicModule, PublicSitePageData } from "@/lib/site-page"
+import {
+  elementHitJudgement,
+  elementOfCode,
+  normalizeElementLabel,
+} from "@/lib/twcaibawang-elements"
 import type { VendorHomepageModule, VendorHomepageModulesResponse } from "@/lib/vendor-homepage"
 
 type TwcaibawangHomeClientProps = {
@@ -1626,15 +1631,23 @@ function renderSihangzhongte(module: PublicModule | null, lotteryTypeId: 1 | 2 |
     .map((row) => {
       const entries = parseLabelCodeEntries(getRowContent(row))
       const { code: hitCode } = specialPartsOf(row.result, row.isOpened)
-      const hitLabel = row.isOpened ? labelForCode(entries, hitCode) : ""
-      const isCorrect = resolveJudgement(
-        row.isCorrect,
-        row.isOpened && hitCode ? hitLabel !== "" : null
-      )
-      // 四行中特：标黄特码所属的五行
+      // 四行中特：判定与标黄**只按特码号码的五行**（特码 = res_code 最后一项），
+      // 号码五行 ∈ 预测四行 → 对，且只标黄命中的那一行。
+      // 这里刻意**不**用正文条目里的号码清单：该清单历史上是生肖五行
+      //（如 `木|04,05,16,17,28,29,40,41`，17 虎被算成木，而号码五行 17 = 火；
+      // 37 马被算成火 + 只覆盖 48 码），用它落黄会把生肖五行当成号码五行。
+      // 号码五行分组见 frontend/lib/twcaibawang-elements.ts
+      //（权威来源 backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS）。
+      const predictedLabels = entries.map((entry) => entry.label)
+      const hitElement = row.isOpened ? elementOfCode(hitCode) : ""
+      const computed = row.isOpened ? elementHitJudgement(predictedLabels, hitCode) : null
+      // 号码五行复算优先：接口 is_correct（public/api.py::_ELEMENT_MAP 同口径）只在复算
+      // 不可用（未开奖 / 特码缺失 / 正文无标签）时兜底，避免旧口径或快照缓存把
+      //「生肖 ∈ 四行、号码 ∉ 四行」的期判成「对」而与标黄落点自相矛盾。
+      const isCorrect = computed !== null ? computed : resolveJudgement(row.isCorrect, null)
       const text = entries
         .map((entry) =>
-          isCorrect === true && hitLabel === entry.label
+          isCorrect === true && hitElement !== "" && hitElement === normalizeElementLabel(entry.label)
             ? `<span style="background-color: #FFFF00">${escapeHtml(entry.label)}</span>`
             : escapeHtml(entry.label)
         )

@@ -8,7 +8,10 @@
 //   2. 9肖中特：命中生肖标黄；
 //   3. 绝杀一波只能出现一次；
 //   4. 琴棋书画用「两行分组说明 + 每期一行」的新格式；
-//   5. 四字玄机（mode 52）的候选 title/jiexi 成对，且相邻五期不重复。
+//   5. 四字玄机（mode 52）的候选 title/jiexi 成对，且相邻五期不重复；
+//   6. 四行中特（mode 482）只按**特码号码五行**判定与标黄：特码 = res_code 最后一项，
+//      命中 = 该号码五行 ∈ 预测四行，只标黄命中的那一行；未开奖不判定、零高亮；
+//      「生肖五行 ∈ 四行但号码五行 ∉ 四行」必须判「错」（见第 6 节，真跑渲染函数）。
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import vm from "node:vm"
@@ -54,7 +57,15 @@ function extractFunction(text, name) {
 function stripTs(text) {
   return text
     .replace(/(function\s+[A-Za-z_$][\w$]*\s*\()([^)]*)(\))/g,
-      (_match, head, params, tail) => head + params.replace(/:\s*[^,)]+/g, "") + tail)
+      (_match, head, params, tail) =>
+        head +
+        params
+          .replace(/:\s*[^,)]+/g, "")
+          // TS 可选形参（`options?: {…}` → `options`）；形参块去掉了尾部 `)`
+          .replace(/\?\s*(?=[,)]|$)/g, "") +
+        tail)
+    // 函数返回值注解（`): SourceRow[] {` → `) {`）
+    .replace(/\)\s*:\s*[A-Za-z_$][\w$<>[\]|, .]*(?=\s*\{)/g, ")")
     .replace(/\b(const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*[^=\n]+=/g, "$1 $2 =")
     .replace(/\s+as\s+[A-Za-z_$][\w$<>[\]|" ]*/g, "")
 }
@@ -146,6 +157,17 @@ const tiandiSource = tiandiMatch[0].replace(
   "const TIANDI_ZODIACS ="
 )
 
+// 该站号码五行分组（四行中特 mode 482 的判定/标黄口径）。这里**真跑**它，而不是
+// 在测试里另抄一份表，保证「改回生肖五行」必定 FAIL。
+const ELEMENTS_TS = "frontend/lib/twcaibawang-elements.ts"
+const elementsSource = stripTs(
+  fs.readFileSync(ELEMENTS_TS, "utf8").replace(/^export\s+/gm, "")
+)
+assert.ok(
+  elementsSource.includes("ELEMENT_NUMBER_GROUPS") && elementsSource.includes("elementHitJudgement"),
+  `${ELEMENTS_TS} 必须导出号码五行分组与命中判定`,
+)
+
 const harness = [
   stripTs(section(source, "mapColorToWave")),
   "const COLOR_BY_CODE = (() => { const map = {}; const put = (codes, name) => { codes.split(',').forEach((code) => { map[code] = name }) };",
@@ -160,7 +182,23 @@ const harness = [
   stripTs(section(source, "labelForCode")),
   tiandiSource,
   stripTs(section(source, "tiandiZodiacsOf")),
-  "globalThis.__tcbw = { COLOR_BY_CODE, waveLabelOfCode, halfWaveLabelOfCode, specialPartsOf, resolveJudgement, labelForCode, tiandiZodiacsOf }",
+  // ── 四行中特：整段真跑渲染函数所需的依赖 ─────────────────────
+  elementsSource,
+  stripTs(section(source, "escapeHtml")),
+  stripTs(section(source, "normalizePredictionText")),
+  stripTs(section(source, "parseJsonStringArray")),
+  stripTs(section(source, "sortRowsByTermDesc")),
+  stripTs(section(source, "toSourceRows")),
+  stripTs(section(source, "getRowContent")),
+  stripTs(section(source, "parseLabelCodeEntries")),
+  stripTs(section(source, "formatOpenResult")),
+  stripTs(section(source, "renderResultWithCustomJudge")),
+  stripTs(section(source, "renderJudgeResult")),
+  stripTs(section(source, "getLotteryLiuheName")),
+  stripTs(section(source, "renderTitleTable")),
+  stripTs(section(source, "renderLiuhePredictionTitleTable")),
+  stripTs(section(source, "renderSihangzhongte")),
+  "globalThis.__tcbw = { COLOR_BY_CODE, waveLabelOfCode, halfWaveLabelOfCode, specialPartsOf, resolveJudgement, labelForCode, tiandiZodiacsOf, ELEMENT_NUMBER_GROUPS, ELEMENT_BY_CODE, elementOfCode, normalizeElementLabel, elementHitJudgement, renderSihangzhongte }",
 ].join("\n")
 
 const sandbox = {}
@@ -203,4 +241,144 @@ assert.equal(api.labelForCode(entries, "49"), "")
 assert.deepEqual([...api.tiandiZodiacsOf("天肖")], ["兔", "马", "猴", "猪", "牛", "龙"])
 assert.deepEqual([...api.tiandiZodiacsOf("地肖")], ["鼠", "虎", "蛇", "羊", "鸡", "狗"])
 
+// ── 6. 四行中特（mode 482）只按**特码号码五行**判定与标黄 ──────────
+//
+// 背景：twcaibawang 的 mode 482 正文里的号码清单来自供应商的**生肖五行**
+// （`fixed_data` sign='五行肖'）：`木|04,05,16,17,28,29,40,41`、`火|01,02,13,14,25,26,37,38,49`
+// —— 只覆盖 48 码，且 17 虎算「木」（号码五行是火）、37 马算「火」（号码五行是木）。
+// 旧实现用 `labelForCode(entries, hitCode)`（正文清单）定位命中行，于是：
+//   · 号码五行命中但生肖五行不命中 → 该期「对」却零黄底；
+//   · 生肖五行命中而号码五行不命中 → 黄底落在生肖那一行（用户报障）。
+// 现在的口径：特码 = res_code 最后一项，命中 = 该号码五行 ∈ 预测四行，只标黄该行。
+const LEGACY_ZODIAC_ELEMENT_GROUPS = {
+  金: [10, 11, 22, 23, 34, 35, 46, 47],
+  木: [4, 5, 16, 17, 28, 29, 40, 41],
+  水: [7, 8, 19, 20, 31, 32, 43, 44],
+  火: [1, 2, 13, 14, 25, 26, 37, 38, 49],
+  土: [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48],
+}
+const ALL_ELEMENTS = ["金", "木", "水", "火", "土"]
+
+/** 该站真实正文形态（生肖五行的号码清单）。 */
+function elementContent(labels, groups = LEGACY_ZODIAC_ELEMENT_GROUPS) {
+  return `[${labels.map((label) => `"${label}|${groups[label].join(",")}"`).join(", ")}]`
+}
+
+function tcbwRow({ term, content, result, isOpened = true, isCorrect = null }) {
+  return {
+    term,
+    prediction_text: content,
+    result_text: result,
+    is_opened: isOpened,
+    is_correct: isCorrect,
+    raw: { content },
+  }
+}
+
+function renderSihangRows(rows) {
+  return api.renderSihangzhongte({ mechanism_key: "sihangzhongte", history: rows }, 3)
+}
+
+function yellowLabels(html) {
+  return [...html.matchAll(/background-color: #FFFF00">([^<]*)<\/span>/g)].map((match) => match[1])
+}
+
+/** 去掉标签后的可见文字（判定文字「对」被 font 包裹、「错」不被包裹）。 */
+function plainText(html) {
+  return html.replace(/<[^>]*>/g, "")
+}
+
+// 6.1 号码五行分组：01-49 全覆盖、互不重叠、与后端权威常量一致
+const groupedCodes = Object.keys(api.ELEMENT_NUMBER_GROUPS).flatMap((element) => [
+  ...api.ELEMENT_NUMBER_GROUPS[element],
+])
+assert.equal(groupedCodes.length, 49, "号码五行必须覆盖 49 码")
+assert.equal(new Set(groupedCodes).size, 49, "号码五行不得重叠")
+assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["木"]], ["07", "08", "15", "16", "23", "24", "37", "38", "45", "46"])
+assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["火"]], ["01", "02", "09", "10", "17", "18", "31", "32", "39", "40", "47", "48"])
+assert.deepEqual([...api.ELEMENT_NUMBER_GROUPS["土"]], ["05", "06", "19", "20", "27", "28", "35", "36", "49"])
+for (const [code, element] of [["24", "木"], ["37", "木"], ["01", "火"], ["05", "土"], ["13", "水"], ["03", "金"]]) {
+  assert.equal(api.elementOfCode(code), element, `${code} 的号码五行应为 ${element}`)
+}
+assert.equal(api.elementOfCode(""), "", "空号码不得回退到生肖五行")
+assert.equal(api.elementHitJudgement([], "37"), null, "没有预测标签时不可判定")
+assert.equal(api.elementHitJudgement(["木"], ""), null, "没有特码时不可判定")
+
+// 6.2 需求②：号码五行 ∈ 四行 → 判「对」，且只标黄那一行
+for (const [code, element] of [["24", "木"], ["37", "木"], ["01", "火"], ["05", "土"], ["13", "水"], ["03", "金"]]) {
+  const excluded = ALL_ELEMENTS.find((item) => item !== element)
+  const predicted = ALL_ELEMENTS.filter((item) => item !== excluded)
+  assert.ok(predicted.includes(element), `${code} 样例必须把 ${element} 排进预测四行`)
+  const html = renderSihangRows([
+    tcbwRow({ term: "270", content: elementContent(predicted), result: `兔${code}` }),
+  ])
+  assert.ok(plainText(html).includes(`${code}兔对`), `${code}（号码五行 ${element}）命中预测四行应判「对」`)
+  assert.deepEqual(yellowLabels(html), [element], `${code} 只应标黄号码五行那一行（${element}）`)
+}
+
+// 6.3 需求①：生肖五行 ∈ 四行、号码五行 ∉ 四行 → 必须判「错」，零黄底
+// 17 虎：生肖五行 = 木（旧正文 `木|…,17,…`），号码五行 = 火
+// 24 羊：旧正文把 24 放进「土」；号码五行 = 木
+for (const [code, zodiac, zodiacElement, numberElement, predicted] of [
+  ["17", "虎", "木", "火", ["木", "金", "水", "土"]],
+  ["24", "羊", "土", "木", ["土", "金", "水", "火"]],
+]) {
+  assert.equal(api.elementOfCode(code), numberElement, `${code} 号码五行应为 ${numberElement}`)
+  assert.ok(
+    LEGACY_ZODIAC_ELEMENT_GROUPS[zodiacElement].includes(Number(code)),
+    `前提：供应商旧正文把 ${code} 归到 ${zodiacElement}（生肖五行）`,
+  )
+  assert.ok(predicted.includes(zodiacElement), `前提：${zodiacElement}（生肖五行）在预测四行内`)
+  assert.ok(!predicted.includes(numberElement), `前提：${numberElement}（号码五行）不在预测四行内`)
+  // 接口即使（旧口径 / 快照缓存）说「对」，也必须以号码五行为准改判「错」
+  for (const apiValue of [null, true]) {
+    const html = renderSihangRows([
+      tcbwRow({
+        term: "270",
+        content: elementContent(predicted),
+        result: `${zodiac}${code}`,
+        isCorrect: apiValue,
+      }),
+    ])
+    assert.ok(
+      plainText(html).includes(`${code}${zodiac}错`),
+      `${code}（生肖五行 ${zodiacElement} ∈ 四行、号码五行 ${numberElement} ∉ 四行）必须判「错」（接口值 ${apiValue}）`,
+    )
+    assert.deepEqual(yellowLabels(html), [], `${code} 判「错」时不得有任何黄底`)
+  }
+}
+
+// 6.4 需求③：未开奖不显示判定、零高亮
+const unopened = renderSihangRows([
+  tcbwRow({
+    term: "271",
+    content: elementContent(["木", "金", "水", "土"]),
+    result: "待开奖",
+    isOpened: false,
+  }),
+])
+assert.ok(unopened.includes("??????"), "未开奖只显示开奖占位")
+assert.ok(
+  !plainText(unopened).includes("对") && !plainText(unopened).includes("错"),
+  "未开奖不得显示「对 / 错」",
+)
+assert.deepEqual(yellowLabels(unopened), [], "未开奖零高亮")
+
+// 6.5 需求③：号码五行不在预测四行 → 判「错」且零黄底
+const missHtml = renderSihangRows([
+  tcbwRow({ term: "269", content: elementContent(["金", "水", "火", "土"]), result: "马37" }),
+])
+assert.ok(plainText(missHtml).includes("37马错"), "37 号码五行 = 木，不在 金/水/火/土 里应判「错」")
+assert.deepEqual(yellowLabels(missHtml), [], "错期零黄底")
+
+// 6.6 结构约束：四行中特不得再用正文号码清单（生肖五行）定位命中行
+const sihangBody = section(source, "renderSihangzhongte")
+assert.ok(
+  !sihangBody.includes("labelForCode("),
+  "四行中特不得再用正文号码清单（生肖五行）定位命中行",
+)
+assert.ok(sihangBody.includes("elementHitJudgement"), "四行中特必须用号码五行判定命中")
+assert.ok(sihangBody.includes("elementOfCode"), "四行中特必须用号码五行决定标黄落点")
+
 console.log(`twcaibawang verdict contract passed (${JUDGE_MODULES.length} 个判定模块)`)
+
