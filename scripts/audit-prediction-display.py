@@ -223,19 +223,24 @@ ROW_SCRIPT = r"""
     }
     const host = item.el.closest('tr');
     if (host) {
-      // 只并入**下一个**兄弟行：供应商把「一期」拆成两行时，内容行写在标题行之后
+      // 只并入**后面**的兄弟行：供应商把「一期」拆成两行时，内容行写在标签行之后
       // （四字玄机 / 独家幽默 / 一句真言都是「标题行 + 内容行」）。若回头并上一个兄弟行，
       // 会把上一期的内容行算到本期头上，造成「错期却有黄底」的假阳性。
-      for (const sib of [host.nextElementSibling]) {
-        if (!sib) continue;
-        if (isTitleRow(sib)) continue;
+      // 连续并入**多个**兄弟行，直到遇到下一个期号为止——「配对模块」会把判定留在 header 行、
+      // 把命中黄底写在紧随其后的 detail 行，只并一行会漏掉那块高亮（twssz 的三肖六码/双波10码）。
+      let sib = host.nextElementSibling;
+      let merged = 0;
+      while (sib && merged < 3) {
+        if (isTitleRow(sib)) { sib = sib.nextElementSibling; continue; }
         const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!sibText || sibText.length > 260) continue;
-        if (/\d{2,3}\s*期/.test(sibText)) continue;
-        if (!/开|開/.test(sibText) && countYellow(sib) === 0 && !looksLikeCandidates(sibText)) continue;
+        if (!sibText || sibText.length > 260) break;
+        if (/\d{2,3}\s*期/.test(sibText)) break;
+        if (!/开|開/.test(sibText) && countYellow(sib) === 0 && !looksLikeCandidates(sibText)) break;
+        if (text.length + sibText.length > 220) break;
         text = (text + ' ' + sibText).trim();
         nodes.push(sib);
-        break;
+        merged += 1;
+        sib = sib.nextElementSibling;
       }
     }
     out.push({
@@ -307,6 +312,10 @@ VERDICT_NOISE_RE = re.compile(r"不?中奖|必中|中特")
 # 排除型（杀号）玩法：判定「准/对」= 杀掉的集合里没有开奖目标 = 本来就没有可高亮的命中项，
 # R4（命中却没高亮）对这类模块不适用。
 EXCLUDE_MODULE_RE = re.compile(r"绝杀|绝禁|绝版杀|输尽光|杀[一二三四五六七八九十\d]|必杀")
+# 「一格多玩法」的聚合卡片（A级猛料/AAA级大公开）：卡片级的「对」表示卡内至少有一处命中，
+# 供应商也确实把那处命中标了黄（只是在同一张卡的别的格子里）。这类卡片按卡判定符合规范，
+# 逐格看会误报 R4，故显式豁免。
+AGGREGATE_CARD_RE = re.compile(r"A级大公|AAA级大公|准确率")
 
 
 def _rightmost_verdict(tail: str) -> str:
@@ -442,7 +451,10 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
         if any(EXCLUDE_MODULE_RE.search(row["text"]) for row in module_rows):
             continue
         # 模块归属不明的行（跨行合并拿不到容器 id）无法可靠归因高亮，不报 R4。
-        if module == "?":
+        if module == "?" or module.startswith("?|"):
+            continue
+        # 「一格多玩法」的聚合卡片按卡判定（见 AGGREGATE_CARD_RE 注释）。
+        if AGGREGATE_CARD_RE.search(module) or any(AGGREGATE_CARD_RE.search(row["text"]) for row in module_rows):
             continue
         for row in module_rows:
             if is_pending(row["text"]):
@@ -488,6 +500,12 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
     hit_tokens = ("准", "对", "赢", "中")
     miss_tokens = ("错", "输", "不中")
     for module, module_rows in by_module.items():
+        # 归属不明的容器（拿不到 id/class）与「一格多玩法」的聚合卡片不参与 R8——
+        # 前者无法确定是不是同一个玩法，后者的行本来就跨玩法混排。
+        if module == "?" or module.startswith("?|"):
+            continue
+        if AGGREGATE_CARD_RE.search(module) or any(AGGREGATE_CARD_RE.search(row["text"]) for row in module_rows):
+            continue
         decided: list[str] = []
         for row in module_rows:
             text = row["text"]
