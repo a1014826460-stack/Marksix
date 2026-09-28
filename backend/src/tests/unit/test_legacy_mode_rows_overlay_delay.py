@@ -61,6 +61,7 @@ def _setup_db(tmp_path: Path) -> str:
                 next_time TEXT,
                 status INTEGER,
                 is_opened INTEGER,
+                opened_at TEXT,
                 next_term INTEGER,
                 created_at TEXT,
                 updated_at TEXT

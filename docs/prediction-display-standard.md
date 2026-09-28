@@ -746,6 +746,148 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 
 ---
 
+## 五之十三、twbst528 七项展示改造（2026-09-30）
+
+站点：`twbst528`（web_id 10）主页 `frontend/public/vendor/twbst528/index.html` +
+适配器 `frontend/public/vendor/twbst528/site-data-adapter.js`。
+
+| # | 需求 | 实现 |
+| --- | --- | --- |
+| 1 | 【八肖来袭】→【七肖来袭】 | `index.html` / `index1.html` 板块标题改名；适配器 `sectionByTitle("七肖来袭")`，数据源仍是 mode 44（`7xiao7ma`） |
+| 2 | 【平特①肖】/【绝杀①肖】内容显示改「生肖×3」（鸡鸡鸡） | `renderPingteYixiaoHistory`（命中整段标黄）、`renderJueshaYixiaoHistory`（排除型零黄底）都按供应商模板的重复三次写法 |
+| 2b | **所有平特**按七个开奖号码判定 | 新增平特判定引擎：`fullDrawnCodes` / `fullDrawnZodiacs`（按长度取最长的开奖串，兼容 `raw.res_code` 与嵌套 `raw.raw.res_code`）、`flatZodiacHit`（生肖 ∈ 七肖）、`flatTailHit`（尾数 ∈ 七码尾数）、`withFlatVerdict` + `applyFlatVerdicts`（渲染前对 `pt1xiao/pt1wei/pt2xiao/pt3xiao` 统一改写判定） |
+| 2c | 平特命中项可能是**平码** | `withFlatVerdict` 在行上挂 `flatDraw`，`highlightTokens` 增加「候选 ∈ 七个开奖值」命中分支，避免「命中却零黄底」（R4） |
+| 2d | 【绝杀①肖】判定口径 | 用户确认**保持**「按最后一个开奖号码（特码）判定」，不做七码复算（只在测试里加反向断言锁死） |
+| 3 | 【天地+②肖】【18码中特】无后端资料 | 18码中特 进 `EMPTY_PANEL_TITLES`（蓝图 `blocked_requires_backend_work`）；天地+②肖 先进 `UNBACKED_PANELS`（按模块行数动态隐藏）。两者都只隐藏、保留 DOM 与 `data-prediction-empty` 标记。**同日晚些的第二轮把天地+②肖的数据源由 0 行的 `tiandi_2xiao` 改为 `title_5`（mode 5 天地生肖）并恢复显示 —— 见本节的「补充」小节** |
+| 4 | 【独家公式】排版 | 去掉模板占位字母 `T`（`T37`）与烤死的「整体准确率：96.96%。参弃随意」；每行统一 `第N期 开：20-19-38-35-23-42-45狗 【单数】√`；√/x 取**维度判定** `raw.formula[kind].is_correct`（行级 `result.isCorrect` 在该供应商模块里恒为 null，旧实现因此把命中行也显示成 `x`）；标黄只落维度值（单数/大数/命中的那个尾数数字） |
+| 5 | 【家野中特】显示家禽/野兽 | 数据源由「平特2肖（mode 43）」换成站内已授权的 mode 14「家禽野兽」（`title_14`）；`domesticWildGroups` 兼容两种 tokens 形态（组名单独成项 / 用 `;` 粘在上一肖后），显示 `家禽：猪鸡羊马+野兽：猴龙鼠兔`，标黄只落开出的那个特肖 |
+| 6 | 【码友三（10码中特）】→【码友三（六肖中特）】 | 卡片标题改名（数据源本来就是 `6xzt` = mode 46 六肖中特，旧标题与正文不符） |
+| 7 | 【暴富⑦肖】去号码、只留生肖 | `renderBaofuQixiaoHistory` 由 `tokens(row).join("")`（会输出 `猪\|08猴\|11…` 原始串）改为 `zodiactsOf(row).join("")`；【七肖来袭】同口径 |
+
+**验收（本地，未部署）**：
+
+- 展示审计：`python scripts\audit-prediction-display.py twbst528 --base-url http://127.0.0.1:3000`
+  → `rows=383 js_errors=0 error=0 warn=2`（与改动前持平，warn 仍是两条既有 R5 连期重复）。
+- 渲染契约：`twbst528-display-contract.mjs`（新增第 19 节：七码引擎/三次显示/独家公式排版/
+  家野中特数据源/暴富⑦肖纯生肖/动态隐藏）、`twbst528-live-mapping-contract.py`
+  （修复既有红色项：天地+②肖 与 18码中特 改为断言整块隐藏、一肖一码/⑤肖⑩码 同；
+  新增平特七码口径、暴富⑦肖纯生肖、码友三改名、独家公式排版断言）、
+  `twbst528-tiandi-display-contract.py`（天地板块按行数动态隐藏后仍通过：夹具给了行 → 面板照常渲染）。
+- 后端：`cd backend/src; python -m pytest -q` → `1159 passed / 13 skipped / 2 failed`，
+  两个失败与改动前一致（`test_nginx_exposes_exact_liveness_and_readiness_proxies`；
+  `test_postgres_scheduler_task_is_exclusively_acquired_and_recovers_after_lock_timeout` 并发偶发）。
+
+### 补充（同日第二轮）：分类中特板块的「借模块」错位（2026-09-30）
+
+**报障现象**：【左右中特】内容显示「天肖/地肖」、【日夜特肖】内容显示「前肖/后肖」。
+
+**根因**：这两个板块的数据源在适配器里被绑成了**别的玩法**的模块，而本站没有它们自己的分类数据：
+
+| 板块 | 改前绑的模块 | 该模块正文标签 | 本站数据 |
+| --- | --- | --- | --- |
+| 左右中特 | `title_5` = mode 5 天地生肖 | 天肖/地肖 | 有（但属于天地口径） |
+| 日夜特肖 | `qianhou_texiao` = mode 219 前后特肖 | 前肖/后肖 | 有（但属于前后口径） |
+| 阴阳⑧码中特 | `title_48` = mode 48 8肖中特 | 8 个生肖 | 有（但属于 8 肖口径） |
+| 前后中特 | `qianhou_texiao` = mode 219 前后特肖 | 前肖/后肖 | ✅ 口径本来就一致 |
+
+库内核对（dev 库 `created.mode_payload_*`）：`mode_payload_152`（左右肖）只有 web 1/4/6/7/8，
+**没有 web=10**；`mode_payload_164`（日夜肖）在按站点生成的数据表里**全站 0 行**；
+阴阳肖同样没有 web=10 的生成行 → 这三个板块**不可能**显示正确的左/右、日/夜、阴/阳。
+
+**处理**（用户确认）：
+
+1. **左右中特 / 日夜特肖 / 阴阳⑧码中特 → 整块隐藏**：不再借别的模块，进 `EMPTY_PANEL_TITLES`
+   （`data-prediction-empty` + `display:none`，保留 DOM，后端补数据后可还原映射）。
+2. **天地+②肖 改绑 `title_5`**：`title_5` 就是 mode 5「天地生肖（天地选1，生肖选2）」——
+   正文 `["地肖|蛇,羊,鸡,狗,鼠,虎"]` + `xiao` 两肖，正是面板图例/样例的 `天肖+狗鼠` 形状，
+   web=10 有真实历史行；此前绑的供应商模块 `tiandi_2xiao` 全站 0 行，面板只能隐藏。
+   判定仍由 `tiandiJudgement()` 本地复算（**特肖 ∈ 天地组 ∪ 两肖**），不靠接口那套「只比两肖」的口径；
+   `tiandiJudgement` 现在同时认两种字段形状（`tiandi`+`xiao_pair` / 正文标签+`xiao`）。
+3. **`UNBACKED_PANELS` 改为 `{title: "天地+②肖", moduleKey: "title_5"}`**：按行数动态隐藏，
+   `title_5` 有行就渲染、没行才隐藏。
+
+**契约测试同步**：
+
+- `twbst528-tiandi-display-contract.py`：夹具从 `tiandi_2xiao`（`raw.tiandi`/`raw.xiao_pair`）
+  改为 `title_5`（正文标签 + `raw.xiao`），断言不变（天地组∪两肖、只标命中项、错/未开奖零黄底）。
+  该契约的「杂散黄底」探针补上**可见性口径**（`getClientRects().length > 0`）——被隐藏板块里
+  烤死的模板黄底样例不是页面展示，与 `scripts/audit-prediction-display.py` 的 ROW_SCRIPT 同口径，
+  否则新隐藏的三个板块的静态样例会被误报成 12 处杂散黄底。
+- `twbst528-display-contract.mjs`：新增 10b 节（天地+②肖必须绑 `title_5`、前后中特绑
+  `qianhou_texiao`、三个无数据板块不得再接模块渲染），并更新隐藏清单断言。
+- `twbst528-live-mapping-contract.py`：新增 `title_5`/`qianhou_texiao` 的真实形状夹具，
+  断言天地+②肖**可见**（`地肖+猴猪`、特肖不命中 → `开:36马错`、零黄底），
+  三个无数据板块整块隐藏。
+
+**验收**：`rows=371 js_errors=0 error=0 warn=2`（与改前同类持平，warn 仍是既有 R5 两条）；
+页面实测天地+②肖 = `地肖+猪兔 / 天肖+龙狗 / 天肖+龙蛇 …`（对/错按天地组∪两肖，命中项标黄），
+前后中特 = `前肖/后肖`，左右中特/日夜特肖/阴阳⑧码中特 `display:none`。
+
+**遗留（本轮未动）**：twbst528「红蓝绿肖」仍原样显示 `绿肖|羊,龙,牛,狗` 这类 `标签|值` 串
+（同类 S5 观感问题，非 error）；左右中特 / 日夜特肖 / 阴阳⑧码中特 要恢复显示，需先为 web=10
+生成并授权左右肖（mode 152）/ 日夜肖 / 阴阳肖数据。
+
+---
+
+## 五之十四、平特（x平特x）口径全站核查（2026-09-30）
+
+**需求**：所有「x平特x」预测模块的命中判定都要跟**本期七个开奖号码**比，不是只看最后一个特码/特尾；
+并要求核查十个站点。用户报障样例：`271期成语平特尾:【六道轮回】 开:猴35错` —— 第 271 期第一个
+开奖号码是 36（尾 6），与「六」一致，应判「准」。
+
+### 判定基准（权威）与三类数据来源
+
+| 判定来源 | 站点 | 核查方式 |
+| --- | --- | --- |
+| 后端 `is_correct`（`predict.common.flat_zodiac_hit` / `flat_tail_hit`，config `flat_zodiac` / `flat_tail`） | twssz、twjsz666、twwanli、twcaibawang(部分)、twcf888 | `python scripts\audit-verdict-truth.py --mode-id 43 --mode-id 54 --mode-id 56 --mode-id 103 --mode-id 173 --mode-id 470` → 十站点 `error=0`（judged=2450） |
+| 站点自己的 legacy JS | shengshi8800（`legacy-prediction-verdict.js` 的 `flatZodiacVerdict`/`flatTailVerdict`）、twsaimahui（`getZjIndex(..., 整期串)`） | 源码审阅 + 渲染层契约 |
+| 站点适配器 / Next 侧渲染器 | twbst528（平特七码引擎，2026-09-30 上一轮）、twsyw、twjinniu（`flatZodiacHit`/`flatTailHit`）、twcaibawang（`TwcaibawangHomeClient`） | 源码审阅 + 各站契约 |
+
+### 本轮修的三处（twsaimahui 两文件 + twsyw 两面板）
+
+| 站点 | 模块 | 问题 | 修法 |
+| --- | --- | --- | --- |
+| twsaimahui | `068chengyupw.js` 成语平特尾 | 只比**特码**尾数（`tail === num`）→ 命中落在平码上的期一律判「错」 | 遍历 `codeSplit` 比末位数字；命中时标黄**预测的成语**（命中的可能是平码，标黄特码会给出假命中标记） |
+| twsaimahui | `022pt1w.js` 平特一尾 | 用子串包含判定：候选尾 1 会被 19（十位 1）误命中 | 只比号码**末位数字** |
+| twsyw | `#gold6xiao` 黄金六肖的「平特一肖资料」那一路 | 用**特肖**比对（`oneHit = inList(one, specialZodiac)`） | 改为与**七个开奖号码的生肖**比对，命中项点亮该候选（九肖那一路仍按中特口径） |
+| twsyw | `#five_no_hit` 平特5不中 | 只比**特码**：`特码 ∈ 前 5 码` | 按站点负责人确认的**不中语义 + 平特口径**：展示的前 5 码在本期**七个开奖号码**里**一个都不出现**才算「对」，出现任意一个即「错」；排除型零黄底（行内没有 `res_code` 时回退特码） |
+
+### 保留不动的两处（数据侧问题，改展示只会更错）
+
+| 站点 | 模块 | 现状 | 为什么不动 |
+| --- | --- | --- | --- |
+| twcaibawang | `#szpt` 四字平特 | 绑 `sizixuanji`（mode 52 四字玄机，判定 = 特肖 ∈ `jiexi` 池） | `jiexi` 池是**7 个生肖**（如实测 `虎马兔龙牛羊狗`）：7 肖池对上 7 个开奖号码，平特口径的命中率 ≈ 99.6%，改完会变成「恒对」；要真正做平特需数据侧提供「四字 → 单肖」的候选 |
+| twjsz666 | `四字解平特肖` | 同上（同一 mode 52、同一 7 肖池） | 同上 |
+
+### 验收
+
+- `python scripts\audit-verdict-truth.py`（六个平特 mode，十站点）：`error=0 / judged=2450 / 误差率 0.0000%`。
+- 展示层复算筛查（playwright 抓十站点页面 + 用真实开奖库复算）：所有「x平特x」行与七码口径一致；
+  逐站行数：shengshi8800 14 / twcaibawang 16 / twsaimahui 54 / twjinniu 16 / twcf888 45 /
+  twssz 24 / twbst528 5（论坛标题行，非预测行）/ twjsz666 32 / twwanli 0（面板文本不含「平特」）/
+  twsyw 20。
+- 新增契约：`frontend/test/twsaimahui-flat-verdict-contract.mjs`（源码 + vm 真跑渲染器）；
+  `frontend/test/twsyw-display-contract.py` 的 `#five_no_hit` / `#gold6xiao` 夹具改为带 `res_code`
+  的平特口径用例（「平特5不中」按不中语义：候选落在七个开奖号码里 → 「错」且零黄底；
+  「命中来自平码、特码不在候选里」的用例留给黄金六肖那一路）。
+- 展示审计：`twsaimahui`、`twsyw` 本地 `error=0 js_errors=0`；
+  `node frontend/test/twsaimahui-bundle-contract.mjs`（bundle 已重算）等契约全绿。
+
+### 遗留
+
+1. **四字平特 / 四字解平特肖**（twcaibawang `#szpt` / twjsz666 四字解平特肖）绑的是 mode 52 四字玄机，
+   `jiexi` 候选池是 **7 个生肖**：7 肖池对上 7 个开奖号码，七码口径命中率 ≈ 99.6%（恒对）。
+   **站点负责人 2026-09-30 决定：保持现状（仍按特肖 ∈ `jiexi` 池判定），本项记为数据侧问题** ——
+   要真正做成平特需数据侧提供「四字 → 单肖」的候选。
+2. **twsaimahui 平特一尾（`022pt1w`）的正文形态**：payload 形如 `["9尾,4尾,…,1尾|"]` 时，
+   渲染器只取标签首字符（首个尾数），其余尾数既不展示也不参与判定；后端 `tail_atom_labels`
+   已在真值审计侧摊平，展示侧若要逐尾展示需另开一轮。
+
+**已决（本条不再是遗留）**：twsyw `#five_no_hit` 的标题/语义冲突 —— 负责人确认按「不中」语义，
+即「展示的 5 码在七个开奖号码里一个都不出现才算『对』」，实现见上表。
+
+---
+
 ## 六、常见根因速查
 
 | 现象 | 常见根因 | 处理 |

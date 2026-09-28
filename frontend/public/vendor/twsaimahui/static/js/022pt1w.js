@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getPtWei?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -28,10 +28,18 @@
 
                 let c1 = [];
                 let zj = false;
-                let index;
+                // 平特尾口径：本期**七个开奖号码**里任一号码的**尾数**命中候选尾数即命中。
+                // 旧写法拿候选尾去「子串包含」整期号码：候选尾 1 会被 19（十位是 1、尾数是 9）
+                // 误判成命中。这里只比末位数字。
+                let tailHit = function (digit) {
+                    for (let k = 0; k < codeSplit.length; k++) {
+                        let digits = String(codeSplit[k] || '').replace(/[^0-9]/g, '');
+                        if (digits && digits.charAt(digits.length - 1) === digit) return true;
+                    }
+                    return false;
+                };
                 for (let i = 0; i < xiao.length; i++) {
-                    index = getZjIndex(xiao[i],codeSplit);
-                    if (index !== undefined) {
+                    if (tailHit(xiao[i])) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {

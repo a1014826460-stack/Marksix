@@ -609,6 +609,113 @@
     return copy;
   }
 
+  // ── 平特口径：命中看**七个开奖号码**（六个平码 + 特码）─────────────────
+  // 需求（2026-09-30）：所有平特玩法（平特①肖 / 平特一尾 / 平特 N 肖）的命中判定
+  // 都要看开奖的七个号码，而不是只看最后一个特码。
+  //
+  // 为什么在展示层复算：接口的 `result.is_correct` 在部分数据源上仍是**特码口径**
+  // （例：189 期「平特①肖 龙」，龙以平码开出，特码是狗 —— 只比特码就会判成「错」）。
+  // 展示层直接用 payload 里的完整开奖串复算，页面上的「对/错」始终是平特口径。
+  //
+  // 完整开奖串的三种形态（按长度取最长的那一份，避免只拿到特码）：
+  //   · `result.code` / `result.zodiac`：本地站点接口给的是**七码/七肖**；
+  //   · `raw.res_code` / `raw.res_sx`：站点接口给的是七码/七肖；
+  //   · `raw.raw.res_code` / `raw.raw.res_sx`：供应商模块（独家公式等）外层只留特码，
+  //     完整串嵌套在 `raw.raw` 里。
+  function longestDrawnList(lists) {
+    return lists.reduce(function (best, list) {
+      return list.length > best.length ? list : best;
+    }, []);
+  }
+
+  /** 七个开奖号码（`20,19,38,35,23,42,45` → `["20",…,"45"]`，末位为特码）。 */
+  function fullDrawnCodes(row) {
+    var raw = row && row.raw || {};
+    var nested = raw.raw || {};
+    return longestDrawnList([
+      valueList(row && row.result && row.result.code),
+      valueList(raw.res_code),
+      valueList(nested.res_code),
+    ]).map(function (value) {
+      var digits = String(value).replace(/\D/g, "");
+      return digits ? digits.padStart(2, "0") : "";
+    }).filter(Boolean);
+  }
+
+  /** 七个开奖号码对应的生肖（末位为特肖）。 */
+  function fullDrawnZodiacs(row) {
+    var raw = row && row.raw || {};
+    var nested = raw.raw || {};
+    return longestDrawnList([
+      valueList(row && row.result && row.result.zodiac),
+      valueList(raw.res_sx),
+      valueList(nested.res_sx),
+    ]).map(function (value) {
+      return String(value).replace(/[\[\]"]/g, "").trim();
+    }).filter(Boolean);
+  }
+
+  /**
+   * 平特肖命中：预测的任一生肖出现在**七个开奖生肖**里。拿不到开奖串返回 null。
+   *
+   * 候选必须能解析成生肖字（`狗` / `狗|09`）才做复算：拿不到可解析候选时返回 `null`
+   * 沿用接口判定，避免把「候选形态不认识」的期次一律压成「错」。
+   */
+  function flatZodiacHit(row) {
+    var drawn = fullDrawnZodiacs(row);
+    var picked = zodiactsOf(row).filter(function (zodiac) { return ZODIAC_CHAR_SET[zodiac]; });
+    if (!drawn.length || !picked.length) return null;
+    return picked.some(function (zodiac) { return drawn.indexOf(zodiac) !== -1; });
+  }
+
+  /** 平特尾命中：预测尾数出现在**七个开奖号码**的任一尾数里。拿不到开奖串返回 null。 */
+  function flatTailHit(row) {
+    var codes = fullDrawnCodes(row);
+    var tails = tokens(row).map(function (value) {
+      var digits = String(value).split("|")[0].replace(/\D/g, "");
+      return digits ? digits.charAt(digits.length - 1) : "";
+    }).filter(Boolean);
+    if (!codes.length || !tails.length) return null;
+    return codes.some(function (code) {
+      return tails.indexOf(code.charAt(code.length - 1)) !== -1;
+    });
+  }
+
+  /**
+   * 复制一行并按平特口径重算 `result.isCorrect`（拿不到开奖串时原样返回）。
+   *
+   * 同时挂上 `flatDraw`：平特的命中项可能来自**平码**（不是特码），标黄链路
+   * （`highlightTokens`）必须按整组开奖值判断，否则「命中却零黄底」。
+   */
+  function withFlatVerdict(row, kind) {
+    if (!row || !row.result || !row.result.isOpened) return row;
+    var hit = kind === "tail" ? flatTailHit(row) : flatZodiacHit(row);
+    if (hit === null) return row;
+    var copy = withResultCorrect(row, hit);
+    copy.flatDraw = { zodiacs: fullDrawnZodiacs(row), codes: fullDrawnCodes(row) };
+    return copy;
+  }
+
+  // 平特类模块（机制名里带「平特」）→ 判定口径。所有用到这些模块的面板
+  // （平特①肖 / 平特一尾 / 三期计划的平特计划·平尾计划 / 吉美丑凶 / ③肖防③码）
+  // 都在渲染入口前统一改写一次，避免各面板各写一套。
+  var FLAT_MODULE_KINDS = {
+    pt1xiao: "zodiac",
+    pt1wei: "tail",
+    pt2xiao: "zodiac",
+    pt3xiao: "zodiac",
+  };
+
+  function applyFlatVerdicts(modules) {
+    Object.keys(FLAT_MODULE_KINDS).forEach(function (key) {
+      var module = modules[key];
+      if (!module || !Array.isArray(module.rows)) return;
+      module.rows = module.rows.map(function (row) {
+        return withFlatVerdict(row, FLAT_MODULE_KINDS[key]);
+      });
+    });
+  }
+
   // ── 标黄口径 ─────────────────────────────────────────────────────────
   // 规则：**只有预测命中的生肖 / 号码 / 波色 / 文字可以标黄，其余文字一律不标黄。**
   //
@@ -742,6 +849,8 @@
     var code = resultToken(row.result.code, true);
     var zodiac = resultToken(row.result.zodiac, false);
     var wave = drawnWave(row);
+    // 平特行（见 withFlatVerdict）：判定值已经按七个开奖号码重算过，标黄也要按整组开奖值比对。
+    var flatDraw = row.flatDraw || null;
     var digits = String(code || "").replace(/\D/g, "");
     var tailDigit = digits ? digits.charAt(digits.length - 1) : "";
     // 一位数（如 09）的头数是 0，`0头` 必须能匹配上。
@@ -752,6 +861,9 @@
       if (code && candidate === code) return true;
       if (zodiac && candidate === zodiac) return true;
       if (wave && candidate === wave) return true;
+      // 平特：命中项可能来自平码而不是特码，候选直接与七个开奖生肖 / 号码比对。
+      if (flatDraw && flatDraw.zodiacs.indexOf(candidate) !== -1) return true;
+      if (flatDraw && flatDraw.codes.indexOf(candidate) !== -1) return true;
       // 头/尾候选写作 `4头` / `4头单` / `7尾` / `2尾双`，
       // 与开奖号码的头数 / 尾数比较（候选里还带单双后缀，所以用正则取头尾数字，
       // 并让后缀参与判定，避免把同头数的另一个单双组合标黄）。
@@ -886,17 +998,62 @@
     }, "shuangbo");
   }
 
+  // 【八肖来袭】已按需求改名为【七肖来袭】：数据源仍是 mode 44（`7xiao7ma`），
+  // 面板标题与站点真实玩法「七肖」对齐。候选是 `生肖|号码`，面板只显示生肖
+  // （供应商模板同样是纯生肖串，号码不进正文）。
   function renderBaxiaoLaixiHistory(module) {
-    var section = sectionByTitle("八肖来袭");
+    var section = sectionByTitle("七肖来袭");
     if (section) section.setAttribute("data-prediction-section", "7xiao7ma");
     renderThreeColumnRows(section, module, function (row) {
-      return tokens(row).join("");
+      return zodiactsOf(row).join("");
     }, "7xiao7ma");
   }
 
+  var DOMESTIC_WILD_LABELS = ["家禽", "野兽"];
+
+  /**
+   * 【家野中特】的分组正文：`家禽|猪,鸡,羊,马;野兽|猴,龙,鼠,兔` → 两组（各 4 肖）。
+   *
+   * tokens 的形态不稳定（组名可能单独成项，也可能用 `;` 粘在上一组最后一个生肖后面
+   * —— `["家禽","猪","鸡","羊","马;野兽","猴",…]`），所以按「组名为界」逐项切分，
+   * 两种形态都能还原出「组名 + 生肖串」。
+   */
+  function domesticWildGroups(row) {
+    var groups = [];
+    tokens(row).forEach(function (value) {
+      String(value).replace(/[【】\[\]"]/g, "").split(/[|;；]/).forEach(function (piece) {
+        var label = DOMESTIC_WILD_LABELS.filter(function (name) {
+          return piece.indexOf(name) === 0;
+        })[0];
+        if (label) {
+          groups.push({ label: label, values: [] });
+          piece = piece.slice(label.length);
+        }
+        if (!groups.length) return;
+        piece.replace(/[|,，、\s]/g, "").split("").forEach(function (char) {
+          if (char) groups[groups.length - 1].values.push(char);
+        });
+      });
+    });
+    return groups.filter(function (group) { return group.label; });
+  }
+
+  // 「家野中特」：数据源换成站内已授权的 mode 14「家禽野兽」（`title_14`）。
+  // 需求（2026-09-30）：显示【家禽】/【野兽】两组组名 + 各自生肖，不再只显示生肖串
+  // （旧实现借「平特2肖」的两个生肖顶替，面板里只有 `兔+猴`，看不出家野分组）。
+  // 判定沿用 mode 14 的接口口径（特肖 ∈ 家禽 4 肖 ∪ 野兽 4 肖），
+  // 标黄只落在开出的那个特肖上。
   function renderJiayeZhongteHistory(module) {
     renderThreeColumnRows(sectionByTitle("家野中特"), module, function (row) {
-      return tokens(row).join("+");
+      var groups = domesticWildGroups(row);
+      if (!groups.length) return "";
+      return groups.map(function (group) {
+        return group.label + "：" + group.values.join("");
+      }).join("+");
+    }, "title_14", function (row, text) {
+      if (!row || !row.result || row.result.isCorrect !== true) return [];
+      var zodiac = resultToken(row.result.zodiac, false);
+      return zodiac && text.indexOf(zodiac) !== -1 ? [zodiac] : [];
     });
   }
 
@@ -910,6 +1067,11 @@
     renderThreeColumnRows(sectionByTitle("平特一尾"), module, function (row) {
       var value = displayLabels(row, "").replace(/尾/g, "");
       return value ? value + value + value + "尾" : "";
+    }, "pt1wei", function (row, text) {
+      // 判定已由 applyFlatVerdicts 按**七个开奖号码**重算；命中时按模板口径只把尾数数字标黄
+      // （`<span>222</span>尾`），「尾」字不标。
+      if (!row || !row.result || row.result.isCorrect !== true || !text) return [];
+      return [text.replace(/尾$/, "") || text];
     });
   }
 
@@ -920,10 +1082,12 @@
     });
   }
 
+  // 「暴富⑦肖」：候选是 `生肖|号码`（`猪|08`），面板只展示生肖串。
+  // 需求（2026-09-30）：去除号码展示，只保留生肖（供应商模板同样是纯生肖串）。
   function renderBaofuQixiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("暴富⑦肖"), module, function (row) {
-      return tokens(row).join("");
-    });
+      return zodiactsOf(row).join("");
+    }, "7xiao7ma");
   }
 
   function renderHuobaoSitourHistory(module) {
@@ -932,10 +1096,15 @@
     });
   }
 
+  // 「平特①肖」：供应商模板把单个生肖重复三次（牛牛牛/鸡鸡鸡），照原样保留三次。
+  // 判定由 applyFlatVerdicts 统一按**七个开奖号码**重算（平特口径），不是只看特码。
   function renderPingteYixiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("平特①肖"), module, function (row) {
-      var value = tokens(row)[0] || "";
-      return value;
+      var value = zodiactsOf(row)[0] || "";
+      return value ? value + value + value : "";
+    }, "pt1xiao", function (row, text) {
+      // 命中时整段候选（三个重复生肖）一起标黄，与供应商模板的整段黄底一致。
+      return row && row.result && row.result.isCorrect === true && text ? [text] : [];
     });
   }
 
@@ -965,13 +1134,19 @@
    * 正确口径（与 twwanli `#tdsx`、twsyw `#nannv`、twcaibawang 一致）：特肖落在
    * **天地组 ∪ 本期 2 个候选肖** 任一即命中。未开奖、拿不到特肖、或缺天地组/两肖
    * 资料时返回 `null`，沿用既有接口判定，不凭空造「错」。
+   *
+   * 天地组/两肖的两个来源（2026-09-30 起面板改绑 `title_5`）：
+   *   · `title_5`（mode 5 天地生肖）：天地组写在**正文标签**里（`["地肖|蛇,羊,…"]`），
+   *     两肖在 `xiao` 列；
+   *   · `tiandi_2xiao`（供应商模块，本站 0 行）：组在 `tiandi` 列，两肖在 `xiao_pair` 列。
    */
   function tiandiJudgement(row) {
     var result = row && row.result || {};
     var zodiac = resultToken(result.zodiac, false);
-    var picked = String(rawValue(row, "tiandi") || "");
+    var picked = String(rawValue(row, "tiandi") || displayLabels(row, "") || "");
     var group = tiandiGroup(picked);
     var pair = valueList(rawValue(row, "xiao_pair"));
+    if (!pair.length) pair = valueList(rawValue(row, "xiao"));
     if (!result.isOpened || !zodiac || !group.length || !pair.length) return null;
     var inGroup = group.indexOf(zodiac) >= 0;
     var inPair = pair.indexOf(zodiac) >= 0;
@@ -995,6 +1170,16 @@
     return copy;
   }
 
+  /**
+   * 【天地+②肖】= 天地组选 1 + 生肖选 2，绑定站内已授权的 mode 5「天地生肖」（`title_5`）。
+   *
+   * 2026-09-30 修正：此前该面板绑的是供应商模块 `tiandi_2xiao`（本站全站 0 行 → 面板只能
+   * 隐藏），而 `title_5`（mode 5「天地生肖（天地选1，生肖选2）」）的正文就是
+   * `["地肖|蛇,羊,鸡,狗,鼠,虎"]` + `xiao` 两肖 —— 与面板图例/样例（`天肖+狗鼠`）完全对应，
+   * 且 web=10 有真实历史行。所以改绑 `title_5`：面板恢复显示，内容与判定都按天地口径。
+   *
+   * 判定由 `tiandiJudgement` 本地复算（特肖 ∈ 天地组 ∪ 两肖），不靠接口那套「只比两肖」的口径。
+   */
   function renderTiandiErxiaoHistory(module) {
     renderThreeColumnRows(sectionByTitle("天地+②肖"), module, function (row) {
       var tiandi = String(rawValue(row, "tiandi") || "");
@@ -1067,8 +1252,16 @@
   // 「绝杀①肖 / 绝杀①波 / 绝杀一肖一尾」都是**排除型**：必须显式把模块键交给
   // highlightRuleFor，否则会退回默认的「命中型」口径 —— 判定为「错」（杀失败）时
   // 开奖值恰好等于候选，会被当成命中项标黄（线上 twbst528 `?|狗` 一处 R3 的根因）。
+  //
+  // 【绝杀①肖】内容显示按需求（2026-09-30）与【平特①肖】统一成「生肖重复三次」
+  // （供应商模板里平特①肖就是 `牛牛牛` / `鸡鸡鸡` 的写法）；判定口径**不变**：
+  // 用户明确要求绝杀①肖仍按最后一个开奖号码（特码）判定，不做七码复算。
   function renderJueshaYixiaoHistory(module) {
-    renderThreeColumnRows(sectionByTitle("绝杀①肖"), module, function (row) { return tokens(row).join(""); }, "juesha1xiao");
+    renderThreeColumnRows(sectionByTitle("绝杀①肖"), module, function (row) {
+      var values = tokens(row);
+      var value = values.length ? String(values[0]).split("|")[0].trim() : "";
+      return value ? value + value + value : "";
+    }, "juesha1xiao");
   }
 
   function renderJueshaYiboHistory(module) {
@@ -1600,6 +1793,45 @@
     });
   }
 
+  /** 「独家公式」单行展示值：`单` → `单数`；`["5","2","1","3"]` → `5213尾`。 */
+  function dujiaGongshiValue(kind, labels) {
+    if (kind === "tails") return compactLabels(labels, "") + "尾";
+    var first = String(labels[0] || "").replace(/[\[\]"]/g, "");
+    return first.split("|", 1)[0].trim() + "数";
+  }
+
+  /** 「开：20-19-38-35-23-42-45狗」：完整开奖串（前六平码 + 末位特码 + 特肖，全部用 `-` 连接）。 */
+  function drawnSummary(row) {
+    var codes = fullDrawnCodes(row);
+    var zodiac = resultToken(row && row.result && row.result.zodiac, false);
+    if (codes.length > 1) return codes.join("-") + zodiac;
+    var single = resultToken(row && row.result && row.result.code, true);
+    if (single) return single + zodiac;
+    return String(row && row.result && row.result.text || "").replace(/^开[:：]?/, "");
+  }
+
+  /** 维度命中时要标黄的那一段（`markLineHit` 只在 `【…】` 范围内找，不会污染开奖号码）。 */
+  function dujiaGongshiHitTokens(kind, row, value) {
+    if (!value) return [];
+    if (kind === "tails") {
+      var tail = String(resultToken(row.result.code, true)).replace(/\D/g, "").slice(-1);
+      return tail && value.indexOf(tail) !== -1 ? [tail] : [];
+    }
+    return [value];
+  }
+
+  /**
+   * 【独家公式】：三个小节（独家单双 / 独家大小 / 公式四尾），每节 6 期。
+   *
+   * 需求（2026-09-30）：
+   *   · 去掉无意义的 `T37`（`T` 只是模板占位字母，号码本身就是开奖特码）；
+   *   · 删掉模板烤死的「整体准确率：96.96%。参弃随意」；
+   *   · 每行补「开：xx」并统一排版：`第190期 开：20-19-38-35-23-42-45狗 【5213尾】√`。
+   *
+   * 判定取 `raw.formula[kind].is_correct`：这个供应商模块行的 `result.isCorrect` 恒为
+   * null（每个维度各自判定），所以 √/x 必须用维度判定，否则命中期也会显示成 `x`。
+   * 标黄只落在维度值上（`单数` / `大数` / 命中的那个尾数数字），与供应商模板一致。
+   */
   function renderDujiaGongshiHistory(module) {
     var section = sectionByTitle("独家公式");
     if (!section) return;
@@ -1610,30 +1842,32 @@
     ["parity", "size", "tails"].forEach(function (kind, blockIndex) {
       var block = blocks[blockIndex];
       if (!block) return;
-      var groups = lineGroups(block).filter(function (group) {
-        return /\d+期/.test(group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join(""));
-      });
-      groups.forEach(function (group, rowIndex) {
+      var rowIndex = 0;
+      lineGroups(block).forEach(function (group) {
         var templateText = group.map(function (leaf) { return String(leaf.nodeValue || ""); }).join("");
+        // 模板烤死的整行说明文字（每个小节末尾一条）不是数据行，必须清空。
+        if (/整体准确率|参弃随意/.test(templateText)) {
+          writeLineGroup(group, "");
+          return;
+        }
+        if (!/\d+(?:-\d+)?\s*期/.test(templateText)) return;
         var row = resolveRow(templateText, rowIndex);
-        var formula = row && rawValue(row, "formula");
-        var entry = formula && formula[kind];
-        var labels = entry && Array.isArray(entry.labels) ? entry.labels : [];
-        var firstLabel = String(labels[0] || "").replace(/[\[\]"]/g, "");
-        var value = kind === "tails"
-          ? compactLabels(labels, "") + "尾"
-          : firstLabel.split("|", 1)[0].trim() + "数";
-        var rawCodes = valueList(rawValue(row, "res_code"));
-        var opened = Boolean(row && row.result && row.result.isOpened);
-        // `res_code` 是本期完整开奖串（前 6 个平码 + 末位特码），与 lottery_draws.numbers 同序。
-        // 部分模块行里 res_code 为空，此时至少把特码显示出来，不要留空。
-        var prefix = opened
-          ? (rawCodes.length >= 6 ? rawCodes.slice(0, 6).join("-") : "---------------------") +
-            " T" + resultToken(row.result.code, true)
-          : "--------------------- T--";
-        var marker = !opened ? "?" : row.result.isCorrect === true ? "√" : "x";
-        var line = row ? termValue(row).replace(/^第/, "") + " " + prefix + " 【" + value + "】" + marker : "暂无后端资料";
-        writeLineGroup(group, line, row ? highlightTokens(row, "hit", allowMarkedTokens(line)) : []);
+        rowIndex += 1;
+        if (!row) {
+          writeLineGroup(group, "暂无后端资料");
+          return;
+        }
+        var formula = rawValue(row, "formula") || {};
+        var entry = formula[kind] || {};
+        var labels = Array.isArray(entry.labels) ? entry.labels : [];
+        var value = labels.length ? dujiaGongshiValue(kind, labels) : "";
+        var opened = Boolean(row.result && row.result.isOpened);
+        var marker = !opened ? "?" : entry.is_correct === true ? "√" : "x";
+        var line = termValue(row) + " 开：" + (opened ? drawnSummary(row) : "待开奖") +
+          (value ? " 【" + value + "】" : "") + marker;
+        writeLineGroup(group, line, opened && entry.is_correct === true
+          ? dujiaGongshiHitTokens(kind, row, value)
+          : []);
       });
     });
   }
@@ -1747,18 +1981,24 @@
 
   function renderPredictions(result) {
     var modules = modulesFrom(result);
+    // 平特类模块（pt1xiao / pt1wei / pt2xiao / pt3xiao）先把判定统一改成**七码口径**；
+    // 之后所有用到这些模块的面板（平特①肖 / 平特一尾 / 三期计划的平特·平尾计划 /
+    // 吉美丑凶 / ③肖防③码）拿到的都是同一套判定，不必各写一份。
+    applyFlatVerdicts(modules);
+    // 没有后端数据的板块（天地+②肖 / 18码中特）整块隐藏，不留「暂无后端资料」空壳。
+    hideUnbackedPanels(modules);
     Array.prototype.forEach.call(window.document.querySelectorAll(".lxlm, .tzlb"), renderPredictionTitle);
     renderYijuZhongpingHistory(modules.yijuzhenyan);
     renderLiangboTuweiHistory(modules.shuangbo);
     renderBaxiaoLaixiHistory(modules["7xiao7ma"]);
-    renderJiayeZhongteHistory(modules.pt2xiao);
+    renderJiayeZhongteHistory(modules.title_14);
     renderShaliangbanboHistory(modules.shaliangbanbo);
     renderPingteYiweiHistory(modules.pt1wei);
     renderDaxiaoZhongteHistory(modules.daxiao);
     renderBaofuQixiaoHistory(modules["7xiao7ma"]);
     renderHuobaoSitourHistory(modules.sitouzhongte);
     renderPingteYixiaoHistory(modules.pt1xiao);
-    renderTiandiErxiaoHistory(modules.tiandi_2xiao);
+    renderTiandiErxiaoHistory(modules.title_5);
 
     renderTaiwanPmtImage(modules.tw_pmt_image);
     renderPredictionImage("sxztu", modules.sxztu);
@@ -1796,9 +2036,13 @@
     renderJueshaShimaHistory(modules.wensha10ma);
     renderLiuxiaoShiermaHistory(modules["9xiao12ma"]);
     renderHeibaiSanxiaoHistory(moduleWithRows(modules.heibai3xiao, modules.title_45));
-    renderCategoryHistory("阴阳⑧码中特", modules.title_48, {});
+    // 【阴阳⑧码中特】本站没有对应数据：面板图例要求「阴肖/阳肖 + 4 肖 + 8 码」，
+    // 而站内唯一沾边的 `title_48` 是「8肖中特」（8 个生肖、无阴阳分组），画上去就是
+    // 「图例与内容不符」。按「无数据 → 不借别的模块」处理，板块在 hideEmptyPanels() 里整块隐藏。
     // 18码中特 在 site_module_blueprints 里是 blocked_requires_backend_work：
     // 后端没有确认 mechanism/mode_id，所以不能拿六肖十八码的数据顶上。
+    // 该板块在 hideEmptyPanels() 里整块隐藏（保留 DOM 与这条「必须空态」的渲染路径，
+    // 防止将来有人把别的模块接进来）。
     renderShibamaHistory(null);
     renderSanxiaoFangSanmaHistory(modules.pt3xiao, modules.pt3xiao);
     // site_page_dependencies 把「8肖16码」面板绑到 mode_id 60 = `9xiao12ma`
@@ -1810,8 +2054,12 @@
     renderZongheJueshaHistory(modules);
     renderDaxiaoYitouHistory(modules.dxztt1);
     renderSixiaoBamaHistory(modules["4xiao8ma"]);
-    renderCategoryHistory("日夜特肖", modules.qianhou_texiao, {});
-    renderCategoryHistory("左右中特", modules.title_5, {});
+    // 【日夜特肖】/【左右中特】本站没有「日夜肖 / 左右肖」数据（`created.mode_payload_164`
+    // 全站 0 行、`created.mode_payload_152` 只有 web 1/4/6/7/8），过去分别借
+    // `qianhou_texiao`（前后肖）与 `title_5`（天地肖）顶上 → 面板图例是日/夜、左/右，
+    // 内容却是前/后、天/地。现按「无数据 → 不借别的模块」处理：两个板块在
+    // hideEmptyPanels() 里整块隐藏（保留 DOM，后端补数据后可还原映射）。
+    // 【前后中特】的 `qianhou_texiao` 本身就是「前后特肖」，口径一致，保持不变。
     renderCategoryHistory("前后中特", modules.qianhou_texiao, {});
     renderQiweiSixingHistory(modules.title_74, modules.sihangzhongte);
     renderSijiJiuxiaoHistory(modules.siji3, modules.siji3);
@@ -1856,24 +2104,52 @@
     return Promise.all([draw, predictions]);
   }
 
-  // ── 有壳无数据板块：整块隐藏 ──────────────────────────────────────────
-  // 这两个面板对应的供应商模块**在 payload 里存在但一行数据都没有**：
-  //   public_yixiao_yima（公开一肖一码）← 依赖 mode 151，该 mode 全表 0 行
-  //   wuxiao_wuma      （五肖五码）    ← 依赖 mode 151，同上
-  // 直接调用 `_build_*` 实测 history = 0 行（不是渲染问题，是没数据）。
-  // 按「有壳无数据 → 删」处理；保留 DOM 与后端引用，便于数据源补齐后还原。
-  var EMPTY_PANEL_TITLES = ["一肖一码", "⑤肖⑩码"];
+  // ── 无数据支撑板块：整块隐藏 ──────────────────────────────────────────
+  // 两类：
+  //   1) 静态（EMPTY_PANEL_TITLES）：payload 里**恒定**没有任何数据的模块 ——
+  //      public_yixiao_yima（公开一肖一码）/ wuxiao_wuma（五肖五码）都依赖 mode 151，全表 0 行；
+  //      18码中特 在 `site_module_blueprints` 里是 `blocked_requires_backend_work`
+  //      （后端 mechanism/mode_id 都没确认，连模块都没有）；
+  //      日夜特肖 / 左右中特 / 阴阳⑧码中特（2026-09-30 追加）在本站没有对应分类数据
+  //      （`created.mode_payload_164` 全站 0 行；`created.mode_payload_152` 只有
+  //      web 1/4/6/7/8；阴阳肖也没有 web=10 的生成行），过去是借别的模块顶上的，
+  //      现在不再借 —— 板块整块隐藏，避免「图例是日/夜、内容是前/后」这类错位。
+  //   2) 动态（UNBACKED_PANELS）：按 payload 行数判断 —— 【天地+②肖】绑 `title_5`
+  //      （mode 5 天地生肖），有行就渲染、没行就隐藏，不做永久删除。
+  // 都按「有壳无数据 → 删」处理；保留 DOM 与后端引用，便于数据源补齐后还原。
+  var EMPTY_PANEL_TITLES = ["一肖一码", "⑤肖⑩码", "18码中特", "日夜特肖", "左右中特", "阴阳⑧码中特"];
+  var UNBACKED_PANELS = [
+    { title: "天地+②肖", moduleKey: "title_5" },
+  ];
+
+  function hidePanel(section, name) {
+    if (!section) return false;
+    section.setAttribute("data-prediction-empty", name);
+    section.hidden = true;
+    // 供应商样式表可能给 .lxlm/.tzlb 设了带 !important 的 display，
+    // 内联 display:none 会被压过去，所以用 setProperty(..., "important")。
+    section.style.setProperty("display", "none", "important");
+    return true;
+  }
+
+  function sectionTitle(section) {
+    var head = section && section.querySelector(".pb-tit");
+    return String(head && head.textContent || "");
+  }
 
   function hideEmptyPanels() {
     Array.prototype.forEach.call(window.document.querySelectorAll(".lxlm, .tzlb"), function (section) {
-      var title = String(section.querySelector(".pb-tit") && section.querySelector(".pb-tit").textContent || "");
+      var title = sectionTitle(section);
       var matched = EMPTY_PANEL_TITLES.filter(function (name) { return title.indexOf(name) !== -1; })[0];
-      if (!matched) return;
-      section.setAttribute("data-prediction-empty", matched);
-      section.hidden = true;
-      // 供应商样式表可能给 .lxlm/.tzlb 设了带 !important 的 display，
-      // 内联 display:none 会被压过去，所以用 setProperty(..., "important")。
-      section.style.setProperty("display", "none", "important");
+      if (matched) hidePanel(section, matched);
+    });
+  }
+
+  /** 模块缺行（或缺模块）的板块整块隐藏；有数据时保持原样。 */
+  function hideUnbackedPanels(modules) {
+    UNBACKED_PANELS.forEach(function (panel) {
+      if (panel.moduleKey && distinctRows(modules[panel.moduleKey]).length) return;
+      hidePanel(sectionByTitle(panel.title), panel.title);
     });
   }
 
@@ -1891,7 +2167,8 @@
 
   window.Twbst528SiteData = { selectLottery: selectLottery };
   window.addEventListener("DOMContentLoaded", function () {
-    // 先隐藏有壳无数据的板块，再渲染其余板块。
+    // 先隐藏有壳无数据（静态已知）的板块，再渲染其余板块；
+    // 需要看 payload 行数的板块（天地+②肖）在 renderPredictions 里隐藏。
     hideEmptyPanels();
     bindLotteryTabs();
     selectLottery(activeLottery.lotteryType);

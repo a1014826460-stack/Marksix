@@ -233,9 +233,9 @@
       function notifyRevealGate(payload) {
         if (!payload) return;
         var issue = normalizeIssue(payload.current_issue);
-        var drawTimeSec = parseBeijingDateTimeToSeconds(payload.draw_time);
-        if (!issue || !(drawTimeSec > 0)) return;
-        var unlockAt = drawTimeSec + (REVEAL_INTERVAL_SEC * 6);
+        var revealStartSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        if (!issue || !(revealStartSec > 0)) return;
+        var unlockAt = revealStartSec + (REVEAL_INTERVAL_SEC * 6);
         if (!(unlockAt > getServerNowSeconds())) return;
         try {
           window.parent.postMessage({
@@ -414,6 +414,14 @@
         return true;
       }
 
+      // 揭示锚点 = 号码首次对外可用的时刻（reveal_start，后端开盘瞬间写定，全局唯一）。
+      // 所有浏览器都按它推进同一条时间线：刷新接着走、跨浏览器进度一致；
+      // 旧数据/旧部署没有该字段时退回 draw_time，行为与改造前一致。
+      function _revealStartRaw(payload) {
+        if (payload && payload.reveal_start) return payload.reveal_start;
+        return payload && payload.draw_time ? payload.draw_time : "";
+      }
+
       // 已按顺序公布了多少个号码（1..7）。香港彩轮序发布用它决定“再补一个号码”。
       function _progressiveBallCount(payload) {
         if (!payload || !Array.isArray(payload.result_balls)) return 0;
@@ -428,10 +436,10 @@
 
       function _shouldRevealPayload(payload) {
         if (!_hasFullBalls(payload)) return false;
-        var drawTimeSec = parseBeijingDateTimeToSeconds(payload && payload.draw_time ? payload.draw_time : "");
-        if (drawTimeSec > 0) {
-          var elapsedByDrawTime = getServerNowSeconds() - drawTimeSec;
-          return elapsedByDrawTime >= 0 && elapsedByDrawTime <= REVEAL_WINDOW_SEC;
+        var revealStartSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        if (revealStartSec > 0) {
+          var elapsedByRevealStart = getServerNowSeconds() - revealStartSec;
+          return elapsedByRevealStart >= 0 && elapsedByRevealStart <= REVEAL_WINDOW_SEC;
         }
         if (countdownDeadline <= 0) return false;
         var elapsedByDeadline = getServerNowSeconds() - countdownDeadline;
@@ -462,8 +470,8 @@
       }
 
       function _resolveRevealStartSec(payload) {
-        var drawTimeSec = parseBeijingDateTimeToSeconds(payload && payload.draw_time ? payload.draw_time : "");
-        if (drawTimeSec > 0) return drawTimeSec;
+        var revealStartSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        if (revealStartSec > 0) return revealStartSec;
         if (countdownDeadline > 0) return countdownDeadline;
         return 0;
       }
@@ -891,7 +899,8 @@
             shouldStartRevealFromPolling: shouldStartRevealFromPolling,
             hasFullBalls: hasFullBalls,
             progressiveBallCount: progressiveBallCount,
-            drawTime: payload && payload.draw_time ? payload.draw_time : ""
+            drawTime: payload && payload.draw_time ? payload.draw_time : "",
+            revealStart: _revealStartRaw(payload)
           });
 
           if (hasProgressiveBalls) {

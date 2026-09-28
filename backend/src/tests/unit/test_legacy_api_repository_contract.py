@@ -125,7 +125,8 @@ def test_get_legacy_current_term_keeps_empty_fallback_shape(tmp_path: Path):
                 year INTEGER,
                 term INTEGER,
                 next_term INTEGER,
-                is_opened INTEGER
+                is_opened INTEGER,
+                opened_at TEXT
             )
             """
         )

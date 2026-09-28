@@ -460,3 +460,48 @@ python scripts\audit-prediction-display.py twsaimahui --base-url http://127.0.0.
    `d.content.split(',')`，`content` 非字符串时会抛错，抛错点之后的同一 bundle 内模块全部不渲染。
    属于既有缺陷（`lint-prediction-renderers.py` 已列为 warn），本轮未处理。
 4. 极老的「`?`占位」英文口径 `开:？00??`（普通未开奖模块）本轮只改了 `.l1`；其余模块维持原状。
+
+---
+
+## 十、平特（flat）口径补修：成语平特尾 / 平特一尾（2026-09-30）
+
+用户报障：`271期成语平特尾:【六道轮回】 开:猴35错` —— 第 271 期七个开奖号码的第一个是 36，
+尾数 6 与「六道轮回」的「六」一致，应判「准」。
+
+### 10.1 根因
+
+`static/js/068chengyupw.js`（成语平特尾）的命中口径是**只比最后一个特码**：
+
+```js
+let tail = code ? code.split('').pop() : '';      // code = codeSplit[codeSplit.length-1]
+if (opened && tail && tail === num) { zj = true; }
+```
+
+平特（flat）的语义是「本期**七个开奖号码**里任一号码命中即算命中」（后端
+`predict.common.flat_tail_hit` / `flat_zodiac_hit`，mode 54/56/43/470/103 均为 `flat_*`），
+所以命中落在平码上的期次一律被误判成「错」。本地 dev 库实测 190/185/184/183 四期属于此类。
+
+同一站点其余平特模块（`022pt1w` 平特一尾、`065yiziptx`/`074ptyx` 平特一肖、
+`066chengyupx` 成语平特肖、`067sanzipw` 平特三肖）本来就是拿整期 `res_code` / `res_sx` 比对的，
+只有成语平特尾退化成特码口径。
+
+### 10.2 修法
+
+| 文件 | 改动 |
+| --- | --- |
+| `068chengyupw.js` | 命中改为遍历 `codeSplit`（七个开奖号码）比较**末位数字**；命中时把**预测的成语**标黄（命中的号码可能是平码，标黄特码会给出假命中标记）；开奖段仍固定显示本期特码 |
+| `022pt1w.js` | 平特一尾的命中由「子串包含」（`getZjIndex(candidate, codeSplit)`，候选尾 1 会被 19 的十位 1 误命中）改为**只比末位数字** |
+
+渲染示例（190 期：`res_code=20,19,38,35,23,42,45`，特码 45）：
+`【零珠片玉】(零 → 尾 0) 开:狗45准`，成语标黄（20 是平码、尾数 0）；判「错」的期零黄底。
+
+### 10.3 验收
+
+- 新增契约 `frontend/test/twsaimahui-flat-verdict-contract.mjs`：源码层断言平特六件套都以整期
+  `res_code`/`res_sx` 为基准（`068` 必须遍历 `codeSplit`、不得再出现 `tail === num`），
+  渲染层在 vm 里真跑渲染器断言「平码命中 → 准 + 只点亮命中项」「七码都不中 → 错 + 零黄底」。
+- `node frontend/test/twsaimahui-bundle-contract.mjs`、`twsaimahui-special-code-contract.mjs`、
+  `twsaimahui-adapter-contract.mjs` 全部通过（bundle 已按 `--rebuild --apply` 重算，文件名随内容变化）。
+- 展示审计：`python scripts\audit-prediction-display.py twsaimahui --base-url http://127.0.0.1:3000`
+  → `error=0 js_errors=0`。
+- 全站平特口径核查见 `docs/prediction-display-standard.md`「五之十四」。

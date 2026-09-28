@@ -167,6 +167,9 @@ const RENAMES = [
   [index, "台湾百事通【吉美丑凶】", "台湾百事通【三肖六码】"],
   [index1, "澳门新新彩【胆大胆小】", "澳门新新彩【四肖中特】"],
   [index1, "澳门新新彩【吉美丑凶】", "澳门新新彩【三肖六码】"],
+  // 2026-09-30：【八肖来袭】→【七肖来袭】（数据源是 mode 44「7肖7码」，标题与玩法对齐）。
+  [index, "台湾百事通【七肖来袭】", "台湾百事通【八肖来袭】"],
+  [index1, "澳门新新彩【七肖来袭】", "澳门新新彩【八肖来袭】"],
 ]
 for (const [html, newTitle, oldTitle] of RENAMES) {
   assert(html.includes(`<div class="pb-tit tzlb-tit">${newTitle}</div>`), `板块标题未改名：${oldTitle} -> ${newTitle}`)
@@ -174,6 +177,12 @@ for (const [html, newTitle, oldTitle] of RENAMES) {
 }
 // [码友二（四肖中特）] 这类卡片文字**不属于板块标题**，必须保持不变
 assert(index.includes("码友二（四肖中特）"), "码友卡片标题「码友二（四肖中特）」不得被改名")
+// 2026-09-30：【码友三（10码中特）】→【码友三（六肖中特）】。
+// 该卡片的数据源是 `6xzt`（mode 46 六肖中特），旧标题「10码中特」与正文不符。
+for (const [html, name] of [[index, "index.html"], [index1, "index1.html"]]) {
+  assert(html.includes("码友三（六肖中特）"), `${name} 的码友三卡片必须改名为「码友三（六肖中特）」`)
+  assert(!html.includes("码友三（10码中特）"), `${name} 不得再残留旧卡片名「码友三（10码中特）」`)
+}
 
 // ── 6. 第 2 项：码友每期必须带开奖与判定 ──────────────────────────────────
 assert(
@@ -238,7 +247,7 @@ assert(
 // 不传键会退回默认的「命中型」口径 → 判定「错」（杀失败）时开奖值恰好等于候选，
 // 会被当成命中项标黄（线上 `?|狗` / `?|本期` / `?|蓝单` 等 R3 的根因）。
 for (const [pattern, where] of [
-  [/renderThreeColumnRows\(sectionByTitle\("绝杀①肖"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "juesha1xiao"\)/, "绝杀①肖"],
+  [/renderThreeColumnRows\(sectionByTitle\("绝杀①肖"\), module, function \(row\) \{[\s\S]{0,200}?\}, "juesha1xiao"\)/, "绝杀①肖"],
   [/renderThreeColumnRows\(sectionByTitle\("绝杀①波"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "jueshabanbo"\)/, "绝杀①波"],
   [/renderThreeColumnRows\(sectionByTitle\("绝杀一肖一尾"\), module, function \(row\) \{ return tokens\(row\)\.join\(""\); \}, "juesha1wei"\)/, "绝杀一肖一尾"],
   [/renderThreeColumnRows\(sectionByTitle\("杀两半波"\), module, function \(row\) \{[\s\S]{0,120}\}, "shaliangbanbo"\)/, "杀两半波"],
@@ -251,12 +260,11 @@ for (const [pattern, where] of [
 
 // ── 10. 展示源必须唯一：不得跨模块兜底 ────────────────────────────────────
 // `moduleWithRows(primary, fallback)` 会在 primary 缺失时改用**另一个模块**，
-// 于是「一肖一码」画出了 9肖12码的 12 个号码、「⑤肖⑩码」画出了 4肖8码、
-// 「天地+②肖」画出了天地生肖。缺失就该显示「暂无后端资料」。
+// 于是「一肖一码」画出了 9肖12码的 12 个号码、「⑤肖⑩码」画出了 4肖8码。
+// 缺失就该隐藏板块（或显示「暂无后端资料」），不得借别的模块数据。
 for (const [primary, wrong] of [
   ["public_yixiao_yima", "9xiao12ma"],
   ["wuxiao_wuma", "4xiao8ma"],
-  ["tiandi_2xiao", "title_5"],
 ]) {
   assert(
     !new RegExp(`moduleWithRows\\(\\s*modules\\.${primary}\\s*,\\s*modules(?:\\.|\\[")${wrong}`).test(adapter),
@@ -270,6 +278,30 @@ assert(
 assert(
   /renderShibamaHistory\(null\)/.test(adapter),
   "18码中特 在 site_module_blueprints 里是 blocked_requires_backend_work，必须渲染空态而不是借别人的数据",
+)
+// ── 10b. 分类中特板块：数据源必须与面板图例同一口径（2026-09-30）──────────
+// 【天地+②肖】= 天地组选 1 + 生肖选 2，绑定 mode 5「天地生肖」（title_5，本站有数据）；
+// 【前后中特】绑定 mode 219「前后特肖」（qianhou_texiao）—— 两者口径一致。
+// 而【日夜特肖】【左右中特】【阴阳⑧码中特】本站没有对应分类数据，过去分别借
+// `qianhou_texiao`（前后肖）/ `title_5`（天地肖）/ `title_48`（8肖中特）顶上，
+// 页面出现「图例是日/夜、内容是前/后」这类错位；现在一律不借 → 整块隐藏。
+assert(
+  /renderTiandiErxiaoHistory\(modules\.title_5\)/.test(adapter),
+  "【天地+②肖】必须绑定 mode 5 = title_5（天地生肖：天地组 + 两肖），不得绑 0 行的 tiandi_2xiao",
+)
+assert(
+  /renderCategoryHistory\("前后中特", modules\.qianhou_texiao, \{\}\)/.test(adapter),
+  "【前后中特】必须继续绑定 qianhou_texiao（前后特肖），口径一致",
+)
+for (const title of ["日夜特肖", "左右中特", "阴阳⑧码中特"]) {
+  assert(
+    !new RegExp(`render[A-Za-z]*History\\("${title}"`).test(adapter) && !adapter.includes(`renderCategoryHistory("${title}"`),
+    `【${title}】本站无对应分类数据，不得再接别的模块渲染（应整块隐藏）`,
+  )
+}
+assert(
+  !/renderTiandiErxiaoHistory\(modules\.tiandi_2xiao\)/.test(adapter),
+  "【天地+②肖】不得再绑 0 行的 tiandi_2xiao 模块",
 )
 
 // ── 11. 「代号生肖」标黄：代号要能反查回生肖 ───────────────────────────────
@@ -326,16 +358,39 @@ assert(
 // ── 15. 有壳无数据板块隐藏（区别于「缺数据源」）─────────────────────────────
 // `public_yixiao_yima` / `wuxiao_wuma` 在 payload 里存在，但直接调用对应
 // `_build_*` 实测 history = 0 行（两者都依赖 mode 151，该 mode 全表 0 行）。
+// 18码中特（2026-09-30 需求）在 `site_module_blueprints` 里是
+// `blocked_requires_backend_work`：后端 mechanism/mode_id 未确认，连模块都没有。
+// 日夜特肖 / 左右中特 / 阴阳⑧码中特（2026-09-30 追加）：本站没有对应的分类数据
+// （`created.mode_payload_164` 全站 0 行、`created.mode_payload_152` 无 web=10 行），
+// 过去借别的模块顶上 → 图例与内容不符，现在同样整块隐藏。
 // 按「有壳无数据 → 删」处理；有数据的板块不得被误伤。
-const emptyBlock = /var EMPTY_PANEL_TITLES = \[([\s\S]{0,300}?)\]/.exec(adapter)
+const emptyBlock = /var EMPTY_PANEL_TITLES = \[([\s\S]{0,400}?)\]/.exec(adapter)
 assert(emptyBlock, "必须维护有壳无数据板块清单 EMPTY_PANEL_TITLES")
 const emptyList = emptyBlock[1]
-for (const name of ["一肖一码", "⑤肖⑩码"]) {
+for (const name of ["一肖一码", "⑤肖⑩码", "18码中特", "日夜特肖", "左右中特", "阴阳⑧码中特"]) {
   assert(emptyList.includes(`"${name}"`), `有壳无数据清单必须包含 ${name}`)
 }
-for (const keep of ["独家公式", "天地+②肖", "本期输尽光", "双波⑩码", "大小", "六肖六码"]) {
-  assert(!emptyList.includes(`"${keep}"`), `${keep} 有数据/已修复，不得列入有壳无数据清单`)
+for (const keep of ["独家公式", "本期输尽光", "双波⑩码", "大小", "六肖六码", "天地+②肖", "前后中特"]) {
+  assert(!emptyList.includes(`"${keep}"`), `${keep} 有数据/已修复，不得列入静态有壳无数据清单`)
 }
+// 【天地+②肖】按 `title_5` 的行数**动态判断**：后端有行就渲染（本项目 web=10 有 69 期），
+// 没行才隐藏 —— 不能塞进静态清单（否则有数据也不会显示）。
+assert(
+  /var UNBACKED_PANELS = \[([\s\S]{0,300}?)\]/.test(adapter),
+  "必须维护按行数动态隐藏的无数据板块清单 UNBACKED_PANELS",
+)
+assert(
+  /UNBACKED_PANELS = \[[\s\S]{0,200}title: "天地\+②肖", moduleKey: "title_5"/.test(adapter),
+  "天地+②肖 必须按 title_5 的行数动态隐藏（数据源已从 tiandi_2xiao 改为 title_5）",
+)
+assert(
+  /function hideUnbackedPanels\(modules\)[\s\S]{0,400}distinctRows\(modules\[panel\.moduleKey\]\)\.length/.test(adapter),
+  "hideUnbackedPanels 必须按模块行数判断（有数据就保持显示）",
+)
+assert(
+  !emptyList.includes(`"天地+②肖"`),
+  "天地+②肖 有数据时应恢复显示，不得列入静态有壳无数据清单",
+)
 assert(
   /data-prediction-empty/.test(adapter),
   "隐藏有壳无数据板块时必须打 data-prediction-empty 标记，便于验收与还原",
@@ -343,6 +398,10 @@ assert(
 assert(
   /hideEmptyPanels\(\);/.test(adapter),
   "DOMContentLoaded 必须先调用 hideEmptyPanels()",
+)
+assert(
+  /applyFlatVerdicts\(modules\);[\s\S]{0,200}hideUnbackedPanels\(modules\);/.test(adapter),
+  "renderPredictions 必须先按平特口径重算判定，再隐藏无数据板块",
 )
 
 // ── 16. 「大小」面板（原「大小+①头」）────────────────────────────────────
@@ -460,4 +519,119 @@ assert(
   )
 }
 
+// ── 19. 2026-09-30 七项改造（源码级口径）────────────────────────────────────
+// 需求清单：
+//   1. 【八肖来袭】→【七肖来袭】（上面的 RENAMES）；
+//   2. 【平特①肖】【绝杀①肖】内容显示改「生肖重复三次」；**所有平特**按七个开奖号码判定；
+//      绝杀①肖按用户确认仍按最后一个开奖号码（特码）判定，不做七码复算；
+//   3. 天地+②肖 / 18码中特 无后端资料 → 整块隐藏（上面第 15 节）；
+//   4. 独家公式：去 `T37`、去「整体准确率…参弃随意」、加「开：」；
+//   5. 家野中特改用 mode 14（title_14）显示家禽/野兽两组；
+//   6. 码友三（10码中特）→ 码友三（六肖中特）（上面的 RENAMES）；
+//   7. 暴富⑦肖只显示生肖，不显示号码。
+
+// 2a. 平特判定引擎：七个开奖号码（六个平码 + 特码）
+for (const token of [
+  "function fullDrawnCodes", "function fullDrawnZodiacs",
+  "function flatZodiacHit", "function flatTailHit",
+  "function withFlatVerdict", "var FLAT_MODULE_KINDS", "function applyFlatVerdicts",
+]) {
+  assert(adapter.includes(token), `平特七码判定缺少 ${token}`)
+}
+assert(
+  /FLAT_MODULE_KINDS = \{[\s\S]{0,200}pt1xiao: "zodiac"[\s\S]{0,120}pt1wei: "tail"[\s\S]{0,120}pt3xiao: "zodiac"/.test(adapter),
+  "平特一肖/一尾/三肖都必须走七码口径（一尾按号码尾数、其余按生肖）",
+)
+// 完整开奖串必须能从嵌套的 `raw.raw.res_code`（供应商模块外层只留特码）里取到，
+// 并按长度取最长的那一份。
+assert(
+  /valueList\(nested\.res_code\)/.test(adapter) && /valueList\(nested\.res_sx\)/.test(adapter),
+  "完整开奖串必须读取 raw.raw.res_code / raw.raw.res_sx（独家公式等模块外层只有特码）",
+)
+assert(
+  /function longestDrawnList[\s\S]{0,220}list\.length > best\.length/.test(adapter),
+  "开奖串必须按「取最长一份」读取，避免只拿到特码",
+)
+// 平特的命中项可能来自平码（不是特码），标黄链路必须按整组开奖值比对。
+assert(
+  /if \(flatDraw && flatDraw\.zodiacs\.indexOf\(candidate\) !== -1\) return true;/.test(adapter) &&
+    /if \(flatDraw && flatDraw\.codes\.indexOf\(candidate\) !== -1\) return true;/.test(adapter),
+  "平特命中项可能来自平码，highlightTokens 必须按 flatDraw（七个开奖值）判定标黄",
+)
+
+// 2b. 【平特①肖】生肖 ×3 + 命中整段标黄
+assert(
+  /function renderPingteYixiaoHistory[\s\S]{0,500}var value = zodiactsOf\(row\)\[0\] \|\| "";[\s\S]{0,120}value \+ value \+ value/.test(adapter),
+  "【平特①肖】内容必须显示成「生肖重复三次」（鸡鸡鸡），与供应商模板一致",
+)
+assert(
+  /function renderPingteYixiaoHistory[\s\S]{0,700}row\.result\.isCorrect === true && text \? \[text\]/.test(adapter),
+  "【平特①肖】命中时整段三个重复生肖一起标黄",
+)
+// 2c. 【绝杀①肖】同样三次显示，但**判定口径不变**（用户明确：仍按最后一个开奖号码）。
+assert(
+  /function renderJueshaYixiaoHistory[\s\S]{0,600}value \+ value \+ value[\s\S]{0,200}"juesha1xiao"/.test(adapter),
+  "【绝杀①肖】内容同样显示成「生肖重复三次」，并保留排除型模块键",
+)
+assert(
+  /function renderJueshaYixiaoHistory[\s\S]{0,700}withFlatVerdict/.test(adapter) === false,
+  "【绝杀①肖】不得接入平特七码复算（用户确认：绝杀仍按最后一个开奖号码判定）",
+)
+// 2d. 【平特一尾】命中时只标尾数数字（`<span>555</span>尾`）。
+assert(
+  /function renderPingteYiweiHistory[\s\S]{0,700}return \[text\.replace\(\/尾\$\/, ""\) \|\| text\];/.test(adapter),
+  "【平特一尾】命中时只标尾数数字部分（「尾」字不标）",
+)
+
+// 4. 【独家公式】排版：去 T 前缀 / 去准确率说明 / 加「开：」
+assert(
+  /function renderDujiaGongshiHistory[\s\S]{0,1800}整体准确率\|参弃随意/.test(adapter),
+  "【独家公式】必须清空模板烤死的「整体准确率：96.96%。参弃随意」说明行",
+)
+assert(
+  /function renderDujiaGongshiHistory[\s\S]{0,2400}" 开：" \+ \(opened \? drawnSummary\(row\) : "待开奖"\)/.test(adapter),
+  "【独家公式】每行必须补「开：xx」（未开奖给「开：待开奖」）",
+)
+assert(
+  /function drawnSummary[\s\S]{0,300}codes\.join\("-"\) \+ zodiac/.test(adapter),
+  "【独家公式】开奖串必须是七个号码（前六平码 + 末位特码）连特肖",
+)
+assert(
+  !/T" \+ resultToken\(row\.result\.code, true\)/.test(adapter),
+  "【独家公式】不得再输出 `T37` 这类无意义前缀",
+)
+assert(
+  /function renderDujiaGongshiHistory[\s\S]{0,2600}entry\.is_correct === true \? "√" : "x"/.test(adapter),
+  "【独家公式】√/x 必须取维度判定 raw.formula[kind].is_correct（行级 isCorrect 恒为 null）",
+)
+
+// 5. 【家野中特】改用 mode 14（title_14），显示家禽/野兽两组。
+assert(
+  /renderJiayeZhongteHistory\(modules\.title_14\)/.test(adapter),
+  "【家野中特】数据源必须是 mode 14 = title_14（家禽野兽），不得再借平特2肖",
+)
+assert(
+  /function domesticWildGroups[\s\S]{0,900}DOMESTIC_WILD_LABELS/.test(adapter),
+  "【家野中特】必须按「组名 + 生肖」还原家禽/野兽两组（tokens 形态不稳定）",
+)
+assert(
+  /group\.label \+ "：" \+ group\.values\.join\(""\)/.test(adapter),
+  "【家野中特】展示成 `家禽：猪鸡羊马+野兽：猴龙鼠兔` 形态",
+)
+
+// 7. 【暴富⑦肖】只保留生肖（候选是 `生肖|号码`）
+assert(
+  /function renderBaofuQixiaoHistory[\s\S]{0,300}return zodiactsOf\(row\)\.join\(""\);/.test(adapter),
+  "【暴富⑦肖】必须只显示生肖串（不得再把 `生肖|号码` 一起写进正文）",
+)
+assert(
+  /function renderBaxiaoLaixiHistory[\s\S]{0,400}sectionByTitle\("七肖来袭"\)[\s\S]{0,400}return zodiactsOf\(row\)\.join\(""\);/.test(adapter),
+  "【七肖来袭】必须按新标题查找，且只显示生肖串",
+)
+assert(
+  !adapter.includes('sectionByTitle("八肖来袭")'),
+  "适配器里不得再引用旧标题「八肖来袭」",
+)
+
 console.log("twbst528-display-contract: OK")
+

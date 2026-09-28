@@ -81,10 +81,13 @@ function applyRevealMask(data, revealGate) {
 }
 
 function updateLegacyRevealGateFromPayload(payload) {
-    if (!payload || !payload.current_issue || !payload.draw_time) return;
-    var drawTimeSec = parseBeijingDateTimeToSeconds(payload.draw_time);
-    if (!(drawTimeSec > 0)) return;
-    var unlockAtSec = drawTimeSec + (25 * 6);
+    if (!payload || !payload.current_issue) return;
+    // 揭示锚点与共享开奖面板一致：优先 reveal_start（号码首次对外可用时刻，
+    // 全局唯一、跨浏览器一致），旧数据没有该字段时退回 draw_time。
+    var gateTimeRaw = payload.reveal_start || payload.draw_time || '';
+    var gateTimeSec = parseBeijingDateTimeToSeconds(gateTimeRaw);
+    if (!(gateTimeSec > 0)) return;
+    var unlockAtSec = gateTimeSec + (25 * 6);
     var nowSec = Math.floor(Date.now() / 1000);
     if (!(unlockAtSec > nowSec)) return;
     setLegacyRevealGate({

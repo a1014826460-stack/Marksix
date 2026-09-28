@@ -20,10 +20,12 @@
 - envelope：`modulesFrom()` 从 `result.data` 起逐层剥 `.data`，直到某层出现数组型
   `canonical_modules`（只认 `canonical_modules`）；因此桩客户端返回
   `{ state, data: { data: { canonical_modules } } }`。
-- moduleKey：`index.html` 的【天地+②肖】面板由 `renderTiandiErxiaoHistory(modules.tiandi_2xiao)`
-  供应，即 `tiandi_2xiao`（**不是** `title_5`；`title_5` 在本站供「左右中特」）。
-- 行字段：`row.issue/term`、`row.raw.tiandi`（"天肖"/"地肖"）、`row.raw.xiao_pair`
-  （2 个候选生肖的数组）、`row.result.{isOpened, code, zodiac, isCorrect}`。
+- moduleKey：`index.html` 的【天地+②肖】面板由 `renderTiandiErxiaoHistory(modules.title_5)`
+  供应，即 **mode 5「天地生肖（天地选1，生肖选2）」= `title_5`**
+  （2026-09-30 起；此前绑的是本站全站 0 行的供应商模块 `tiandi_2xiao`）。
+- 行字段：`row.issue/term`、`row.prediction.tokens` = `["天肖|兔,马,猴,猪,牛,龙"]`
+  （天地组写在正文标签里）、`row.raw.xiao` = 2 个候选生肖（逗号串）、
+  `row.result.{isOpened, code, zodiac, isCorrect}`。
 - 标记：自建 marker `<span data-prediction-hit="true" style="background-color:#FFFF00">`。
 
 不连线上、不连数据库：本地静态服务（`frontend/public`）+ 桩 `lottery-site-data-client`
@@ -80,6 +82,10 @@ PROBE_JS = r"""
   const YELLOW = (v) => ['rgb(255, 255, 0)', 'rgba(255, 255, 0, 1)', '#ffff00', '#ff0', 'yellow']
     .includes(String(v || '').replace(/\s+/g, ' ').toLowerCase());
   const isYellow = (el) => Boolean(el) && YELLOW(getComputedStyle(el).backgroundColor);
+  // 隐藏/未上屏的元素（无数据板块整块 display:none 时留下的模板样例）**不算页面展示**：
+  // 与 `scripts/audit-prediction-display.py` 的 ROW_SCRIPT 同口径
+  // （`getClientRects().length === 0` 直接跳过），否则被隐藏板块里烤死的黄底样例会误报杂散黄底。
+  const isRendered = (el) => Boolean(el) && el.getClientRects().length > 0;
 
   // 按标题定位【天地+②肖】板块（与 sectionByTitle 同口径：读 .pb-tit 里的【…】）。
   const sections = Array.from(document.querySelectorAll('.lxlm, .tzlb'));
@@ -117,6 +123,7 @@ PROBE_JS = r"""
   // (a) 标记属性必须与黄底一致：带属性却没黄底 = 幽灵标记。
   const ghostMarkers = [];
   document.querySelectorAll('[data-prediction-hit]').forEach((el) => {
+    if (!isRendered(el)) return;
     if (!isYellow(el)) ghostMarkers.push({ text: MONO(el.textContent).slice(0, 30), bg: getComputedStyle(el).backgroundColor });
   });
 
@@ -124,6 +131,7 @@ PROBE_JS = r"""
   const strayYellow = [];
   document.querySelectorAll('*').forEach((el) => {
     if (el.hasAttribute('data-prediction-hit')) return;
+    if (!isRendered(el)) return;
     if (!isYellow(el)) return;
     const parent = el.parentElement;
     if (parent && isYellow(parent)) return;
@@ -137,6 +145,7 @@ PROBE_JS = r"""
   const wrongWithHighlight = [];
   const pendingWithHighlight = [];
   Array.from(document.querySelectorAll('.mtbl tbody > tr')).forEach((tr) => {
+    if (!isRendered(tr)) return;
     const hits = hitTexts(tr);
     if (!hits.length) return;
     const text = MONO(tr.textContent);
@@ -158,13 +167,18 @@ PROBE_JS = r"""
 """
 
 
+TIANDI_POOLS = {"天肖": "兔,马,猴,猪,牛,龙", "地肖": "鼠,虎,蛇,羊,鸡,狗"}
+
+
 def row(issue, *, tiandi, pair, opened=True, code="", zodiac="", is_correct=None):
+    """mode 5（`title_5`）的行：正文标签 `天肖|兔,马,猴,猪,牛,龙` + `xiao` 两肖。"""
+    pool = TIANDI_POOLS[tiandi]
     result = {"isOpened": opened, "code": code, "zodiac": zodiac, "isCorrect": is_correct}
     return {
         "issue": issue,
         "term": issue[-3:],
-        "prediction": {"tokens": [], "text": "%s+%s" % (tiandi, "".join(pair)), "extra": {}},
-        "raw": {"tiandi": tiandi, "xiao_pair": list(pair)},
+        "prediction": {"tokens": ["%s|%s" % (tiandi, pool)], "text": "%s|%s" % (tiandi, pool), "extra": {}},
+        "raw": {"content": json.dumps(["%s|%s" % (tiandi, pool)], ensure_ascii=False), "xiao": ",".join(pair)},
         "result": result,
     }
 
@@ -172,13 +186,13 @@ def row(issue, *, tiandi, pair, opened=True, code="", zodiac="", is_correct=None
 def build_modules():
     """270/269/267 = 已开奖对照，266 = 未开奖。
 
-    所有 `isCorrect` 故意给 `False`：它只反映 vendor 对 `xiao` 两肖的比对结果
+    所有 `isCorrect` 故意给 `False`：它只反映接口对 `xiao` 两肖的比对结果
     （270/267 期两肖都没命中，命中落在天地组），用来证明适配器已本地复算而不依赖它。
     """
     modules = [
         {
-            "moduleKey": "tiandi_2xiao",
-            "title": "天地两肖",
+            "moduleKey": "title_5",
+            "title": "天地生肖（天地选1，生肖选2）",
             "display_style": "single-line",
             "rows": [
                 # 270 天肖+兔鸡 开 37 马 → 马 ∈ 天肖组 → 对，只黄「天肖」；

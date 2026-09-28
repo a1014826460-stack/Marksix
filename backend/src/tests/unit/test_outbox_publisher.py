@@ -115,6 +115,7 @@ def test_publisher_uses_authoritative_opened_draw_and_marks_event_published(tmp_
     assert snapshots.get_latest_draw(3) == {
         "current_issue": "2026188",
         "draw_time": "2026-08-07 22:32:00",
+        "reveal_start": "2026-08-07 22:32:00",
         "result_balls": [
             {"value": "01", "zodiac": "", "color": "red", "element": ""},
             {"value": "02", "zodiac": "", "color": "red", "element": ""},

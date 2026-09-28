@@ -15,7 +15,8 @@ def test_generation_repository_loads_opened_draws_and_future_truth_without_expos
                 year INTEGER,
                 term INTEGER,
                 numbers TEXT,
-                is_opened INTEGER DEFAULT 0
+                is_opened INTEGER DEFAULT 0,
+                opened_at TEXT
             )
             """
         )

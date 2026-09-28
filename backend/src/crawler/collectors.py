@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,14 @@ def _upsert_draw(
     advance_next_time = previous is None or (
         effective_is_opened == 1 and previous_is_opened == 0
     )
+    # opened_at 记录号码首次对外可用的北京时间，供前台揭示锚点（reveal_start）。
+    # 已开盘行的重复刷新绝不改动它；表达式在 SQL 侧再做一次首写固定兜底。
+    try:
+        opened_at = (
+            datetime.strptime(now, "%Y-%m-%d %H:%M:%S") + timedelta(hours=8)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        opened_at = now
     if not advance_next_time:
         next_time = ""
 
@@ -121,8 +129,8 @@ def _upsert_draw(
             """
             INSERT INTO lottery_draws
                 (lottery_type_id, year, term, numbers, draw_time,
-                 status, is_opened, next_term, next_time, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                 status, is_opened, next_term, next_time, opened_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
                 numbers = excluded.numbers,
                 draw_time = excluded.draw_time,
@@ -131,18 +139,22 @@ def _upsert_draw(
                     ELSE excluded.is_opened
                 END,
                 next_time = excluded.next_time,
+                opened_at = CASE
+                    WHEN lottery_draws.is_opened = 1 THEN COALESCE(NULLIF(lottery_draws.opened_at, ''), excluded.opened_at)
+                    ELSE excluded.opened_at
+                END,
                 updated_at = excluded.updated_at
             """,
             (lottery_type_id, year, term, numbers, draw_time,
-             effective_is_opened, term + 1, next_time, now, now),
+             effective_is_opened, term + 1, next_time, opened_at, now, now),
         )
     else:
         conn.execute(
             """
             INSERT INTO lottery_draws
                 (lottery_type_id, year, term, numbers, draw_time,
-                 status, is_opened, next_term, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                 status, is_opened, next_term, opened_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
             ON CONFLICT(lottery_type_id, year, term) DO UPDATE SET
                 numbers = excluded.numbers,
                 draw_time = excluded.draw_time,
@@ -150,10 +162,14 @@ def _upsert_draw(
                     WHEN lottery_draws.is_opened = 1 THEN 1
                     ELSE excluded.is_opened
                 END,
+                opened_at = CASE
+                    WHEN lottery_draws.is_opened = 1 THEN COALESCE(NULLIF(lottery_draws.opened_at, ''), excluded.opened_at)
+                    ELSE excluded.opened_at
+                END,
                 updated_at = excluded.updated_at
             """,
             (lottery_type_id, year, term, numbers, draw_time,
-             effective_is_opened, term + 1, now, now),
+             effective_is_opened, term + 1, opened_at, now, now),
         )
     current = conn.execute(
         """

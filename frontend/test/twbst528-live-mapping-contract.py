@@ -40,7 +40,7 @@ def prediction_payload(lottery_type: str):
     formula_rows = [
         {
             **row,
-            "raw": {"res_code": "20,37,24,28,19,48,36", "formula": {"parity": {"labels": ["单"], "is_correct": True}, "size": {"labels": ["大"], "is_correct": False}, "tails": {"labels": ["1", "2", "3", "4"], "is_correct": True}}},
+            "raw": {"res_code": "20,37,24,28,19,48,36", "formula": {"parity": {"labels": ["单"], "is_correct": True}, "size": {"labels": ["大"], "is_correct": False}, "tails": {"labels": ["3", "6"], "is_correct": True}}},
         }
         for row in rows
     ]
@@ -58,7 +58,27 @@ def prediction_payload(lottery_type: str):
                 {"moduleKey": "yijuzhenyan", "rows": rows + [rows[0]]},
                 {"moduleKey": "shuangbo", "rows": rows},
                 {"moduleKey": "shuangbo_12ma", "rows": rows},
-                {"moduleKey": "7xiao7ma", "rows": rows},
+                {"moduleKey": "7xiao7ma", "rows": [
+                    {
+                        **row,
+                        "prediction": {
+                            "tokens": ["猪|08", "猴|11", "龙|03", "虎|05", "羊|12", "鼠|07", "马|01"],
+                            "text": "猪|08,猴|11,龙|03,虎|05,羊|12,鼠|07,马|01",
+                        },
+                    }
+                    for row in rows
+                ]},
+                # 家野中特：mode 14「家禽野兽」（家野两列各 4 肖）。
+                {"moduleKey": "title_14", "rows": [
+                    {
+                        **row,
+                        "prediction": {
+                            "tokens": ["家禽|猪,鸡,羊,马", "野兽|猴,龙,鼠,兔"],
+                            "text": "家禽|猪,鸡,羊,马;野兽|猴,龙,鼠,兔",
+                        },
+                    }
+                    for row in rows
+                ]},
                 {"moduleKey": "pt2xiao", "rows": rows},
                 {"moduleKey": "jueshabanbo", "rows": rows},
                 {"moduleKey": "pt1wei", "rows": rows},
@@ -67,14 +87,23 @@ def prediction_payload(lottery_type: str):
                     {**row, "prediction": {"tokens": ["羊|12,24", "马|01,13", "狗|09,21", "鼠|07,19"]}}
                     for row in rows
                 ]},
-                {"moduleKey": "pt1xiao", "rows": rows},
+                # 平特①肖：候选「猪」——开奖七肖里猪是**平码**（特肖是马），
+                # 只比特码会判「错」，平特七码口径必须判「对」（并把「猪猪猪」整段标黄）。
+                {"moduleKey": "pt1xiao", "rows": [
+                    {**row, "prediction": {"tokens": ["猪"], "text": "猪"}} for row in rows
+                ]},
+                # 天地+②肖：mode 5「天地生肖」——正文是天地组标签，两肖在 xiao 列。
+                # mock 用「地肖 + 猴猪」，开奖特肖是马（不在地肖组、也不在两肖里）→ 必判「错」。
                 {"moduleKey": "title_5", "rows": [
                     {**row, "prediction": {"tokens": ["地肖|蛇,羊,鸡,狗,鼠,虎"]}, "raw": {"xiao": "猴,猪"}}
                     for row in rows
                 ]},
                 {"moduleKey": "title_47", "rows": rows},
                 {"moduleKey": "pt3xiao", "rows": rows},
-                {"moduleKey": "juesha1xiao", "rows": rows},
+                # 绝杀①肖：内容显示同样重复三次（鸡鸡鸡）；判定仍走接口（按最后一个开奖号码）。
+                {"moduleKey": "juesha1xiao", "rows": [
+                    {**row, "prediction": {"tokens": ["鸡"], "text": "鸡"}} for row in rows
+                ]},
                 {"moduleKey": "danshuangtema", "rows": rows},
                 {"moduleKey": "juesha1wei", "rows": rows},
                 {"moduleKey": "shuangbo_12ma", "rows": rows},
@@ -99,7 +128,11 @@ def prediction_payload(lottery_type: str):
                 {"moduleKey": "title_197", "rows": rows},
                 {"moduleKey": "juesha2xiao", "rows": rows},
                 {"moduleKey": "dxztt1", "rows": rows},
-                {"moduleKey": "qianhou_texiao", "rows": rows},
+                # 前后中特：mode 219「前后特肖」——正文是前后组标签。
+                {"moduleKey": "qianhou_texiao", "rows": [
+                    {**row, "prediction": {"tokens": ["前肖|鼠,牛,虎,兔,龙,蛇"]}, "raw": {"xiao": "鼠,猴"}}
+                    for row in rows
+                ]},
                 {"moduleKey": "sihangzhongte", "rows": rows},
                 {"moduleKey": "siji3", "rows": rows},
                 {"moduleKey": "siduanzhongte", "rows": rows},
@@ -110,7 +143,10 @@ def prediction_payload(lottery_type: str):
                 {"moduleKey": "qinqi", "rows": rows},
                 {"moduleKey": "shujinguang", "rows": rows},
                 {"moduleKey": "sitouzhongte", "rows": rows},
-                {"moduleKey": "qianhou_texiao", "rows": rows},
+                {"moduleKey": "qianhou_texiao", "rows": [
+                    {**row, "prediction": {"tokens": ["前肖|鼠,牛,虎,兔,龙,蛇"]}, "raw": {"xiao": "鼠,猴"}}
+                    for row in rows
+                ]},
                 {"moduleKey": "siji3", "rows": rows},
                 {"moduleKey": "4xiao8ma", "rows": rows},
                 {"moduleKey": "tw_pmt_image", "rows": [
@@ -211,8 +247,30 @@ def main() -> None:
             second_row = first_table.locator("tr").nth(1).inner_text()
             assert "开:36马错" in second_row, second_row
 
-            tiandi = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="天地+②肖")).first
-            assert "第510期" in tiandi.inner_text() and "地肖" in tiandi.inner_text(), tiandi.inner_text()[:300]
+            # 无后端资料的板块必须整块隐藏，不留空壳（DOM 保留、打 data-prediction-empty 标记）：
+            #   一肖一码 / ⑤肖⑩码 —— 依赖 mode 151，全表 0 行；
+            #   18码中特 —— site_module_blueprints 里是 blocked_requires_backend_work；
+            #   日夜特肖 / 左右中特 / 阴阳⑧码中特 —— 本站没有对应分类数据
+            #     （mode 164 全站 0 行、mode 152 无 web=10 行），不得借别的模块顶上。
+            for title in ("一肖一码", "⑤肖⑩码", "18码中特", "日夜特肖", "左右中特", "阴阳⑧码中特"):
+                section = frame.locator(".lxlm, .tzlb").filter(has=frame.locator(".pb-tit", has_text=title)).first
+                assert section.count() == 1, f"{title} 板块必须保留 DOM（便于数据补齐后还原）"
+                assert section.get_attribute("data-prediction-empty") == title, (
+                    title,
+                    section.get_attribute("data-prediction-empty"),
+                )
+                assert section.evaluate("node => getComputedStyle(node).display") == "none", title
+
+            # 【天地+②肖】2026-09-30 起绑定 mode 5「天地生肖」（title_5，mock 里有行）：
+            # 面板必须**可见**，内容为「天地组+两肖」，判定按「特肖 ∈ 天地组 ∪ 两肖」本地复算。
+            tiandi = frame.locator(".lxlm, .tzlb").filter(has=frame.locator(".pb-tit", has_text="天地+②肖")).first
+            assert tiandi.get_attribute("data-prediction-empty") is None, "天地+②肖 有数据时不得被隐藏"
+            tiandi_rows = tiandi.locator("table.mtbl tbody > tr")
+            tiandi_text = [tiandi_rows.nth(index).inner_text() for index in range(tiandi_rows.count())]
+            assert any("第510期" in value and "地肖+猴猪" in value and "开:待开奖" in value for value in tiandi_text), tiandi_text
+            # 509 期开奖特肖是马（地肖组与两肖都不含）→ 必须判「错」且零黄底。
+            assert any("第509期" in value and "开:36马错" in value for value in tiandi_text), tiandi_text
+            assert tiandi.locator("[data-prediction-hit]").count() == 0, tiandi.inner_text()[:300]
 
             # The dedicated, pre-existing image slot must receive only this
             # site's Taiwan 跑马图 URL; it must never reuse another site's image.
@@ -232,10 +290,12 @@ def main() -> None:
             # All reviewed three-column modules must replace supplier terms,
             # values and result placeholders from their own API module.
             # 注：「四肖中特」已按需求改名为「胆大胆小」、「三肖六码」改名为「吉美丑凶」，
-            # 板块名以站点当前文案为准。
+            # 「八肖来袭」改名为「七肖来袭」，板块名以站点当前文案为准。
+            # 平特①肖 不在这里逐行断言「错」：它的判定已改成**七码口径**，
+            # mock 里的候选「猪」是平码 → 509 期应为「对」，单独断言（见下）。
             for title in (
-                "两波突围", "八肖来袭", "家野中特", "杀两半波", "平特一尾", "大小中特",
-                "暴富⑦肖", "平特①肖", "胆大胆小", "吉美丑凶",
+                "两波突围", "七肖来袭", "家野中特", "杀两半波", "平特一尾", "大小中特",
+                "暴富⑦肖", "胆大胆小", "吉美丑凶",
                 "绝杀①肖", "绝杀①波", "单双二肖", "绝杀一肖一尾",
             ):
                 if title == "杀两半波":
@@ -245,6 +305,39 @@ def main() -> None:
                 rendered_rows = [history_rows.nth(index).inner_text() for index in range(history_rows.count())]
                 assert any("第509期" in value and "开:36马错" in value for value in rendered_rows), (title, rendered_rows)
                 assert not any("第323期" in value or "????" in value for value in rendered_rows), (title, rendered_rows)
+
+            # 【平特①肖】七码口径 + 生肖 ×3：候选「猪」是 509 期的平码（特肖是马），
+            # 只比特码会判「错」，七码口径必须判「对」。
+            pingte1 = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="平特①肖")).first
+            pingte1_rows = pingte1.locator("table.mtbl tbody > tr")
+            pingte1_text = [pingte1_rows.nth(index).inner_text() for index in range(pingte1_rows.count())]
+            assert any("猪猪猪" in value for value in pingte1_text), pingte1_text
+            assert any("第509期" in value and "开:36马对" in value for value in pingte1_text), pingte1_text
+            hit_marks = pingte1.locator("[data-prediction-hit]").all_inner_texts()
+            assert hit_marks and all(value == "猪猪猪" for value in hit_marks if value), hit_marks
+
+            # 【暴富⑦肖】/【七肖来袭】只保留生肖：候选 `生肖|号码` 不得把号码带进正文。
+            for title in ("暴富⑦肖", "七肖来袭"):
+                section = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text=title)).first
+                section_text = section.inner_text()
+                assert "猪猴龙虎羊鼠马" in section_text, (title, section_text[:300])
+                assert "|" not in section_text, (title, section_text[:300])
+
+            # 【家野中特】改用 mode 14 后必须显示家禽 / 野兽两组。
+            jiaye = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="家野中特")).first
+            jiaye_text = jiaye.inner_text()
+            assert "家禽：猪鸡羊马+野兽：猴龙鼠兔" in jiaye_text, jiaye_text[:300]
+
+            # 【绝杀①肖】内容显示同样重复三次（鸡鸡鸡），但判定仍按最后一个开奖号码（特码）。
+            juesha = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="绝杀①肖")).first
+            juesha_text = juesha.inner_text()
+            assert "鸡鸡鸡" in juesha_text, juesha_text[:300]
+
+            # 【码友来料参考】第三张卡的标题必须与数据源（mode 46 六肖中特）一致。
+            mayou = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="码友来料参考")).first
+            mayou_titles = mayou.locator('font[style*="16pt"]').all_inner_texts()
+            assert "码友三（六肖中特）" in mayou_titles, mayou_titles
+            assert not any("10码中特" in value for value in mayou_titles), mayou_titles
 
             # Remaining reviewed three-column supplier sections also require a
             # dedicated backend mapping rather than their static snapshots.
@@ -258,11 +351,11 @@ def main() -> None:
             assert "510期:台湾百事通" in forum.locator("li").first.inner_text()
 
             newly_dynamic_titles = (
-                "代号生肖", "独家公式", "六尾出特", "六肖六码", "一肖一码", "码友来料参考",
+                "代号生肖", "独家公式", "六尾出特", "六肖六码", "码友来料参考",
                 "梭哈⑦尾", "六肖十八码", "红蓝绿肖", "五行来料", "绝杀⑩码", "⑥肖12码",
-                "黑白三肖", "阴阳⑧码中特", "18码中特", "③肖防③码", "8肖16码", "三期计划",
-                "⑤肖⑩码", "稳中单双", "综合绝杀", "大小", "四肖八码", "日夜特肖",
-                "左右中特", "前后中特", "七尾四行", "四季九肖",
+                "黑白三肖", "③肖防③码", "8肖16码", "三期计划",
+                "稳中单双", "综合绝杀", "大小", "四肖八码",
+                "前后中特", "七尾四行", "四季九肖",
                 "四段中特",
             )
             for title in newly_dynamic_titles:
@@ -276,7 +369,8 @@ def main() -> None:
             # Reused mature backend modules must preserve the vendor's visual
             # grouping: no raw implementation delimiters or dense unbroken
             # payloads may replace a card/table data slot.
-            for title in ("⑥肖12码", "③肖防③码", "8肖16码", "⑤肖⑩码", "三期计划", "综合绝杀"):
+            # 「⑤肖⑩码」已按「有壳无数据 → 删」整块隐藏，不再纳入逐行断言。
+            for title in ("⑥肖12码", "③肖防③码", "8肖16码", "三期计划", "综合绝杀"):
                 section = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text=title)).first
                 assert section.locator("br").count() > 0, (title, section.inner_text()[:300])
                 assert "|" not in section.inner_text(), (title, section.inner_text()[:300])
@@ -289,29 +383,32 @@ def main() -> None:
                 assert "暂无后端资料" not in section.inner_text(), (title, section.inner_text()[:300])
                 assert "323期" not in section.inner_text() and "????" not in section.inner_text(), (title, section.inner_text()[:300])
 
-            # Empty preferred modules must fall back to a populated mature
-            # module instead of masking the usable source object.
-            for title in ("一肖一码", "黑白三肖", "⑤肖⑩码"):
+            # 「有壳无数据 → 整块隐藏」的板块：DOM 保留、打 data-prediction-empty 标记、
+            # 计算样式 display:none（一肖一码 / ⑤肖⑩码 依赖 mode 151 全表 0 行）。
+            for title in ("一肖一码", "⑤肖⑩码"):
                 section = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text=title)).first
-                section_text = section.inner_text()
-                assert re.search(r"(?:第)?510\s*期", section_text), (title, section_text[:300])
-                assert "暂无后端资料" not in section_text, (title, section_text[:300])
-            five_xiao = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="⑤肖⑩码")).first
-            assert "台肖0台码0" in five_xiao.inner_text(), five_xiao.inner_text()[:300]
-            assert "|" not in five_xiao.inner_text(), five_xiao.inner_text()[:300]
+                assert section.get_attribute("data-prediction-empty") == title, title
+                assert section.evaluate("node => getComputedStyle(node).display") == "none", title
 
+            # 有数据的板块（黑白三肖）不得被上面的隐藏规则误伤。
+            heibai = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="黑白三肖")).first
+            assert re.search(r"(?:第)?510\s*期", heibai.inner_text()), heibai.inner_text()[:300]
+
+            # 【独家公式】排版：去 `T37`、去模板烤死的「整体准确率…参弃随意」、补「开：」，
+            # 未开奖给「开：待开奖」；√/x 取维度判定 raw.formula[kind].is_correct。
             formula = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="独家公式")).first
             formula_text = formula.inner_text()
-            assert "510期 --------------------- T-- 【单数】?" in formula_text, formula_text[:500]
-            assert "509期 20-37-24-28-19-48 T36 【单数】x" in formula_text, formula_text[:500]
-            assert "510期 --------------------- T-- 【大数】?" in formula_text, formula_text[:500]
-            assert "510期 --------------------- T-- 【1234尾】?" in formula_text, formula_text[:500]
-
-            yixiao = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="一肖一码")).first
-            yixiao_rows = yixiao.locator("table.mtbl").first.locator("tbody > tr")
-            assert yixiao_rows.count() == 12
-            assert "台码0" in yixiao_rows.nth(0).inner_text()
-            assert "台码0.台码1.台码2" in yixiao_rows.nth(1).inner_text()
+            assert "第510期 开：待开奖 【单数】?" in formula_text, formula_text[:500]
+            assert "第509期 开：20-37-24-28-19-48-36马 【单数】√" in formula_text, formula_text[:500]
+            assert "第510期 开：待开奖 【大数】?" in formula_text, formula_text[:500]
+            assert "第509期 开：20-37-24-28-19-48-36马 【大数】x" in formula_text, formula_text[:500]
+            assert "第510期 开：待开奖 【36尾】?" in formula_text, formula_text[:500]
+            assert "第509期 开：20-37-24-28-19-48-36马 【36尾】√" in formula_text, formula_text[:500]
+            assert "T--" not in formula_text and "T36" not in formula_text, formula_text[:500]
+            assert "整体准确率" not in formula_text and "参弃随意" not in formula_text, formula_text[:500]
+            # 命中项标黄：单双维度命中 → 标「单数」；四尾维度命中 → 只标命中的那个尾数数字。
+            formula_hits = formula.locator("[data-prediction-hit]").all_inner_texts()
+            assert formula_hits.count("单数") == 5 and formula_hits.count("6") == 5, formula_hits
 
             # The supplier double-wave card is one row per issue, with a
             # preserved three-font header and the supplied coloured wave lines.

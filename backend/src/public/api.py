@@ -640,7 +640,7 @@ def get_public_latest_draw(
     with connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT year, term, numbers, draw_time
+            SELECT year, term, numbers, draw_time, opened_at
             FROM lottery_draws
             WHERE lottery_type_id = ?
               AND is_opened = 1
@@ -655,6 +655,7 @@ def get_public_latest_draw(
             return {
                 "current_issue": "",
                 "draw_time": "",
+                "reveal_start": "",
                 "result_balls": [],
                 "special_ball": None,
             }
@@ -671,9 +672,13 @@ def get_public_latest_draw(
         for ball in balls:
             ball["element"] = element_map.get(str(ball.get("value") or ""), "")
 
+        # reveal_start = 号码首次对外可用的时刻（opened_at）；
+        # 历史行该列可能为空，此时退回 draw_time 保持旧行为。
         return {
             "current_issue": f"{latest_draw['year']}{latest_draw['term']}",
             "draw_time": str(latest_draw.get("draw_time") or ""),
+            "reveal_start": str(latest_draw.get("opened_at") or "")
+            or str(latest_draw.get("draw_time") or ""),
             "result_balls": balls[:-1],
             "special_ball": balls[-1] if balls else None,
         }

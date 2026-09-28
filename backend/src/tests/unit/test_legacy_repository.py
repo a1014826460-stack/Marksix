@@ -54,7 +54,8 @@ def test_legacy_repository_resolves_current_term_from_lottery_draws(tmp_path):
                 term INTEGER,
                 next_term INTEGER,
                 numbers TEXT,
-                is_opened INTEGER
+                is_opened INTEGER,
+                opened_at TEXT
             )
             """
         )

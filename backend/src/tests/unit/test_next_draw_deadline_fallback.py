@@ -57,6 +57,7 @@ def _setup(tmp_path, name: str):
                 lottery_type_id INTEGER, year INTEGER, term INTEGER,
                 numbers TEXT, draw_time TEXT, status INTEGER,
                 is_opened INTEGER DEFAULT 0, next_term INTEGER, next_time TEXT,
+                opened_at TEXT,
                 created_at TEXT, updated_at TEXT,
                 UNIQUE(lottery_type_id, year, term)
             )

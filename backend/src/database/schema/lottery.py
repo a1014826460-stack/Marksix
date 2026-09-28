@@ -45,3 +45,7 @@ def ensure_lottery_tables(conn: Any, pk_sql: str) -> None:
         """
     )
     add_column_if_missing(conn, "lottery_draws", "next_time", "TEXT")
+    # 该期号码首次对外可用的北京时间（开盘瞬间写一次，之后不再改动）。
+    # 前台开奖面板用它作为逐球揭示的全局锚点（reveal_start），
+    # 避免 draw_time 与真实发布时刻脱节时把整排号码一次性放出。
+    add_column_if_missing(conn, "lottery_draws", "opened_at", "TEXT")

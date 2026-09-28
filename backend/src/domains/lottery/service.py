@@ -773,6 +773,12 @@ def save_draw(
         if not n.isdigit() or int(n) < 1 or int(n) > 49:
             raise ValueError(f"无效号码: {n}，每个号码必须为 01-49")
 
+    # opened_at：号码首次对外可用的北京时间，前台揭示锚点（reveal_start）取它。
+    beijing_now_str = (
+        (datetime.now(timezone.utc) + timedelta(hours=8)).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
+    )
+    opened_at_value = beijing_now_str if fields["is_opened"] == 1 else ""
+
     with connect(db_path) as conn:
         previous = None
         if draw_id is not None:
@@ -862,12 +868,12 @@ def save_draw(
                 """
                 INSERT INTO lottery_draws (
                     lottery_type_id, year, term, numbers, draw_time, next_time, status,
-                    is_opened, next_term, created_at, updated_at
+                    is_opened, next_term, opened_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING *
                 """,
-                (*fields.values(), now, now),
+                (*fields.values(), opened_at_value, now, now),
             ).fetchone()
             _update_taiwan_previous_draw_next_time(
                 conn,
@@ -881,11 +887,14 @@ def save_draw(
                 """
                 UPDATE lottery_draws
                 SET lottery_type_id = ?, year = ?, term = ?, numbers = ?, draw_time = ?,
-                    next_time = ?, status = ?, is_opened = ?, next_term = ?, updated_at = ?
+                    next_time = ?, status = ?, is_opened = ?, next_term = ?,
+                    opened_at = CASE WHEN ? = 1 AND lottery_draws.is_opened = 0
+                                     THEN ? ELSE lottery_draws.opened_at END,
+                    updated_at = ?
                 WHERE id = ?
                 RETURNING *
                 """,
-                (*fields.values(), now, draw_id),
+                (*fields.values(), fields["is_opened"], opened_at_value, now, draw_id),
             ).fetchone()
             if not row:
                 raise KeyError(f"draw_id={draw_id} 不存在")

@@ -16,6 +16,7 @@ def _latest_draw_payload() -> dict[str, object]:
     return {
         "current_issue": "2026131",
         "draw_time": "2026-05-14 22:30:00",
+        "reveal_start": "2026-05-14 22:30:00",
         "result_balls": [
             {"value": "01", "zodiac": "马", "color": "red"},
             {"value": "02", "zodiac": "蛇", "color": "blue"},

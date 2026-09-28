@@ -1347,8 +1347,11 @@ class CrawlerScheduler:
                 ).fetchone()
                 if draw and draw_numbers_are_publishable(lottery_type_id, draw["numbers"]):
                     cur = conn.execute(
-                        "UPDATE lottery_draws SET is_opened = 1, updated_at = ? WHERE id = ?",
-                        (now_utc, draw["id"]),
+                        "UPDATE lottery_draws SET is_opened = 1, "
+                        "opened_at = CASE WHEN is_opened = 0 THEN ? "
+                        "ELSE COALESCE(NULLIF(opened_at, ''), ?) END, "
+                        "updated_at = ? WHERE id = ?",
+                        (now_beijing, now_beijing, now_utc, draw["id"]),
                     )
                     opened = cur.rowcount
                     if opened:
@@ -1374,9 +1377,12 @@ class CrawlerScheduler:
                 ]
                 for row in openable:
                     cur = conn.execute(
-                        "UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                        "UPDATE lottery_draws SET is_opened = 1, "
+                        "opened_at = CASE WHEN is_opened = 0 THEN ? "
+                        "ELSE COALESCE(NULLIF(opened_at, ''), ?) END, "
+                        "updated_at = ? "
                         "WHERE id = ? AND is_opened = 0",
-                        (now_utc, row["id"]),
+                        (now_beijing, now_beijing, now_utc, row["id"]),
                     )
                     opened += cur.rowcount
                     if cur.rowcount:
@@ -2049,9 +2055,12 @@ class CrawlerScheduler:
                     ids = [row["id"] for row in pending]
                     placeholders = ",".join("?" for _ in ids)
                     conn.execute(
-                        f"UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                        f"UPDATE lottery_draws SET is_opened = 1, "
+                        f"opened_at = CASE WHEN is_opened = 0 THEN ? "
+                        f"ELSE COALESCE(NULLIF(opened_at, ''), ?) END, "
+                        f"updated_at = ? "
                         f"WHERE id IN ({placeholders}) AND is_opened = 0",
-                        [now_utc] + ids,
+                        [now_beijing, now_beijing, now_utc] + ids,
                     )
                     _crawler_logger.info("AutoOpen: Set is_opened=1 for %d draw(s)", len(pending))
 
@@ -2576,10 +2585,14 @@ class CrawlerScheduler:
             if due_rows:
                 ids = [row["id"] for row in due_rows]
                 placeholders = ",".join("?" for _ in ids)
+                now_beijing = now_beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
                 conn.execute(
-                    f"UPDATE lottery_draws SET is_opened = 1, updated_at = ? "
+                    f"UPDATE lottery_draws SET is_opened = 1, "
+                    f"opened_at = CASE WHEN is_opened = 0 THEN ? "
+                    f"ELSE COALESCE(NULLIF(opened_at, ''), ?) END, "
+                    f"updated_at = ? "
                     f"WHERE id IN ({placeholders})",
-                    [now_utc] + ids,
+                    [now_beijing, now_beijing, now_utc] + ids,
                 )
             if opened_count > 0:
                 _crawler_logger.info("TaiwanOpen — opened %d Taiwan draw(s)", opened_count)

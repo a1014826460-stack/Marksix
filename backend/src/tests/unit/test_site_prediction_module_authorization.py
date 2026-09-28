@@ -42,6 +42,7 @@ def _setup_authorization_tables(db_path: str) -> None:
                 term INTEGER,
                 numbers TEXT,
                 is_opened INTEGER,
+                opened_at TEXT,
                 next_term INTEGER,
                 draw_time TEXT
             )

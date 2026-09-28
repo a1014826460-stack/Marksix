@@ -806,6 +806,7 @@ def test_lottery_service_save_draw_preserves_admin_create_and_backfill_behavior(
         "created_at",
         "updated_at",
         "next_time",
+        "opened_at",
     ]
     assert created["lottery_type_id"] == 3
     assert created["year"] == 2026
@@ -814,6 +815,8 @@ def test_lottery_service_save_draw_preserves_admin_create_and_backfill_behavior(
     assert created["draw_time"] == new_draw_time
     assert created["status"] is True
     assert created["is_opened"] is True
+    # 首次录入即开奖：opened_at 记录本次录入时刻（揭示锚点 reveal_start 的来源）
+    assert created["opened_at"]
 
     with connect(db_path) as conn:
         previous_after = conn.execute(

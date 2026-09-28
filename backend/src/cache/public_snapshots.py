@@ -18,7 +18,9 @@ from cache.contracts import CacheStore
 
 _KEY_VERSION = "v1"
 _VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-_LATEST_DRAW_FIELDS = frozenset({"current_issue", "draw_time", "result_balls", "special_ball"})
+_LATEST_DRAW_FIELDS = frozenset(
+    {"current_issue", "draw_time", "reveal_start", "result_balls", "special_ball"}
+)
 _CURRENT_PERIOD_FIELDS = frozenset(
     {"lottery_type_id", "lottery_name", "current_period", "current_year", "current_term"}
 )
@@ -224,8 +226,12 @@ def _validate_payload(
         raise ValueError("public snapshot payload fields are not allowed")
     result = dict(payload)
     if snapshot_type == "latest_draw":
-        if not isinstance(result["current_issue"], str) or not isinstance(result["draw_time"], str):
-            raise ValueError("latest draw issue and time must be strings")
+        if (
+            not isinstance(result["current_issue"], str)
+            or not isinstance(result["draw_time"], str)
+            or not isinstance(result["reveal_start"], str)
+        ):
+            raise ValueError("latest draw issue and times must be strings")
         if not isinstance(result["result_balls"], list):
             raise ValueError("latest draw result_balls must be a list")
         for ball in result["result_balls"]:

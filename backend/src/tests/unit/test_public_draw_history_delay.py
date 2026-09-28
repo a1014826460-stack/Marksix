@@ -24,7 +24,8 @@ def _setup_db(tmp_path: Path) -> str:
                 term INTEGER,
                 numbers TEXT,
                 draw_time TEXT,
-                is_opened INTEGER
+                is_opened INTEGER,
+                opened_at TEXT
             )
             """
         )
