@@ -382,4 +382,55 @@ assert(
   "sectionByTitle 精确匹配命中时必须直接返回，不再退回子串匹配",
 )
 
+// ── 18. 「综合绝杀」3头中特 / 3行中特 按排除型重做 ─────────────────────────
+// 该面板是杀号语义（每个小节都写 `NNN期稳杀【…】`），而后端 mode 12（3头中特）/
+// mode 53（3行中特）的 `is_correct` 是**命中型**（特码头 / 特码五行落在候选里 → true）。
+// 直接上接口判定会渲染成「稳杀…对」，并把整段候选标黄（线上 188 期
+// `稳杀【3头2头1头】开:38蛇对` 带 1 处黄底 = 「对」与杀号语义混排）。
+// 本面板必须按排除型取反：被杀集合**不含**开奖目标 → 对，含 → 错；排除型零黄底。
+// 真渲染断言见 `frontend/test/twbst528-zonghe-juesha-contract.py`。
+for (const [key, moduleExpr] of [["3tou", 'modules["3tou"]'], ["3hang", 'modules["3hang"]']]) {
+  assert(
+    adapter.includes(`{ key: "${key}", module: ${moduleExpr}, rule: "kill", invertVerdict: true }`),
+    `${key} 在「综合绝杀」面板里必须显式按排除型渲染（rule:"kill" + invertVerdict:true）`,
+  )
+}
+assert(
+  /function resultValue\(row, invert\)/.test(adapter),
+  "resultValue 必须支持 invert 参数（展示层按排除型取反）",
+)
+assert(
+  /var correct = result\.isCorrect;/.test(adapter) &&
+    /if \(invert === true\)[\s\S]{0,240}result\.isCorrect === true \? false[\s\S]{0,120}result\.isCorrect === false \? true/.test(adapter),
+  "resultValue 的 invert 分支必须把命中型 is_correct 取反（true→错、false→对），不传时沿用接口判定",
+)
+assert(
+  /var text = formatter\(row, moduleIndex, entry\);/.test(adapter) &&
+    /highlightTokens\(row, entry\.rule \|\| highlightRuleFor\(entry\.key\)/.test(adapter),
+  "renderCompositeLines 必须把小节条目交给 formatter，并让 entry.rule 覆盖标黄口径",
+)
+// 取反的对象必须是「开奖号码是否落在**本行候选自己声明的号码清单**里」，而不是接口
+// `is_correct` 直接取反：上游 mode 53 用 fixed_data 五行表（37→木）判定，而供应商正文的
+// 分组是另一套划分（`土|03,06,09,…,45,48` 里含 45）——直接取反会出现
+// 「开奖号码明明写在候选【土】组里，却判杀中（对）」的自相矛盾展示。
+assert(
+  /function candidateNumberLists/.test(adapter) &&
+    /function killedSetContainsTarget/.test(adapter) &&
+    /function withResultCorrect/.test(adapter),
+  "综合绝杀 3tou/3hang 必须按本行候选清单本地复算（candidateNumberLists + killedSetContainsTarget + withResultCorrect）",
+)
+assert(
+  /var hitInKillSet = invert \? killedSetContainsTarget\(row\) : null;/.test(adapter) &&
+    /var judged = hitInKillSet === null \? row : withResultCorrect\(row, hitInKillSet\);/.test(adapter),
+  "排除型小节必须优先按本行候选清单复算，拿不到清单时才退回接口判定",
+)
+// `3tou` / `3hang` 不得进全局 KILL_RULE_KEYS：`renderWuxingLailiaoHistory(modules["3hang"])`
+// 仍把「3行中特」当**命中型**渲染（五行来料面板），全局改键会连带改掉它的口径。
+for (const key of ["3tou", "3hang"]) {
+  assert(
+    !killBlock[1].includes(`"${key}"`),
+    `${key} 不得进全局 KILL_RULE_KEYS（会连带改掉「五行来料」等命中型面板的口径）`,
+  )
+}
+
 console.log("twbst528-display-contract: OK")

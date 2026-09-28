@@ -542,6 +542,56 @@
     return padNumber && /^\d{1,2}$/.test(token) ? token.padStart(2, "0") : token;
   }
 
+  /** 候选 token（`土|03,06,…` / `3头|30,…`）声明的号码清单并集。 */
+  function candidateNumberLists(row) {
+    var codes = [];
+    tokens(row).forEach(function (value) {
+      var parts = String(value).replace(/[\[\]"]/g, "").split("|");
+      if (parts.length < 2) return;
+      parts.slice(1).join("|").split(/[,，、\s]+/).forEach(function (item) {
+        var digits = String(item).replace(/\D/g, "");
+        if (!digits || digits.length > 2) return;
+        codes.push(String(Number(digits)).padStart(2, "0"));
+      });
+    });
+    return codes;
+  }
+
+  /**
+   * 「开奖目标是否落在**被杀集合**里」——排除型小节的命中判定（命中型语义）。
+   *
+   * 口径：被杀集合就是**本行候选自己声明的号码清单**（`土|03,06,…` / `3头|30,…`），
+   * 所以判定 = 特码号码是否出现在这些清单里。
+   *
+   * 为什么不用接口 `is_correct` 直接取反：上游按**号码五行表**（`fixed_data` 五行，
+   * 37→木）判定 mode 53，而供应商正文里的分组是**另一套五行划分**
+   * （`土|03,06,09,…,45,48` 里就含 45，而 fixed_data 的 45 属木）。拿上游判定取反会
+   * 出现「开奖号码明明写在候选【土】组里，却判杀中（对）」的自相矛盾展示。
+   * 按本行清单判定既与展示自洽，也与「杀掉的候选集合是否含开奖目标」的玩法口径一致。
+   *
+   * 返回 `true`（含＝杀失败）/ `false`（不含＝杀中）/ `null`（拿不到清单或特码，
+   * 调用方退回接口判定）。
+   */
+  function killedSetContainsTarget(row) {
+    var code = resultToken(row && row.result && row.result.code, true);
+    if (!code) return null;
+    var codes = candidateNumberLists(row);
+    if (!codes.length) return null;
+    return codes.indexOf(code) !== -1;
+  }
+
+  /** 复制一行并覆盖 `result.isCorrect`（不改原 payload 行）。 */
+  function withResultCorrect(row, correct) {
+    if (!row) return null;
+    var copy = {};
+    Object.keys(row).forEach(function (key) { copy[key] = row[key]; });
+    var result = {};
+    Object.keys(row.result || {}).forEach(function (key) { result[key] = row.result[key]; });
+    result.isCorrect = correct;
+    copy.result = result;
+    return copy;
+  }
+
   // ── 标黄口径 ─────────────────────────────────────────────────────────
   // 规则：**只有预测命中的生肖 / 号码 / 波色 / 文字可以标黄，其余文字一律不标黄。**
   //
@@ -1069,9 +1119,35 @@
     });
   }
 
+  /**
+   * 红蓝绿肖的命中项（标黄用）：开奖特肖落在该行声明的某个分类分组里 → 标黄该生肖。
+   *
+   * 为什么要专门给一个 resolver：候选写作 `蓝肖|蛇,虎,猪,猴`，通用 `allowMarkedTokens`
+   * 按分隔符切分时会把**紧跟在标签后的第一个成员**（`蓝肖|蛇` → `蓝肖`）丢掉，
+   * 于是命中项恰好是该分类首肖时整块标不出黄底（实测 188 期开 38 蛇、候选
+   * `蓝肖|蛇,虎,猪,猴`，判定「对」却 0 黄底）。
+   */
+  function hllxHitZodiacs(row) {
+    if (!row || !row.result || !row.result.isOpened || row.result.isCorrect !== true) return [];
+    var zodiac = resultToken(row.result.zodiac, false);
+    if (!zodiac) return [];
+    var found = false;
+    tokens(row).forEach(function (value) {
+      var parts = String(value).replace(/[\[\]"]/g, "").split("|");
+      if (parts.length < 2) return;
+      var members = parts.slice(1).join("|").split(/[,，、\s]+/).map(function (item) {
+        return item.trim();
+      });
+      if (members.indexOf(zodiac) !== -1) found = true;
+    });
+    return found ? [zodiac] : [];
+  }
+
   function renderHongLanLvXiaoHistory(module) {
     renderRemainingThreeColumnHistory("红蓝绿肖", module, function (row) {
       return predictionText(row, " ");
+    }, "hllx", function (row) {
+      return hllxHitZodiacs(row);
     });
   }
 
@@ -1576,14 +1652,24 @@
     // 高亮：排除型一律零黄底 ——「对」= 没有可高亮的命中项；「错」= 开奖目标正落在被杀的
     // 集合里，属于 S3 明令禁止标黄的情形。故这两个小节显式传 rule:"kill"，而不能把
     // 3tou/3hang 加进全局 KILL_RULE_KEYS（那会连带改掉「五行来料」等命中型面板的口径）。
+    //
+    // 判定取值：`killedSetContainsTarget()` 按**本行候选自己声明的号码清单**
+    // （`土|03,06,…` / `3头|30,…`）复算「开奖号码 ∈ 被杀集合」，与面板上列出的候选完全
+    // 自洽；清单缺失时才退回接口 `is_correct` 再取反（见 `killedSetContainsTarget` 注释：
+    // 上游 mode 53 用的是 fixed_data 五行表，与本行正文的分组可能不是同一套划分）。
     renderCompositeLines("综合绝杀", [
       { key: "juesha2xiao", module: modules.juesha2xiao },
       { key: "juesha1wei", module: modules.juesha1wei },
       { key: "3tou", module: modules["3tou"], rule: "kill", invertVerdict: true },
       { key: "3hang", module: modules["3hang"], rule: "kill", invertVerdict: true }
     ], function (row, moduleIndex, entry) {
+      // 排除型小节：先按**本行候选清单**复算「开奖目标是否落在被杀集合里」
+      // （命中型语义），拿不到清单时退回接口判定；两者都再取反成排除型判定。
+      var invert = Boolean(entry && entry.invertVerdict);
+      var hitInKillSet = invert ? killedSetContainsTarget(row) : null;
+      var judged = hitInKillSet === null ? row : withResultCorrect(row, hitInKillSet);
       return termValue(row).replace(/^第/, "") + "稳杀【" + displayLabels(row, "") + "】" +
-        resultValue(row, Boolean(entry && entry.invertVerdict));
+        resultValue(judged, invert);
     });
   }
 

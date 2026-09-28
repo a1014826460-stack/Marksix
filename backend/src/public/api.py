@@ -136,6 +136,7 @@ def summarize_prediction_text(row: dict[str, Any]) -> str:
 # 这里曾维护过一份**过期的硬编码表**（37 → 火），与 fixed_data 的「37 → 木」冲突，
 # 导致「精准五行 / 三行中特」把 37 判成不入预测三行 → 应「对」却显示「错」。
 from predict.common import canonical_element_number_map as _canonical_element_number_map
+from predict.common import zodiac_category_labels as _zodiac_category_labels
 from predict.common import TIANDI_ZODIACS as _TIANDI_ZODIACS
 
 _ELEMENT_MAP: dict[str, str] = _canonical_element_number_map()
@@ -176,6 +177,12 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
         "羊": "画", "猴": "画", "猪": "画",
     }
     qqsh_label = _QQSH_ZODIAC_MAP.get(zodiac, "")
+    # 特肖所属的**分类分组**标签（红肖/蓝肖/绿肖、肉肖/菜肖/草肖、春肖/夏肖/秋肖/冬肖、
+    # 阴肖/阳肖、天肖/地肖、凶丑/吉美 …）。这些玩法的候选标签就是分类名，
+    # 缺了这个原子会让 `label in outcome` 子串判定恒为 False（整列恒「错」）。
+    # 口径取自本行正文自己声明的生肖分组，与机制 outcome_loader 同源，见
+    # `predict.common.zodiac_category_labels`。
+    category_labels = _zodiac_category_labels(row.get("content"), zodiac)
     outcomes = [
         "单数" if number % 2 == 1 else "双数",
         "大数" if number >= 25 else "小数",
@@ -194,6 +201,7 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
         code,
         element,
         qqsh_label,
+        *category_labels,
         # 段位（四段中特等）：01-49 每 7 个号码一段
         f"{((number - 1) // 7) + 1}段",
     ]

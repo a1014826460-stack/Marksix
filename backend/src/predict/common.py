@@ -351,6 +351,58 @@ def parse_pipe_label_content(content: str) -> tuple[str, ...]:
         labels.append(item.split("|", 1)[0].strip() if "|" in item else item.strip())
     return tuple(label for label in labels if label)
 
+#: 生肖字集合（归一化后判定「这个分组是不是生肖分组」用）。
+ZODIAC_LABEL_SET = frozenset(ZODIAC_ORDER)
+
+
+def zodiac_category_labels(content: Any, zodiac: str) -> tuple[str, ...]:
+    """从「标签|生肖,…」分组正文里取出**特肖所属分类**标签。
+
+    红蓝绿肖（3选2）/ 肉菜草肖（3选2）/ 四季生肖（4选3）/ 阴阳肖 / 天地肖 /
+    凶吉六肖 … 这类玩法的候选标签是**分类名**（``红肖`` / ``春肖`` / ``凶丑``），
+    不是生肖本身。``public/api.py::_compute_outcome_from_row`` 过去只输出
+    生肖 / 号码 / 五行 / 家禽野兽 / 四艺 / 段位原子，候选分类名永远不是原子，
+    于是 ``contains_hit`` 的 ``label in outcome`` 子串判定恒为 False
+    （twbst528 红蓝绿肖 6/6 期、线上 6/6 期恒「错」）。
+
+    分类口径取自**该行正文自己声明的分组**，与
+    ``structured_mapping.build_pipe_value_map`` 的拆分口径一致
+    （普通串 ``甲|1,2`` 整体当一个分组，不按逗号拆），
+    因此与机制 ``outcome_loader`` / ``scripts/audit-verdict-truth.py`` 的真值模型同源。
+
+    认分组的条件（避免把号码分组当成特肖分类）：
+    · 分组里**至少 2 个**单字生肖成员；
+    · 任一成员含数字（``土|05,06`` / ``小单|01,03`` / ``家禽|01,05,牛|07``）即整组不认；
+    · 非生肖、非数字的成员（历史数据里的错字，如 ``文肖|免,猪,…`` 的 ``免``）忽略，
+      即「该组声明了这些生肖」仍按生肖分组处理。
+    """
+    text = str(content or "").strip()
+    target = normalize_zodiac_label(str(zodiac or "").strip())
+    if not text or not target:
+        return ()
+    items = parse_json_or_plain_content(text)
+    if "|" in text and not text.lstrip().startswith("["):
+        items = [text]
+    found: list[str] = []
+    for item in items:
+        if "|" not in item:
+            continue
+        label, raw_values = item.split("|", 1)
+        label = label.strip()
+        if not label or label in found:
+            continue
+        raw_members = [value.strip() for value in raw_values.split(",") if value.strip()]
+        # 含号码的分组（土|05,06 / 小单|01,03 / 家禽|01,05,牛|07）不是特肖分类。
+        if any(any(char.isdigit() for char in member) for member in raw_members):
+            continue
+        members = [normalize_zodiac_label(member) for member in raw_members]
+        zodiac_members = {member for member in members if member in ZODIAC_LABEL_SET}
+        if len(zodiac_members) < 2:
+            continue
+        if target in zodiac_members:
+            found.append(label)
+    return tuple(found)
+
 def parse_number_content(content: str) -> tuple[str, ...]:
     """从普通字符串或 JSON 字符串中提取 01-49 号码。"""
     labels: list[str] = []
