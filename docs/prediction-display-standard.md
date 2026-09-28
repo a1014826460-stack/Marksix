@@ -713,7 +713,36 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 已核对**一致、无问题**：`#fslx`/`#jiaye`（title_14 展示的 jia∪ye 两列即判定候选集，与 twwanli
 `#msks` 的「分类二选一」语义不同，**不应**照搬家禽/野兽全组口径）、`#m24`、`#jiuxiao`、`#dssx`、
 `#santou`、`#kill1tou`、`#pt1wei`、`#qiw`、`#shuangbo`、`#daxiao`、`#chengyu`、`#jiaye4xiao`、`#kill4xiao`。
-| 家禽/野兽（mode 14 / `title_14`） | twwanli `#msks`（本轮已修）、twwjsz666 `156.html`、twbst528 `144.html`、twjinniu | 其它站点的卡片语义若是「8 肖候选」而非「分类二选一」，则应按机制自身口径（特肖 ∈ 8 肖）判定，**不能**照搬家禽/野兽全组口径 —— 需按站点卡片语义逐个确认 |
+| 家禽/野兽（mode 14 / `title_14`） | twwanli `#msks`（本轮已修）、twjsz666 `156.html`、twbst528 `144.html`、twjinniu | 其它站点的卡片语义若是「8 肖候选」而非「分类二选一」，则应按机制自身口径（特肖 ∈ 8 肖）判定，**不能**照搬家禽/野兽全组口径 —— 需按站点卡片语义逐个确认 |
+
+### 五行口径彻底统一：mode 53 / 482 正文号码清单改写（2026-09-29）
+
+**问题**：后端判定一直用 **号码五行**（`public.fixed_data` `sign='五行'`，37 → 木），而
+`created.mode_payload_53`（三行中特）/ `created.mode_payload_482`（四行中特）里**已落库的正文**
+号码清单是按 **生肖五行**（`sign='五行肖'`，马为火肖）拼出来的 —— 同一特码可能「判定命中」却在
+展示的候选组里找不到，或反之（例：45 的号码五行是木，旧正文把它写进【土】）。
+
+**统一口径**：
+
+| 层面 | 改动 |
+| --- | --- |
+| 号码分组常量 | `predict.common.ELEMENT_NUMBER_GROUPS`（金10/木10/水8/火12/土9 = 49）是唯一权威来源；禁止用 `sign='五行肖'` 推导号码清单 |
+| 生成侧 | `predict/mechanisms.py`：`TABLE_FIXED_MAPPING_KEYS["mode_payload_53"]` 由 `五行肖` 改为 `五行`；`3hang` / `sihangzhongte` / `_make_source_column_element_config` 的 `labels_loader` 与 explanation 同步改为 `五行` |
+| 已落库正文 | 新增 `backend/scripts/repair_mode53_element_content.py`：把两表正文里**每个五行标签后的号码清单**重写为号码五行清单（标签、条目顺序、期号与其它列一律不动）。默认 `--dry-run`，`--apply` 才写；带 `--manifest`（id/原正文/新正文，即回滚依据）与 `--rollback`；写入走 `utils/created_prediction_store.py::update_created_content_row`，`WHERE id/ctid + 原正文` 比较-交换，并发写入只会影响 0 行 |
+| 展示侧 | 正文清单与后端 outcome 同源后，twbst528 适配器里「按本行清单复算」的结果与「接口判定取反」一致（`killedSetContainsTarget` 由「绕开口径冲突」变为「一致性护栏」） |
+
+**为什么不用回填判定**：`is_correct` 是**读时复算**（`serialize_public_history_row`），后端修正
+自动覆盖全部历史期；本次写库只改展示用的号码清单。
+
+**本地验收（dev 库 + `127.0.0.1:3000`）**：
+
+- 修复前 `created.mode_payload_53` 1148/1151 行、`created.mode_payload_482` 741/741 行是旧口径，
+  `public.mode_payload_53` 206/206 行本来就是新口径（= 目标格式样板）。
+- 修复后逐行校验 1892 行：每个标签的清单**完全等于**权威号码五行清单（`json` 合法、条目数 3/4 正确）；
+  「有序标签序列分布」与修复前逐项一致（53：157/138/105/…，482：15/13/11/…）→ 证明只改了号码清单。
+- 幂等：再次 `--dry-run` 显示「将修改 0 行」。
+- 展示审计（HEAD 版审计脚本）：twbst528 本地 `error=0 warn=2`，与修复前持平。
+- 泛化扫描：全库只有这两张表含旧口径清单，其它 mode_payload 表（98/137/269/334/350）早已是新口径。
 
 ---
 

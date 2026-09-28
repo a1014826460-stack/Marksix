@@ -30,6 +30,13 @@ THREE_PERIOD_SPECIAL_MODE_ID = 197
 FIXED_DATA_ZODIAC_SIGN = "生肖"
 FIXED_DATA_COLOR_SIGN = "波色"
 
+#: 号码五行的唯一权威口径：`public.fixed_data` 的 `sign='五行'`（= `predict.common.ELEMENT_NUMBER_GROUPS`）。
+#: `sign='五行肖'`（金肖/木肖/…）是**生肖五行**，两者对同一号码可能给出不同的五行（37：号码五行=木，生肖=马→火），
+#: 不能混用；判定与展示都必须用号码五行。
+FIXED_DATA_ELEMENT_SIGN = "五行"
+FIXED_DATA_ELEMENT_ZODIAC_SIGN = "五行肖"
+ELEMENT_ORDER: tuple[str, ...] = ("金", "木", "水", "火", "土")
+
 
 @dataclass(frozen=True)
 class TableColumn:
@@ -331,6 +338,227 @@ def load_fixed_data_label_code_map(conn: Any, sign_name: str) -> dict[str, tuple
         if codes:
             label_map[label] = codes
     return label_map
+
+
+def load_element_number_groups(conn: Any) -> dict[str, tuple[str, ...]]:
+    """读取**号码五行**分组（`public.fixed_data` 的 `sign='五行'`）。
+
+    这是五行玩法（三行中特 `mode_payload_53` / 四行中特 `mode_payload_482`）
+    判定与展示的唯一权威口径；`sign='五行肖'` 是生肖五行，禁止用其推导号码清单。
+
+    Args:
+        conn: PostgreSQL 连接对象。
+
+    Returns:
+        dict[str, tuple[str, ...]]: `金/木/水/火/土 -> 两位号码元组`；缺失时返回空字典。
+    """
+
+    return load_fixed_data_label_code_map(conn, FIXED_DATA_ELEMENT_SIGN)
+
+
+def rewrite_element_group_content(
+    content: Any,
+    element_groups: dict[str, tuple[str, ...]],
+) -> str | None:
+    """把 `["火|01,02,…"]` 形式正文里**每个五行标签后的号码清单**重写为号码五行清单。
+
+    只改号码清单：标签名、条目顺序、条目数量、JSON 外层结构都原样保留，因此可以安全地
+    只更新 `content` 一列。无法识别的正文（非 JSON 数组 / 不含 `标签|值` 条目）返回
+    `None`，表示「不是五行分组正文，不要动」。
+
+    Args:
+        content: 行内容，例如 `'["木|04,05,…", "金|10,11,…"]'`。
+        element_groups: 权威号码五行分组，见 :func:`load_element_number_groups`。
+
+    Returns:
+        str | None: 重写后的正文；不适用时返回 `None`。清单本来就是权威口径时
+        返回值与 `content` 完全相同（调用方据此跳过写库，保证幂等）。
+    """
+
+    raw = str(content or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, list):
+        return None
+
+    # 只在原文里**逐条目替换号码子串**（而不是重新 dump 整个 JSON），
+    # 这样条目分隔符、缩进、标签原样字节都保持不变 —— 改动的就只是号码清单。
+    rebuilt = raw
+    cursor = 0
+    saw_element = False
+    for item in parsed:
+        text = item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
+        if "|" not in text:
+            continue
+        raw_label, _, numbers = text.partition("|")
+        canonical = element_groups.get(raw_label.strip())
+        if not canonical:
+            continue
+        saw_element = True
+        old_token = json.dumps(text, ensure_ascii=False)
+        desired = f"{raw_label}|{','.join(str(value) for value in canonical)}"
+        if numbers.strip() == ",".join(str(value) for value in canonical):
+            position = rebuilt.find(old_token, cursor)
+            if position >= 0:
+                cursor = position + len(old_token)
+            continue
+        new_token = json.dumps(desired, ensure_ascii=False)
+        position = rebuilt.find(old_token, cursor)
+        if position < 0:
+            # 解析结果与原文对不上（转义/结构异常）：保守放弃，不改这一行。
+            return None
+        rebuilt = rebuilt[:position] + new_token + rebuilt[position + len(old_token):]
+        cursor = position + len(new_token)
+
+    if not saw_element:
+        return None
+    return rebuilt
+
+
+@dataclass(frozen=True)
+class CreatedContentRow:
+    """`created.mode_payload_*` 中一行的候选正文快照（只读字段，不含其它列）。"""
+
+    content: str
+    web_id: Any = None
+    web: Any = None
+    year: str = ""
+    term: str = ""
+    row_id: str = ""
+    row_type: Any = None
+
+    @property
+    def locator(self) -> tuple[tuple[str, str], ...]:
+        """定位该行的「列=值」条件（空元组表示无法定位）。
+
+        优先用主键 `id`；历史行 `id` 为空时退回**不会因 UPDATE 而改变**的自然键
+        （`web_id / type / year / term`）。注意不能用 PostgreSQL `ctid`：UPDATE 之后
+        该行的 `ctid` 会变，回滚清单就失效了。
+        """
+
+        identifier = str(self.row_id or "").strip()
+        if identifier:
+            return (("id", identifier),)
+        pairs = [
+            (column, str(value).strip())
+            for column, value in (
+                ("web_id", self.web_id),
+                ("type", self.row_type),
+                ("year", self.year),
+                ("term", self.term),
+            )
+            if value is not None and str(value).strip() != ""
+        ]
+        return tuple(pairs)
+
+    @property
+    def locatable(self) -> bool:
+        return bool(self.locator)
+
+    @property
+    def locator_label(self) -> str:
+        return " ".join(f"{column}={value}" for column, value in self.locator) or "(不可定位)"
+
+
+def list_created_content_rows(conn: Any, source_table_name: str) -> list[CreatedContentRow]:
+    """读取 `created.mode_payload_*` 的候选正文行。
+
+    只 `SELECT` 定位与正文相关的列（`id / content / web_id / web / type / year / term`），
+    不读取也不返回其它列，调用方无法误改其它字段。
+
+    Args:
+        conn: PostgreSQL 连接对象。
+        source_table_name: 基础表名，例如 `mode_payload_53`。
+
+    Returns:
+        list[CreatedContentRow]: 行快照；表不存在或缺少 `id/content` 时返回空列表。
+    """
+
+    table_name = validate_mode_payload_table_name(source_table_name)
+    if not schema_table_exists(conn, CREATED_SCHEMA_NAME, table_name):
+        return []
+
+    columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
+    if not {"id", "content"}.issubset(columns):
+        return []
+
+    selected = ["id", "content"] + [
+        column
+        for column in ("web_id", "web", "type", "year", "term")
+        if column in columns
+    ]
+    selected_sql = ", ".join(quote_identifier(column) for column in selected)
+    target_qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
+    rows = conn.execute(f"SELECT {selected_sql} FROM {target_qualified}").fetchall()
+
+    snapshots: list[CreatedContentRow] = []
+    for row in rows:
+        record = dict(row) if not isinstance(row, dict) else row
+        snapshots.append(
+            CreatedContentRow(
+                content=str(record.get("content") or ""),
+                web_id=record.get("web_id"),
+                web=record.get("web"),
+                year=str(record.get("year") or ""),
+                term=str(record.get("term") or ""),
+                row_id=str(record.get("id") or ""),
+                row_type=record.get("type"),
+            )
+        )
+    return snapshots
+
+
+#: 允许用于定位 `created.mode_payload_*` 正文行的列（白名单，防止拼接任意 SQL）。
+CONTENT_LOCATOR_COLUMNS: tuple[str, ...] = ("id", "web_id", "web", "type", "year", "term")
+
+
+def update_created_content_row(
+    conn: Any,
+    source_table_name: str,
+    *,
+    locator: tuple[tuple[str, str], ...],
+    expected_content: str,
+    new_content: str,
+) -> int:
+    """只更新 `created.mode_payload_*` 的 `content` 一列（比较-交换语义）。
+
+    `WHERE` 同时锁定定位条件与**更新前的正文**，因此并发写入（例如调度器刚好回写同一条）
+    会让本语句影响 0 行而不是静默覆盖，调用方据此报告冲突。
+
+    Args:
+        conn: PostgreSQL 连接对象。
+        source_table_name: 基础表名，例如 `mode_payload_53`。
+        locator: 定位条件，列名必须在 :data:`CONTENT_LOCATOR_COLUMNS` 白名单内。
+        expected_content: 期望的当前正文（并发保护条件）。
+        new_content: 新的正文。
+
+    Returns:
+        int: 受影响行数（0 表示并发冲突或行已不存在）。
+    """
+
+    table_name = validate_mode_payload_table_name(source_table_name)
+    if not locator:
+        raise ValueError("locator 不能为空。")
+    for column, _ in locator:
+        if column not in CONTENT_LOCATOR_COLUMNS:
+            raise ValueError(f"不支持的定位列 {column!r}；只允许 {CONTENT_LOCATOR_COLUMNS}。")
+
+    where_sql = " AND ".join(
+        f"CAST({quote_identifier(column)} AS TEXT) = ?" for column, _ in locator
+    )
+    params: list[Any] = [value for _, value in locator]
+    target_qualified = quote_qualified_identifier(CREATED_SCHEMA_NAME, table_name)
+    cursor = conn.execute(
+        f"UPDATE {target_qualified} "
+        f"SET {quote_identifier('content')} = ? "
+        f"WHERE {where_sql} AND {quote_identifier('content')} = ?",
+        (new_content, *params, expected_content),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def compact_json_dumps(value: Any) -> str:

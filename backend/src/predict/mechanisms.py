@@ -142,7 +142,9 @@ TABLE_FIXED_MAPPING_KEYS: dict[str, str] = {
     "mode_payload_26": "四艺生肖",
     "mode_payload_28": "单双",
     "mode_payload_38": "波色",
-    "mode_payload_53": "五行肖",
+    # mode_payload_53 的 content 是「五行标签|号码清单」，成员值是**号码**，
+    # 因此口径必须是 sign='五行'（号码五行）；用 sign='五行肖'（生肖）会拿到生肖成员值。
+    "mode_payload_53": "五行",
     "mode_payload_54": "尾",
     "mode_payload_57": "大小",
     "mode_payload_58": "波色单双",
@@ -1018,11 +1020,12 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_parser=parse_pipe_label_content,
         content_formatter=format_element_groups,
         hit_checker=contains_hit,
-        labels_loader=labels_from_fixed("五行肖", tuple(ELEMENT_ORDER)),
+        labels_loader=labels_from_fixed("五行", tuple(ELEMENT_ORDER)),
         explanation=(
             "3行中特从 金、木、水、火、土 五行中选出 3 行作为 content。",
-            "开奖结果 res_code 最后一个号码按特码处理，脚本通过历史 3行中特 content 建立 01-49 号码到五行的映射。",
-            "若特码号码所属五行落入预测的 3 行，则本期按命中计算。",
+            "五行口径取 public.fixed_data 的 sign='五行'（号码五行，与 predict.common.ELEMENT_NUMBER_GROUPS 一致；"
+            "37 属木），不使用生肖五行 sign='五行肖'（37 是马 → 火肖）。",
+            "开奖结果 res_code 最后一个号码按特码处理，特码号码所属五行落入预测的 3 行即按命中计算。",
             "脚本滚动浏览历史开奖记录，回测多个窗口和策略，选择历史命中率最接近 65% 的策略生成本次 content。",
         ),
     ),
@@ -1475,9 +1478,10 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_parser=parse_pipe_label_content,
         content_formatter=format_element_groups,
         hit_checker=contains_hit,
-        labels_loader=labels_from_fixed("五行肖", tuple(ELEMENT_ORDER)),
+        labels_loader=labels_from_fixed("五行", tuple(ELEMENT_ORDER)),
         explanation=(
-            "四行中特按五行分组，优先读取 public.fixed_data 中的五行肖映射。",
+            "四行中特按五行分组，口径取 public.fixed_data 的 sign='五行'（号码五行，"
+            "与 predict.common.ELEMENT_NUMBER_GROUPS 一致），不使用生肖五行 sign='五行肖'。",
             "特码号码所属五行落入预测集合即命中。",
         ),
     ),
@@ -3157,9 +3161,10 @@ def _make_source_column_element_config(
         content_parser=parse_pipe_label_content,
         content_formatter=formatter,
         hit_checker=excludes_hit if exclude else contains_hit,
-        labels_loader=labels_from_fixed("五行肖", tuple(ELEMENT_ORDER)),
+        labels_loader=labels_from_fixed("五行", tuple(ELEMENT_ORDER)),
         explanation=(
             f"{title} 使用 `{source_column}` 作为稳定五行候选字段。",
+            "五行口径统一取 public.fixed_data 的 sign='五行'（号码五行），不使用生肖五行 sign='五行肖'。",
             "回测命中只按该五行字段计算；同表其他文案或辅助字段仅作为输出占位。",
         ),
     )
