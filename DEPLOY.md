@@ -2084,3 +2084,41 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
   - 核实并行会话**进行中**的 shengshi8800 改动（004jyzt/019ma24）未引入回归：
     本地 `rows=443 error=0 js_errors=0`、线上 `rows=447 error=0 js_errors=0`。
   - 本轮未再使用 `git add -A`；`HEAD` 与 `origin/main` 已同步（`6fc84b5`）。
+
+### twssz 展示规范整改（2026-09-28 第七轮）
+
+**用户需求**：① 全部模块文字居中；只有命中的生肖/号码/波色/段数/文字才允许黄底，其余文字一律不许高亮。
+②【A级猛料大公开】字号放大。③ 异常检查。
+
+**发布提交**：`ea1d5de`（twssz 改动）+ `9183f3b`（与并行会话提交合并）。中心节点
+`display-standard-7-20260928T…` / `display-standard-8-20260928T…`（第二次用于追平并行会话的
+`9c6c320`），前端节点 `display-standard-7-20260928T…`；当前两节点均为 `9c6c320`。
+
+**改动（仅 twssz 两个文件 + 一份报告）**
+- `frontend/public/vendor/twssz/index.html`：新增 `<style id="twssz-prediction-display-standard">`
+  （`text-align:center !important` 覆盖供应商 40 处内联左对齐；A级猛料字号；≤480px 单列堆叠）。
+- `frontend/public/vendor/twssz/site-data-adapter.js`：渲染后给真正包住预测模块的祖先容器打
+  `data-prediction-center`；清理错误黄底（整行黄底 32 处、AAA级大公开**样例生肖残留** 17 处、
+  空 span 黄底 17 处、命中项连标点 5 处、模块标题黄字 32 处），并补上 41 处正确的逐项命中高亮；
+  修复「一波中特最新一期整行空白（期号错位一格）」。
+- 报告：`docs/vendor-sites/twssz-prediction-display-remediation.md`。
+
+**验收（本地 + 线上实测）**
+
+| 口径 | rows | error | warn | js_errors |
+| --- | ---: | ---: | ---: | ---: |
+| twssz 本地（改后） | 282 | 0 | 3 | 0 |
+| twssz 线上（改后） | 282 | 0 | 4 | 0 |
+
+- Playwright 计算样式：**52/52 预测模块 `text-align: center`**（改前 51/52 非居中），900px 与 375px 一致。
+- 黄底元素 153 → 128（本地）/135（线上），逐个核对均为本期命中项；「错」的行零黄底、未开奖不给判定不高亮。
+- A级猛料 `.dbt1 span` computed `font-size` **13.33px → 17px**，正文 12px → 16px（900/375 同值）；
+  ≤480px 改单列堆叠，行聚类换行单元格 0 个、无横向溢出。
+- `audit-verdict-truth.py --site twssz` → `rows=2236 error=0`。
+- 报告但未修（详见报告 §3.4）：6 个模块历史上就「命中却没有黄底」（`daxiao`/`pt2xiao`/`sanxiao_siwei_xiao`/
+  `danshuangtema` 用 `√`/`ma24` 精选24码/`title_48-ai` AI心水**完全不显示判定**），逐项补高亮需要为 6 个渲染器
+  各写一套玩法语义，建议单独立项；R8 三条 warn 与基线相同（候选集大，连对在概率内）。
+
+**并行会话**：本轮按 `AGENTS.md` 协作约定只提交 twssz 自己的文件（未用 `git add -A`）；
+`origin/main` 在此期间新增了并行会话的 twbst528/独家公式提交，已用 `git merge`（非强推）合并后推送，
+并补跑一次中心节点发布追平版本。
