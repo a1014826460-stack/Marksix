@@ -2186,3 +2186,56 @@ twsaimahui×2 等）全部通过；其中 `shengshi8800-display-verdict-contract
    对其报 49 条 `verdict_contract`。本轮只按「本期判定」决定高亮；后端修好后前端会自动正确标黄。
 2. 「综合绝杀」面板把命中型 `3tou`/`3hang` 渲染成「稳杀」属既有文案/口径问题（非本轮 R3）。
 3. 既有预存项：truth 审计 twbst528 `error=11`（mode 53/482 五行 false_hit）改动前即存在。
+
+### 展开口径 + 判定口径统一（twjsz666/twwanli/twsyw/twssz/twbst528，2026-09-28 第十轮）
+
+**发布提交**：`d8da18a`（本轮代码/契约）+ 本记录提交。此前 `08ffb53` 轮已上线 `216b2d6`（twjsz666）、
+`306407a`/`bb314ae`（twwanli）、`108ee67`（twsyw `#nannv`）。
+**备份**：中心 `/root/Marksix/.deploy-backups/deploy-20260928T131252Z`（先），
+前端 `deploy-20260928T131252Z`（后）。**两节点均为 `origin/main`**：中心重建
+`python-api`/`scheduler-worker`/`frontend`，前端仅重建 `frontend`；两侧 `nginx -t` 通过、容器 `healthy`。
+
+**根因与改动**（细节见 `docs/prediction-display-standard.md` §五之十 / 五之十一 / 五之十二）
+
+1. **号码五行口径（后端）**：`public/api.py` 的过期硬编码五行表（`37 → 火`，且只覆盖 48 码）与
+   `public.fixed_data` / `mode_payload_53` 的分组（`37 → 木`）冲突 → 「精准五行 / 三行中特 / 四行中特」
+   把 37 判成不入预测三行（应「对」显示「错」）。新增权威常量 `predict.common.ELEMENT_NUMBER_GROUPS`
+   （金10/木10/水8/火12/土9 = 49），`build_element_number_map()` 直接返回它，`api.py` 删除旧表改为同一来源
+   → **所有读接口判定的站点一次性修正**（含 twbst528 长期 `mode 53 false_hit` 一类）。
+2. **家禽/野兽（twwanli `#msks`）**：展示值改用 `domestic_wild_prediction_category`（本期**预测**分类），
+   不再用按特别生肖推导的 `domestic_wild_category`（否则展示值本身就是答案 → 按全组判定就恒「准」）；
+   判定按 fixed_data 家禽/野兽**全组**（家禽=牛马羊鸡狗猪）：预测分类 === 特肖所属固定分类 → 准；
+   黄底从「准/错」字移到命中的分类名。
+3. **天地生肖（mode 5 同源缺陷，四站）**：接口 `is_correct` 只比对 `xiao` 两肖、天地组（6 肖）永不参与
+   → 「天肖里含开奖特肖却显示错」。**twwanli `#tdsx`、twsyw `#nannv`、twssz 天地模块、twbst528【天地+②肖】**
+   统一改为本地复算 `特肖 ∈ 天地组 ∪ 本期两肖`，命中只点亮命中项（命中两肖→该生肖，命中天地组→组名），
+   未命中/未开奖零黄底。twbst528 的模块键是 `tiandi_2xiao`（不是 `title_5`），并为该站既有黄底 marker
+   补上跨站标准标记 `data-prediction-hit`（视觉零变化）。
+4. **twsyw 十处「展示候选 ⊂ 判定候选」**：判定以该单元格**真正展示的候选**为准 —— `#top_xiao_code`
+   (56 格各按 8/5/3/1 肖与 10/6/1 码)、`#qixiao`(前7肖)、`#gold6xiao`(前6肖∪平特一肖)、`#winner12`(前12码)、
+   `#five_no_hit`(前5码)、`#lianma`(前12码∪四段)、`#kill3wei`(前3尾)、`#danshuang`(合数单双+合数大小任一)、
+   `#hblvxiao`(双波+一波任一)、`#composite_kill`(四路各按自身极性 OR)；不再透传 `result.isCorrect`。
+5. **适配器契约白名单**：`twwanli`/`twsyw` 的 `writeRow` `contentHtml` 通道需要 `innerHTML`、
+   `twjsz666` 的 `highlightToken` 需要 `createElement`/`appendChild` —— 均为 HEAD 起既有的命中高亮机制，
+   已从禁止项移出并加注释（`replaceChildren`/`document.write` 仍禁止）；twwanli 契约里
+   「逐模块列举居中」的断言更新为校验共享样式块的全局居中规则。
+
+**验收**
+
+| 项目 | 结果 |
+| --- | --- |
+| 新增/扩展契约 | `twssz-display-contract.py`、`twbst528-tiandi-display-contract.py`（新）、`twsyw-display-contract.py`（143 断言）；三者反向验证分别 FAIL 8 / 4 / 58 项，恢复后全绿 |
+| 既有契约 | `twjsz666`/`twwanli`/`twsyw` 三份 `adapter-contract` 由**红转绿**；`*-legacy-script`、`twsyw-site-registration`、`twjsz666-static`、`twbst528-display/static-article/live-mapping(.mjs)` 全通过 |
+| 后端 | `test_element_number_groups.py` 9 条通过；`tests/unit` 1 failed（既有 nginx HA）/ 1086 passed |
+| 线上资源探针 | `twwanli/site-data-adapter.js` 含 `TIANDI_GROUPS` + `domestic_wild_prediction_category`；`twwanli/index.html` 含 `font-size:26px`；`twjsz666/site-data-adapter.js` 含 `data-prediction-hit-slot`；`twsyw/site-data-adapter.js` 含 `TIANDI_GROUPS` |
+| 公网 | `/health`：www.tw8800.com / www.twcaibawang.com = 200；6 个站点首页 = 200 |
+
+**遗留（未自行决定）**
+
+1. `twbst528/static-article-data-adapter.js` 文章页 `145.html`（天地生肖 `title_5`）第 118/141 行仍依赖
+   `result.isCorrect`，命中时还会把整串候选标黄 —— 已有按行号的精确 diff 建议，需文章页契约才能验证。
+2. `twsyw #top_xiao_code` 的 8 个表头（`data-prediction-title`）仍打印模块级 vendor 判定；若要彻底一致，
+   建议表头只显示开奖（`开:37蛇`，不带对/错）。
+3. `#kill3wei` / `#five_no_hit` 底层是 `contains` 极性（「对」= 目标 ∈ 展示候选），本轮只收窄候选集、
+   未翻转极性；若按「绝杀」语义改排除极性属口径变更，需另行确认。
+4. twssz 全站高亮仍是内联 `#FFFF00`（仅天地模块补了标准标记）；全站标记制属站点级迁移。
