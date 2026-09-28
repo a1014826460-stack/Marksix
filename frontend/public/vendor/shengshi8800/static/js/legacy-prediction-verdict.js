@@ -72,6 +72,20 @@
      *  - pool : 右侧原始 token 列表（可能是号码，也可能是生肖）
      *  兼容纯字符串（CSV 或含 `|` 的单条）。
      */
+    /** JSON.parse 失败 / 非数组标量时的分组还原。
+     *  与 util.js 的 splitRawContent 同口径 —— 渲染层与判定层必须对同一 content
+     *  得到同一组候选，否则会出现「页面显示 0头 候选、判定按别的池算」的错判。
+     *  旧写法 `raw.indexOf('|') !== -1 ? [raw] : csv(raw)` 在多组裸串
+     *  （`0头|01,..,4头|40,..`）上只保留第一个分组的号码池，会算错判定。
+     *  util.js 未加载时退回旧口径，保证本文件独立可用。
+     */
+    function rawGroups(raw) {
+        if (typeof splitRawContent === 'function') {
+            return splitRawContent(raw);
+        }
+        return raw.indexOf('|') !== -1 ? [raw] : csv(raw);
+    }
+
     function groups(content) {
         var items = [];
         if (Object.prototype.toString.call(content) === '[object Array]') {
@@ -85,10 +99,10 @@
                 } else if (parsed && typeof parsed === 'object') {
                     return [];
                 } else {
-                    items = raw.indexOf('|') !== -1 ? [raw] : csv(raw);
+                    items = rawGroups(raw);
                 }
             } catch (error) {
-                items = raw.indexOf('|') !== -1 ? [raw] : csv(raw);
+                items = rawGroups(raw);
             }
         }
         var out = [];
@@ -317,6 +331,23 @@
         return verdict;
     }
 
+    /** 绝杀半波（58）：特码半波落进候选（号码池或「红单」类半波标签）才算杀失败。
+     *  后端 content 是 `["红单|01,07,…"]`（号码池），厂商旧样本是 `["红双"]`（纯标签），
+     *  两种形态都按排除口径取反：落入候选 ->「错」，未落入 ->「准」。
+     */
+    function halfWaveExclusionVerdict(groupList, code) {
+        var included;
+        if (hasAnyCode(groupList)) {
+            included = numberInGroups(groupList, code);
+        } else {
+            var byLabel = halfWaveByLabel(groupList, code);
+            included = byLabel === 'ok' ? true : (byLabel === 'miss' ? false : '');
+        }
+        if (included === true) return 'miss';
+        if (included === false) return 'ok';
+        return 'unknown';
+    }
+
     function labelInContent(groupList, label) {
         for (var i = 0; i < groupList.length; i++) {
             if (groupList[i].label.indexOf(label) === 0) return true;
@@ -403,8 +434,8 @@
                 if (!humorPool.length) return 'unknown';
                 return specialTailVerdict(humorPool, code, row.code);
             }
-            // ── 绝杀：特码不在候选内才算杀中 ─────────────────────
-            // 20 绝杀一尾 / 42 绝杀三肖 / 472 / 473 绝杀 N 肖
+            // ── 绝杀：特码不在候选内才算杀中（排除玩法，显示取反值）──
+            // 20 绝杀一尾 / 42 绝杀三肖（含欲输尽光三肖）/ 472 / 473 绝杀 N 肖 / 58 绝杀半波
             case 20: {
                 if (!groupList.length) return 'unknown';
                 return tailExclusionVerdict(groupList, code, content);
@@ -420,12 +451,16 @@
                 if (killed === false || killedByCode === false) return 'ok';
                 return 'unknown';
             }
-            // ── 号码池 / 生肖池：按数据实际维度判定 ───────────────
+            case 58: {
+                if (!groupList.length) return 'unknown';
+                return halfWaveExclusionVerdict(groupList, code);
+            }
+            // ── 号码池 / 生肖池：按数据实际维度判定（命中类玩法，非排除）──
             // 维度判定顺序很重要：
             //   1) 池里出现生肖 -> 以「特码生肖是否在候选生肖里」为准
             //      （如 8肖中特 `["狗|09"]`、9肖中特、四肖八码，号码只是配码）
             //   2) 否则池里出现号码 -> 以「特码是否在候选号码里」为准
-            //   3) 都没有 -> 退回类别标签（半波/波色）
+            //   3) 都没有 -> 无法判定（半波标签是 58 绝杀半波的专属口径，走上面排除分支）
             case 3:
             case 5:
             case 8:
@@ -436,7 +471,6 @@
             case 49:
             case 51:
             case 53:
-            case 58:
             case 61:
             case 63:
             case 151:
@@ -446,7 +480,6 @@
                 if (hasZodiac && zodiac && zodiacInGroups(groupList, zodiac) === true) return 'ok';
                 if (hasCode && code && numberInGroups(groupList, code) === true) return 'ok';
                 if (hasZodiac || hasCode) return 'miss';
-                if (modeId === 58) return halfWaveByLabel(groupList, code);
                 return 'unknown';
             }
             case 34: {
@@ -486,7 +519,7 @@
                 var name = { red: '红波', blue: '蓝波', green: '绿波' }[color];
                 return waves.indexOf(name) !== -1 ? 'ok' : 'miss';
             }
-            // 58 已在号码池分支处理（有号码池按号码，否则按半波标签）
+            // 58 已改为独立排除分支（见上：绝杀半波与 20/42 同口径取反值）
             // ── 双组生肖（单双四肖 / 黑白各三肖）──────────────────
             case 31: {
                 var one = csv(row.xiao_1);

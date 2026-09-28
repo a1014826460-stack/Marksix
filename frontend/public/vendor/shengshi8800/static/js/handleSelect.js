@@ -28,7 +28,8 @@ function bose2(str,attach,spStr){
 
 //三国
 function sanguo(str,attach,spStr){
-	let ql = JSON.parse(str)
+	// 兜底解析：content 非 JSON（纯中文串 / `标签|值` / 逗号串）时不再抛错中断调用方渲染
+	let ql = parseContentList(str)
 	let sg = ''
 	let ret = ''
 	if( null == spStr || spStr.length == 0 || undefined == attach || Object.keys(attach).length == 0){
@@ -58,7 +59,8 @@ function sanguo(str,attach,spStr){
 
 //五行 str是json 数组
 function wuxing(str,spStr){
-	let ql = JSON.parse(str)
+	// 兜底解析：同上，非 JSON content 不再抛错
+	let ql = parseContentList(str)
 	let wx = ''
 	let ret = ''
 	if( null == spStr || spStr.length == 0 ){
@@ -320,7 +322,8 @@ function parseSjsx(content,ori,res_sx){
 	if(null == content || ori.length == 0 ){
 		return '';
 	}
-	cnt = JSON.parse(content);
+	// 兜底解析：非 JSON content 不再抛错中断调用方渲染
+	cnt = parseContentList(content);
 	let ori_  = '';
 	let ret = '';
 	let is_exist = false;
@@ -354,7 +357,8 @@ function parseSjsx2(content,res_sx){
 	}
 	let sj  = '';
 	let ret = '';
-	let cnt = JSON.parse(content);
+	// 兜底解析：非 JSON content 不再抛错中断调用方渲染
+	let cnt = parseContentList(content);
 	if(res_sx ==null ||res_sx.length==0){
 		for(let i in cnt){
 			sj = cnt[i].substr(0,1)
@@ -443,9 +447,11 @@ function selTxtBcT2(str,spStr){
 //头 ["0头|01,02,03,04,05,06,07,08,09","2头|20,21,22,23,24,25,26,27,28,29","3头|30,31,32,33,34,35,36,37,38,39"]
 function selTxtBcT3(str,spStr){
     if(null == str || str.length == 0){
-		return ;
+		return '';
 	}
-	let yc = JSON.parse(str)
+	// 兜底解析：非 JSON content 不再抛错（同时把空输入的 undefined 改成空串，
+	// 避免调用方对返回值做 .replaceAll 时报错让模块空白）
+	let yc = parseContentList(str)
 	let resStr = "";
     if (null == spStr || spStr.length <= 0){
         yc.forEach(el => {
@@ -477,9 +483,11 @@ function selTxtBcT3(str,spStr){
 //头 ["6尾|06,16,26,36,46","0尾|10,20,30,40","5尾|05,15,25,35,45","3尾|03,13,23,33,43","1尾|01,11,21,31,41","8尾|08,18,28,38,48"]
 function selTxtBcW3(str,spStr){
     if(null == str || str.length == 0){
-		return ;
+		return '';
 	}
-	let yc = JSON.parse(str)
+	// 兜底解析：非 JSON content 不再抛错（6w.js 会直接对返回值做 .replaceAll，
+	// 旧写法空输入返回 undefined 会让「必中六尾」整块空白）
+	let yc = parseContentList(str)
 	let resStr = "";
     if (null == spStr || spStr.length <= 0){
         yc.forEach(el => {

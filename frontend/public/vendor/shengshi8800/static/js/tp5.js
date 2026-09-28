@@ -28,12 +28,16 @@ $.ajax({
                 let xiao =  [];
                 let xiaoV =  [];
                 let ma = [];
-                let content = JSON.parse(d.x7m14);
+                // x7m14 兜底解析：compat 层（app/api/kaijiang/[[...path]]/route.ts 的
+                // mapStructuredTitleRows + ensureJsonArray）目前保证它是 JSON 数组，
+                // 但该保证不在本文件内；一旦上游变脸，旧写法 JSON.parse 抛错会让
+                // 「跑马玄机测字」整个模块容器空白。改用 util.js 的兜底解析。
+                let content = parseContentList(d.x7m14);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[i] = c[1] || '';
+                    ma.push(...(c[1] || '').split(','));
                 }
                 let c1 = [];
                 // 高亮必须与本期判定绑定（mode 331：候选来自 x7m14 七肖14码）。

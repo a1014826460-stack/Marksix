@@ -1455,7 +1455,12 @@ function renderSanxiao15ma(rows: LegacyModeRow[]) {
     const xiao7 = zodiacs.slice(0, 7)
     const code15 = codes.slice(0, 15)
     const result = resolveResult(row)
-    const isCorrect = result.isOpened && (zodiacs.includes(result.zodiac) || code15.includes(result.code))
+    // 判定口径（backend/docs/prediction-module-rules.md mode 72 sanxiao15ma）：
+    // 「特肖落在 9 个候选生肖内即算命中」。候选集合就是 row.xiao 的全部生肖，
+    // 因此**不能**只看展示的 3/5/7 肖前缀 —— 命中项落在第 8、9 位时会出现
+    // 「显示对、却整行没有任何可高亮的候选项」（S2 违规，审计 R4）。
+    // 这里同时把完整候选集合补一行展示，保证命中项一定可见。
+    const isCorrect = result.isOpened && zodiacs.includes(result.zodiac)
     const renderZ = (items: string[]) => items.map((z) => isCorrect && z === result.zodiac ? `<span style="background-color: #FFFF00">${escapeHtml(z)}</span>` : escapeHtml(z)).join("")
     const renderC = (items: string[]) => items.map((c) => isCorrect && c === result.code ? `<span style="background-color: #FFFF00">${escapeHtml(c)}</span>` : escapeHtml(c)).join(".")
     return `<tr><td style="padding:8px 10px;border:1px solid #ccc;font-size:13pt;font-weight:700;line-height:2.2;">
@@ -1463,6 +1468,7 @@ function renderSanxiao15ma(rows: LegacyModeRow[]) {
       <p style="margin:2px 0;">(7.)肖特:${renderZ(xiao7)}</p>
       <p style="margin:2px 0;">(5.)肖特:${renderZ(xiao5)}</p>
       <p style="margin:2px 0;">(3.)肖特:${renderZ(xiao3)}</p>
+      ${zodiacs.length > xiao7.length ? `<p style="margin:2px 0;">(${zodiacs.length}.)肖特:${renderZ(zodiacs)}</p>` : ""}
       <p style="margin:2px 0;color:#FF0000;">稳赚特码（15码）</p>
       <p style="margin:2px 0;color:#008000;">${renderC(code15)}</p>
       ${result.isOpened ? `<p style="margin:2px 0;">开:${renderResultJudge(result, isCorrect)}</p>` : ''}

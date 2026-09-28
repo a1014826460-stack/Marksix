@@ -949,8 +949,19 @@ def three_head_four_tail_outcome(row: Any, conn: Any) -> str:
 
 
 def three_head_four_tail_hit(outcome: str, labels: tuple[str, ...]) -> bool:
+    """三头四尾命中：特码头与特码尾**任一维度**落入对应候选集合即算命中。
+
+    该玩法的标签带 `头:` / `尾:` 两个维度前缀，``category_service.classify_prediction_config``
+    把它归类为 ``PredictionCategory.MIXED``，按项目口径「MIXED 的业务命中语义为
+    任一维度命中即算命中」（``backend/CLAUDE.md`` 2026-06-28 mixed 复合玩法约束，
+    与 ``mixed_dimension_contains_hit`` 同口径）必须使用任一维度判定。
+
+    供应商静态样本同样是这个口径：053期 `三头【4.1.3】四尾【1.4.9.2】开09鸡对`
+    （特码 09 的头 0头 不在候选，只有尾 9尾 命中，供应商标「对」）；
+    052期 `三头【2.3.0】四尾【7.8.3.0】开43猪对`（只有尾 3尾 命中，同样标「对」）。
+    """
     required = tuple(part for part in str(outcome or "").split("|") if part)
-    return bool(required) and all(part in labels for part in required)
+    return bool(required) and any(part in labels for part in required)
 
 
 def format_expert_publications(labels: tuple[str, ...], _conn: Any) -> str:
@@ -1154,8 +1165,8 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         content_formatter=format_three_head_four_tail,
         hit_checker=three_head_four_tail_hit,
         explanation=(
-            "三头四尾分别选择3个头数和4个尾数。",
-            "特码头数与尾数同时落入各自候选集合才记为命中。",
+            "三头四尾分别选择3个头数和4个尾数，属于 MIXED（头/尾双维度）玩法。",
+            "特码头数或尾数**任一维度**落入对应候选集合即记为命中（任一维度命中口径）。",
         ),
         selection_groups=(
             ("头:0头", "头:1头", "头:2头", "头:3头", "头:4头"),

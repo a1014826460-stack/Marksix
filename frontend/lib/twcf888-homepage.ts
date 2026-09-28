@@ -19,6 +19,11 @@ export type Twcf888HomepageCard = {
   route: string
   mode_id: number | null
   module_status: Twcf888ModuleStatus
+  /**
+   * 判定取反的栏目（如 `绝杀一波` 与 `一波中特` 共用 mode 143 但玩法相反）。
+   * 渲染层必须据此把 `is_correct` 取反后再显示对/错。
+   */
+  verdict_inverted: boolean
   data_status: "live_ready" | "missing_live_data" | "snapshot" | "blocked"
   latest_issue: string | null
   notes: string[]
@@ -107,6 +112,7 @@ export async function getTwcf888HomepageModules(
           route: `/twcf888/${group}/${item.id}?lottery_type=${lotteryType}`,
           mode_id: item.modeId,
           module_status: item.moduleStatus,
+          verdict_inverted: item.verdictInverted === true,
           data_status: dataStatus,
           latest_issue: liveModule?.history?.[0]?.issue ?? null,
           notes: buildCardNotes(item.moduleStatus, item.modeId, available),

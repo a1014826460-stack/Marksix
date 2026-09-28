@@ -143,6 +143,12 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
 
     domestic = {"牛", "狗", "猪", "羊", "马", "鸡"}
     wave_map = {"red": "红波", "blue": "蓝波", "green": "绿波"}
+    wave = wave_map.get(color, "")
+    # 半波（红单/红双/蓝单/蓝双/绿单/绿双）是与波色同源的独立取值空间：
+    # 「绝杀半波」(mode 58) / 「杀两半波」(mode 490) 的候选标签就是 `蓝双` 这种两字标签，
+    # 而 `蓝波` 里没有 `蓝双` 子串，缺了这个原子会让 excludes_hit 恒等于 True（判定写死「对」）。
+    # 与 fixed_data `波色单双` 的映射一致（见 predict.categories.size_parity.special_half_wave_from_row）。
+    half_wave = f"{wave.removesuffix('波')}{'双' if number % 2 == 0 else '单'}" if wave else ""
     # 五行元素映射（与 public.fixed_data 中 "五行肖" sign 一致）
     element = _ELEMENT_MAP.get(code, "")
     # 琴棋书画映射
@@ -162,7 +168,8 @@ def _compute_outcome_from_row(row: dict[str, Any]) -> str:
         ("0头" if number < 10 else f"{number // 10}头") + ("双" if number % 2 == 0 else "单"),
         f"{number % 10}尾",
         f"{number % 10}",
-        wave_map.get(color, ""),
+        wave,
+        half_wave,
         "合单" if digit_sum % 2 == 1 else "合双",
         "合数大" if digit_sum >= 7 else "合数小",
         "家禽" if zodiac in domestic else "野兽",
@@ -188,17 +195,58 @@ def _flat_tail_outcome(row: dict[str, Any]) -> str:
     )
 
 
+def _mechanism_outcome_from_row(config: "PredictionConfig", row: dict[str, Any]) -> str:
+    """按机制自己的 ``outcome_loader`` 复算「真实命中目标」。
+
+    这是玩法专属口径的唯一权威来源（``domains.prediction.generation_rules`` 用它做未来期
+    命中校验，``scripts/audit-verdict-truth.py`` 也以它作为独立真值）。没有连接时
+    ``fixed_data`` 兜底映射不可用，头/尾等标签会退化成由 res_code 直接推导的等价标签。
+    """
+    loader = getattr(config, "outcome_loader", None)
+    if not callable(loader):
+        return ""
+    try:
+        return str(loader(row, None) or "").strip()
+    except Exception:  # noqa: BLE001 - 兜底映射缺失时退回通用复合串
+        return ""
+
+
 def _check_correct_by_mechanism(
     prediction_text: str, row: dict[str, Any], config: "PredictionConfig"
 ) -> bool | None:
     """用机制专属的 hit_checker 判断预测是否正确。
 
     _compute_outcome_from_row 返回 ``|`` 分隔的复合标签串（单双/大小/头/尾/
-    波色/合数/家禽野兽/生肖/号码），而 content_parser 提取的是单个维度标签。
+    波色/半波/合数/家禽野兽/生肖/号码），而 content_parser 提取的是单个维度标签。
     标准 contains_hit/excludes_hit 做的是单值精确匹配，因此需要逐标签检查而非
     把整串复合 outcome 直接传给 hit_checker。
+
+    少数玩法的 hit_checker 以**机制专属 outcome**（``头:3头|尾:7尾`` 这类带维度前缀的
+    复合串）为契约，通用复合串会让它们失效：「三头四尾」的候选标签是 ``头:2头`` /
+    ``尾:6尾``，喂通用串时那些通用标签（``双数``/``大数``/``蓝波``）永远不在候选里，
+    ``three_head_four_tail_hit`` 于是恒为 ``False`` → 整列判定恒为「错」。
+    因此这里对非通用口径的自定义 checker 改用 ``outcome_loader`` 的真实命中目标。
     """
-    from predict.common import contains_hit as _std_contains, excludes_hit as _std_excludes
+    from predict.categories.mixed import (
+        mixed_dimension_contains_hit as _mixed_contains,
+        mixed_dimension_excludes_hit as _mixed_excludes,
+    )
+    from predict.common import (
+        contains_hit as _std_contains,
+        exact_contains_hit as _std_exact_contains,
+        excludes_hit as _std_excludes,
+        excludes_hit_exact as _std_exact_excludes,
+    )
+
+    #: 明确约定接收 ``_compute_outcome_from_row`` 通用复合串的 hit_checker。
+    generic_outcome_checkers = (
+        _std_contains,
+        _std_excludes,
+        _std_exact_contains,
+        _std_exact_excludes,
+        _mixed_contains,
+        _mixed_excludes,
+    )
 
     special = extract_special_result(row)
     if not special["code"]:
@@ -220,7 +268,11 @@ def _check_correct_by_mechanism(
     # 标准绝杀检查：复合 outcome 中不包含任何预测标签即为命中
     if config.hit_checker is _std_excludes:
         return not any(label in outcome for label in content_labels)
-    # 自定义 hit_checker（如 mixed_dimension_*）自己处理复合 outcome
+    # 自定义 hit_checker：除通用复合串口径外，一律使用机制专属 outcome
+    if config.hit_checker not in generic_outcome_checkers:
+        mechanism_outcome = _mechanism_outcome_from_row(config, row)
+        if mechanism_outcome:
+            return bool(config.hit_checker(mechanism_outcome, content_labels))
     return config.hit_checker(outcome, content_labels)
 
 

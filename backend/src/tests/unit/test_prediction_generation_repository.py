@@ -91,3 +91,86 @@ def test_generation_repository_loads_enabled_site_modules_with_requested_filter(
             "sort_order": 20,
         }
     ]
+
+
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def fetchall(self):
+        return list(self._rows)
+
+
+class _FakeConn:
+    """Minimal connection double: records SQL, returns canned rows."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.sql = ""
+
+    def execute(self, sql, params=None):
+        self.sql = str(sql)
+        return _FakeCursor(self.rows)
+
+    def rollback(self):
+        return None
+
+
+def test_load_recent_created_rows_reads_title_only_tables(monkeypatch):
+    """mode 52 四字玄机所在的 created 表只有 title/jiexi，没有 content。
+
+    旧实现硬性要求 `content` 列存在，否则返回空历史。结果是
+    `_load_three_period_history_rows` 永远拿不到行，`enforce_three_period_uniqueness(52)`
+    在 `len(recent_tokens) < required_recent` 处直接返回原值，mode 52 的「相邻五期展示值
+    不得相同」从未生效（线上实测 web_id=5 连续四期 title 都是「黯然無光」）。
+    """
+    monkeypatch.setattr(
+        generation_repository,
+        "table_column_names",
+        lambda conn, schema, table: ("id", "web", "type", "year", "term", "title", "jiexi"),
+    )
+    conn = _FakeConn(
+        [
+            {"title": "黯然無光", "jiexi": "虎马兔龙牛羊狗"},
+            {"title": "黯然無光", "jiexi": "鸡蛇马鼠虎猪羊"},
+        ]
+    )
+
+    rows = generation_repository.load_recent_created_rows(
+        conn,
+        table_name="mode_payload_52",
+        lottery_type=3,
+        site_web_id=5,
+        mode_id=52,
+        limit=8,
+    )
+
+    assert rows == [
+        {"title": "黯然無光", "jiexi": "虎马兔龙牛羊狗"},
+        {"title": "黯然無光", "jiexi": "鸡蛇马鼠虎猪羊"},
+    ]
+    # 只 select 实际存在的展示列，绝不 select 不存在的 content
+    assert "content" not in conn.sql
+    assert '"title"' in conn.sql
+    assert '"jiexi"' in conn.sql
+
+
+def test_load_recent_created_rows_returns_empty_without_display_columns(monkeypatch):
+    """既没有 content 也没有 title/jiexi 的表不参与唯一性判定，返回空列表而不是抛错。"""
+    monkeypatch.setattr(
+        generation_repository,
+        "table_column_names",
+        lambda conn, schema, table: ("id", "web", "type", "year", "term"),
+    )
+    conn = _FakeConn([{"title": "unused"}])
+
+    rows = generation_repository.load_recent_created_rows(
+        conn,
+        table_name="mode_payload_x",
+        lottery_type=3,
+        site_web_id=5,
+        mode_id=52,
+    )
+
+    assert rows == []
+    assert conn.sql == ""

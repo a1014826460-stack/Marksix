@@ -49,7 +49,10 @@ $.ajax({
 
             response.data.forEach(el=>{
                 tm = code=dx=dx_=w=''
-                t= JSON.parse(el.tou)[0][0]
+                // tou / content 兜底解析：非 JSON 时取原始串首字符 / 按 `|` 切分，
+                // 旧写法 JSON.parse 抛错会中断 success 回调，整个模块容器空白。
+                let touList = parseContentList(el.tou)
+                t = touList.length > 0 ? String(touList[0]).charAt(0) : ''
                 // 命中判定：按 大/小 与特码实际大小比较，而不是“特码落在本池内”
                 var verdict = window.legacyPredictionVerdict
                     ? window.legacyPredictionVerdict.verdictOf(108, el)
@@ -61,14 +64,14 @@ $.ajax({
                     code = el.res_code.split(',')
                     tm = code[code.length-1]
                 }
-                var items = JSON.parse(el.content)
-                dx = items[0].split('|')
+                var items = parseContentList(el.content)
+                dx = items.length > 0 ? String(items[0]).split('|') : []
 
                 var verdictTxt = verdict === 'ok' ? '准' : (verdict === 'miss' ? '错' : '')
                 if(verdict === 'ok'){
-                    dx_ = `<span style="background-color: #FFFF00">${dx[0]}数</span>`
+                    dx_ = `<span style="background-color: #FFFF00">${dx[0] || ''}数</span>`
                 }else{
-                    dx_ = dx[0]+'数'
+                    dx_ = (dx[0] || '')+'数'
                 }
                 var resTxt = tm ? ('' + (el.res_sx ? el.res_sx.split(',').pop() : '') + tm) : '？00'
                 dx = ''

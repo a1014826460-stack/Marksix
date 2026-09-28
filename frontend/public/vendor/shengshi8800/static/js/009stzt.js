@@ -22,14 +22,16 @@ $.ajax({
                 let sx = sxSplit[sxSplit.length-1]||'';
                 let xiao = [];
                 let ma = [];
-                let content = JSON.parse(d.content);
+                // content 兜底解析：后端 content 在部分 mode/期次上不是 JSON（纯中文串 / `标签|值` / 逗号串），
+                // 旧写法 JSON.parse 抛错会中断 success 回调，让整个模块容器保持空白。改用 util.js 的 parseContentList。
+                let content = parseContentList(d.content);
                 let wei = [];
                 let weiNum = [];
                 let weiValue = [];
                 for (let i = 0; i < content.length; i++) {
                     wei[i] = content[i].split('|')[0];
                     weiNum[i] = content[i].split('|')[0].split('')[0];
-                    weiValue[i] = content[i].split('|')[1];
+                    weiValue[i] = content[i].split('|')[1] || '';
                 }
                 let c1 = ``;
                 for (let i = 0; i < wei.length; i++) {

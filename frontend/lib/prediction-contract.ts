@@ -216,6 +216,53 @@ function collectGroups(...values: unknown[]) {
  * 并逐项渲染，形状不能改。因此这里另建一份「判定用候选集合」：把 `标签|号码`
  * 条目展开成号码 / 生肖原子，只用于「候选项是否命中真实开奖」的交叉校验。
  */
+/**
+ * 站点页判定交叉校验专用的「候选列」白名单。
+ *
+ * 后端各玩法的候选集合**并不总落在 `content`**：
+ *   - 天地生肖（mode 5）/ 三肖15码（mode 72）的候选在 `xiao`；
+ *   - 单双公式（mode 15）/ 四字玄机 的候选在 `title` / `jiexi`；
+ *   - 单双四肖一类把候选拆成 `xiao_1` / `xiao_2` 两列；
+ *   - 家禽野兽在 `jia` / `ye`，黑白肖在 `hei` / `bai`，波色在 `wave`。
+ * `canonicalRowFromPublicHistory` 过去只把 `content` 交给 `candidateAtomsForVerdict`，
+ * 于是这些玩法的真实命中被判成 `contradicted`，`reconcileVerdict` 再把「对」强制改写成
+ * 「错」（线上实测 31 个模块实例受影响，例如 twjinniu `sanxiao15ma` 20 期里 8 期被改判、
+ * 四站 `title_5` 天地生肖全部受影响）。vendor 分支本来就带这些列，这里补齐站点页分支。
+ *
+ * 白名单**刻意不含** `res_code` / `res_sx` / `res_color` / `result_text` / `is_correct`：
+ * 一旦把开奖结果列混进候选集合，交叉校验会自动通过，就再也拦不住虚报命中了。
+ */
+const VERDICT_CANDIDATE_COLUMNS = [
+  "content",
+  "xiao",
+  "code",
+  "xiao_1",
+  "xiao_2",
+  "hei",
+  "bai",
+  "jia",
+  "ye",
+  "jiexi",
+  "title",
+  "wave",
+  "tail",
+  "tou",
+  "wei",
+  "dx",
+  "ds",
+] as const
+
+export function verdictCandidateColumns(raw: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {}
+  for (const column of VERDICT_CANDIDATE_COLUMNS) {
+    const value = raw[column]
+    if (value === null || value === undefined) continue
+    if (typeof value === "string" && !value.trim()) continue
+    picked[column] = value
+  }
+  return picked
+}
+
 export function candidateAtomsForVerdict(input: {
   tokens: unknown[]
   groups?: CanonicalPredictionGroup[]
@@ -295,6 +342,38 @@ export function isFlatPredictionMechanism(...hints: unknown[]) {
   return FLAT_MECHANISM_HINTS.some((hint) => haystack.includes(hint))
 }
 
+/**
+ * 头尾组合玩法（`三头四尾` / mode 492）。候选集合由 `N头` 与 `N尾` 两组标签组成，
+ * 真实命中目标是「特码头 ∈ 候选头 **或** 特码尾 ∈ 候选尾」任一维度命中即算命中
+ * （该玩法在 `backend/src/domains/prediction/category_service.py` 下分类为 MIXED，
+ * 按 `backend/CLAUDE.md`「MIXED 的业务命中语义为任一维度命中即算命中」，
+ * 与后端 `predict.mechanisms.three_head_four_tail_hit` 同口径）。
+ * 候选里的数字是标签的一部分（`2头`）而不是号码原子，所以这类行不能走号码/生肖交叉校验：
+ * 否则命中行会被判成 `contradicted`，`reconcileVerdict` 再把上游的「对」强制改写成「错」。
+ */
+const HEAD_TAIL_MECHANISM_HINTS = ["three_head_four_tail", "三头四尾", "头尾"]
+
+export function isHeadTailPredictionMechanism(...hints: unknown[]) {
+  const haystack = hints.map((item) => cleanText(item)).join(" ")
+  if (!haystack) return false
+  return HEAD_TAIL_MECHANISM_HINTS.some((hint) => haystack.includes(hint))
+}
+
+/** 头尾组合玩法的候选：`{"heads":["2头",…],"tails":["6尾",…]}` 或 `2头.4头.1头` 形态。 */
+export function candidateHeadTailAtoms(items: unknown[]) {
+  const heads = new Set<string>()
+  const tails = new Set<string>()
+  for (const item of items) {
+    for (const part of cleanText(item).split(/[,，、|\s"'[\]{}:：.]+/)) {
+      const head = /(\d)\s*头/.exec(part)
+      if (head) heads.add(head[1])
+      const tail = /(\d)\s*尾/.exec(part)
+      if (tail) tails.add(tail[1])
+    }
+  }
+  return { heads: [...heads], tails: [...tails] }
+}
+
 /** 候选项里的号码原子（`大|25,26` → `25`、`26`；`37` → `37`）。 */
 export function candidateCodeAtoms(items: unknown[]) {
   const atoms: string[] = []
@@ -328,7 +407,8 @@ export function candidateZodiacAtoms(items: unknown[]) {
  *
  * 只有「真实开奖目标确实出现在候选集合里」才认为上游的命中可信；否则判为矛盾。
  * 绝杀/排除类与平特类玩法的候选口径与特码不同，返回 `excluded` / `flat`，
- * 交由各自的展示层按自己的规则判定。
+ * 交由各自的展示层按自己的规则判定。头尾组合玩法（三头四尾）按「头与尾同时命中」
+ * 交叉校验，理由见 `isHeadTailPredictionMechanism`。
  *
  * 返回：
  *   - `"verified"`：候选集合里能找到真实特码或特肖
@@ -365,6 +445,17 @@ export function verifyVerdictAgainstCandidates(input: {
     ...input.tokens,
     ...(input.groups || []).flatMap((group) => [...group.tokens, cleanText(group.label)]),
   ]
+
+  // 三头四尾：头与尾任一维度命中即算命中（见本文件 isHeadTailPredictionMechanism）。
+  if (isHeadTailPredictionMechanism(...hints)) {
+    const { heads, tails } = candidateHeadTailAtoms(items)
+    const special = normalizeCode(code)
+    if (!heads.length || !tails.length || !/^\d{2}$/.test(special)) return "unverifiable"
+    return heads.includes(special.charAt(0)) || tails.includes(special.charAt(1))
+      ? "verified"
+      : "contradicted"
+  }
+
   const codes = candidateCodeAtoms(items)
   const zodiacs = candidateZodiacAtoms(items)
   if (!codes.length && !zodiacs.length) return "unverifiable"
@@ -444,8 +535,13 @@ function canonicalRowFromPublicHistory(row: PublicHistoryRow, mechanismHints: un
       isCorrect: row.is_correct,
       raw,
     }),
-    // 判定用候选集合另外构造，不进 `tokens`。
-    candidateAtoms: candidateAtomsForVerdict({ tokens, groups, extra: prediction.extra }),
+    // 判定用候选集合另外构造，不进 `tokens`（`tokens` 是对外契约，形状不能改）。
+    // 候选列白名单见 `VERDICT_CANDIDATE_COLUMNS`：只补候选列、绝不补开奖结果列。
+    candidateAtoms: candidateAtomsForVerdict({
+      tokens,
+      groups,
+      extra: { ...verdictCandidateColumns(raw) },
+    }),
     mechanismHints,
   })
 

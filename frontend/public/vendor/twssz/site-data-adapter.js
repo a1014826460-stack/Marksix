@@ -220,6 +220,18 @@
     });
   }
 
+  // A card is one issue. When a module's own history does not cover that issue,
+  // falling back to its first row would print another issue's candidates (and
+  // another issue's 期号) inside this card — which is also how a cross-issue
+  // "对" could be produced. Such a cell stays explicitly blank for this issue.
+  function blankModuleRow(referenceRow) {
+    return {
+      term: String(referenceRow && (referenceRow.term || referenceRow.issue) || "").replace(/期$/, ""),
+      prediction: { tokens: [] },
+      result: {}
+    };
+  }
+
   function moduleRowForTerm(module, referenceRow, fallbackIndex) {
     var term = referenceRow && String(referenceRow.term || referenceRow.issue || "").replace(/期$/, "");
     var rows = distinctModuleRows(module);
@@ -228,6 +240,7 @@
         return String(row.term || row.issue || "").replace(/期$/, "") === term;
       })[0];
       if (matched) return matched;
+      if (rows.length) return blankModuleRow(referenceRow);
     }
     return moduleRow(module, fallbackIndex);
   }
@@ -547,34 +560,120 @@
     return match ? match[0] : "";
   }
 
-  function markGradeHits(table, drawRow) {
+  // `verdictScope` is the set of value slots whose candidates own the card's
+  // result text (the 七肖 cell and the 平特 cell of the same vendor row). Every
+  // other cell of the card is still marked — a hit must always be visible — but
+  // it no longer decides the verdict, so the "对" always has a highlighted value
+  // inside the very row it is printed in.
+  function markGradeHits(table, drawRow, verdictScope) {
     var result = drawRow && drawRow.result || {};
     var opened = Boolean(result.isOpened);
     var zodiac = gradeSpecialZodiac(drawRow);
     var code = opened ? resultCode(drawRow) : "";
+    var scope = verdictScope || [];
     var hit = false;
     Array.prototype.forEach.call(table.querySelectorAll('[data-site-slot="prediction"]'), function (root) {
       // Every value slot was just overwritten, so an obsolete supplier hit can
       // never survive: only the current special ball keeps the yellow marker.
+      var inScope = scope.indexOf(root) >= 0;
       Array.prototype.forEach.call(gradeValueLeaves(root), function (leaf) {
         var value = String(leaf.textContent || "").trim();
         var matched = Boolean(value) && opened && ((zodiac && value === zodiac) || (code && value === code));
-        if (matched) hit = true;
+        if (matched && inScope) hit = true;
         markHitLeaf(leaf, matched);
       });
     });
     var recommendationSlot = table.querySelector('[data-site-slot="special"]');
     if (recommendationSlot) {
+      var recommendationInScope = scope.indexOf(recommendationSlot) >= 0;
       Array.prototype.forEach.call(recommendationSlot.querySelectorAll("span"), function (span) {
         if (span.children.length) return;
         var value = String(span.textContent || "").trim();
         if (!value || value.indexOf("开") !== -1) return;
         var matched = Boolean(opened && zodiac && value === zodiac + zodiac + zodiac);
-        if (matched) hit = true;
+        if (matched && recommendationInScope) hit = true;
         markHitLeaf(span, matched);
       });
     }
     return hit;
+  }
+
+  // ── 行内命中项标记工具 ────────────────────────────────────────────────
+  // 判定与高亮必须同源：先按该行**自己展示的候选**与真实开奖复算，再把真正
+  // 命中的那一项标黄；供应商静态模板留下的样例黄标一律先清除（见
+  // clearRowHighlight），否则「未命中却留着旧高亮」永远清不干净。
+
+  function zodiacOfNumber(number) {
+    var value = String(number == null ? "" : number);
+    if (value.length === 1) value = "0" + value;
+    var found = "";
+    Object.keys(ZODIAC_NUMBERS).some(function (zodiac) {
+      if ((ZODIAC_NUMBERS[zodiac] || []).indexOf(value) >= 0) {
+        found = zodiac;
+        return true;
+      }
+      return false;
+    });
+    return found;
+  }
+
+  // 平特类玩法（平特 N 肖 / 平特 N 尾）的命中要看开奖的**全部 7 个号码**，
+  // 所以除了特码与特肖，还要拿到整期号码与整期生肖。兼容载荷可能只带
+  // result.text，这时按号码补算生肖。
+  function drawnAtoms(row) {
+    var raw = row && row.raw || {};
+    var numbers = (String(raw.res_code || "").match(/\d{1,2}/g) || []).map(function (value) {
+      return value.length === 1 ? "0" + value : value;
+    });
+    var zodiacs = String(raw.res_sx || "").split(/[,，、\s|]+/).map(function (value) {
+      return String(value).trim();
+    }).filter(Boolean);
+    if (!zodiacs.length) zodiacs = numbers.map(zodiacOfNumber).filter(Boolean);
+    return {
+      opened: Boolean(row && row.result && row.result.isOpened),
+      code: resultCode(row),
+      zodiac: gradeSpecialZodiac(row),
+      numbers: numbers,
+      zodiacs: zodiacs
+    };
+  }
+
+  // 生肖类玩法：候选肖 == 特肖即为命中项。
+  function isSpecialZodiac(draw, value) {
+    return Boolean(value) && value === draw.zodiac;
+  }
+
+  // 号码类玩法：候选码 == 特码即为命中项。
+  function isSpecialNumber(draw, value) {
+    return Boolean(value) && value === draw.code;
+  }
+
+  // 平特类玩法：候选肖出现在**任何**一个开奖号码的生肖里即为命中项。
+  function isFlatZodiac(draw, value) {
+    return Boolean(value) && draw.zodiacs.indexOf(String(value)) >= 0;
+  }
+
+  // 平特类玩法展示的候选码：出现在任何一个开奖号码里即为命中项。
+  function isDrawnNumber(draw, value) {
+    return Boolean(value) && draw.numbers.indexOf(String(value)) >= 0;
+  }
+
+  function clearNodeChildren(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  // 一个展示候选一个 span；只有真正命中的那一个带黄底。
+  function appendValueSpan(root, text, hit) {
+    var span = window.document.createElement("span");
+    span.textContent = String(text == null ? "" : text);
+    markHitLeaf(span, Boolean(hit));
+    root.appendChild(span);
+    return span;
+  }
+
+  function appendTextNode(root, text) {
+    if (text) root.appendChild(window.document.createTextNode(text));
   }
 
   function renderGradeResult(cell, row) {
@@ -614,13 +713,21 @@
       if (marker.nextSibling && marker.nextSibling.nodeType === 3) marker.nextSibling.nodeValue = "』";
       return;
     }
-    textNodes(recommendationSlot).filter(function (text) {
+    // Several supplied 平特 cards carry the 『』 recommendation as bare text with
+    // no child element, so the hit treatment had nowhere to live and an issue
+    // that really matched could not be shown as a hit. The triple gets its own
+    // span inside the supplier's existing text run; 『』 stay as text nodes so
+    // the wording and the later re-renders are unchanged.
+    var anchor = textNodes(recommendationSlot).filter(function (text) {
       return String(text.nodeValue || "").indexOf("『") !== -1;
-    }).forEach(function (text) {
-      // The 『』 anchor stays in place even without data so a later render can
-      // find the same vendor text node again.
-      text.nodeValue = "『" + triple + "』";
-    });
+    })[0];
+    if (!anchor || !anchor.parentNode) return;
+    var valueSpan = window.document.createElement("span");
+    valueSpan.setAttribute("data-site-slot", "grade-special-value");
+    valueSpan.textContent = triple;
+    anchor.nodeValue = "『";
+    anchor.parentNode.insertBefore(valueSpan, anchor.nextSibling);
+    anchor.parentNode.insertBefore(window.document.createTextNode("』"), valueSpan.nextSibling);
   }
 
   function gradeModules(moduleByKey) {
@@ -654,9 +761,18 @@
       var cells = rows[1].querySelectorAll("td");
       renderGradeValue(cells[0], referenceRow, "zodiac");
       var resultSlot = renderGradeResult(cells[1], recommendationRow);
+      // 判定归属 = 本期结果文字所在的那一行（七肖格 + 平特格）。同一张卡的其它格子
+      // （四肖/三肖/二肖/⑩⑧⑤码）照样按各自的候选标黄，但不再替这一行决定对/错：
+      // 否则会出现「结果印在平特格、命中项落在三肖格」这种判而无据的行。
+      var verdictScope = [
+        gradeValueRoot(cells[0]),
+        slot(cells[1], "special", function (root) { return root.querySelector(".dbt9"); })
+      ].filter(Boolean);
       cells = rows[2].querySelectorAll("td");
       renderGradeValue(cells[0], moduleRowForTerm(modules[1], referenceRow, historyIndex), "zodiac");
-      writeGradeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("span[style*='rgb(255']"); }), numberValues(numberRow));
+      // ⑩码 is 稳杀10码（排除型）：开奖号码出现在杀号集合里说明这一格**没中**，
+      // 所以它不属于可高亮的命中项，单独用一个 slot 名把它排除在命中扫描之外。
+      writeGradeSlots(slot(cells[1], "exclusion", function (root) { return root.querySelector("span[style*='rgb(255']"); }), numberValues(numberRow));
       cells = rows[3].querySelectorAll("td");
       renderGradeValue(cells[0], moduleRowForTerm(modules[3], referenceRow, historyIndex), "zodiac");
       writeGradeSlots(slot(cells[1], "prediction", function (root) { return root.querySelector("font[color='#ff0000']"); }), numberValues(moduleRowForTerm(modules[4], referenceRow, historyIndex)));
@@ -664,11 +780,12 @@
       renderGradeValue(cells[0], recommendationRow, "zodiac");
       writeGradeSlots(gradeValueRoot(cells[1]), numberValues(moduleRowForTerm(modules[6], referenceRow, historyIndex)));
       // Every displayed value is written before the card is judged, so the
-      // result text and the yellow hit leaves always describe this card. A card
-      // is a hit only when one of its own values is the drawn special, so a miss
-      // keeps no supplier marker anywhere inside it.
-      var gradeHit = markGradeHits(table, drawRow);
-      if (!gradeHit && drawRow) clearRowHighlight(table);
+      // result text and the yellow hit leaves always describe this card. The
+      // supplier's own sample marker belongs to the sample draw and is scrubbed
+      // on every pass; markGradeHits then marks exactly the values this issue
+      // matched, so a hit is always visible and a miss keeps nothing.
+      clearRowHighlight(table);
+      var gradeHit = markGradeHits(table, drawRow, verdictScope);
       setNodeText(resultSlot, gradeResultText(drawRow, gradeHit));
     });
   }
@@ -1208,10 +1325,16 @@
       var row = moduleRow(module, index / 2);
       rows[index].setAttribute("data-prediction-row", String(index / 2));
       rows[index + 1].setAttribute("data-prediction-row", String(index / 2));
+      // Both vendor rows carry one issue. The supplier authored each history row
+      // with a sample hit marker, and that marker describes the sample draw, not
+      // this issue. The whole pair is therefore scrubbed **before** the renderer
+      // writes its values, so a miss can never keep a yellow mark and a hit is
+      // marked on the value it actually matched instead of on the sample cell.
+      if (moduleHasRows(module)) {
+        clearRowHighlight(rows[index]);
+        clearRowHighlight(rows[index + 1]);
+      }
       renderPair(rows[index], rows[index + 1], row, index / 2);
-      // Both vendor rows carry one issue, so both follow that issue's judgement.
-      applyRowHighlight(rows[index], row, module);
-      applyRowHighlight(rows[index + 1], row, module);
     }
   }
 
@@ -1232,6 +1355,14 @@
     });
   }
 
+  // The value run lives in the deepest supplier text node of the cell; rebuilding
+  // inside that node's parent keeps the supplied font colour and background, and
+  // gives every displayed candidate its own span so a hit can be marked.
+  function firstTextParent(root) {
+    var nodes = textNodes(root);
+    return nodes.length && nodes[0].parentElement ? nodes[0].parentElement : root;
+  }
+
   function renderTiandiHistory(mapping, module) {
     var table = tableAfterHeading("精准天地+两肖");
     if (!table) return;
@@ -1243,8 +1374,22 @@
       tr.setAttribute("data-prediction-row", String(index));
       var nature = firstValue(predictionTokens(row)[0] || "");
       var pair = row && row.raw && row.raw.xiao ? String(row.raw.xiao).split(/[,，]/).join("") : zodiacValues(row).slice(1, 3).join("");
-      replaceExistingText(cell, row ? termValue(row) + ": 天地 【" + nature + "+" + pair + "】 开:" + openedResult(row) : "");
-      applyRowHighlight(tr, row, module);
+      var valueRoot = slot(cell, "tiandi-value", firstTextParent);
+      // 天地生肖（mode 5）的后端规则仍是 blocked_pending_rule（未定稿），所以高亮
+      // 以本行自己的判定为前提，只把「判定为命中」且真的等于特肖的那一肖标黄：
+      // 判定为「错」的期一律不留黄底，未命中的肖与分类标签也不高亮。
+      var rowHit = isHitRow(row);
+      clearRowHighlight(tr);
+      clearNodeChildren(valueRoot);
+      if (!row) return;
+      var draw = drawnAtoms(row);
+      appendTextNode(valueRoot, termValue(row) + ": 天地 【");
+      appendValueSpan(valueRoot, nature, false);
+      appendTextNode(valueRoot, "+");
+      pair.split("").forEach(function (zodiac) {
+        appendValueSpan(valueRoot, zodiac, rowHit && isSpecialZodiac(draw, zodiac));
+      });
+      appendTextNode(valueRoot, "】 开:" + openedResult(row));
     });
   }
 
@@ -1276,11 +1421,21 @@
     pairedHistoryRows(table, module, function (header, detail, row) {
       var groups = zodiacNumberGroups(row, 8);
       writePairedHeader(header, row, "╔8肖16码╗");
-      var lines = [groups.slice(0, 4), groups.slice(4, 8)].map(function (line) {
-        return line.map(function (group) { return group.zodiac + group.numbers.join("."); }).join("");
-      });
       var detailSlot = detail.querySelector("td > p > b > font");
-      if (detailSlot) setExistingText(detailSlot, row ? lines.join("\n") : "");
+      if (!detailSlot) return;
+      var draw = drawnAtoms(row);
+      // 8肖中特（mode 48）：候选肖 == 特肖即命中。每组的肖与码各占一个 span，
+      // 肖按特肖命中、码按特码命中，所以只有真正命中的那一项带黄底。标黄以本行
+      // 自己的判定为前提：判定为「错」的期一律不留黄底（S3）。
+      var rowHit = isHitRow(row);
+      clearNodeChildren(detailSlot);
+      groups.forEach(function (group, groupIndex) {
+        if (groupIndex === 4) detailSlot.appendChild(window.document.createElement("br"));
+        appendValueSpan(detailSlot, group.zodiac, rowHit && isSpecialZodiac(draw, group.zodiac));
+        appendValueSpan(detailSlot, group.numbers.join("."), rowHit && group.numbers.some(function (number) {
+          return isSpecialNumber(draw, number);
+        }));
+      });
     });
   }
 
@@ -1311,7 +1466,28 @@
       var category = zodiacs.some(function (value) { return "鼠牛虎猴狗猪".indexOf(value) >= 0; }) ? "凶丑" : "吉美";
       writePairedHeader(header, row, "╔三肖六码╗");
       var detailSlot = detail.querySelector("td > p > b > font");
-      if (detailSlot) setExistingText(detailSlot, row ? "【" + category + "】【" + zodiacs.join("") + "】\n【" + xiaoNumbers(row).join("-") + "】" : "");
+      if (!detailSlot) return;
+      var draw = drawnAtoms(row);
+      // 平特3肖（mode 470）的命中口径是「任何一个开奖号码的生肖落在候选肖里」，
+      // 所以展示的候选肖/候选码逐个与**整期 7 个号码**比对：命中的肖与命中的码
+      // 才带黄底，分组说明（凶丑/吉美）本身永远不高亮；标黄仍以本行判定为前提。
+      var rowHit = isHitRow(row);
+      clearNodeChildren(detailSlot);
+      if (!row) return;
+      appendTextNode(detailSlot, "【");
+      appendValueSpan(detailSlot, category, false);
+      appendTextNode(detailSlot, "】【");
+      zodiacs.forEach(function (zodiac) {
+        appendValueSpan(detailSlot, zodiac, rowHit && isFlatZodiac(draw, zodiac));
+      });
+      appendTextNode(detailSlot, "】");
+      detailSlot.appendChild(window.document.createElement("br"));
+      appendTextNode(detailSlot, "【");
+      xiaoNumbers(row).forEach(function (number, numberIndex) {
+        if (numberIndex) appendTextNode(detailSlot, "-");
+        appendValueSpan(detailSlot, number, rowHit && isDrawnNumber(draw, number));
+      });
+      appendTextNode(detailSlot, "】");
     });
   }
 
@@ -1347,12 +1523,25 @@
         return /^(?:blue|green|red)$/i.test(node.getAttribute("color") || "");
       });
       if (waveSlots.length !== 2) return;
+      var draw = drawnAtoms(row);
+      var waveHit = isHitRow(row) ? waveForNumber(draw.code) : "";
       waveSlots.forEach(function (slot, groupIndex) {
-        var label = groups[groupIndex] ? groups[groupIndex].split(":", 1)[0] + ":" : "";
+        var waveName = groups[groupIndex] ? groups[groupIndex].split(":", 1)[0] : "";
+        var label = waveName ? waveName + ":" : "";
         var directText = Array.prototype.filter.call(slot.childNodes, function (child) {
           return child.nodeType === 3;
         });
-        if (directText.length) directText[0].nodeValue = row ? label : "";
+        // 双波中特（mode 38）的命中口径是「特码落在候选波色里」：命中的波色才
+        // 高亮，所以波色标签也放进自己的 span（供应商模板里标签只是裸文本，
+        // 没有可标注的元素），未命中的波色与其中的号码一律不带黄底。
+        var labelSlot = slot.querySelector('[data-site-slot="wave-label"]');
+        if (!labelSlot) {
+          labelSlot = window.document.createElement("span");
+          labelSlot.setAttribute("data-site-slot", "wave-label");
+          slot.insertBefore(labelSlot, slot.firstChild);
+        }
+        labelSlot.textContent = row ? label : "";
+        markHitLeaf(labelSlot, Boolean(waveHit && waveName && waveHit === waveName));
         // Vendor dots (or previously converted commas) between number slots
         // become commas; any other stale text run is blanked so it can never
         // concatenate with the label. The conversion runs once with an empty
@@ -1360,14 +1549,19 @@
         directText.slice(1).forEach(function (text) {
           text.nodeValue = /^\s*[.,]\s*$/.test(text.nodeValue || "") ? "," : "";
         });
+        if (directText.length) directText[0].nodeValue = "";
         // Vendor highlight spans may carry a stale wave label; blank them so
-        // the label never concatenates with the freshly written one.
+        // the label never concatenates with the freshly written one. The label
+        // span is the one element this adapter owns and must stay untouched.
         Array.prototype.forEach.call(slot.querySelectorAll("span"), function (span) {
+          if (span === labelSlot) return;
           if (!span.children.length) span.textContent = "";
         });
         predictionLeaves(slot).forEach(function (numberSlot, numberIndex) {
           var values = groups[groupIndex] ? groups[groupIndex].split(":")[1].split(".") : [];
-          numberSlot.textContent = row ? values[numberIndex] || "" : "";
+          var value = row ? values[numberIndex] || "" : "";
+          numberSlot.textContent = value;
+          markHitLeaf(numberSlot, Boolean(waveHit) && isSpecialNumber(draw, value));
         });
       });
     });

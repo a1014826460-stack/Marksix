@@ -37,8 +37,12 @@ def test_twjsz666_three_head_four_tail_keeps_two_structured_dimensions():
     content = config.content_formatter(labels, None)
 
     assert content == '{"heads":["0头","1头","2头"],"tails":["0尾","1尾","2尾","3尾"]}'
+    # MIXED（头/尾双维度）任一维度命中即算命中；两个维度都没命中才算未命中。
+    # 依据：backend/CLAUDE.md「MIXED 的业务命中语义为任一维度命中即算命中」，
+    # 与供应商静态样本（只有尾命中也标「对」）一致。
     assert config.hit_checker("头:2头|尾:3尾", labels) is True
-    assert config.hit_checker("头:2头|尾:8尾", labels) is False
+    assert config.hit_checker("头:2头|尾:8尾", labels) is True
+    assert config.hit_checker("头:4头|尾:8尾", labels) is False
 
 
 def test_twjsz666_exact_mode_tables_are_bootstrapped(tmp_path):

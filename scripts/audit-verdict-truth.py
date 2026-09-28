@@ -350,6 +350,14 @@ class Mechanism:
     flat_zodiac: bool
     flat_tail: bool
     label_space: str
+    #: 机制专属 outcome 是多段复合串（`头:3头|尾:7尾`），每一段都是独立的可接受标签
+    #: （任一维度命中即算命中 / 杀类要求每一段都不在候选里）。真值必须按分段集合判定，
+    #: 不能拿整串去和候选标签取交集。
+    split_outcome_atoms: bool = False
+
+
+#: hit_checker 以「多段复合 outcome、任一维度命中即算命中」为契约的机制。
+SPLIT_OUTCOME_CHECKERS = {"three_head_four_tail_hit"}
 
 
 def is_exclude_mechanism(title: str, key: str) -> bool:
@@ -379,11 +387,31 @@ def mechanism_blobs(loader_text: str, row: dict[str, Any], prediction_text: str)
     return blobs
 
 
-def parse_content_labels(content: str, label_space: str) -> list[str]:
-    """按共同口径解析候选项标签（优先复用后端机制自己的 content_parser）。"""
+def parse_content_labels(
+    content: str,
+    label_space: str,
+    config: Any = None,
+    *,
+    prefer_mechanism_parser: bool = False,
+) -> list[str]:
+    """按共同口径解析候选项标签（优先复用后端机制自己的 content_parser）。
+
+    ``prefer_mechanism_parser=True`` 时（``split_outcome_atoms`` 机制，如「三头四尾」）
+    必须使用机制自己的 ``content_parser``：它的候选是 ``头:2头`` / ``尾:6尾`` 这种带维度
+    前缀的标签，通用解析器拿不到，会让真值计算恒为「未命中」。
+    """
     text = str(content or "").strip()
     if not text:
         return []
+    if prefer_mechanism_parser and config is not None:
+        parser = getattr(config, "content_parser", None)
+        if callable(parser):
+            try:
+                labels = [str(item).strip() for item in parser(text) if str(item).strip()]
+            except Exception:
+                labels = []
+            if labels:
+                return labels
     try:
         from predict.common import parse_json_or_plain_content
         from predict.mechanisms import parse_number_content, parse_pipe_label_content, parse_zodiac_content
@@ -412,19 +440,22 @@ def truth_label(
     special_zodiac: str,
     all_zodiacs: list[str],
     label_space: str,
-) -> tuple[str, set[str]] | None:
-    """返回 (真实开奖标签, 可接受标签集合)。
+) -> tuple[str, set[str], bool] | None:
+    """返回 (真实开奖标签, 可接受标签集合, 是否为「分段任一命中」口径)。
 
     绝杀/平特这类玩法可能有多个可接受标签（平特尾要看开奖 7 个号码的尾数），
     因此返回集合而不是单值。标签口径必须与 ``content_parser`` 的输出一致：
     例如「公式四尾」的标签是 ``6尾`` 而不是号码 ``06``。
+
+    第三个返回值只对 ``split_outcome_atoms`` 机制为 True：它的机制专属 outcome 是多段复合串
+    （``头:3头|尾:7尾``），每一段都是独立的可接受标签（任一维度命中即算命中）。
     """
     if mechanism.flat_tail:
         tails = {f"{int(code) % 10}尾" for code in (all_codes or [special_code]) if code.isdigit()}
-        return ("", tails) if tails else None
+        return ("", tails, False) if tails else None
     if mechanism.flat_zodiac:
         pool = set(all_zodiacs or ([special_zodiac] if special_zodiac else []))
-        return ("", pool) if pool else None
+        return ("", pool, False) if pool else None
     if not special_code:
         return None
 
@@ -434,7 +465,11 @@ def truth_label(
         try:
             value = str(loader(row, _FIXED_CONN_HOLDER.get("conn")) or "").strip()
             if value:
-                return (value, {value})
+                if mechanism.split_outcome_atoms:
+                    parts = {part.strip() for part in value.split("|") if part.strip()}
+                    if parts:
+                        return (value, parts, False)
+                return (value, {value}, False)
         except Exception:
             pass
 
@@ -450,7 +485,7 @@ def truth_label(
         label = special_zodiac
     else:
         label = special_code
-    return (label, {label})
+    return (label, {label}, False)
 
 
 def judge_vendor_row(
@@ -567,17 +602,20 @@ def judge(
     mechanism: Mechanism,
     content_labels: list[str],
     truth_labels: set[str],
+    require_all: bool = False,
 ) -> bool | None:
     """独立复算：候选项是否命中真实开奖（同一口径下的集合成员判定）。
 
     五行分组（`["火|01,02,09,..."]`）的候选标签是元素名，而真实命中目标是
     「特码所属五行」。这类标签不能靠标签集合直接判定，必须先把特码落到元素上，
     因此这里额外要求「特码号码确实出现在该元素分组的号码列表里」，避免误报 hit。
+
+    ``require_all=True`` 时要求真值集合的**每一项**都出现在候选里；默认是「任一命中」。
     """
     candidates = {str(item).strip() for item in content_labels if str(item).strip()}
     if not candidates or not truth_labels:
         return None
-    hit = bool(candidates & truth_labels)
+    hit = truth_labels <= candidates if require_all else bool(candidates & truth_labels)
     if mechanism.exclude:
         return not hit
     return hit
@@ -713,6 +751,7 @@ def build_mechanisms() -> tuple[dict[int, Mechanism], dict[str, Mechanism], dict
             flat_zodiac=bool(getattr(config, "flat_zodiac", False)),
             flat_tail=bool(getattr(config, "flat_tail", False)),
             label_space=label_space,
+            split_outcome_atoms=checker_name in SPLIT_OUTCOME_CHECKERS,
         )
         by_key[key] = mechanism
         if mode_id and mode_id not in by_mode:
@@ -790,7 +829,10 @@ def audit_site(
 
                 loader_text = content_loader_text(config, row)
                 content_labels = parse_content_labels(
-                    loader_text or str(row.get("content") or ""), mechanism.label_space
+                    loader_text or str(row.get("content") or ""),
+                    mechanism.label_space,
+                    config,
+                    prefer_mechanism_parser=mechanism.split_outcome_atoms,
                 )
                 truth_pair = truth_label(
                     mechanism=mechanism,
@@ -803,7 +845,12 @@ def audit_site(
                     label_space=mechanism.label_space,
                 )
                 truth = (
-                    judge(mechanism=mechanism, content_labels=content_labels, truth_labels=truth_pair[1])
+                    judge(
+                        mechanism=mechanism,
+                        content_labels=content_labels,
+                        truth_labels=truth_pair[1],
+                        require_all=truth_pair[2],
+                    )
                     if truth_pair
                     else None
                 )

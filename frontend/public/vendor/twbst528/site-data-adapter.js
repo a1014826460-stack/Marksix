@@ -864,6 +864,14 @@
     });
   }
 
+  // 供应商的「三期计划」/「综合绝杀」面板里，每个玩法是面板内的一个「（玩法名）」小节。
+  // moduleList 必须与小节**一一对应**：越界的小节（站点没有该玩法的授权模块）一律
+  // 渲染成「暂无后端资料」，绝不允许回退到上一小节的数据，否则同一个小节序列会把同一个
+  // 模块的行重复写多份（线上实测 twbst528「三期计划」的 271 期出现三条一模一样的行）。
+  function moduleAt(moduleList, index) {
+    return index >= 0 && index < moduleList.length ? moduleList[index] : null;
+  }
+
   function renderCompositeLines(title, moduleList, formatter) {
     var section = sectionByTitle(title);
     var cell = section && section.querySelector("table tbody > tr td");
@@ -879,7 +887,7 @@
         return;
       }
       if (!/\d+(?:-\d+)?期/.test(current)) return;
-      var rows = distinctRows(moduleList[Math.min(Math.max(moduleIndex, 0), moduleList.length - 1)]);
+      var rows = distinctRows(moduleAt(moduleList, moduleIndex));
       var row = rows[rowIndex];
       writeLineGroup(group, row ? formatter(row, moduleIndex) : "暂无后端资料", row ? hitValues(row) : []);
       rowIndex += 1;
@@ -920,7 +928,17 @@
   }
 
   function renderSanqiJihuaHistory(modules) {
-    renderCompositeLines("三期计划", [modules.shuangbo, modules.danshuangtema, modules.pt1xiao, modules["3zxt"] || modules.sanxiaozhongte], function (row) {
+    // 面板小节顺序：一波中特 / 单双计划 / 平特计划 / 3.肖中特 / 必出3码 / 平尾计划。
+    // 「必出3码」站点没有授权任何 3 码玩法，用 null 占位（渲染「暂无后端资料」），
+    // 不能省掉这一位——省掉会让「平尾计划」错位拿到「3.肖中特」的数据。
+    renderCompositeLines("三期计划", [
+      modules.shuangbo,
+      modules.danshuangtema,
+      modules.pt1xiao,
+      modules["3zxt"] || modules.sanxiaozhongte,
+      null,
+      modules.pt1wei
+    ], function (row) {
       return termValue(row).replace(/^第/, "") + "【" + displayLabels(row, "") + "】" + resultValue(row);
     });
   }

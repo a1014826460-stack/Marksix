@@ -352,7 +352,15 @@ def verdict_of(text: str) -> str:
     if not openings:
         tail_match = VERDICT_TAIL_RE.search(cleaned)
         return tail_match.group(1) if tail_match else ""
-    return _rightmost_verdict(cleaned[openings[-1].end():])
+    # 判定字紧跟在开奖结果后面。只在「最后一个开/開」之后的短窗口里找，
+    # 否则像 shengshi8800 的独家幽默那样，笑话正文里的「对我又是…」会被当成判定「对」。
+    tail = cleaned[openings[-1].end():]
+    window_hit = _rightmost_verdict(tail[:16])
+    if window_hit:
+        return window_hit
+    # 窗口里没有（例如「开奖【域名】」这类结构），退回「行尾判定字」口径。
+    tail_match = VERDICT_TAIL_RE.search(cleaned)
+    return tail_match.group(1) if tail_match else ""
 
 
 def highlight_count(html: str) -> int:

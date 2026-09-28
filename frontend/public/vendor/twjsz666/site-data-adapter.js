@@ -492,10 +492,13 @@
     });
   }
 
-  function markPredictionRow(element, row, index) {
+  function markPredictionRow(element, row, index, highlightScope) {
     if (!element || !element.setAttribute) return;
     if (index !== undefined) element.setAttribute("data-prediction-row", String(index));
     element.__twjsz666PredictionRow = row || null;
+    // 高亮范围默认是整行；「三头四尾」这类玩法必须只点亮命中的**候选**（头/尾），
+    // 不能去点亮同一行「开:37马对」里的开奖号码，所以单独限定到候选单元格。
+    element.__twjsz666HighlightScope = highlightScope || null;
   }
 
   // 命中值按优先级分组：先整颗（生肖/号码），再带「头」「尾」的位，最后才退化到裸数字，
@@ -557,10 +560,11 @@
   function highlightPredictionRow(element) {
     var row = element && element.__twjsz666PredictionRow;
     var groups = hitTokenGroups(row);
+    var scope = element && element.__twjsz666HighlightScope || element;
     for (var index = 0; index < groups.length; index += 1) {
       var matched = false;
       groups[index].forEach(function (token) {
-        if (highlightToken(element, token)) matched = true;
+        if (highlightToken(scope, token)) matched = true;
       });
       if (matched) return;
     }
@@ -658,13 +662,15 @@
       }
       var issue = displayIssue(row);
       var value = "三头【" + heads.join(".") + "】四尾【" + tails.join(".") + "】";
+      var candidateSlot = tr.querySelector(".zl") || cells[1];
       if (cells.length === 1) setText(cells[0], issue + " " + value + " " + resultText(row));
       else {
         setText(cells[0], issue);
-        setText(tr.querySelector(".zl") || cells[1], value);
+        setText(candidateSlot, value);
         if (cells[2]) setText(cells[2], resultText(row));
       }
-      markPredictionRow(tr, row, index);
+      // 只点亮候选单元格里命中的头/尾（「错」的当期一个黄底都不留）。
+      markPredictionRow(tr, row, index, candidateSlot);
     });
   }
   function renderFourCharacterFlatXiaoUnavailable(section) { clearUnavailableSlots(section); }

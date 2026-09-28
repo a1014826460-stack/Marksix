@@ -172,8 +172,16 @@ def load_recent_created_rows(
 ) -> list[dict[str, Any]]:
     try:
         created_columns = set(table_column_names(conn, CREATED_SCHEMA_NAME, table_name))
-        selected_columns = [column for column in ("title", "content", "jiexi") if column in created_columns]
-        if "content" not in created_columns or not selected_columns:
+        # Text-pool modes do not carry a `content` column at all: mode 52 四字玄机 and
+        # mode 62 欲钱解特诗 persist their display value in `title` (plus the paired
+        # `jiexi`). Requiring `content` here made the history always empty for those
+        # modes, so `enforce_three_period_uniqueness(52)` bailed out on
+        # `len(recent_tokens) < required_recent` and the generator could emit the same
+        # title for many consecutive issues. Load whichever display columns exist.
+        selected_columns = [
+            column for column in ("title", "content", "jiexi") if column in created_columns
+        ]
+        if not selected_columns:
             return []
         selected_sql = ", ".join(quote_identifier(column) for column in selected_columns)
         table_ref = f'{quote_identifier(CREATED_SCHEMA_NAME)}.{quote_identifier(table_name)}'

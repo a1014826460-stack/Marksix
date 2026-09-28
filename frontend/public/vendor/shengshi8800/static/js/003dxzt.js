@@ -34,12 +34,14 @@ $.ajax({
                 let xiao = [];
                 let ma = [];
                 let maValue = [];
-                let content = JSON.parse(d.content);
+                // content 兜底解析：后端 content 在部分 mode/期次上不是 JSON（纯中文串 / `标签|值` / 逗号串），
+                // 旧写法 JSON.parse 抛错会中断 success 回调，让整个模块容器保持空白。改用 util.js 的 parseContentList。
+                let content = parseContentList(d.content);
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])
-                    maValue[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    maValue[i] = c[1] || '';
+                    ma.push(...(c[1] || '').split(','));
                 }
                 let c = [];
                 // 大/小两池合起来覆盖 01..49，按号码落池高亮恒为真，因此这里只输出标签，

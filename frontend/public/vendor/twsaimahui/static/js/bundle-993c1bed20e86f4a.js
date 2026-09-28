@@ -6241,7 +6241,7 @@ color: #FF0000;
 </table>*/
 
 ;
-﻿
+
 $.ajax({
     url: httpApi + `/api/kaijiang/getShaXiao?web=${web}&type=${type}&num=1`,
     type: 'GET',
@@ -6255,28 +6255,38 @@ $.ajax({
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
-                let codeSplit = d.res_code.split(',');
-                let sxSplit = d.res_sx.split(',');
-                let code = codeSplit[codeSplit.length-1]||'';
-                let sx = sxSplit[sxSplit.length-1]||'';
-                let xiao = d.content.split(',');
+                // null/undefined 安全的 CSV 解析：`String(null)` 会得到 'null'，会被误判成已开奖。
+                let csv = function (v) { return (v === null || v === undefined) ? [] : String(v).split(','); };
+                let codeSplit = csv(d.res_code);
+                let sxSplit = csv(d.res_sx);
+                // 开奖口径：res_code/res_sx 第 1 项 = 本期特码/特肖（与 058s2x.js / 016sha3x.js 一致）。
+                let code = codeSplit[0]||'';
+                let sx = sxSplit[0]||'';
+                let opened = !!(code && sx);
+                let xiao = (d.content === null || d.content === undefined) ? [] : String(d.content).split(',');
                 let xiaoV = [];
                 let ma = [];
 
+                // 绝杀语义：杀掉的生肖「不含」开奖特肖 = 命中 = 准；含 = 错。
+                // 旧写法用 `xiao[i].indexOf(sx) === -1`（空 sx 会得到 0 → 判成「不含」），
+                // 未开奖期因此被写成「？00错」并把候选肖标黄，同时违反 S1 与 S3。
+                // 现在与 058s2x.js / 016sha3x.js 对齐：未开奖不判定、不高亮。
                 let c1 = [];
-                let zj = false;
-                for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiao[i].indexOf(sx) === -1) {
-                        zj = true;
-                        c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
-                    }else {
-                        c1.push(`${xiao[i]}`)
-                    }
+                let hitAny = false;
+                for (let k = 0; k < xiao.length; k++) {
+                    if (opened && sx && xiao[k].indexOf(sx) !== -1) { hitAny = true; }
+                    c1.push(`<span>${xiao[k]}</span>`);
                 }
+                let zj = opened && !hitAny;
+
+                let resHtml = opened
+                    ? (`开:${sx}${code}${zj ? '准' : '错'}`)
+                    : '开:待开奖';
+
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>绝杀一肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】开:${sx||'？'}${code||'00'}${zj? (sx?'准':'--'):'错'}
+${d.term}期</strong><span class='styleliao'><strong>绝杀一肖</strong></span>:【<span class='stylezi'><strong>${c1.join('')}</strong></span><strong>】${resHtml}
 </strong>
 </td>
 </tr>

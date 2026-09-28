@@ -147,10 +147,16 @@ _BLOCKED_RULE = PredictionGenerationRule(
 )
 
 
-def _rule(rule_id: str, truth_outcome: TruthOutcome, *, prefix_width: int = 1) -> PredictionGenerationRule:
+def _rule(
+    rule_id: str,
+    truth_outcome: TruthOutcome,
+    *,
+    prefix_width: int = 1,
+    revision: int = 1,
+) -> PredictionGenerationRule:
     return PredictionGenerationRule(
         rule_id=rule_id,
-        rule_revision=1,
+        rule_revision=revision,
         supported=True,
         block_reason="",
         cross_site_prefix_width=prefix_width,
@@ -216,7 +222,15 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     489: _rule("zodiac", _special_zodiac),
     490: _rule("half_wave_exclusion", _special_half_wave),
     491: _rule("tail", _special_tail),
-    492: _rule("head_tail", lambda truth, _conn: f"头:{_special_head(truth, _conn)}|尾:{_special_tail(truth, _conn)}"),
+    # 三头四尾 (mode 492)：MIXED 任一维度命中口径。2026-09-28 之前
+    # ``three_head_four_tail_hit`` 要求头与尾同时命中，与「MIXED 任一维度命中」的项目约束
+    # 及供应商样本口径不一致；语义修正后 rule_revision 从 1 升到 2，
+    # 让 ``prediction_generation_controls`` 里旧版本的验证结果可以被区分出来。
+    492: _rule(
+        "head_tail",
+        lambda truth, _conn: f"头:{_special_head(truth, _conn)}|尾:{_special_tail(truth, _conn)}",
+        revision=2,
+    ),
     493: _rule("number", _special_number, prefix_width=3),
     494: _rule("number_exclusion", _special_number, prefix_width=2),
 }

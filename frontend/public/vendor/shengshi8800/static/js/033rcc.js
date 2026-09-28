@@ -14,7 +14,9 @@ $.ajax({
         let caox = '';
         if(data.length>0){
             for (let i in data) {
-                data[i]['content'] = JSON.parse(data[i].content);
+                // content 兜底解析：后端 content 在部分 mode/期次上不是 JSON（纯中文串 / `标签|值` / 逗号串），
+                // 旧写法 JSON.parse 抛错会中断 success 回调，让整个模块容器保持空白。改用 util.js 的 parseContentList。
+                data[i]['content'] = parseContentList(data[i].content);
                 data[i].value = '';
                 for (let i2 in data[i].content) {
                     let split = data[i]['content'][i2].split('|');
@@ -61,8 +63,8 @@ $.ajax({
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0].split('')[0])
-                    xiaoV[i] = c[1];
-                    ma.push(...c[1].split(','));
+                    xiaoV[i] = c[1] || '';
+                    ma.push(...(c[1] || '').split(','));
                 }
 
                 let c1 = [];

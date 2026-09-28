@@ -63,6 +63,7 @@ def _outcome_description(rule_id: str) -> str:
         "parity": "special number parity is in any candidate",
         "wave": "special number wave is in any candidate",
         "half_wave_exclusion": "special half-wave is absent from every candidate",
+        "head_tail": "special number head OR tail is in its candidate group (mixed: any dimension)",
         "combined_parity": "special digit-sum parity is in any candidate",
         "combined_size": "special digit-sum size is in any candidate",
         "blocked_pending_rule": "blocked_pending_rule",

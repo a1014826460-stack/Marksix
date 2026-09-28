@@ -233,7 +233,16 @@ def quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 def table_exists(conn: Any, table_name: str) -> bool:
-    return conn.table_exists(table_name)
+    """表存在性探测；没有可用连接时按「不存在」处理。
+
+    公开页在部分调用路径上拿不到数据库连接（例如 ``serialize_public_history_row``
+    只为复算判定而调用 ``outcome_loader``）。这类玩法（头/尾/单双/大小）在没有
+    ``fixed_data`` 时本来就有等价的数字兜底标签，因此这里退化为 False 让兜底生效，
+    而不是抛 ``AttributeError`` 把整个判定打断。
+    """
+    if conn is None or not hasattr(conn, "table_exists"):
+        return False
+    return bool(conn.table_exists(table_name))
 
 def normalize_fixed_label(label: str) -> str:
     """把 fixed_data 的部分分类名归一为预测玩法使用的标签名。"""

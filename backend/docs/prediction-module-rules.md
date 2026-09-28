@@ -12,6 +12,17 @@ The special-number wave comes from `res_color` (last value → 红波/蓝波/绿
 as fallback (`predict.categories.size_parity.special_wave_from_row`) and is embedded in the composite outcome
 by `public.api._compute_outcome_from_row`.
 
+Half-wave modules (mode 58 绝杀半波 / mode 490 杀两半波) predict the candidate as the **half-wave label**
+itself (`蓝双` / `绿单`), so `_compute_outcome_from_row` must also carry the half-wave atom
+(`{波色}{单双}` = `蓝双`) next to the wave and parity atoms; without it the `label in outcome` substring
+check can never match and `excludes_hit` returns `True` for every row (the whole column was permanently
+"对" before 2026-09-28).
+
+Mode 492 三头四尾 is a `PredictionCategory.MIXED` play (`头:` / `尾:` label prefixes), so its hit semantics
+follow the repo-wide mixed rule — **any dimension hits** (特码头或特尾任一落入对应候选即命中), implemented by
+`predict.mechanisms.three_head_four_tail_hit` and mirrored by
+`frontend/lib/prediction-contract.ts::verifyVerdictAgainstCandidates`.
+
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
 | 3 | rcca | 肉菜草肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
@@ -83,7 +94,7 @@ by `public.api._compute_outcome_from_row`.
 | 489 | liuxiaoliuma | 六肖六码 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 490 | shaliangbanbo | 杀两半波 | half_wave_exclusion | special half-wave is absent from every candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 491 | gongshi_siw | 公式四尾 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 492 | three_head_four_tail | 三头四尾 | head_tail | head_tail | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 492 | three_head_four_tail | 三头四尾 | head_tail | special number head OR tail is in its candidate group (mixed: any dimension) | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 493 | selected_22_codes | 精选22码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 3; adjacent: full ordered signature |
 | 494 | steady_kill_7_codes | 稳杀7码 | number_exclusion | special number is absent from every candidate | controlled_future | supported | cross-site prefix: 2; adjacent: full ordered signature |
 | 495 | expert_publications | 精准台湾高手资料 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |

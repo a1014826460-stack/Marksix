@@ -203,6 +203,40 @@ def test_apply_uniqueness_routes_mode_52_through_title_payloads(monkeypatch):
     assert result["jiexi"] == "牛羊马虎猴鼠猪"
 
 
+def test_load_three_period_history_rows_passes_display_columns_to_repository(monkeypatch):
+    """mode 52 的历史加载必须真正落到 created 表，不能因为缺少 content 列返回空。
+
+    回归：`generation_repository.load_recent_created_rows` 曾经硬性要求 `content`
+    列存在；`created.mode_payload_52` 只有 title/jiexi，于是历史恒为空，
+    「相邻五期展示值不得相同」在线上从未对四字玄机生效（web_id=5 连续四期
+    title 都是「黯然無光」）。这里同时锁定参数传递，避免再次被静默短路。
+    """
+    captured: dict[str, object] = {}
+
+    def fake_loader(conn, **kwargs):
+        captured.update(kwargs)
+        return [{"title": "黯然無光", "jiexi": "虎马兔龙牛羊狗"}]
+
+    monkeypatch.setattr(
+        service.generation_repository, "load_recent_created_rows", fake_loader
+    )
+
+    rows = service._load_three_period_history_rows(
+        object(),
+        table_name="mode_payload_52",
+        lottery_type=3,
+        site_web_id=5,
+        mode_id=52,
+    )
+
+    assert rows == [{"title": "黯然無光", "jiexi": "虎马兔龙牛羊狗"}]
+    assert captured["table_name"] == "mode_payload_52"
+    assert captured["lottery_type"] == 3
+    assert captured["site_web_id"] == 5
+    assert captured["mode_id"] == 52
+    assert captured["limit"] == service.THREE_PERIOD_HISTORY_LIMIT
+
+
 def test_apply_uniqueness_keeps_mode_52_title_when_mapping_table_missing_or_same(monkeypatch):
     """候选表缺 mode 52 行、或候选与最近四期都相同时，保持原值并给出告警。"""
     row = {"title": "黯然無光", "jiexi": "蛇鸡虎兔龙鼠羊"}

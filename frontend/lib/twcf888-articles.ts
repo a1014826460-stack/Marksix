@@ -31,6 +31,16 @@ export type Twcf888ArticleDefinition = {
   moduleStatus: Twcf888ModuleStatus
   modeId: number | null
   snapshotPath: string
+  /**
+   * 判定取反的栏目。
+   *
+   * `绝杀一波`（2290）与 `一波中特`（3049）共用 mode 143 的同一份候选与同一个
+   * `is_correct`，但玩法相反：mode 143 的 `is_correct=true` 表示「特码波色落在候选里」，
+   * 而「绝杀一波」的准 = 特码波色**没有**落在被杀波色里（供应商静态样例
+   * `index/index/jsb/id/2290.html`：杀蓝波 + 开 24 红 → 对；杀蓝波 + 开 25 蓝 → 错）。
+   * 不做取反就会出现「杀掉的波色开出来了却显示对」。
+   */
+  verdictInverted?: boolean
 }
 
 export type Twcf888ArticleDetail = {
@@ -74,7 +84,7 @@ const ARTICLE_DEFINITIONS: readonly Twcf888ArticleDefinition[] = [
   { id: "2287", title: "绝杀一行", group: "jsb", moduleStatus: "live_backed", modeId: 98, snapshotPath: "index/index/jsb/id/2287.html" },
   { id: "2288", title: "绝杀二肖", group: "jsb", moduleStatus: "live_backed", modeId: 473, snapshotPath: "index/index/jsb/id/2288.html" },
   { id: "2289", title: "绝杀二尾", group: "jsb", moduleStatus: "live_backed", modeId: 95, snapshotPath: "index/index/jsb/id/2289.html" },
-  { id: "2290", title: "绝杀一波", group: "jsb", moduleStatus: "live_backed", modeId: 143, snapshotPath: "index/index/jsb/id/2290.html" },
+  { id: "2290", title: "绝杀一波", group: "jsb", moduleStatus: "live_backed", modeId: 143, snapshotPath: "index/index/jsb/id/2290.html", verdictInverted: true },
   { id: "2291", title: "绝杀一头", group: "jsb", moduleStatus: "live_backed", modeId: 41, snapshotPath: "index/index/jsb/id/2291.html" },
   { id: "2292", title: "绝杀一肖", group: "jsb", moduleStatus: "live_backed", modeId: 472, snapshotPath: "index/index/jsb/id/2292.html" },
 
@@ -628,9 +638,17 @@ function buildArticleRows(
   history: PublicHistoryRow[]
 ): Twcf888ArticleRow[] {
   return history.map((row) => {
-    const predictionHtml = buildArticlePredictionHtml(definition, row)
-    const effectiveCorrect =
+    const rawCorrect =
       definition.modeId === 45 ? resolveBlackWhiteDisplay(row).isCorrect : row.is_correct
+    // 绝杀一波（2290）与一波中特（3049）共用 mode 143 的候选与 is_correct，但玩法相反：
+    // 先按 `verdictInverted` 收敛成该栏目自己的判定，再交给展示分支，
+    // 否则「杀掉的波色开出来」会被显示成「对」。取反后也没有可高亮的命中项
+    // （杀号命中 = 候选里没有开奖目标），因此渲染行不会残留黄色高亮。
+    const effectiveCorrect =
+      definition.verdictInverted && row.is_opened && rawCorrect !== null ? !rawCorrect : rawCorrect
+    const renderRow =
+      effectiveCorrect === rawCorrect ? row : { ...row, is_correct: effectiveCorrect }
+    const predictionHtml = buildArticlePredictionHtml(definition, renderRow)
 
     let resultHtml = "???????"
     if (row.is_opened) {

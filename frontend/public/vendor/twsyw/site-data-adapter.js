@@ -32,6 +32,14 @@
     });
   }
   function predictionText(row) { return String(row && row.prediction && row.prediction.text || "").replace(/[\[\]"]/g, "").trim(); }
+  // 读取「不在 tokens 里」的候选列（如 mode 5 天地生肖的 `xiao`）。
+  // tokens 是对外契约不能改，候选列只能从 canonical row 的 raw / prediction.extra 里取。
+  function rawField(row, key) {
+    var raw = row && row.raw;
+    if (raw && raw[key] !== undefined && raw[key] !== null && String(raw[key]).trim() !== "") return raw[key];
+    var extra = row && row.prediction && row.prediction.extra;
+    return extra ? extra[key] : undefined;
+  }
   function tokens(row) {
     var value = row && row.prediction && row.prediction.tokens;
     return Array.isArray(value) ? value.map(String).filter(Boolean) : predictionText(row).split(/[|,，、\s]+/).filter(Boolean);
@@ -60,15 +68,36 @@
   }
   function section(id) { return document.getElementById(id); }
   function historyRows(root) { return root ? Array.prototype.filter.call(root.querySelectorAll("tr"), function (row) { return row.querySelector("[data-prediction-issue]"); }) : []; }
-  function writeRow(row, term, content, opened, hit) {
+  function writeRow(row, term, content, opened, hit, contentHtml) {
     var issue = row.querySelector("[data-prediction-issue]");
     var value = row.querySelector("[data-prediction-content]");
     var result = row.querySelector("[data-prediction-result]");
     Array.prototype.forEach.call(row.querySelectorAll("[data-prediction-hit]"), function (node) { node.removeAttribute("data-prediction-hit"); });
     issue.textContent = term || "";
-    value.textContent = content || "";
+    // contentHtml 用于「一行多个候选项、只有一个命中」的模块：只能给命中的那一项
+    // 加 data-prediction-hit，整块上黄底会把没命中的候选项也点亮（S2）。
+    if (contentHtml) value.innerHTML = contentHtml;
+    else value.textContent = content || "";
     result.textContent = opened || "";
-    if (hit) value.setAttribute("data-prediction-hit", "true");
+    if (hit && !contentHtml) value.setAttribute("data-prediction-hit", "true");
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // 一行多个候选项时，只把真正命中的那一项包进 data-prediction-hit。
+  function highlightOnly(items, hitValue, joiner) {
+    return items.map(function (item) {
+      var text = String(item == null ? "" : item);
+      return text && text === hitValue
+        ? '<span data-prediction-hit="true">' + escapeHtml(text) + "</span>"
+        : escapeHtml(text);
+    }).join(joiner == null ? "" : joiner);
   }
   function renderHistory(id, module, formatter) {
     var source = distinctRows(module);
@@ -85,9 +114,38 @@
     return "家禽野兽资料：家禽 " + domestic + "；野兽 " + wild;
   }
   function heavenly(row) { return predictionText(row).replace("|", "：").replace(/,/g, ""); }
+  // 天地生肖（mode 5）的真实候选是 `xiao` 列的 2 个生肖；`content` 只是静态的
+  // 「天肖/地肖」分组定义（整组 6 肖）。后端正是按 `xiao` 判定的，
+  // 直接渲染 content 会让展示值几乎恒定（S7），并且出现「天肖里含开奖特肖却显示错」。
+  function chosenZodiacs(row) {
+    var values = [];
+    var raw = rawField(row, "xiao");
+    if (Array.isArray(raw)) values = raw.map(String).filter(Boolean);
+    else if (typeof raw === "string") values = raw.split(/[|,，、\s]+/).map(function (v) { return v.trim(); }).filter(Boolean);
+    if (!values.length) {
+      labels(row).forEach(function (label) {
+        String(label).split(/[,，、\s]+/).forEach(function (part) {
+          var value = part.trim();
+          if (/^[鼠牛虎兔龙蛇马羊猴鸡狗猪]$/.test(value) && values.indexOf(value) < 0) values.push(value);
+        });
+      });
+    }
+    return values;
+  }
   function selectedCodes(row, count) { return numbers(row).slice(0, count).join("."); }
   function xiaoCodes(row, count) { return labels(row).slice(0, count).join(""); }
   function contentWithLabel(label, value) { return label + "资料：" + (value || "暂无后端资料"); }
+  // 特码 / 特肖（canonical row 的 result 字段）。
+  function specialParts(row) {
+    var result = row && row.result || {};
+    var last = function (value) {
+      var items = String(value || "").split(/[,，、|\s]+/).filter(Boolean);
+      return items.length ? items[items.length - 1] : "";
+    };
+    var code = last(result.code);
+    if (/^\d$/.test(code)) code = "0" + code;
+    return { code: code, zodiac: last(result.zodiac) };
+  }
 
   function renderFslx(modules) { renderHistory("fslx", modules.title_14, domesticWild); }
   function renderM24(modules) { renderHistory("m24", modules.ma24, function (row) { return selectedCodes(row, 24); }); }
@@ -114,7 +172,31 @@
       writeRow(row, issueOf(source) + "期", "24码资料：" + selectedCodes(code[index], 12) + "；四段资料：" + groupLabels(segment[index]).join(" "), resultText(source), source.result && source.result.isCorrect === true);
     });
   }
-  function renderNannv(modules) { renderHistory("nannv", modules.title_5, function (row) { return contentWithLabel("天地生肖", heavenly(row)); }); }
+  // 男女中特（`#nannv`）由 mode 5（天地生肖）供数：展示「天肖/地肖 + 本期 2 个候选生肖」，
+  // 与后端判定所用字段一致；命中时只给命中的那个生肖上黄底。
+  function renderNannv(modules) {
+    var sourceRows = distinctRows(modules.title_5);
+    historyRows(section("nannv")).forEach(function (row, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(row, "", "暂无后端资料", "", false);
+      var side = labels(source).slice(0, 1).join("") || "天地肖";
+      var chosen = chosenZodiacs(source);
+      if (!chosen.length) return writeRow(row, "", "暂无后端资料", "", false);
+      var isHit = source.result && source.result.isCorrect === true;
+      var hitZodiac = isHit ? specialParts(source).zodiac : "";
+      var body = hitZodiac && chosen.indexOf(hitZodiac) >= 0
+        ? highlightOnly(chosen, hitZodiac)
+        : chosen.map(escapeHtml).join("");
+      writeRow(
+        row,
+        issueOf(source) + "期",
+        "",
+        resultText(source),
+        false,
+        "天地生肖资料：【" + escapeHtml(side) + "+" + body + "】"
+      );
+    });
+  }
   function renderDanshuang(modules) {
     var parity = distinctRows(modules.title_132), size = distinctRows(modules.title_279);
     historyRows(section("danshuang")).forEach(function (row, index) {
@@ -139,7 +221,27 @@
   function renderKill3wei(modules) { renderHistory("kill3wei", modules.title_66, function (row) { return contentWithLabel("五尾", tailLabels(row).slice(0, 3).join(" ")); }); }
   function renderChengyu(modules) { renderHistory("chengyu", modules.qinqi, function (row) { return contentWithLabel("琴棋书画", xiaoCodes(row, 9)); }); }
   function renderShuangbo(modules) { renderHistory("shuangbo", modules.shuangbo, function (row) { return labels(row).slice(0, 2).join(""); }); }
-  function renderKill1tou(modules) { renderHistory("kill1tou", modules["3tou"], function (row) { return contentWithLabel("三头", headLabels(row, 1).join("")); }); }
+  function renderKill1tou(modules) {
+    // 绝杀一头（`#kill1tou`）由 mode 3tou（三头中特）供数，后端判定是
+    // 「特码头落在 3 个候选头之内」。因此必须把 3 个候选头都展示出来：
+    // 只显示第一个候选会让展示值连续多期完全相同（S7，审计 R5：
+    // 线上 270/269/268/267 四期都是「3头」），而且判定依据的第 2、3 个候选项
+    // 根本不可见，命中时也无从高亮。命中时只给命中的那个头上黄底。
+    var sourceRows = distinctRows(modules["3tou"]);
+    historyRows(section("kill1tou")).forEach(function (row, index) {
+      var source = sourceRows[index];
+      if (!source) return writeRow(row, "", "暂无后端资料", "", false);
+      var heads = headLabels(source, 3);
+      if (!heads.length) return writeRow(row, "", "暂无后端资料", "", false);
+      var isHit = source.result && source.result.isCorrect === true;
+      var digits = String(specialParts(source).code || "").replace(/[^0-9]/g, "");
+      var hitHead = isHit && digits ? digits.charAt(0) + "头" : "";
+      var body = hitHead && heads.indexOf(hitHead) >= 0
+        ? highlightOnly(heads, hitHead, ".")
+        : heads.map(escapeHtml).join(".");
+      writeRow(row, issueOf(source) + "期", "", resultText(source), false, contentWithLabel("三头", body));
+    });
+  }
   function renderFiveNoHit(modules) { renderHistory("five_no_hit", modules.selected_22_codes, function (row) { return contentWithLabel("五码", selectedCodes(row, 5)); }); }
   function renderCompositeKill(modules) {
     var kill = distinctRows(modules.juesha3xiao);

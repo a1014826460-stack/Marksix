@@ -97,20 +97,44 @@
 
   // hitSlot 指定命中项落在哪一列：多分组模块（单双各四肖 / 天地生肖）必须高亮
   // 真正命中的那一组，否则会出现「第二组命中却点亮第一组」的错位高亮。
-  function writeRow(row, issue, content, result, secondary, hit, hitSlot) {
+  // contentHtml 用于「一行多个候选项、只有一个命中」的模块（如波色）：此时必须
+  // 只给命中的那一项加 data-prediction-hit，整块上黄底会把没命中的候选项也点亮（S2）。
+  function writeRow(row, issue, content, result, secondary, hit, hitSlot, contentHtml) {
     var issueSlot = row.querySelector("[data-prediction-issue]");
     var contentSlot = row.querySelector("[data-prediction-content]");
     var secondarySlot = row.querySelector("[data-prediction-content-secondary]");
     var resultSlot = row.querySelector("[data-prediction-result]");
     clearHit(row);
     if (issueSlot) issueSlot.textContent = issue || "";
-    if (contentSlot) contentSlot.textContent = content || "";
+    if (contentSlot) {
+      if (contentHtml) contentSlot.innerHTML = contentHtml;
+      else contentSlot.textContent = content || "";
+    }
     if (secondarySlot) secondarySlot.textContent = secondary || "";
     if (resultSlot) resultSlot.textContent = result || "";
-    if (!hit) return;
+    if (!hit || contentHtml) return;
     var target = hitSlot === "secondary" ? secondarySlot : contentSlot;
     if (!target) target = contentSlot || secondarySlot;
     if (target) target.setAttribute("data-prediction-hit", "true");
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // 一行多个候选项时，只把真正命中的那一项包进 data-prediction-hit，
+  // 没命中的候选项保持无高亮（S2：只有命中才高亮）。
+  function highlightOnly(items, hitValue) {
+    return items.map(function (item) {
+      var text = String(item == null ? "" : item);
+      return text && text === hitValue
+        ? '<span data-prediction-hit="true">' + escapeHtml(text) + "</span>"
+        : escapeHtml(text);
+    }).join("+");
   }
 
   function renderUnavailableHistory(id) {
@@ -140,15 +164,58 @@
         if (!source) return writeRow(row, "", "暂无后端资料", "");
         var codeCount = [1, 3, 5, 7][rowIndex];
         var xiaoCount = rowIndex >= 4 && rowIndex <= 11 ? rowIndex - 3 : 0;
-        var value = codeCount ? codeValues(source).slice(0, codeCount).join(".") : xiaoCount ? labels(source).slice(0, xiaoCount).join("") : listValue(rawValue(source, "wave")).slice(0, 2).join("+");
         var label = ["一码", "三码", "五码", "七码", "一肖", "二肖", "三肖", "四肖", "五肖", "六肖", "七肖", "九肖", "波色"][rowIndex] || "";
-        writeRow(row, issueOf(source) + "期:" + label, value || "暂无后端资料", resultText(source), "", source.result && source.result.isCorrect === true);
+        var issue = issueOf(source) + "期:" + label;
+        if (!codeCount && !xiaoCount) {
+          // 波色行：候选是 mode 38（双波中特）的两个波色，落在 token 正文里
+          // （`蓝波,绿波`），并不在 raw.wave 列。只读 raw.wave 会取到空值 →
+          // 页面渲染兜底串「暂无后端资料」、还给它上了黄底并显示「对」，
+          // 属 S1（未命中/无数据不得给判定）+ S2（兜底串不该高亮）违规。
+          var waves = listValue(rawValue(source, "wave")).slice(0, 2);
+          if (!waves.length) {
+            waves = [];
+            labels(source).forEach(function (label) {
+              String(label).split(/[,，、\s]+/).forEach(function (part) {
+                var value = part.trim();
+                if (value && waves.indexOf(value) < 0) waves.push(value);
+              });
+            });
+            waves = waves.slice(0, 2);
+          }
+          if (!waves.length) {
+            // 真正的数据缺失：不给判定、不高亮。
+            return writeRow(row, issue, "暂无后端资料", "");
+          }
+          var isHit = source.result && source.result.isCorrect === true;
+          var hitWave = isHit ? specialWave(source) : "";
+          return writeRow(
+            row,
+            issue,
+            waves.join("+"),
+            resultText(source),
+            "",
+            false,
+            "content",
+            // 只有命中的那个波色加黄底；没命中的波色保持无高亮（S2）。
+            hitWave && waves.indexOf(hitWave) >= 0 ? highlightOnly(waves, hitWave) : waves.map(escapeHtml).join("+")
+          );
+        }
+        var value = codeCount ? codeValues(source).slice(0, codeCount).join(".") : labels(source).slice(0, xiaoCount).join("");
+        writeRow(row, issue, value || "暂无后端资料", resultText(source), "", source.result && source.result.isCorrect === true);
       });
     });
   }
 
   function predictionText(row) {
     return String(row && row.prediction && row.prediction.text || rawValue(row, "content") || "").trim();
+  }
+
+  // mode 38（双波中特）的命中目标是**特码波色**：接口给的是 `red/blue/green`，
+  // 展示层用的是 `红波/蓝波/绿波`。
+  var WAVE_BY_COLOR = { red: "红波", blue: "蓝波", green: "绿波" };
+  function specialWave(row) {
+    var color = String(row && row.result && row.result.color || "").trim().toLowerCase();
+    return WAVE_BY_COLOR[color] || "";
   }
 
   function resultParts(row) {
