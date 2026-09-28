@@ -310,6 +310,214 @@ assert(
   `候选列仍不含真实开奖时必须改判为未命中，got ${JSON.stringify(stillContradicted?.result)}`
 )
 
+// ── 2c. 大小+2头（vendor `daxiao_2tou`）：口径是「特码大小 或 头位数」任一命中 ──
+// 线上缺陷：twcaibawang 首页「大小+2头」连续多期显示「错」。
+// 后端 `vendor/homepage_modules.py::_build_daxiao_2tou` 的口径是
+// `(大 and 特码>=25) or (小 and 特码<=24) or 特码(两位).startswith(头码)`，
+// 而契约层只按「候选集合是否含特码/特肖」交叉校验：候选是 `【大数` / `32】`
+// 两个标签，特码 37、特肖 马 都不在其中 → 判成 contradicted → 上游的「对」被
+// 改写成「错」（270 期 `大` + 特码 37 明明命中大小维度）。
+// 这里要求：大小维度命中必须放行；大小维度不命中但头位数命中也要放行。
+const VENDOR_SITE = { site_id: 5, web_id: 5, site_key: "twcaibawang", lottery_type: 3 }
+
+function vendorDaxiao2Tou(rows: Array<Record<string, unknown>>) {
+  return buildCanonicalPredictionModules({
+    vendorHomepageModules: {
+      ok: true,
+      site: VENDOR_SITE,
+      data: [{
+        module_key: "daxiao_2tou",
+        title: "大小+2头",
+        display_style: "single-line",
+        history: rows,
+      }],
+    } as never,
+  })[0]?.rows || []
+}
+
+function daxiao2TouRow(issue: string, daxiao: string, touCode: string, resCode: string, resSx: string, isCorrect: boolean | null) {
+  return {
+    issue,
+    year: "2026",
+    term: issue.slice(-3),
+    daxiao,
+    tou_code: touCode,
+    display_text: `【${daxiao}数+${touCode}】`,
+    result: { res_code: resCode, res_sx: resSx, res_color: "blue", result_text: `开${resCode}${resSx}`, is_opened: Boolean(resCode) },
+    is_opened: Boolean(resCode),
+    is_correct: isCorrect,
+    raw: { source_mode_ids: [57, 108] },
+  }
+}
+
+const dx2touRows = vendorDaxiao2Tou([
+  // 270 期：`大` + 特码 37（≥25）→ 大小维度命中，页面必须显示「对」
+  daxiao2TouRow("2026270", "大", "32", "37", "马", true),
+  // 269 期：`大` + 特码 46（≥25）→ 大小维度命中，页面必须显示「对」
+  daxiao2TouRow("2026269", "大", "37", "46", "鸡", true),
+  // 263 期：`小` + 特码 37，大小不命中，但头位数 3 命中（37 以 3 开头）→ 「对」
+  daxiao2TouRow("2026263", "小", "33", "37", "马", true),
+  // 268 期：`大` + 特码 11（≤24），头码 3 也没命中 → 上游判「错」，页面保持「错」
+  daxiao2TouRow("2026268", "大", "36", "11", "猴", false),
+])
+const dx2touByIssue = new Map(dx2touRows.map((row) => [row.issue, row]))
+
+assert(
+  dx2touByIssue.get("2026270")?.result.isCorrect === true,
+  `大小+2头 270 期大数命中不得被改判，got ${JSON.stringify(dx2touByIssue.get("2026270")?.result)}`
+)
+assert(
+  dx2touByIssue.get("2026270")?.status === "opened-hit",
+  `大小+2头 270 期 status 必须是 opened-hit，got ${dx2touByIssue.get("2026270")?.status}`
+)
+assert(
+  dx2touByIssue.get("2026269")?.result.isCorrect === true,
+  `大小+2头 269 期大数命中不得被改判，got ${JSON.stringify(dx2touByIssue.get("2026269")?.result)}`
+)
+assert(
+  dx2touByIssue.get("2026263")?.result.isCorrect === true,
+  `大小+2头 263 期头位数命中不得被改判，got ${JSON.stringify(dx2touByIssue.get("2026263")?.result)}`
+)
+assert(
+  dx2touByIssue.get("2026268")?.result.isCorrect === false,
+  `大小+2头 268 期上游判错时页面必须保持「错」，got ${JSON.stringify(dx2touByIssue.get("2026268")?.result)}`
+)
+
+// ── 2d. 候选口径无法表达判定的复合玩法：不得降级（unverifiable 放行） ──
+// `大小中特带1头`（mode 108）：`content` 是 `大|32`，`tou` 是后端另算的头数标签。
+// 实测个别站点后端会给出与 `content` 不一致的判定，本层无法复算 → 必须放行上游判定。
+const dxztt1VendorFree = buildCanonicalPredictionModules({
+  sitePageData: {
+    site: {} as never,
+    draw: {} as never,
+    modules: [{
+      id: 108,
+      mechanism_key: "dxztt1",
+      title: "大小中特带1头",
+      default_modes_id: 108,
+      default_table: "mode_payload_108",
+      sort_order: 1,
+      status: true,
+      history: [{
+        issue: "2026190",
+        year: "2026",
+        term: "190",
+        prediction_text: '["大|45"]',
+        result_text: "狗45",
+        is_opened: true,
+        is_correct: true,
+        source_web_id: 10,
+        raw: {
+          content: '["大|45"]',
+          tou: '["4头"]',
+          res_code: "20,19,38,35,23,42,45",
+          res_sx: "猪,鼠,蛇,猴,猴,牛,狗",
+        },
+      }],
+    }],
+  },
+})[0]?.rows[0]
+
+assert(
+  dxztt1VendorFree?.result.isCorrect === true,
+  `大小中特带1头（大小维度命中）不得被改判，got ${JSON.stringify(dxztt1VendorFree?.result)}`
+)
+
+// `六尾出特`（mode 487）：候选是 `5尾` / `7尾` 这类尾数标签，特码 45 的尾数 5 在候选内。
+// 通用「号码原子」校验会把 `5尾` 读成号码 `05`，从而把「对」改写成「错」。
+const liuweichuteHit = buildCanonicalPredictionModules({
+  sitePageData: {
+    site: {} as never,
+    draw: {} as never,
+    modules: [{
+      id: 487,
+      mechanism_key: "liuweichute",
+      title: "六尾出特",
+      default_modes_id: 487,
+      default_table: "mode_payload_487",
+      sort_order: 1,
+      status: true,
+      history: [{
+        issue: "2026190",
+        year: "2026",
+        term: "190",
+        prediction_text: "5尾,7尾,4尾,2尾,3尾,8尾",
+        result_text: "狗45",
+        is_opened: true,
+        is_correct: true,
+        source_web_id: 10,
+        raw: { content: "5尾,7尾,4尾,2尾,3尾,8尾", res_code: "20,19,38,35,23,42,45", res_sx: "猪,鼠,蛇,猴,猴,牛,狗" },
+      }, {
+        issue: "2026189",
+        year: "2026",
+        term: "189",
+        prediction_text: "0尾,4尾,8尾,7尾,5尾,2尾",
+        result_text: "狗09",
+        is_opened: true,
+        is_correct: false,
+        source_web_id: 10,
+        raw: { content: "0尾,4尾,8尾,7尾,5尾,2尾", res_code: "32,36,39,05,33,37,09", res_sx: "猪,羊,龙,虎,狗,马,狗" },
+      }],
+    }],
+  },
+})[0]?.rows || []
+
+assert(
+  liuweichuteHit[0]?.result.isCorrect === true,
+  `六尾出特尾数命中不得被改判，got ${JSON.stringify(liuweichuteHit[0]?.result)}`
+)
+assert(
+  liuweichuteHit[1]?.result.isCorrect === false,
+  `六尾出特尾数不命中时页面必须保持「错」，got ${JSON.stringify(liuweichuteHit[1]?.result)}`
+)
+
+// `头数单双`（mode 488）：候选是 `4头单` 这类「头数+单双」，特码 45 是 4头单。
+const toudanshuangHit = buildCanonicalPredictionModules({
+  sitePageData: {
+    site: {} as never,
+    draw: {} as never,
+    modules: [{
+      id: 488,
+      mechanism_key: "toudanshuang",
+      title: "头数单双",
+      default_modes_id: 488,
+      default_table: "mode_payload_488",
+      sort_order: 1,
+      status: true,
+      history: [{
+        issue: "2026190",
+        year: "2026",
+        term: "190",
+        prediction_text: '["4头单", "3头单", "1头双", "2头单", "0头单"]',
+        result_text: "狗45",
+        is_opened: true,
+        is_correct: true,
+        source_web_id: 10,
+        raw: { content: '["4头单", "3头单", "1头双", "2头单", "0头单"]', res_code: "20,19,38,35,23,42,45", res_sx: "猪,鼠,蛇,猴,猴,牛,狗" },
+      }, {
+        issue: "2026187",
+        year: "2026",
+        term: "187",
+        prediction_text: '["0头双", "3头单", "0头单", "3头双", "2头双"]',
+        result_text: "虎29",
+        is_opened: true,
+        is_correct: false,
+        source_web_id: 10,
+        raw: { content: '["0头双", "3头单", "0头单", "3头双", "2头双"]', res_code: "07,27,02,36,49,45,29", res_sx: "鼠,龙,蛇,羊,马,狗,虎" },
+      }],
+    }],
+  },
+})[0]?.rows || []
+
+assert(
+  toudanshuangHit[0]?.result.isCorrect === true,
+  `头数单双 4头单 命中不得被改判，got ${JSON.stringify(toudanshuangHit[0]?.result)}`
+)
+assert(
+  toudanshuangHit[1]?.result.isCorrect === false,
+  `头数单双 2头双 不命中时页面必须保持「错」，got ${JSON.stringify(toudanshuangHit[1]?.result)}`
+)
+
 // ── 3. vendor 模块行：虚报命中同样必须改判 ────────────────────
 const contradictedVendor = buildCanonicalPredictionModules({
   vendorHomepageModules: {

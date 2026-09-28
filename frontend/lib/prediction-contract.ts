@@ -343,6 +343,208 @@ export function isFlatPredictionMechanism(...hints: unknown[]) {
 }
 
 /**
+ * 复合维度玩法（大小 / 尾数 / 头数单双）的候选口径。
+ *
+ * 这些玩法的候选项是**维度标签**而不是号码原子：
+ *   - 大小中特（mode 57）：`大` / `小`，01-24 为小、25-49 为大；
+ *   - 大小中特带1头（mode 108）：同 mode 57，`content` 是 `大|32`（标签|头位数）；
+ *   - 六尾出特（487）/ 公式四尾（491）：`N尾`，特码**个位**落在候选尾数内即命中；
+ *   - 头数单双（488）：`N头单` / `N头双`，特码十位头数与单双组合一致才命中。
+ * 通用「候选号码/生肖是否命中特码」交叉校验会把这些标签里的数字误当作号码原子
+ * （`5尾` → 号码 `05`），于是命中行被判成 `contradicted`，`reconcileVerdict`
+ * 再把上游的「对」强制改写成「错」。已用真实数据逐行比对：这四种口径的精确复算
+ * 与后端 `is_correct` 完全一致（见 `frontend/test/prediction-verdict-truth-contract.ts`）。
+ */
+export type VerdictCandidateShape =
+  | "generic"
+  | "tail"
+  | "head_parity"
+  | "size"
+  | "size_head"
+  | "size_head_unverified"
+
+const TAIL_LABEL_RE = /(\d)\s*尾/
+const HEAD_LABEL_RE = /(\d)\s*头/
+const HEAD_PARITY_LABEL_RE = /^(\d)\s*头\s*(单|双)$/
+
+/** 明确声明「大小」语义的候选列（`大小中特` / `大小+2头` 的专用列）。 */
+const SIZE_EXTRA_KEYS = new Set(["daxiao", "dx", "size"])
+/** 明确声明「头数」语义的候选列（`大小+2头` 的两位头码）。 */
+const HEAD_CODE_EXTRA_KEYS = new Set(["tou_code"])
+/** 头数候选列白名单（含 `大小中特带1头` 的 `tou` 原始头数标签）。 */
+const HEAD_EXTRA_KEYS = new Set(["tou_code", "tou", "tou_label"])
+const TAIL_EXTRA_KEYS = new Set(["tail", "wei", "tails"])
+
+type VerdictCandidateSource = { key: string; value: string }
+
+function lastKeySegment(key: string) {
+  return key.split(".").pop() || ""
+}
+
+function verdictCandidateSources(input: {
+  tokens: unknown[]
+  groups?: CanonicalPredictionGroup[]
+  extra?: Record<string, unknown>
+}): VerdictCandidateSource[] {
+  const sources: VerdictCandidateSource[] = input.tokens.map((token) => ({
+    key: "",
+    value: cleanText(token),
+  }))
+  for (const group of input.groups || []) {
+    for (const token of group.tokens) sources.push({ key: "", value: cleanText(token) })
+  }
+  for (const [key, value] of Object.entries(input.extra || {})) {
+    if (value === null || value === undefined) continue
+    if (typeof value === "string" || typeof value === "number") {
+      sources.push({ key, value: cleanText(value) })
+      continue
+    }
+    if (Array.isArray(value)) {
+      for (const nested of value) {
+        if (nested !== null && nested !== undefined && typeof nested !== "object") {
+          sources.push({ key, value: cleanText(nested) })
+        }
+      }
+      continue
+    }
+    if (typeof value === "object") {
+      for (const [nestedKey, nested] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof nested === "string" || typeof nested === "number") {
+          sources.push({ key: `${key}.${nestedKey}`, value: cleanText(nested) })
+        }
+      }
+    }
+  }
+  return sources.filter((source) => source.value)
+}
+
+/**
+ * 候选集合里**明确声明**的大小标签。
+ *
+ * 不能看到任何 `大`/`小` 字就当作大小候选：`独家幽默`（整段段子）、
+ * `欲钱买特码`（`牛气冲天` 这类成语）里的文本可能刚好含 `大` 字，那样会把
+ * 生肖/号码玩法误判成大小玩法。只认三种明确来源：
+ *   1. 专用候选列（`extra.daxiao` / `dx` / `size`）；
+ *   2. 文本 token 里以 `大数` / `小数` 形态出现的标签（`daxiao_2tou` 的 `【大数`）；
+ *   3. `content` 列里以 `标签|值` 形态出现的首段标签（`dxztt1` 的 `大|32`）。
+ */
+function verdictSizeLabels(sources: VerdictCandidateSource[]) {
+  const labels = new Set<string>()
+  for (const source of sources) {
+    const key = lastKeySegment(source.key)
+    if (SIZE_EXTRA_KEYS.has(key)) {
+      if (source.value.includes("大")) labels.add("大")
+      if (source.value.includes("小")) labels.add("小")
+      continue
+    }
+    if (!source.key && /[大小]数/.test(source.value)) {
+      labels.add(source.value.includes("大数") ? "大" : "小")
+      continue
+    }
+    if (key === "content") {
+      const label = source.value.split(/[|:：]/, 1)[0]?.trim() || ""
+      if (label === "大" || label === "大数") labels.add("大")
+      if (label === "小" || label === "小数") labels.add("小")
+    }
+  }
+  return labels
+}
+
+/** 候选集合里是否存在两位头码列（`大小+2头` 的 `tou_code`）。 */
+function hasHeadCodeColumn(sources: VerdictCandidateSource[]) {
+  return sources.some((source) => HEAD_CODE_EXTRA_KEYS.has(lastKeySegment(source.key)))
+}
+
+/** 候选集合里的尾数候选（`5尾` → `5`）。 */
+function verdictTailDigits(sources: VerdictCandidateSource[]) {
+  const digits = new Set<string>()
+  for (const source of sources) {
+    const match = TAIL_LABEL_RE.exec(source.value)
+    if (match) digits.add(match[1])
+  }
+  return digits
+}
+
+/** 候选集合里的头数候选（`3头` → `3`；`tou_code: "32"` → `3`）。 */
+function verdictHeadDigits(sources: VerdictCandidateSource[]) {
+  const digits = new Set<string>()
+  for (const source of sources) {
+    const match = HEAD_LABEL_RE.exec(source.value)
+    if (match) {
+      digits.add(match[1])
+      continue
+    }
+    if (!HEAD_EXTRA_KEYS.has(source.key.split(".").pop() || "")) continue
+    const value = source.value.replace(/[^\d]/g, "")
+    if (value) digits.add(value.charAt(0))
+  }
+  return digits
+}
+
+/** 候选集合里的「N头单 / N头双」组合（`4头单` → `4头单`）。 */
+function verdictHeadParityLabels(sources: VerdictCandidateSource[]) {
+  const labels = new Set<string>()
+  for (const source of sources) {
+    const match = HEAD_PARITY_LABEL_RE.exec(source.value.trim())
+    if (match) labels.add(`${match[1]}头${match[2]}`)
+  }
+  return labels
+}
+
+/**
+ * 候选项到底是「号码/生肖原子」还是「复合维度标签」。
+ *
+ * 复合维度标签（`大` / `5尾` / `4头单`）无法用一个候选集合表达判定口径，
+ * 因此不能按 contains 交叉校验，否则命中行会被判成 `contradicted`。
+ */
+export function verdictCandidateShape(input: {
+  tokens: unknown[]
+  groups?: CanonicalPredictionGroup[]
+  extra?: Record<string, unknown>
+}): VerdictCandidateShape {
+  const sources = verdictCandidateSources(input)
+  const keys = new Set(sources.map((source) => lastKeySegment(source.key)))
+  const hasHeadPair = sources.some((source) => HEAD_PARITY_LABEL_RE.test(source.value.trim()))
+  if (hasHeadPair) return "head_parity"
+  // 尾数玩法（`六尾出特` / `公式四尾`）：预测正文本身就是 `N尾` 列表。
+  // 注意「正文里有号码/生肖」的行不算尾数玩法：`独家幽默`（mode 59）的预测正文是一段
+  // 段子，行尾的 `code` 列才是 `7尾|07,17,…` 这类附加候选，把它当成尾数候选会误判。
+  if ([...keys].some((key) => TAIL_EXTRA_KEYS.has(key))) return "tail"
+  if (verdictTailDigits(sources).size > 0 && !verdictHasAtomPrediction(sources)) return "tail"
+  // `大小+2头`（vendor `daxiao_2tou`）：两位头码列 `tou_code` 是明确的复合维度标识。
+  if (hasHeadCodeColumn(sources)) return "size_head"
+  // `大小中特带1头`（mode 108）：`tou` 是后端另算的头数标签，本层无法据此复算口径，
+  // 且已实测后端在个别站点会算出与 `content` 不一致的判定，因此归为不可校验。
+  if ([...keys].some((key) => HEAD_EXTRA_KEYS.has(key))) return "size_head_unverified"
+  if (verdictSizeLabels(sources).size > 0) return "size"
+  return "generic"
+}
+
+/** 候选项里出现号码或生肖原子时，说明预测正文本身就是号码/生肖口径。 */
+function verdictHasAtomPrediction(sources: VerdictCandidateSource[]) {
+  for (const source of sources) {
+    // 先剥掉维度标签（`5尾` / `3头` / `4头单`）再判断，否则 `5尾` 会被读成号码 `05`。
+    const stripped = source.value
+      .replace(TAIL_LABEL_RE, " ")
+      .replace(HEAD_PARITY_LABEL_RE, " ")
+      .replace(HEAD_LABEL_RE, " ")
+    if (candidateZodiacAtoms([stripped]).length > 0) return true
+    // 残余里还要能看出完整的号码原子（`07`、`32`），才说明正文是号码口径。
+    if (/(^|[^\d])\d{2}([^\d]|$)/.test(stripped)) return true
+  }
+  return false
+}
+
+/** 精确复算：大小标签与特码（01-24 小 / 25-49 大）是否一致。 */
+export function recomputeSizeVerdict(labels: Set<string>, special: string | null) {
+  if (!special || !/^\d{2}$/.test(special)) return null
+  const value = Number(special)
+  if (labels.has("大") && value >= 25) return true
+  if (labels.has("小") && value <= 24) return true
+  return false
+}
+
+/**
  * 头尾组合玩法（`三头四尾` / mode 492）。候选集合由 `N头` 与 `N尾` 两组标签组成，
  * 真实命中目标是「特码头 ∈ 候选头 **或** 特码尾 ∈ 候选尾」任一维度命中即算命中
  * （该玩法在 `backend/src/domains/prediction/category_service.py` 下分类为 MIXED，
@@ -411,11 +613,15 @@ export function candidateZodiacAtoms(items: unknown[]) {
  * 交叉校验，理由见 `isHeadTailPredictionMechanism`。
  *
  * 返回：
- *   - `"verified"`：候选集合里能找到真实特码或特肖
+ *   - `"verified"`：候选集合里能找到真实特码或特肖，或复合维度口径精确复算命中
  *   - `"excluded"`：绝杀/排除类玩法，不做 contains 交叉校验
  *   - `"flat"`：平特类玩法（需要全部 7 个开奖号码），不做特码交叉校验
- *   - `"unverifiable"`：缺少开奖号码或候选项为空
- *   - `"contradicted"`：上游 `is_correct === true`，但候选集合没有命中真实开奖
+ *   - `"unverifiable"`：缺少开奖号码、候选项为空，或候选口径无法表达该玩法的判定
+ *   - `"contradicted"`：上游 `is_correct === true`，但候选集合确实没有命中真实开奖
+ *
+ * 判定原则：**没有把握就不要降级**。只有「候选集合能完整表达该玩法判定口径」时才允许
+ * 返回 `contradicted`；一旦本层无法重算（复合维度标签、缺少可判定列），必须返回
+ * `unverifiable` 放行上游判定，否则会把上游算对的「对」改写成「错」。
  */
 export type VerdictVerification =
   | "verified"
@@ -432,6 +638,7 @@ export function verifyVerdictAgainstCandidates(input: {
   tokens: unknown[]
   groups?: CanonicalPredictionGroup[]
   mechanismHints?: unknown[]
+  extra?: Record<string, unknown>
 }): VerdictVerification {
   if (input.isCorrect !== true || !input.isOpened) return "verified"
   const hints = input.mechanismHints || []
@@ -454,6 +661,55 @@ export function verifyVerdictAgainstCandidates(input: {
     return heads.includes(special.charAt(0)) || tails.includes(special.charAt(1))
       ? "verified"
       : "contradicted"
+  }
+
+  // 复合维度玩法：候选是 `大/小`、`N尾`、`N头单双` 这类标签，通用的号码/生肖
+  // contains 校验不适用（标签里的数字不是号码原子），必须走各自的口径精确复算。
+  const candidateInput = {
+    tokens: input.tokens,
+    groups: input.groups,
+    extra: input.extra,
+  }
+  const shape = verdictCandidateShape(candidateInput)
+  if (shape !== "generic") {
+    const sources = verdictCandidateSources(candidateInput)
+    const special = code && /^\d{1,2}$/.test(code) ? normalizeCode(code) : null
+    if (!special) return "unverifiable"
+
+    if (shape === "tail") {
+      return verdictTailDigits(sources).has(special.charAt(1)) ? "verified" : "contradicted"
+    }
+
+    if (shape === "head_parity") {
+      const labels = verdictHeadParityLabels(sources)
+      if (!labels.size) return "unverifiable"
+      const value = Number(special)
+      const head = value < 10 ? "0" : String(Math.floor(value / 10))
+      const parity = value % 2 === 0 ? "双" : "单"
+      return labels.has(`${head}头${parity}`) ? "verified" : "contradicted"
+    }
+
+    const sizeLabels = verdictSizeLabels(sources)
+    const sizeHit = recomputeSizeVerdict(sizeLabels, special)
+    // `大小中特带1头`（mode 108）：本层只能看到 `tou` 这一份后端另算的头数标签，
+    // 无法复算后端真正的命中口径，放行上游判定（宁可不降级，不误改对为错）。
+    if (shape === "size_head_unverified") return sizeHit ? "verified" : "unverifiable"
+    // 大小中特（mode 57）：特码大小命中即算命中。
+    if (shape === "size") {
+      if (sizeHit === null) return "unverifiable"
+      return sizeHit ? "verified" : "contradicted"
+    }
+
+    // 大小+2头（vendor `daxiao_2tou`）：后端口径是「特码大小命中 **或** 头位数命中」。
+    // 大小维度无法复算（没有 `大`/`小` 标签）时头数维度也没有把握，只能放行上游判定。
+    if (sizeHit === null) return "unverifiable"
+    if (sizeHit) return "verified"
+    const heads = verdictHeadDigits(sources)
+    if (!heads.size) return "unverifiable"
+    if (heads.has(special.charAt(0))) return "verified"
+    // `tou_code` 是两位头码，后端 `_extract_tou_label` 可能另取一份原始头数标签；
+    // 本层看不到那份标签时不敢断言矛盾，放行上游判定（宁可不降级，不误改对为错）。
+    return "unverifiable"
   }
 
   const codes = candidateCodeAtoms(items)
@@ -483,6 +739,7 @@ function reconcileVerdict(input: {
   result: CanonicalPredictionResult
   candidateAtoms: unknown[]
   mechanismHints: unknown[]
+  candidateExtra?: Record<string, unknown>
 }): CanonicalPredictionResult {
   const verification = verifyVerdictAgainstCandidates({
     isCorrect: input.result.isCorrect,
@@ -491,6 +748,7 @@ function reconcileVerdict(input: {
     zodiac: input.result.zodiac,
     tokens: input.candidateAtoms,
     mechanismHints: input.mechanismHints,
+    extra: input.candidateExtra,
   })
   if (verification !== "contradicted") return input.result
   return { ...input.result, isCorrect: false }
@@ -542,6 +800,8 @@ function canonicalRowFromPublicHistory(row: PublicHistoryRow, mechanismHints: un
       groups,
       extra: { ...verdictCandidateColumns(raw) },
     }),
+    // 复合维度玩法（大小 / 尾数 / 头数单双）要靠 `extra` 里的专用列精确复算口径。
+    candidateExtra: { ...verdictCandidateColumns(raw) },
     mechanismHints,
   })
 
@@ -653,6 +913,8 @@ function canonicalRowFromVendorHistory(
     result: vendorResult(row),
     // 判定用候选集合另外构造（含 best_pick / picks 等展示字段），不进 `tokens`。
     candidateAtoms: candidateAtomsForVerdict({ tokens, groups, extra: vendorExtra }),
+    // 复合维度玩法（`daxiao_2tou` 的 `daxiao` + `tou_code`）要靠这些列精确复算口径。
+    candidateExtra: vendorExtra,
     mechanismHints,
   })
 
