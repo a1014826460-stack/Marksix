@@ -193,7 +193,7 @@ tw8800 前台是 legacy shell `frontend/public/vendor/shengshi8800/index.html`�
 | `026sssx.js` | 8 | `c.join('')` | `["绿肖|羊,龙,牛,狗", "蓝肖|蛇,虎,猪,猴"]`（3 选 2） |
 | `031dssx.js` | 31 | `[单：${c1}][双：${c2}]` | xiao_1 / xiao_2 两列 4+4 肖 |
 | `ds4x.js` | 31 | `xiao_1 / xiao_2` | 同 031dssx |
-| `019ma24.js` | 34 | `d.content.split(',') 两行 12 码` | 24 个号码 |
+| `019ma24.js` | 34 | `d.content.split(',') 三行 8 码` | 24 个号码 |
 | `018shu3x.js` | 42 | `c.join('')（纯生肖串）` | `兔,虎,猪` |
 | `020ssx.js` | 42 | `c1.join('')（纯生肖串）` | `兔,虎,猪` |
 | `027ptw.js` | 43 | `c.join('')` | `狗,猴` 等生肖组 |

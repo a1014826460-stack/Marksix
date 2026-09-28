@@ -110,6 +110,7 @@ const verdictScripts = [
   "015maishazs.js", // 28 单双中特
   "031dssx.js", // 31 单双四肖
   "dx.js", // 108 大小中特带1头
+  "004jyzt.js", // 63 家野中特：只有命中的组名可以黄底
 ]
 
 for (const name of verdictScripts) {
@@ -196,5 +197,110 @@ assert.equal(verdictOf(34, { content: "39,23,20,08,22,42", res_code: "28,23,26,1
   "miss", "mode 34: 特码37 不在 24 码里 -> miss")
 assert.equal(verdictOf(34, { content: "39,23,20,08,22,42,37", res_code: "28,23,26,17,30,04,37", res_sx: "兔,猴,蛇,虎,牛,兔,马" }),
   "ok", "mode 34: 特码37 在 24 码里 -> ok")
+
+// ── 5. 渲染层：经典24码三行 / 家野中特只有命中组名黄底 ────────────
+// 需求：① 经典24码的 24 码由两行（12+12）改为三行（8+8+8，每行保留 `{}`）；
+//      ② 家野中特只允许「命中的那一组组名」黄底，〈〈 〉〉/期号/判定字/开奖号码零黄底，
+//         且高亮必须与 legacyPredictionVerdict 的判定同一数据源（旧写法拿特码号码匹配
+//         生肖池 `["家禽|牛,马,羊,鸡,狗,猪"]`，条件恒假 → 准期零黄底）。
+const YELLOW = '<span style="background-color: #FFFF00">'
+
+/** 在 vm 里真跑一个 tw8800 渲染脚本（注入站点 util.js 与统一判定模块）。 */
+function renderTw8800(file, rows) {
+  const captured = []
+  const jquery = (selector) => ({
+    html(value) {
+      if (value !== undefined) captured.push(String(value))
+      return this
+    },
+    append(value) {
+      if (value !== undefined) captured.push(String(value))
+      return this
+    },
+  })
+  jquery.ajax = (options) => {
+    if (typeof options.success === "function") options.success({ data: rows })
+    return {}
+  }
+
+  const sandbox = {
+    $: jquery,
+    httpApi: "",
+    web: "4",
+    type: "3",
+    console,
+    JSON, String, Number, Boolean, Object, Array, Math, Date, RegExp, Error,
+    isNaN, parseInt, parseFloat, encodeURIComponent, decodeURIComponent,
+    setTimeout, clearTimeout,
+  }
+  sandbox.window = sandbox
+  sandbox.globalThis = sandbox
+  vm.createContext(sandbox)
+  // 站点公共脚本先于模块加载：util.js 提供 parseContentList，判定模块提供 verdictOf。
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, "util.js"), "utf8"), sandbox, { filename: "util.js" })
+  vm.runInContext(fs.readFileSync(VERDICT_FILE, "utf8"), sandbox, { filename: "legacy-prediction-verdict.js" })
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, file), "utf8"), sandbox, { filename: file })
+
+  assert.ok(captured.length > 0, `${file}: 渲染脚本必须把 HTML 注入容器`)
+  return captured.join("\n")
+}
+
+function yellowSpans(html) {
+  return [...html.matchAll(/<span style="background-color: #FFFF00">([^<]*)<\/span>/g)].map((m) => m[1])
+}
+
+/** 去掉黄底 span 只留文字，便于断言号码行本身的分段（命中项会被黄底包起来）。 */
+function stripYellow(html) {
+  return html.replace(/<span style="background-color: #FFFF00">([^<]*)<\/span>/g, "$1")
+}
+
+// 24 码：三行各 8 码，每行保留 `{}`
+const ma24Content = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, "0")).join(",")
+const ma24Hit = renderTw8800("019ma24.js", [{
+  term: "270", content: ma24Content, res_code: "11,19,23,31,42,05,24", res_sx: "马,狗,猴,龙,猪,鼠,蛇",
+}])
+const ma24Lines = stripYellow(ma24Hit).match(/class='zl'>\{[^}]*\}/g) || []
+assert.equal(ma24Lines.length, 3, `经典24码必须渲染三行号码：${ma24Hit.slice(0, 400)}`)
+assert.ok(ma24Lines[0].includes("{01.02.03.04.05.06.07.08}"), `三行首行必须是 01~08：${ma24Lines[0]}`)
+assert.ok(ma24Lines[1].includes("{09.10.11.12.13.14.15.16}"), `三行次行必须是 09~16：${ma24Lines[1]}`)
+assert.ok(ma24Lines[2].includes("{17.18.19.20.21.22.23.24}"), `三行末行必须是 17~24：${ma24Lines[2]}`)
+assert.deepEqual(yellowSpans(ma24Hit), ["24"], "经典24码命中时只允许命中的那一个号码黄底")
+
+const ma24Miss = renderTw8800("019ma24.js", [{
+  term: "269", content: ma24Content, res_code: "11,19,23,31,42,05,49", res_sx: "马,狗,猴,龙,猪,鼠,龙",
+}])
+assert.deepEqual(yellowSpans(ma24Miss), [], "经典24码未命中必须零黄底")
+
+// 家野中特：content 是 `["家禽|牛,马,羊,鸡,狗,猪"]`，判定口径 = 特肖落在本组池内
+const JY_HIT = {
+  term: "270", content: '["家禽|牛,马,羊,鸡,狗,猪"]',
+  res_code: "01,02,03,04,05,06,22", res_sx: "龙,兔,虎,牛,蛇,马,羊",
+}
+const jyHit = renderTw8800("004jyzt.js", [JY_HIT])
+assert.deepEqual(yellowSpans(jyHit), ["家禽"], `家野中特命中时只允许组名黄底：${jyHit.slice(0, 400)}`)
+assert.ok(jyHit.includes("〈〈") && jyHit.includes("〉〉"), "家野中特的 〈〈 〉〉 必须照常显示")
+assert.ok(jyHit.includes("准"), "家野中特命中必须显示「准」")
+
+const JY_MISS = {
+  term: "269", content: '["家禽|牛,马,羊,鸡,狗,猪"]',
+  res_code: "01,02,03,04,06,07,05", res_sx: "龙,兔,虎,牛,马,狗,鼠",
+}
+const jyMiss = renderTw8800("004jyzt.js", [JY_MISS])
+assert.deepEqual(yellowSpans(jyMiss), [], "家野中特未命中必须零黄底")
+assert.ok(jyMiss.includes("错"), "家野中特未命中必须显示「错」")
+
+const JY_PENDING = {
+  term: "271", content: '["家禽|牛,马,羊,鸡,狗,猪"]', res_code: ",,,,,,", res_sx: ",,,,,,",
+}
+const jyPending = renderTw8800("004jyzt.js", [JY_PENDING])
+assert.deepEqual(yellowSpans(jyPending), [], "家野中特未开奖必须零黄底")
+assert.ok(!jyPending.includes("准") && !jyPending.includes("错"), "家野中特未开奖不得显示判定")
+
+const JY_WILD_HIT = {
+  term: "268", content: '["野兽|鼠,虎,兔,龙,蛇,猴"]',
+  res_code: "01,02,03,04,05,06,12", res_sx: "龙,兔,虎,牛,马,狗,蛇",
+}
+assert.deepEqual(yellowSpans(renderTw8800("004jyzt.js", [JY_WILD_HIT])), ["野兽"],
+  "家野中特命中野兽组时只允许「野兽」黄底")
 
 console.log(`display verdict contract passed (${verdictScripts.length} 个展示脚本已覆盖)`)

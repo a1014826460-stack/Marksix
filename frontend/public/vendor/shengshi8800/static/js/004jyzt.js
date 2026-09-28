@@ -31,9 +31,21 @@ $.ajax({
                     ma.push(...(c[1] || '').split(','));
                 }
 
+                // 命中高亮：只有「命中的那一组组名」可以黄底，其余文字（〈〈 〉〉、期号、
+                // 判定字、开奖号码）一律不黄；未命中 / 未开奖零黄底。
+                //   · 判定统一走 window.legacyPredictionVerdict（mode 63 = 特肖落在本组池内），
+                //     高亮与判定必须同一数据源，否则会出现「准期无黄底」或「错期有黄底」。
+                //   · 旧写法 `xiaoV[i].indexOf(code)` 拿特码号码去匹配生肖池（content 是
+                //     `["家禽|牛,马,羊,鸡,狗,猪"]`），条件恒为假 → 命中期永远无高亮。
+                let __verdict = window.legacyPredictionVerdict
+                    ? window.legacyPredictionVerdict.verdictOf(63, d)
+                    : 'unknown';
+                let __hit = __verdict === 'ok';
                 let c1 = [];
                 for (let i = 0; i < xiao.length; i++) {
-                    if (code && xiaoV[i].indexOf(code) !== -1) {
+                    let pool = (xiaoV[i] || '').split(',');
+                    let inPool = (sx && pool.indexOf(sx) !== -1) || (code && pool.indexOf(code) !== -1);
+                    if (__hit && inPool) {
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
                         c1.push(`${xiao[i]}`)
@@ -43,7 +55,7 @@ $.ajax({
 
 
                 //console.log(ma)
-                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(63, d)) : '';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>

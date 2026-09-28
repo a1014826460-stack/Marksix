@@ -41,8 +41,9 @@ $.ajax({
 	<tr>
         <td>
             <font color='#000000'>${d.term}期:《经典24码》开【${resSx[resSx.length-1]||'？'}${resCode[resCode.length-1]||'00'}】${__verdictTxt}</font> <br>
-            <span class=\'zl\'>{${c2.slice(0,12).join('.')}}</span><br>
-            <span class=\'zl\'>{${c2.slice(12).join('.')}}</span>
+            <span class=\'zl\'>{${c2.slice(0,8).join('.')}}</span><br>
+            <span class=\'zl\'>{${c2.slice(8,16).join('.')}}</span><br>
+            <span class=\'zl\'>{${c2.slice(16).join('.')}}</span>
         </td>
     </tr>
             `}
