@@ -111,8 +111,8 @@
     { key: "juesha2xiao", title: "综合绝杀", target: compositeTable, renderer: renderCompositeKillHistory },
     { key: "juesha2xiao-steady", title: "只是有点帅【稳杀二肖】", renderer: renderSteadyJueshaTwoXiaoHistory },
     { key: "juesha1wei", title: "精选特料专区", renderer: renderTeLiaoHistory },
-    { key: "pt1wei", title: "平特一尾", target: function () { return targetAfter("top_3", 0, 3); }, rows: allRows, renderer: renderStructuredHistory },
-    { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, renderer: renderStructuredHistory },
+    { key: "pt1wei", title: "平特一尾", target: function () { return targetAfter("top_3", 0, 3); }, rows: allRows, hitScope: "drawn", renderer: renderStructuredHistory },
+    { key: "pt1xiao", title: "平特一肖", target: function () { return targetAfter("top_3", 0, 6); }, rows: allRows, hitScope: "drawn", renderer: renderStructuredHistory },
     { key: "title_48", title: "8肖16码", renderer: renderEightXiaoHistory },
     { key: "wuzhong5ma", title: "内幕⑤不中", renderer: renderFiveNotHistory },
     { key: "3hang", title: "综合资料", target: function () { return targetAfter("top_2", 0, 2); }, rows: allRows, renderer: renderStructuredHistory },
@@ -120,7 +120,7 @@
     { key: "shuangbo", title: "双波10码", renderer: renderDoubleWaveHistory },
     { key: "title_47", title: "四肖中特", target: fourZodiacHistoryTarget, rows: allRows, renderer: renderStructuredHistory },
     { key: "danshuangtema", title: "单双中特", renderer: renderDanShuangHistory },
-    { key: "title_143", title: "一波中特", target: function () { return window.document.querySelector("#con_jihuadanshuang50000ww_2"); }, rows: allParagraphs, renderer: renderStructuredHistory },
+    { key: "title_143", title: "一波中特", target: function () { return window.document.querySelector("#con_jihuadanshuang50000ww_2"); }, rows: allParagraphs, mergeTokens: true, renderer: renderStructuredHistory },
     { key: "3tou", title: "一头一码", renderer: renderOneHeadHistory }
   ];
 
@@ -790,15 +790,6 @@
     });
   }
 
-  function rowSummary(row, title) {
-    if (!row) return "";
-    var result = row.result || {};
-    // A pending issue prints the vendor's placeholder once and carries no
-    // judgement at all; only an opened row combines the drawn value with 对/错.
-    var outcome = result.isOpened ? drawValue(row) + resultLabel(row) : "待开奖";
-    return termValue(row) + " " + title + "：" + predictionTokens(row).map(firstValue).join("·") + " 开：" + outcome;
-  }
-
   function clearOtherLeafText(root, retained) {
     Array.prototype.filter.call(root.querySelectorAll("font, span, p"), function (node) {
       return !node.children.length && node !== retained;
@@ -811,6 +802,61 @@
   // Fallback for vendor tables with one pre-existing text field per history row.
   // It writes that field only, never a table/div/container, and has a named
   // renderer entry so a new vendor layout cannot silently use raw API tokens.
+  //
+  // 展示规范 S2/S3：只有**本期命中的那一项**（生肖/号码/波色/段位/文字）带黄底，
+  // 期号、模块名、开奖结果与未命中项一律不允许高亮。所以候选值不再整行标黄，
+  // 而是「一个候选一个 span」，命中的那一个由本行自己的候选与真实开奖复算决定。
+  function tokenNumberList(token) {
+    return (String(token == null ? "" : token).split("|").slice(1).join("|").match(/\d{1,2}/g) || []).map(function (value) {
+      return value.length === 1 ? "0" + value : value;
+    });
+  }
+
+  // scope = "special"：候选与特码/特肖比（三头中特、综合资料、四肖中特、一波中特…）
+  // scope = "drawn"  ：候选与整期 7 个开奖号码比（平特一尾、平特一肖…）
+  function candidateHit(draw, token, scope) {
+    if (!draw || !draw.opened) return false;
+    var label = firstValue(token);
+    var numbers = tokenNumberList(token);
+    if (scope === "drawn") {
+      if (numbers.length) return numbers.some(function (number) { return draw.numbers.indexOf(number) >= 0; });
+      return Boolean(label) && draw.zodiacs.indexOf(label) >= 0;
+    }
+    if (numbers.length) return Boolean(draw.code) && numbers.indexOf(draw.code) >= 0;
+    return Boolean(label) && label === draw.zodiac;
+  }
+
+  function structuredCandidates(row, mapping) {
+    var tokens = predictionTokens(row);
+    if (!tokens.length && row && row.prediction && row.prediction.text) {
+      tokens = String(row.prediction.text).split(/[,\s]+/).filter(Boolean);
+    }
+    // 一波中特的 content 是 `蓝波`，兼容层把它拆成两个单字 token（显示成 `蓝·波`）。
+    // 这里按「一个波色一个候选」合并展示，命中判定才落在一个完整的波色上。
+    if (mapping.mergeTokens) return [{ text: tokens.map(firstValue).join(""), token: tokens.join("") }];
+    return tokens.map(function (token) {
+      return { text: firstValue(token), token: token };
+    }).filter(function (item) { return item.text; });
+  }
+
+  function structuredHit(draw, mapping, item) {
+    if (mapping.mergeTokens) return Boolean(draw.opened && draw.code && waveForNumber(draw.code) === item.text);
+    return candidateHit(draw, item.token, mapping.hitScope || "special");
+  }
+
+  function writeStructuredLine(valueSlot, row, mapping) {
+    clearNodeChildren(valueSlot);
+    if (!row) return;
+    var draw = drawnAtoms(row);
+    var rowHit = isHitRow(row);
+    appendTextNode(valueSlot, termValue(row) + " " + mapping.title + "：");
+    structuredCandidates(row, mapping).forEach(function (item, index) {
+      if (index) appendTextNode(valueSlot, "·");
+      appendValueSpan(valueSlot, item.text, rowHit && structuredHit(draw, mapping, item));
+    });
+    appendTextNode(valueSlot, " 开：" + openedResult(row));
+  }
+
   function renderStructuredHistory(mapping, module, moduleByKey) {
     var target = mapping.target && mapping.target();
     if (!target) return;
@@ -826,15 +872,23 @@
           return !candidate.children.length && String(candidate.textContent || "").trim();
         })[0];
       });
+      // 少数行（一波中特的第一个 `<p>《红红红》</p>`）只有裸文本、没有可复用的
+      // `font/span` 叶子，于是整行永远写不进去、屏幕上是空行 —— 最新一期就凭空消失。
+      // 首次清空之后这一行就再也没有文字，所以用一个持久标记记住「这一行自己就是值槽」；
+      // 供应商的装饰性空行（如三头中特的第一行）从未有过文字，不会被标记，仍然保持空白。
+      var valueRow = node.getAttribute("data-site-valuerow") === "true";
+      if (!valueSlot && !node.children.length && (valueRow || String(node.textContent || "").trim())) {
+        node.setAttribute("data-site-valuerow", "true");
+        valueSlot = node;
+      }
       var apiRow = apiRows[index];
+      // 供应商模板为样例那一期预埋的黄标先无条件清除：判定为「错」的期因此整行零黄底，
+      // 判定为「准」的期也只保留下面重新点亮的命中项。
+      clearRowHighlight(node);
       clearOtherLeafText(node, valueSlot);
       // Extra vendor rows are deliberately blank: reusing a previous API row
       // would falsely display the same issue multiple times.
-      if (valueSlot) valueSlot.textContent = apiRow ? rowSummary(apiRow, mapping.title) : "";
-      // The summary leaf is this row's own value slot, so it carries the hit
-      // marker: a hit keeps the yellow background the supplier used for it and
-      // every other row is scrubbed below.
-      if (moduleHasRows(module) && isHitRow(apiRow) && valueSlot) markHitLeaf(valueSlot, true);
+      if (valueSlot) writeStructuredLine(valueSlot, apiRow, mapping);
       applyRowHighlight(node, apiRow, module);
     });
   }
@@ -1011,6 +1065,9 @@
       line.setAttribute("data-prediction-row", String(index));
       var values = predictionTokens(row).map(firstValue);
       var label = values.join("") || "";
+      // 供应商模板在《单单单》/《双双双》里预埋了黄底 span；写值只会清空它的文字，
+      // 空 span 的黄底仍会被算成高亮，所以这里连黄底一起清掉。
+      clearRowHighlight(line);
       replaceExistingText(line, row ? termValue(row) + "《" + label + "》" + openedResult(row, "√") : "");
       applyRowHighlight(line, row, module);
     });
@@ -1104,8 +1161,18 @@
         var leaves = predictionLeaves(line);
         var codeValues = lineIndex === 2 ? numbers.slice(0, 15) : numbers.slice(0, 9);
         leaves.forEach(function (leaf, leafIndex) {
-          leaf.textContent = (codeValues[leafIndex] || "") + (leafIndex < codeValues.length - 1 ? "." : "");
-          if (leafIndex < codeValues.length) leaf.setAttribute("color", "#FF0000");
+          var inRange = leafIndex < codeValues.length;
+          leaf.textContent = inRange ? codeValues[leafIndex] : "";
+          // 分隔符 "." 放在叶子之外的文本节点里，命中的号码叶子因此只含两位数字，
+          // 黄底不会连尾随的点号一起点亮（改前是 `<font>10.</font>` 整块变黄）。
+          var separator = leaf.nextSibling;
+          if (inRange && leafIndex < codeValues.length - 1) {
+            if (separator && separator.nodeType === 3) separator.nodeValue = ".";
+            else leaf.parentNode.insertBefore(window.document.createTextNode("."), leaf.nextSibling);
+          } else if (separator && separator.nodeType === 3) {
+            separator.nodeValue = "";
+          }
+          if (inRange) leaf.setAttribute("color", "#FF0000");
           // Obsolete hits from the previous issue or lottery are cleared here;
           // the current special number is marked after every value is written.
           markHitLeaf(leaf, false);
@@ -1189,6 +1256,9 @@
       var cell = card.querySelector("td");
       if (!cell) return;
       card.setAttribute("data-prediction-row", String(index));
+      // 供应商模板在「波色:」「尾数:」里预埋了黄底 span；清空文字不会去掉黄底，
+      // 空黄底仍会被审计按计算样式算成高亮，所以整格先清一次。
+      clearRowHighlight(cell);
       var term = slot(cell, "ai-term", function (node) {
         return Array.prototype.filter.call(node.querySelectorAll("span"), function (candidate) {
           return /^(?:\d+)?期$/.test(String(candidate.textContent || "").trim());
@@ -1540,7 +1610,9 @@
           labelSlot.setAttribute("data-site-slot", "wave-label");
           slot.insertBefore(labelSlot, slot.firstChild);
         }
-        labelSlot.textContent = row ? label : "";
+        // 只有波色名本身属于命中项，分隔用的冒号留在文本节点里，
+        // 这样黄底不会连标点一起点亮。
+        labelSlot.textContent = row ? waveName : "";
         markHitLeaf(labelSlot, Boolean(waveHit && waveName && waveHit === waveName));
         // Vendor dots (or previously converted commas) between number slots
         // become commas; any other stale text run is blanked so it can never
@@ -1549,7 +1621,7 @@
         directText.slice(1).forEach(function (text) {
           text.nodeValue = /^\s*[.,]\s*$/.test(text.nodeValue || "") ? "," : "";
         });
-        if (directText.length) directText[0].nodeValue = "";
+        if (directText.length) directText[0].nodeValue = row && waveName ? ":" : "";
         // Vendor highlight spans may carry a stale wave label; blank them so
         // the label never concatenates with the freshly written one. The label
         // span is the one element this adapter owns and must stay untouched.
@@ -1589,6 +1661,29 @@
     return groups;
   }
 
+  // 复用供应商既有的叶子节点写值：颜色/字号（例如 `<font color="#FF0000" size="4">`）
+  // 全部保持原样，只把值写进去，并让等于本期命中项的那一个叶子带黄底。
+  // `separator` 用于补回写值时被清空的标点（`必中二头：2,3` 的逗号），
+  // 逗号留在叶子外的文本节点里，所以黄底只包住数字本身。
+  function writeLeafValues(root, values, hitValue, separator) {
+    var leaves = Array.prototype.filter.call(root.querySelectorAll("font, span"), function (node) {
+      return !node.children.length;
+    });
+    leaves.forEach(function (leaf, index) {
+      var value = values[index] || "";
+      var keepSeparator = Boolean(separator) && Boolean(value) && index < values.length - 1;
+      leaf.textContent = value;
+      markHitLeaf(leaf, Boolean(hitValue && value && value === hitValue));
+      var next = leaf.nextSibling;
+      if (keepSeparator) {
+        if (next && next.nodeType === 3) next.nodeValue = separator;
+        else leaf.parentNode.insertBefore(window.document.createTextNode(separator), leaf.nextSibling);
+      } else if (next && next.nodeType === 3) {
+        next.nodeValue = "";
+      }
+    });
+  }
+
   function renderOneHeadHistory(mapping, module) {
     var cards = window.document.querySelectorAll(".bizhong1");
     Array.prototype.forEach.call(cards, function (card, index) {
@@ -1601,12 +1696,26 @@
       var right = card.querySelectorAll(".bizhong1-r li");
       var foot = card.querySelector(".bizhong1-foot");
       if (title) replaceExistingText(title, "一头一码（" + siteConfig.siteDomain + "）");
+      // 供应商样例里那个黄色数字属于样例那一期，先无条件清除；本期是否命中另行点亮。
+      clearRowHighlight(card);
+      var draw = drawnAtoms(row);
+      var rowHit = isHitRow(row);
+      var headHit = rowHit && draw.opened && draw.code ? draw.code.charAt(0) : "";
       Array.prototype.forEach.call(left, function (line, lineIndex) {
-        replaceExistingText(line, row ? termValue(row) + "必中" + ["一", "二", "三", "四"][lineIndex] + "头：" + groups.slice(0, lineIndex + 1).map(function (group) { return group.label; }).join(",") : "");
+        var heads = groups.slice(0, lineIndex + 1).map(function (group) { return group.label; });
+        replaceExistingText(line, row ? termValue(row) + "必中" + ["一", "二", "三", "四"][lineIndex] + "头：" : "");
+        writeLeafValues(line, row ? heads : [], headHit, ",");
         applyRowHighlight(line, row, module);
       });
       Array.prototype.forEach.call(right, function (line, lineIndex) {
-        replaceExistingText(line, row ? ["①", "②", "③", "④"][lineIndex] + (groups[lineIndex] ? groups[lineIndex].numbers.join(".") : "") : "");
+        var numbers = row && groups[lineIndex] ? groups[lineIndex].numbers : [];
+        replaceExistingText(line, row ? ["①", "②", "③", "④"][lineIndex] : "");
+        var container = line.querySelector("font") || line;
+        clearNodeChildren(container);
+        numbers.forEach(function (number, numberIndex) {
+          if (numberIndex) appendTextNode(container, ".");
+          appendValueSpan(container, number, rowHit && draw.opened && number === draw.code);
+        });
         applyRowHighlight(line, row, module);
       });
       if (foot) {
@@ -1660,7 +1769,13 @@
       var rows = table.querySelectorAll("tr");
       table.setAttribute("data-prediction-section", "aaa-grade");
       table.setAttribute("data-prediction-row", String(index));
+      // 供应商为样例那一期在每个 ⑨⑧⑦⑥肖 行里预埋了一处黄标。那处黄标与本期无关，
+      // 过去只在「判定为错」的期才被清掉，于是命中的期会把样例的**别的生肖**留在屏上。
+      // 现在无条件先清，再按本期特肖重新点亮：命中的肖才有黄底，其余一律没有。
+      clearRowHighlight(table);
       if (rows[0]) setExistingText(rows[0].querySelector("strong") || rows[0], row ? termValue(row) + " AAA级大公开;准确率绝对100%;大胆下注!" : "");
+      var draw = drawnAtoms(row);
+      var rowHit = isHitRow(row);
       [9, 8, 7, 6].forEach(function (count, rowIndex) {
         if (!rows[rowIndex + 1]) return;
         var outer = rows[rowIndex + 1].querySelector("font[color='#fa035a']");
@@ -1669,7 +1784,9 @@
         Array.prototype.filter.call(outer.children, function (child) {
           return child.tagName === "FONT" || child.tagName === "SPAN";
         }).forEach(function (valueSlot, valueIndex) {
-          setExistingText(valueSlot, row ? aaaZodiacs(row)[valueIndex] || "" : "");
+          var value = row ? aaaZodiacs(row)[valueIndex] || "" : "";
+          setExistingText(valueSlot, value);
+          markHitLeaf(valueSlot, Boolean(rowHit && draw.opened && value && value === draw.zodiac));
         });
       });
       applyRowHighlight(table, row, module);
@@ -1682,6 +1799,23 @@
     renderAaaGradeHistory(moduleByKey);
     COMPLETE_SECTION_MAPPINGS.forEach(function (mapping) {
       mapping.renderer(mapping, moduleByKey[mapping.key], moduleByKey);
+    });
+    markPredictionContainers();
+  }
+
+  // 需求1：把预测内容的**祖先容器**（`.box.pad` / `.contentbox_01` /
+  // `.dz_content08ab2d` / `.Contentbox50000` / `#table1` …）标记出来，由页面里的
+  // 展示规范样式表统一居中。只标记真正包住预测模块的容器，页脚（属性知识 /
+  // 免责声明）与图纸导航因为不含预测模块而不受影响。
+  function markPredictionContainers() {
+    Array.prototype.forEach.call(window.document.querySelectorAll("[data-prediction-section]"), function (section) {
+      var node = section.parentElement;
+      while (node && node !== window.document.body) {
+        var cls = String(node.className || "");
+        if (cls.indexOf("cgi-body") >= 0 || cls.indexOf("legacy-site-footer") >= 0) break;
+        node.setAttribute("data-prediction-center", "true");
+        node = node.parentElement;
+      }
     });
   }
 

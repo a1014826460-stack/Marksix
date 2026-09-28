@@ -22,6 +22,59 @@
         .adbox img{width: 100%;}
         .cgi-body{ margin:0 auto; position:relative; overflow:hidden; background-color:#FFFFFF } a{ text-decoration:none; cursor:pointer; color:#333 } html,body{ padding:0; margin:0;width:100%; min-height:100%; font-family: "Helvetica Neue", Helvetica, STHeiTi, sans-serif; } *{ margin:0;padding:0 } ul li{ list-style:none; } table{ width:100%; border-collapse:collapse; border-spacing:0; } img { max-width: 100%; } td, th { border: 1px solid #DDD; } body{ overflow:hidden; overflow-y:auto; background-attachment: fixed; background-position: top; background: top center repeat-y; } .copyright{ padding-top:25px }</style>
 <script src="/vendor/_shared/forced-announcement.js"></script>
+<!-- twssz 预测模块展示规范（2026-09-29）
+     需求1：所有预测模块的展示文字统一居中（供应商模板里带内联 text-align:left 的单元格
+            也用 !important 覆盖；`<p align="center">` 的 UA 值 -webkit-center 同样被覆盖）。
+     需求2：A级猛料大公开字号放大，并在 ≤480px 窄屏改为单列堆叠以保证不换行、不溢出。
+     选择器只覆盖预测模块容器，不触碰页头广告、页脚与图纸导航。 -->
+<style id="twssz-prediction-display-standard">
+    [data-prediction-section],
+    [data-prediction-section] *,
+    [data-prediction-row],
+    [data-prediction-row] *,
+    [data-prediction-center],
+    [data-prediction-center] *,
+    .dz_content08ab2d,
+    .dz_content08ab2d *,
+    .contentbox_01 .bbzhong122,
+    .contentbox_01 .bbzhong122 *,
+    .contentbox_01 .bizhong1,
+    .contentbox_01 .bizhong1 *,
+    #con_jihuadanshuang50000ww_1,
+    #con_jihuadanshuang50000ww_1 *,
+    #con_jihuadanshuang50000ww_2,
+    #con_jihuadanshuang50000ww_2 *,
+    #table1,
+    #table1 * {
+        text-align: center !important;
+    }
+
+    /* A级猛料：改前 标题 10pt(13.33px) / 正文 12px；改后 标题 17px / 正文 16px */
+    [data-prediction-section="grade-a"] .dbt1,
+    [data-prediction-section="grade-a"] .dbt1 span {
+        font-size: 17px !important;
+    }
+    [data-prediction-section="grade-a"] .dbt2,
+    [data-prediction-section="grade-a"] .dbt2 span,
+    [data-prediction-section="grade-a"] .dbt2 font,
+    [data-prediction-section="grade-a"] .dbt3,
+    [data-prediction-section="grade-a"] .dbt3 span,
+    [data-prediction-section="grade-a"] .dbt3 font {
+        font-size: 16px !important;
+    }
+    @media screen and (max-width: 480px) {
+        [data-prediction-section="grade-a"] table,
+        [data-prediction-section="grade-a"] tbody,
+        [data-prediction-section="grade-a"] tr,
+        [data-prediction-section="grade-a"] td {
+            display: block;
+            width: auto !important;
+            box-sizing: border-box;
+        }
+        [data-prediction-section="grade-a"] table { border: 1px solid #000; }
+        [data-prediction-section="grade-a"] td { border-bottom: 1px solid #ddd; }
+    }
+</style>
 </head>
 <body>
 <div class="cgi-body" style="max-width:800px;">
@@ -657,7 +710,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00">澳洲精选</font>『2组连肖连尾』</font></b>
+                                <font color="#FFFFFF">澳洲精选</font>『2组连肖连尾』</font></b>
                     </td>
                 </tr>
                 </tbody>
@@ -970,7 +1023,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00">澳洲精选</font>『精选24码』</font></b>
+                                <font color="#FFFFFF">澳洲精选</font>『精选24码』</font></b>
                     </td>
                 </tr>
                 </tbody>
@@ -1277,7 +1330,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00"></font>『精准四肖』</font>
+                                <font color="#FFFFFF"></font>『精准四肖』</font>
                         </b>
                     </td>
                 </tr>
@@ -1286,7 +1339,7 @@
             <div>
                 <style>
                     .bbzhong122 { color: #000000; font-size: 18px; font-weight: bold; border: solid 1px #7d7d7d; background: #ffffff;}
-                    .bbzhong122-tit { padding: 5px 0; color: #ff0; font-size: 24px; text-align: center; border-bottom: solid 1px #7d7d7d; background: #237575;}
+                    .bbzhong122-tit { padding: 5px 0; color: #ffffff; font-size: 24px; text-align: center; border-bottom: solid 1px #7d7d7d; background: #237575;}
                     .bbzhong122-box { display: flex;}
                     .bbzhong122-box ul {}
                     .bbzhong122-box ul li { padding: 5px 0; padding-left: 10px; border-bottom: solid 1px #7d7d7d;}
@@ -1421,7 +1474,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">澳洲精选</font>《极品大小》</font></b>
+                            <font color="#FFFFFF">澳洲精选</font>《极品大小》</font></b>
                 </td>
             </tr>
             </tbody>
@@ -1963,7 +2016,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00">澳洲精选</font>『AI心水玄机论坛』</font></b>
+                                <font color="#FFFFFF">澳洲精选</font>『AI心水玄机论坛』</font></b>
                     </td>
                 </tr>
                 </tbody>
@@ -2297,7 +2350,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00">躺平稳赚</font>『家野二肖』</font></b>
+                                <font color="#FFFFFF">躺平稳赚</font>『家野二肖』</font></b>
                     </td>
                 </tr>
                 </tbody>
@@ -2473,7 +2526,7 @@
                     <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                         <b>
                             <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                                <font color="#FFFF00">躺平稳赚</font>『三头中特』</font></b>
+                                <font color="#FFFFFF">躺平稳赚</font>『三头中特』</font></b>
                     </td>
                 </tr>
                 </tbody>
@@ -2640,7 +2693,7 @@
                 <tbody>
                 <tr>
                     <td style="border:10px double #237575; height: 50px;" bgcolor="#0000FF"><p align="center">
-                        <b><font face="楷体" style="font-size: 16pt"><font color="#FFFF00">澳洲精选『综合绝杀』</font></font></b>
+                        <b><font face="楷体" style="font-size: 16pt"><font color="#FFFFFF">澳洲精选『综合绝杀』</font></font></b>
                     </p></td>
                 </tr>
                 </tbody>
@@ -2733,7 +2786,7 @@
                 <td bgcolor="#0000FF" height="33" style="border:10px double #0000FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00"></font>『澳洲精选特料专区』</font>
+                            <font color="#FFFFFF"></font>『澳洲精选特料专区』</font>
                     </b>
                 </td>
             </tr>
@@ -3135,7 +3188,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">澳洲精选</font>『平特一尾』</font></b>
+                            <font color="#FFFFFF">澳洲精选</font>『平特一尾』</font></b>
                 </td>
             </tr>
             </tbody>
@@ -3355,7 +3408,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">澳洲精选</font>『平特一肖』</font></b>
+                            <font color="#FFFFFF">澳洲精选</font>『平特一肖』</font></b>
                 </td>
             </tr>
             </tbody>
@@ -3576,7 +3629,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">澳洲精选</font>『8肖16码』</font></b>
+                            <font color="#FFFFFF">澳洲精选</font>『8肖16码』</font></b>
                 </td>
             </tr>
             </tbody>
@@ -3732,7 +3785,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">澳洲精选</font>『内幕⑤不中』</font></b>
+                            <font color="#FFFFFF">澳洲精选</font>『内幕⑤不中』</font></b>
                 </td>
             </tr>
             </tbody>
@@ -3894,7 +3947,7 @@
                 <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                     <b>
                         <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                            <font color="#FFFF00">精准天地+两肖</font></font>
+                            <font color="#FFFFFF">精准天地+两肖</font></font>
                     </b>
                 </td>
             </tr>
@@ -4109,7 +4162,7 @@
             <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                 <b>
                     <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                        <font color="#FFFF00">只是有点帅</font>【稳杀二肖】</font></b>
+                        <font color="#FFFFFF">只是有点帅</font>【稳杀二肖】</font></b>
             </td>
         </tr>
         </tbody>
@@ -4138,7 +4191,7 @@
             <td bgcolor="#0000FF" height="33" style="border:10px double #0000FF" align="center">
                 <b>
                     <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                        <font color="#FFFF00"></font>『澳洲精选综合资料』</font>
+                        <font color="#FFFFFF"></font>『澳洲精选综合资料』</font>
                 </b>
             </td>
         </tr>
@@ -4461,7 +4514,7 @@
             <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                 <b>
                     <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                        <font color="#FFFF00">澳洲精选</font>『三肖六码』</font></b>
+                        <font color="#FFFFFF">澳洲精选</font>『三肖六码』</font></b>
             </td>
         </tr>
         </tbody>
@@ -4625,7 +4678,7 @@
             <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                 <b>
                     <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                        <font color="#FFFF00">澳洲精选</font>『双波10码』</font></b>
+                        <font color="#FFFFFF">澳洲精选</font>『双波10码』</font></b>
             </td>
         </tr>
         </tbody>
@@ -4771,7 +4824,7 @@
             <td bgcolor="#0099FF" height="33" style="border:10px double #0099FF" align="center">
                 <b>
                     <font face="楷体" style="font-size: 18pt" color="#FFFFFF">
-                        <font color="#FFFF00">澳洲精选</font>『四肖中特』</font></b>
+                        <font color="#FFFFFF">澳洲精选</font>『四肖中特』</font></b>
             </td>
         </tr>
         </tbody>
@@ -4996,7 +5049,7 @@
         <div class="dz_content08ab2d">
             <style>
                 .bizhong1 { color: #000000; font-size: 18px; font-weight: bold; border: solid 1px #7d7d7d; background: #ffffff;}
-                .bizhong1-tit { padding: 5px 0; color: #ff0; font-size: 24px; text-align: center; border-bottom: solid 1px #7d7d7d; background: #237575;}
+                .bizhong1-tit { padding: 5px 0; color: #ffffff; font-size: 24px; text-align: center; border-bottom: solid 1px #7d7d7d; background: #237575;}
                 .bizhong1-box { display: flex;}
                 .bizhong1-box ul {}
                 .bizhong1-box ul li { padding: 5px 0; padding-left: 10px; border-bottom: solid 1px #7d7d7d;}
