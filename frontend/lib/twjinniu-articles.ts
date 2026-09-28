@@ -49,12 +49,15 @@ const INTRO_HTML =
 const SNAPSHOT_DIR = path.join(process.cwd(), "public", "vendor", "twjinniu", "amgst")
 const HIGHLIGHT_OPEN = '<span style="background-color: #FFFF00">'
 const HIGHLIGHT_CLOSE = "</span>"
-const ZODIAC_PATTERN = /[鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬]/g
+const ZODIAC_PATTERN = /[鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬免]/g
 const ZODIAC_ALIAS: Record<string, string> = {
   龍: "龙",
   馬: "马",
   雞: "鸡",
   豬: "猪",
+  // `public.fixed_data` 的「文武肖」沿用了厂商写法「免」，实际就是「兔」。
+  // 不归一化会让「兔」判定永远匹配不上，列表里也会出现错别字。
+  免: "兔",
 }
 
 const LIVE_ARTICLE_DEFINITIONS: Record<string, ArticleDefinition> = {
@@ -333,6 +336,68 @@ function qinqiLabels(row: PublicHistoryRow) {
   return splitPredictionTokens(row.prediction_text || raw.content)
 }
 
+/**
+ * 「二选一」生肖分组模块：候选组只有一组，另一组的信息必须来自静态说明。
+ *
+ * 144 文武中特（文肖 / 武肖）与 480 吉凶六肖（凶丑 / 吉美）在 `created.mode_payload_*`
+ * 里每期只落**一个**组标签（如 `["文肖|免,猪,羊,鸡,鼠,龙"]`），而展示规范 S6 要求
+ * 两组固定分组说明都要显示。因此从该模块自己的历史行里收集全部出现过的分组，
+ * 合成一条与期号无关的分组说明；某一期恰好抽到的那组加下划线。
+ */
+const TWO_CHOICE_GROUP_MODE_IDS = new Set([144, 480])
+
+type GroupDefinition = {
+  label: string
+  values: string[]
+}
+
+/** 收集该模块历史行里出现过的全部「组|成员」定义，按首次出现顺序去重。 */
+export function collectGroupDefinitions(rows: PublicHistoryRow[]): GroupDefinition[] {
+  const definitions: GroupDefinition[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    for (const item of parsePipeItems((row.raw || {}).content ?? row.prediction_text)) {
+      if (!item.label || seen.has(item.label)) continue
+      const values = item.values.map((value) => normalizeZodiac(value)).filter(Boolean)
+      if (!values.length) continue
+      seen.add(item.label)
+      definitions.push({ label: item.label, values })
+    }
+  }
+  return definitions
+}
+
+function renderGroupLegend(rows: PublicHistoryRow[], modeId: number) {
+  if (!TWO_CHOICE_GROUP_MODE_IDS.has(modeId)) return ""
+  if (!rows.length) return ""
+
+  const definitions = collectGroupDefinitions(rows)
+  if (definitions.length < 2) return ""
+
+  const currentLabel = firstPredictionLabel(rows[0])
+  const parts = definitions.map((definition) => {
+    const shown = definition.values.join("")
+    const isCurrent = definition.label === currentLabel
+    const text = `${escapeHtml(definition.label)}：${escapeHtml(shown)}`
+    return isCurrent
+      ? `<span style="text-decoration: underline;">${text}</span> <font color="#FF0000">（本期）</font>`
+      : text
+  })
+
+  return `<p style="font-weight:700;color:#000080;margin:2px 0;">【${escapeHtml(
+    definitions.map((definition) => definition.label).join(" / ")
+  )} 固定分组】${parts.join("　")}</p>`
+}
+
+/** 该模块本轮用于展示的分组说明（S6）；非二选一模块返回空串。 */
+export function buildGroupLegendHtml(rows: PublicHistoryRow[], modeId: number) {
+  return renderGroupLegend(rows, modeId)
+}
+
+function buildLiveContentHtml(rows: TwjinniuArticleRow[], groupLegendHtml = "") {
+  return `${INTRO_HTML}${groupLegendHtml}${rows.map((row) => row.lineHtml).join("")}`
+}
+
 function domesticWildPrediction(row: PublicHistoryRow) {
   const raw = row.raw || {}
   const jia = parseZodiacs(raw.jia)
@@ -405,8 +470,16 @@ function renderPredictionInner(article: ArticleDefinition, row: PublicHistoryRow
     }
     case 26:
       return renderJoinedTokens(qinqiLabels(row), "", "")
-    case 480:
-      return escapeHtml(firstPredictionLabel(row))
+    case 480: {
+      // 吉凶六肖的正文是 `吉美|兔,龙,蛇,马,羊,鸡`。原实现只上屏组名「吉美」，
+      // 把 6 个候选肖整个丢掉，用户看不到任何预测内容（违反 S6）。
+      const group = parsePipeItems((row.raw || {}).content).at(0)
+      if (!group) return escapeHtml(firstPredictionLabel(row))
+      const zodiacs = group.values.map((value) => normalizeZodiac(value)).filter(Boolean)
+      const special = row.is_opened ? resolveSpecialZodiac(row, draw) : ""
+      const list = renderJoinedTokens(zodiacs, "", special)
+      return `${escapeHtml(group.label)}：${list}`
+    }
     default:
       return escapeHtml(String(row.prediction_text || "").trim())
   }
@@ -474,10 +547,6 @@ function buildRowHtml(article: ArticleDefinition, row: PublicHistoryRow, draw?: 
     isCorrect: row.is_correct,
     lineHtml,
   }
-}
-
-function buildLiveContentHtml(rows: TwjinniuArticleRow[]) {
-  return `${INTRO_HTML}${rows.map((row) => row.lineHtml).join("")}`
 }
 
 async function readSnapshotHtml(articleId: string) {
@@ -588,7 +657,8 @@ async function loadLiveArticle(
     return buildMissingLiveArticleDetail(article, lotteryType)
   }
 
-  const rows = module.history.slice(0, 10).map((row) => buildRowHtml(article, row, drawMap.get(row.issue)))
+  const history = module.history.slice(0, 10)
+  const rows = history.map((row) => buildRowHtml(article, row, drawMap.get(row.issue)))
 
   return {
     id: article.id,
@@ -599,7 +669,7 @@ async function loadLiveArticle(
     status: "ok",
     missingMapping: false,
     notes: [],
-    contentHtml: buildLiveContentHtml(rows),
+    contentHtml: buildLiveContentHtml(rows, renderGroupLegend(history, article.modeId)),
     rows,
     requestedLotteryType: lotteryType,
   }

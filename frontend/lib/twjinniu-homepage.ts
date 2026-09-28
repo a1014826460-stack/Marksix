@@ -1352,25 +1352,36 @@ function renderQianhouTexiao(rows: LegacyModeRow[]) {
     </tr></tbody></table></td></tr>${body}</tbody></table>`
 }
 
+/**
+ * 前后24码的固定落码文本（永久固定，不随期号变化）。
+ *
+ * 两行合计 49 个号码、互不重叠（模块名虽叫「前后24码」，后落码实际是 25 个）：
+ *   前落码（24 个）：01-08 + 17-24 + 33-40
+ *   后落码（25 个）：09-16 + 25-32 + 41-49
+ */
+const QIANHOU_FRONT_CODES = Object.freeze([
+  "01", "02", "03", "04", "05", "06", "07", "08",
+  "17", "18", "19", "20", "21", "22", "23", "24",
+  "33", "34", "35", "36", "37", "38", "39", "40",
+])
+const QIANHOU_BACK_CODES = Object.freeze([
+  "09", "10", "11", "12", "13", "14", "15", "16",
+  "25", "26", "27", "28", "29", "30", "31", "32",
+  "41", "42", "43", "44", "45", "46", "47", "48", "49",
+])
+
 function renderQianhou24ma(rows: LegacyModeRow[]) {
   // ---- Static section: permanent fixed number mapping ----
-  // Wrap each number in a <span> so the browser can reflow them on
-  // narrow screens instead of overflowing a single long line.
-  const renderStaticNumbers = (numbers: number[]) =>
-    numbers.map((n) => `<span class="qianhou-num">${String(n).padStart(2, "0")}</span>`).join(" ")
-
-  const frontNumbers1 = renderStaticNumbers([1,2,3,4,5,6,7,8,17,18,19,20,21,22,23])
-  const frontNumbers2 = renderStaticNumbers([24,33,34,35,36,37,38,39,40])
-  const backNumbers1 = renderStaticNumbers([9,10,11,12,13,14,15,16,25,26,27,28,29,30,31,32])
-  const backNumbers2 = renderStaticNumbers([41,42,43,44,45,46,47,48,49])
-
+  // 用纯文本 + 单个空格输出，不做逐号 <span>。逐号 span 在移动端
+  // 会因 flex/inline-block 的间隙折叠出现 `2324`、`3241` 这类号码粘连，
+  // 纯文本行既不会粘连，也不会在号码中间被拆断。
   const staticSection = `
     <table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td style="padding:8px;background:#fff;border:1px solid #ccc;">
       <p style="text-align:center;color:#FF0000;font-weight:700;font-size:14pt;margin:6px 0;">前后落码【永久固定】</p>
       <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
       <div class="qianhou-static-numbers" style="text-align:center;font-weight:700;font-size:13pt;margin:4px 0;line-height:2.2;">
-        <div class="qianhou-group"><span class="qianhou-label" style="color:#FF0000;">前落码：</span><span class="qianhou-row">${frontNumbers1}</span><span class="qianhou-row">${frontNumbers2}</span></div>
-        <div class="qianhou-group"><span class="qianhou-label" style="color:#008000;">后落码：</span><span class="qianhou-row">${backNumbers1}</span><span class="qianhou-row">${backNumbers2}</span></div>
+        <p class="qianhou-row" style="margin:2px 0;"><span class="qianhou-label" style="color:#FF0000;">前落码：</span>${QIANHOU_FRONT_CODES.join(" ")}</p>
+        <p class="qianhou-row" style="margin:2px 0;"><span class="qianhou-label" style="color:#008000;">后落码：</span>${QIANHOU_BACK_CODES.join(" ")}</p>
       </div>
       <p class="qianhou-star" style="text-align:center;color:#0000FF;font-weight:700;font-size:20pt;margin:4px 0;">*************************************************</p>
     </td></tr></tbody></table>`

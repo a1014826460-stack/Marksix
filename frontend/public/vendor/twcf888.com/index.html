@@ -708,7 +708,8 @@
             var tailLine = list[0] || "";
             var tailLabel = tailLine.split("|")[0] || "";
             var tailDigit = tailLabel.replace(/[^\d]/g, "").slice(0, 1);
-            var tailDisplay = tailDigit ? tailDigit + tailDigit + tailDigit : "--";
+            // 平特一尾按原站五位数字样式展示：7尾 → 【77777】
+            var tailDisplay = tailDigit ? tailDigit + tailDigit + tailDigit + tailDigit + tailDigit : "--";
             if (row.is_opened && row.is_correct === true) {
                 return '<font color="#FF6600">【<span style="background-color:#FFFF00">' + escapeHtml(tailDisplay) + '</span>】</font>';
             }
@@ -731,6 +732,30 @@
             }) + "】</font>";
         }
 
+        if (meta.modeId === 38 || meta.modeId === 143 || meta.modeId === 224) {
+            var waveValues = list.length ? list : splitValues(getPredictionSourceText(row));
+            var waveJoined = waveValues.join("+") || formatPredictionText(getPredictionSourceText(row));
+            var resultWaveSlot = resultColor === "red"
+                ? "红波"
+                : resultColor === "blue"
+                    ? "蓝波"
+                    : resultColor === "green"
+                        ? "绿波"
+                        : "";
+            // 高亮口径与其它绝杀/命中类一致：开奖波色落在候选里才标黄。
+            // mode 143 被 `一波中特`（命中型）与 `绝杀一波`（verdictInverted）共用。
+            // 判定「取反后」为「错」等价于原始判定为「对」（开奖波色落在候选里），
+            // 因此这里统一用取反后的判定当命中标志：取反栏目判定为「错」时标黄，
+            // 非取反栏目判定为「对」时标黄；两条路径都不会出现「对」却带黄底。
+            var waveDrawnInCandidate = Boolean(resultWaveSlot) && waveJoined.indexOf(resultWaveSlot) !== -1;
+            var waveShouldHighlight = row.is_opened && waveDrawnInCandidate &&
+                (meta.verdictInverted === true ? row.is_correct === false : row.is_correct === true);
+            if (waveShouldHighlight) {
+                return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + escapeHtml(waveJoined) + "</span>】</font>";
+            }
+            return '<font color="#0000FF">【' + escapeHtml(waveJoined) + "】</font>";
+        }
+
         if (meta.modeId === 473) {
             var killTwoZodiacs = splitValues(raw.content || getPredictionSourceText(row));
             return '<font color="#0000FF">【' + escapeArrayItemList(killTwoZodiacs, {
@@ -749,7 +774,29 @@
             }) + "】</font>";
         }
 
-        if (meta.modeId === 14 || meta.modeId === 38 || meta.modeId === 41 || meta.modeId === 483) {
+        if (meta.modeId === 98) {
+            // 绝杀一行（五行杀）：`["水|13,14,…"]` → 【水水水】；原实现只上屏标签且命中高亮永远落空。
+            var wx98 = list[0] || "";
+            var wx98Label = (wx98.split("|")[0] || "").trim();
+            var wx98Display = wx98Label ? wx98Label + wx98Label + wx98Label : "--";
+            if (row.is_opened && row.is_correct === false) {
+                return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + escapeHtml(wx98Display) + '</span>】</font>';
+            }
+            return '<font color="#0000FF">【' + escapeHtml(wx98Display) + "】</font>";
+        }
+
+        if (meta.modeId === 41) {
+            // 绝杀一头 / 必杀1头：`["0头|01,…"]` → 【00000】。
+            // 原实现与 14/38/483 共用 formatPredictionText 分支，会把整串原始 JSON 上屏。
+            var head41Label = (list[0] || "").split("|")[0] || "";
+            var head41Digit = head41Label.replace(/[^\d]/g, "").slice(0, 1);
+            var head41Display = head41Digit
+                ? head41Digit + head41Digit + head41Digit + head41Digit + head41Digit
+                : "--";
+            return '<font color="#0000FF">【' + escapeHtml(head41Display) + "】</font>";
+        }
+
+        if (meta.modeId === 14 || meta.modeId === 38 || meta.modeId === 483) {
             return '<font color="#0000FF">【' + escapeHtml(formatPredictionText(getPredictionSourceText(row))) + "】</font>";
         }
 
@@ -786,9 +833,48 @@
             }) + "】</font>";
         }
 
+        if (meta.modeId === 57) {
+            // 特码大小：正文是 `["大|25,26,…"]`，只取标签并三连展示 【大大大】。
+            // 原实现落到最末默认分支，把整串原始 JSON 上屏（S5 原始数据外泄）。
+            var size57 = list[0] || "";
+            var size57Label = (size57.split("|")[0] || "").replace(/[\[\]\"]/g, "").trim();
+            var size57Display = size57Label ? size57Label + size57Label + size57Label : "--";
+            var size57Text = escapeHtml(size57Display);
+            if (row.is_opened && row.is_correct === true) {
+                return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + size57Text + "</span>】</font>";
+            }
+            return '<font color="#0000FF">【' + size57Text + "】</font>";
+        }
+
         if (resultCode && row.is_opened && row.is_correct === true && meta.modeId === 20) {
-            var killTailLabel = (list[0] || "").split("|")[0] || "";
-            return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + escapeHtml(killTailLabel) + "</span>】</font>";
+            var killTailLabel20 = (list[0] || "").split("|")[0] || "";
+            var killTailDigit20 = killTailLabel20.replace(/[^\d]/g, "").slice(0, 1);
+            var killTailDisplay20 = killTailDigit20
+                ? killTailDigit20 + killTailDigit20 + killTailDigit20 + killTailDigit20 + killTailDigit20
+                : killTailLabel20 || "--";
+            return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + escapeHtml(killTailDisplay20) + "</span>】</font>";
+        }
+
+        if (meta.modeId === 20) {
+            // 绝杀一尾：未命中（杀中）时也要给出五位数字，不能把 `["7尾|07,…"]` 原始串上屏。
+            var killTailLabel20b = (list[0] || "").split("|")[0] || "";
+            var killTailDigit20b = killTailLabel20b.replace(/[^\d]/g, "").slice(0, 1);
+            var killTailDisplay20b = killTailDigit20b
+                ? killTailDigit20b + killTailDigit20b + killTailDigit20b + killTailDigit20b + killTailDigit20b
+                : killTailLabel20b || "--";
+            return '<font color="#0000FF">【' + escapeHtml(killTailDisplay20b) + "】</font>";
+        }
+
+        if (meta.modeId === 472) {
+            // 绝杀一肖 / 绝禁一肖：单个生肖三连展示 `兔` → 【兔兔兔】。
+            var killOneZodiac = (raw.content || getPredictionSourceText(row) || "").replace(/[\[\]\"]/g, "").split(",")[0].trim();
+            var killOneDisplay = killOneZodiac
+                ? killOneZodiac + killOneZodiac + killOneZodiac
+                : "--";
+            if (row.is_opened && row.is_correct === false) {
+                return '<font color="#0000FF">【<span style="background-color:#FFFF00">' + escapeHtml(killOneDisplay) + "</span>】</font>";
+            }
+            return '<font color="#0000FF">【' + escapeHtml(killOneDisplay) + "】</font>";
         }
 
         return '<font color="#0000FF">【' + escapeHtml(formatPredictionText(getPredictionSourceText(row))) + "】</font>";
@@ -1056,7 +1142,9 @@
         }
         var rows = [];
         for (var index = 0; index < module.history.length; index++) {
-            var row = module.history[index];
+            // 取反栏目（绝杀一波）必须先把 is_correct 收敛成栏目自己的判定，
+            // 否则卡片会显示相反的「对/错」。
+            var row = effectiveVerdictRow(meta, module.history[index]);
             rows.push(
                 '<tr><td width="100%" height="40"><p align="center" class="twcf888-nine-row"><b><font face="楷体" style="font-size:14pt">' +
                 escapeHtml(formatIssueLabel(row.issue, lotteryType)) +
@@ -1555,7 +1643,8 @@
                 '<p align="center"><b><font face="微软雅黑" size="3" color="#237575">' + escapeHtml(meta.title) + '</font></b></p>' +
                 '<p align="center"><font color="#888">暂无预测数据</font></p></td>';
         }
-        var latest = module.history[0];
+        // 取反栏目（绝杀一波）必须先收敛判定，再渲染正文与结果，保持两处一致。
+        var latest = effectiveVerdictRow(meta, module.history[0]);
         return '<td width="50%" height="60" class="twcf888-module-row" style="vertical-align:middle">' +
             '<p align="center"><b><font face="微软雅黑" size="3" color="#237575">' + escapeHtml(meta.title) + '</font></b></p>' +
             '<p align="center"><b><font face="微软雅黑" size="4">' +
@@ -1957,7 +2046,7 @@
 
 
   <script src="/vendor/_shared/managed-site-links.js"></script>
-  <managed-site-links site-key="twcf888"></managed-site-links>
+  <managed-site-links site-key="twcf888" style="display:block;width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;"></managed-site-links>
   <div class="legacy-site-footer" style="width:100%;max-width:800px;margin:0 auto;box-sizing:border-box;">
   <div class="box pad" id="legacy-attribute-anchor">
     <div class="list-title">属性知识</div>

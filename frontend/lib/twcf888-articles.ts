@@ -262,6 +262,29 @@ function buildPredictionSpan(innerHtml: string) {
   return `<span style="color: #2ecc71">${innerHtml}</span>`
 }
 
+/**
+ * 单标签预测的「重复字符」展示：一个字符重复 N 次。
+ *
+ * 原站对只有单个取值的玩法（绝杀一肖 / 绝禁一肖 / 绝杀一行 / 特码大小）用
+ * 三连写法 `【马马马】`、`【木木木】`、`【大大大】`；对头尾类
+ * （平特一尾 / 绝杀一尾 / 绝杀一头 / 必杀1头）用五位数字写法 `【55555】`、`【00000】`。
+ * 重复字数按玩法区分，不能统一成一个常量。
+ */
+const REPEAT_COUNT_CHARACTER = 3
+const REPEAT_COUNT_DIGIT = 5
+
+function repeatText(value: string, times: number) {
+  const text = String(value || "").trim()
+  if (!text) return ""
+  return text.repeat(times)
+}
+
+/** 从 `7尾` / `0头` / `555` 这类文本里取第一个数字字符；取不到返回空串。 */
+function firstDigit(value: string) {
+  const match = String(value || "").match(/\d/)
+  return match ? match[0] : ""
+}
+
 function wrapWholeHighlight(content: string, enabled: boolean) {
   return enabled ? `<span style="background-color: #FFFF00">${content}</span>` : content
 }
@@ -359,16 +382,19 @@ function buildArticlePredictionHtml(
     }
     case 54: {
       const label = parsePipeValue(predictionList[0] || "").label
-      const digit = label.replace(/[^\d]/g, "").slice(0, 1)
-      const display = digit ? `${digit}${digit}${digit}` : "--"
+      const display = repeatText(firstDigit(label), REPEAT_COUNT_DIGIT) || "--"
       const inner =
         row.is_opened && row.is_correct === true
           ? `<span style="background-color: #FFFF00">${escapeHtml(display)}</span>`
           : escapeHtml(display)
       return buildPredictionSpan(inner)
     }
-    case 20:
-      return buildPredictionSpan(escapeHtml(parsePipeValue(predictionList[0] || "").label || "--"))
+    case 20: {
+      // 绝杀一尾：`["7尾|07,17,27,37,47"]` → 【77777】
+      const label = parsePipeValue(predictionList[0] || "").label
+      const display = repeatText(firstDigit(label), REPEAT_COUNT_DIGIT)
+      return buildPredictionSpan(escapeHtml(display || label || "--"))
+    }
     case 95: {
       const matchedLabel = pickMatchedPipeLabel(predictionList, resultCode)
       const labels = predictionList
@@ -402,7 +428,6 @@ function buildArticlePredictionHtml(
       )
     }
     case 42:
-    case 472:
     case 473: {
       const values = splitCsv(raw.content || getPredictionSourceText(row))
       return buildPredictionSpan(
@@ -410,6 +435,16 @@ function buildArticlePredictionHtml(
           highlight: row.is_opened && row.is_correct === false ? resultZodiac : "",
         })
       )
+    }
+    case 472: {
+      // 绝杀一肖 / 绝禁一肖：单个生肖按原站样式三连展示 `兔` → 【兔兔兔】。
+      const zodiac = splitCsv(raw.content || getPredictionSourceText(row))[0] || ""
+      const display = repeatText(zodiac, REPEAT_COUNT_CHARACTER) || "--"
+      const inner =
+        row.is_opened && row.is_correct === false && resultZodiac === zodiac
+          ? `<span style="background-color: #FFFF00">${escapeHtml(display)}</span>`
+          : escapeHtml(display)
+      return buildPredictionSpan(inner)
     }
     case 5: {
       const side = parsePipeValue(predictionList[0] || "").label || "天地肖"
@@ -457,15 +492,22 @@ function buildArticlePredictionHtml(
         })}`
       )
     }
-    case 41:
-      return buildPredictionSpan(escapeHtml(parsePipeValue(predictionList[0] || "").label || "--"))
+    case 41: {
+      // 绝杀一头 / 必杀1头：`["0头|01,…"]` → 【00000】
+      const label = parsePipeValue(predictionList[0] || "").label
+      const display = repeatText(firstDigit(label), REPEAT_COUNT_DIGIT)
+      return buildPredictionSpan(escapeHtml(display || label || "--"))
+    }
     case 98: {
-      const matchedLabel = pickMatchedPipeLabel(predictionList, resultCode)
-      return buildPredictionSpan(
-        row.is_opened && row.is_correct === false && matchedLabel
-          ? `<span style="background-color: #FFFF00">${escapeHtml(matchedLabel)}</span>`
-          : escapeHtml(parsePipeValue(predictionList[0] || "").label || "--")
-      )
+      // 绝杀一行（mode 98，五行杀）：`["水|13,14,…"]` → 【水水水】。
+      // 原实现只上屏 `pickMatchedPipeLabel` 的标签，命中判定的黄色高亮因此永远落空。
+      const label = parsePipeValue(predictionList[0] || "").label
+      const display = repeatText(label, REPEAT_COUNT_CHARACTER) || "--"
+      const inner =
+        row.is_opened && row.is_correct === false && label
+          ? `<span style="background-color: #FFFF00">${escapeHtml(display)}</span>`
+          : escapeHtml(display)
+      return buildPredictionSpan(inner)
     }
     case 2: {
       const matchedLabel = pickMatchedPipeLabel(predictionList, resultCode)
@@ -543,12 +585,19 @@ function buildArticlePredictionHtml(
             : resultColor === "green"
               ? "绿波"
               : ""
-      return buildPredictionSpan(
-        wrapWholeHighlight(
-          escapeHtml(joined),
-          row.is_opened && row.is_correct === true && joined.indexOf(matchedWave) !== -1
-        )
-      )
+      // 高亮口径（与其它绝杀/命中类一致）：开奖目标落在候选里才标黄。
+      //
+      // mode 143 被两个相反的栏目共用：`一波中特`（3049，命中型）与
+      // `绝杀一波`（2290，verdictInverted）。取反栏目的 `row.is_correct` 已被
+      // `buildArticleRows` 翻成「杀中=true」，这里不能再拿它当命中标志，否则
+      // 杀失败那期永远不标黄（线上实测 263 期 `【蓝波】开 马37错` 零黄底，
+      // 而镜像栏目同一期是标黄的）。取反栏目必须用原始判定判断「开奖波色是否落在候选里」。
+      const drawerInCandidate = Boolean(matchedWave) && joined.indexOf(matchedWave) !== -1
+      const shouldHighlight =
+        row.is_opened &&
+        drawerInCandidate &&
+        (definition.verdictInverted === true || row.is_correct === true)
+      return buildPredictionSpan(wrapWholeHighlight(escapeHtml(joined), shouldHighlight))
     }
     case 226:
     case 470: {
@@ -565,7 +614,15 @@ function buildArticlePredictionHtml(
         wrapWholeHighlight(escapeHtml(label), row.is_opened && row.is_correct === true)
       )
     }
-    case 57:
+    case 57: {
+      // 特码大小：正文是 `["大|25,26,…"]`，只取标签并三连展示 `【大大大】`。
+      // 原实现落到默认分支，把整串 `["大|25,26,…"]` 直接上屏（S5 原始 JSON 外泄）。
+      const label = parsePipeValue(predictionList[0] || "").label
+      const html = escapeHtml(repeatText(label, REPEAT_COUNT_CHARACTER) || label || "--")
+      return buildPredictionSpan(
+        wrapWholeHighlight(html, row.is_opened && row.is_correct === true)
+      )
+    }
     case 198:
     case 279:
     case 132: {
@@ -656,9 +713,9 @@ function buildArticleRows(
       const resultText =
         definition.modeId === 88
           ? effectiveCorrect === true
-            ? `${baseResultText}鍑?`
+            ? `${baseResultText}准`
             : effectiveCorrect === false
-              ? `${baseResultText}閿?`
+              ? `${baseResultText}错`
               : baseResultText
           : appendResultOutcome(baseResultText, effectiveCorrect)
       if (effectiveCorrect === true) {
@@ -748,7 +805,7 @@ function buildFourLineFourHeadRows(
         resultHtml,
         isOpened,
         isCorrect,
-        lineHtml: `<p>${escapeHtml(elementRow.issue)}鏈?${escapeHtml(definition.title)} 銆?span style="color: #2ecc71">${predictionInner}</span>銆戝紑 ${resultHtml}</p>`,
+        lineHtml: `<p>${escapeHtml(elementRow.issue)}期 ${escapeHtml(definition.title)} 【<span style="color: #2ecc71">${predictionInner}</span>】开 ${resultHtml}</p>`,
       }
     })
     .filter((row): row is Twcf888ArticleRow => Boolean(row))

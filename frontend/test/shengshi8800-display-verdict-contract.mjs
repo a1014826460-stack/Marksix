@@ -1,8 +1,8 @@
 // 展示口径契约（tw8800 / shengshi8800）
 //
-// 覆盖本轮「命中才显示 / 命中才高亮 / 三期中特 中N期」的展示需求：
-//   1. 逻辑用例：mode 197 的「中N期」由三期窗口内已开奖各期的特肖算出；
-//   2. 静态不变量：相关渲染脚本必须走统一判定，且不得再写死默认值。
+// 覆盖本轮「命中才显示 / 命中才高亮 / 三期中特 固定中1期」的展示需求：
+//   1. 逻辑用例：mode 197 的结果列由 compat 路由的 period_zodiacs 判断窗口是否已开奖；
+//   2. 静态不变量：相关渲染脚本必须走统一判定。
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import path from "node:path"
@@ -45,8 +45,11 @@ function toPlainJs(source) {
 const harness = [
   "function asString(value) { return value == null ? '' : String(value) }",
   toPlainJs(extractFunction(routeSource, "sanqiWindowZodiacs")),
+  // `filterSanqiDisplayRows` 会调用 `sanqiWindowPeriods` 附加逐期开奖明细（新增字段），
+  // 抽取时必须一并带上，否则 vm 里会 ReferenceError。
+  toPlainJs(extractFunction(routeSource, "sanqiWindowPeriods")),
   toPlainJs(extractFunction(routeSource, "filterSanqiDisplayRows")),
-  "globalThis.__sanqi = { sanqiWindowZodiacs, filterSanqiDisplayRows }",
+  "globalThis.__sanqi = { sanqiWindowZodiacs, sanqiWindowPeriods, filterSanqiDisplayRows }",
 ].join("\n")
 
 const sandbox = {}
@@ -75,24 +78,20 @@ assert.equal(picked[0].period_zodiacs, "鸡,马")
 assert.equal(picked[1].term, "265")
 assert.equal(picked[1].period_zodiacs, "羊,兔,猪")
 
-/** 与 023sqzt.js 完全一致的「中N期」口径。 */
-function hitPeriods(pool, periodZodiacs) {
+/** 与 023sqzt.js 完全一致的结果列口径：窗口内有开奖即固定「中1期」，否则「中几期」。 */
+function sanqiTerm(periodZodiacs) {
   const zodiacs = String(periodZodiacs || "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean)
-  let hits = 0
-  for (const zodiac of zodiacs) {
-    if (pool.indexOf(zodiac) !== -1) hits++
-  }
-  return zodiacs.length > 0 ? `中${hits}期` : "中几期"
+  return zodiacs.length > 0 ? "中1期" : "中几期"
 }
 
-assert.equal(hitPeriods("牛蛇鼠猴", picked[0].period_zodiacs), "中0期",
-  "269-271 窗口候选 [牛蛇鼠猴]，已开奖两期都没中 -> 中0期")
-assert.equal(hitPeriods("羊鼠兔龙", picked[1].period_zodiacs), "中2期",
-  "263-265 窗口候选 [羊鼠兔龙]，羊与兔命中 -> 中2期")
-assert.equal(hitPeriods("牛蛇鼠猴", ""), "中几期", "窗口内一期都没开奖 -> 中几期")
+assert.equal(sanqiTerm(picked[0].period_zodiacs), "中1期",
+  "269-271 窗口已有开奖 -> 固定「中1期」（厂商从不显示中0期/中2期）")
+assert.equal(sanqiTerm(picked[1].period_zodiacs), "中1期",
+  "263-265 窗口已有开奖 -> 固定「中1期」（即使命中 2 期也不显示中2期）")
+assert.equal(sanqiTerm(""), "中几期", "窗口内一期都没开奖 -> 中几期")
 
 // ── 2. 展示脚本静态不变量 ────────────────────────────────────
 const verdictScripts = [
@@ -149,14 +148,13 @@ const collisions = [...globalOwners.entries()]
   .map(([key, files]) => `${key} 被多个脚本定义: ${[...files].join(", ")}`)
 assert.deepEqual(collisions, [], `存在跨脚本的全局名冲突：\n${collisions.join("\n")}`)
 
-// 三期中特（197）自己算「中N期」，不直接显示「准/错」
+// 三期中特（197）结果列固定「中1期」（厂商口径），不直接显示「准/错」
 const sqzt = fs.readFileSync(path.join(JS_DIR, "023sqzt.js"), "utf8")
-assert.ok(sqzt.includes("period_zodiacs"), "023sqzt.js 必须读取接口返回的 period_zodiacs")
-assert.ok(sqzt.includes("hitPeriods"), "023sqzt.js 必须统计窗口内命中期数")
-assert.ok(!/'中1期'/.test(sqzt), "023sqzt.js 不得把「中1期」写死为默认值")
+assert.ok(sqzt.includes("period_zodiacs"), "023sqzt.js 必须读取接口返回的 period_zodiacs（用于命中高亮与是否已开奖）")
+assert.ok(/'中1期'/.test(sqzt), "023sqzt.js 已开奖窗口必须固定显示「中1期」，不得统计真实中0期/中2期")
 assert.ok(
-  /periodZodiacs\.length\s*>\s*0\s*\?/.test(sqzt),
-  "023sqzt.js 只在窗口内已有开奖数据时才显示「中N期」，否则保持「中几期」",
+  /periodZodiacs\.length\s*>\s*0\s*\?\s*'中1期'\s*:\s*'中几期'/.test(sqzt),
+  "023sqzt.js 只在窗口内已有开奖数据时显示「中1期」，否则保持「中几期」",
 )
 
 // 单双各四肖：未命中不得显示「中:」

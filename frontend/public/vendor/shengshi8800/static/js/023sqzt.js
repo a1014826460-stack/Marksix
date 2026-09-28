@@ -52,13 +52,10 @@ $.ajax({
                         c1.push(`${xiao[i]}`)
                     }
                 }
-                // 「中N期」= 窗口内已开奖各期中，特肖落在候选 4 肖里的期数；
-                // 一期都还没开奖时保持「中几期」（未知），不再恒显示「中1期」。
-                let hitPeriods = 0;
-                for (let i = 0; i < periodZodiacs.length; i++) {
-                    if (xiao.indexOf(periodZodiacs[i]) !== -1) hitPeriods++;
-                }
-                let term = periodZodiacs.length > 0 ? ('中' + hitPeriods + '期') : '中几期'
+                // 「中1期」按厂商原文固定展示：厂商对已开奖窗口一律显示「中1期」，
+                // 从不显示中0期/中2期/中3期（营销口径，不做真实期数统计）；
+                // 窗口内一期都没开奖时保持「中几期」。命中的生肖仍然标黄。
+                let term = periodZodiacs.length > 0 ? '中1期' : '中几期'
                 //console.log(ma)
                 htmlBoxList = htmlBoxList + ` 
 

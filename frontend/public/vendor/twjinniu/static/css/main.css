@@ -1,4 +1,4 @@
-﻿html, body {
+html, body {
     padding: 0;
     margin: 0;
     width: 100%;
@@ -2330,6 +2330,7 @@ font-size: 16px;
     }
 
     /* ---- 前后24码 基础排版 ---- */
+    /* 落码行已改为纯文本 + 空格，不再逐号包 <span>（避免移动端号码粘连）。 */
     .qianhou-num {
         display: inline-block;
         min-width: 1.6em;
@@ -2347,9 +2348,12 @@ font-size: 16px;
         margin-right: 4px;
     }
 
+    /* 纯文本落码行：允许在数字之间换行，同时不把号码本身拆断。 */
     .qianhou-row {
-        display: inline;
-        white-space: nowrap;
+        display: block;
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
     }
 
     /* ---- 前后24码移动端排版 ---- */
@@ -2367,9 +2371,10 @@ font-size: 16px;
         margin: 0 0.5px;
     }
 
-    /* 移动端取消 nowrap，允许数字行内自由换行 */
+    /* 移动端落码行允许在数字之间自由换行（号码内部不拆） */
     #twjinniu-qianhou-24ma .qianhou-row {
         white-space: normal !important;
+        word-break: keep-all !important;
     }
 
     #twjinniu-qianhou-24ma td p font,

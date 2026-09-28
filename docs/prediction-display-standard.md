@@ -479,6 +479,92 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 
 ---
 
+## 五之八、tw8800 三期中特恢复固定「中1期」（2026-09-28）
+
+需求：三期中特（mode 197，`023sqzt.js`）此前被改成真实统计「中N期」（窗口内已开奖各期
+特肖落在候选 4 肖的期数），一个都未命中会显示「中0期」、中两期显示「中2期」。
+确认**厂商原文就是固定文案**（`let term = '中1期'; if (!sx) term = '中几期'`）——
+已开奖窗口一律显示「中1期」，从不显示中0期/中2期/中3期；真实统计不符合厂商营销展示。
+
+**处理**：`023sqzt.js` 恢复固定口径——窗口内已有开奖（`period_zodiacs` 非空）显示 `中1期`，
+一期都没开奖保持 `中几期`；命中生肖标黄的逻辑保留（`period_zodiacs` 仍由 compat 路由
+`sanqiWindowZodiacs()` 提供，用于高亮与是否已开奖判断）。契约测试
+`frontend/test/shengshi8800-display-verdict-contract.mjs` 的「中N期」用例同步改为固定口径
+（断言已开奖窗口必须显示「中1期」，且不得再统计真实期数）。
+`docs/vendor-sites/shengshi8800-pool-label-remediation.md` 第 3 节已记录反转。
+
+**验证**：`node frontend/test/shengshi8800-display-verdict-contract.mjs` 通过
+（15 个展示脚本覆盖）；`023sqzt.js` 语法检查通过。
+
+---
+
+## 五之九、twsaimahui 家野两肖（`.l1`）/ 四肖三期内必出（`.l21`）修复记录（2026-09-28）
+
+### 1) `061jy2x.js`（mode 251 家野两肖）：格式与高亮
+
+**现象**：`270期家畜野兽:【虎马兔牛猴鸡+虎马兔牛猴鸡】 开:马37准` —— 两段完全相同（同一批 6 肖），
+组名丢失。
+
+**数据来源核查**：`getJyxiao2` → **mode 251「家野两肖」**。该表**没有 `content` 列**，
+后端列是 `title`（= `家禽|牛,马,羊,鸡,狗,猪`，即「组名|组成员」，`predict/mechanisms.py`
+已显式支持 `title` 作为 content 列的替代表）与 `xiao`（= **两肖**；供应商原始
+`public.mode_payload_251`（web 1/5）的 `xiao` 宽度**恒为 2**，如 `蛇,龙`）。
+历史 `mapJyxiao2()` **丢掉了 `title`**，并用 `xiao` 合成 `["马|","虎|",…]`（竖线后为空码，因为该表
+没有 `code` 列），于是组名消失、同一批 6 肖被渲染两遍 —— 这是展示缺陷的直接根因。
+
+**数据侧根因（已修）**：生成侧宽度推断用 `parse_pipe_label_content(title)`，把 `家禽|牛,马,羊,鸡,狗,猪`
+的**分类成员**按逗号拆成 6 个候选标签，于是 `created.mode_payload_251` 每期写进 `xiao` 的是 6 肖
+（所有 web / 所有 type 共 200+ 行全部如此）。修法：宽度改取 `xiao` 列（该玩法的候选列）的样本众数，
+与 mode 142（表内标题「家野2肖（家野选1，生肖选2）」）完全一致 → `label_count=2`。
+**已落库的预测正文不改**（`xiao` 列仍是 6 肖），由兼容层按字段语义取前 2 项。
+
+**修法**：
+- `frontend/app/api/kaijiang/[[...path]]/route.ts`（**共用文件**）：`mapJyxiao2()` 改为
+  `content ← ["组名|组成员"]`（来自 `row.title`）、`xiao ← 两肖`（按字段语义宽度 2 截取）；
+  既有字段名与顺序不变。
+- `frontend/public/vendor/twsaimahui/static/js/061jy2x.js`：渲染 `【组名+两肖】`，
+  判定 = 特肖 ∈ 组成员 ∪ 两肖（命中的是两肖里的某一个 → 高亮该生肖；命中的是组内成员 →
+  高亮组名，与 `040jiaye.js` 的高亮口径一致）；未命中零黄底；未开奖显示 `开:待开奖`，
+  不显示判定也不高亮。家禽/野兽固定分组以 `public.fixed_data`（sign=`家禽|野兽`，
+  id 16/17，status=1）为准。
+
+### 2) `023sanqibizhong.js`（mode 197 四肖三期内必出）：每期各自显示判定
+
+**现象**：一个三期窗口只有一个 3 行表，只有窗口内**最新已开奖那一期**有开奖段，另外两期空白；
+且开奖串取的是**第一项**（`res_code[0]`/`res_sx[0]`），于是把平码当成特码（线上 269-271
+窗口显示 `开:兔28错`，真实是 `270 开:马37`）。
+
+**数据来源核查**：`mode_payload_197` 是**每期一行**存储（列 `start`/`end` 标识所属窗口），
+每行自带该期真实开奖；最新窗口只有 1 行（其余期尚未生成），历史窗口 3 行。
+`filterSanqiDisplayRows()` 过去按 `start-end` 分组后**只保留一行**（窗口内最新已开奖期），
+其余两行被丢弃。
+
+**修法**：
+- `route.ts`（**共用文件**）：`filterSanqiDisplayRows()` 新增把整个窗口的逐期结果带出
+  （新函数 `sanqiWindowPeriods()`），`mapSanqiTwsaimahui()` **只新增** `periods`
+  字段（按期中升序的 `{term,res_code,res_sx}` 数组）；`getSanqiXiao4new` 对 web=6
+  把取数 `limit` 由 8 提到 10（1+3+3+3，覆盖 4 个**完整**窗口；其它站点仍是 8）。
+  既有 `content`/`name`/`res_code`/`res_sx` 字段与语义完全保留。
+- `frontend/public/vendor/twsaimahui/static/js/023sanqibizhong.js`：按 `periods` 逐期渲染
+  （每行 `期号 | 候选4肖 | 开:<特肖><特码>准/错`，候选单元格每期独立高亮，避免整行共用一个
+  命中状态）；特码/特肖取开奖串**最后一项**；未开奖期显示 `开:待开奖`、不给判定、不高亮。
+
+**验收（本地 dev）**：
+
+| 口径 | 命令 | rows | error | warn | js_errors |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 线上（旧代码 = 修复前） | `audit-prediction-display.py twsaimahui --json .codex-temp\audit-tsam-live.json` | 652 | 0 | 5 | 0 |
+| 本地修复后 | `audit-prediction-display.py twsaimahui --base-url http://127.0.0.1:3000 --json .codex-temp\audit-tsam-fix.json --dump-rows .codex-temp\rows-tsam-fix.json` | 655 | 0 | 2 | 0 |
+
+逐期独立复算（真值取 `public.lottery_draws.numbers` + `public.fixed_data` sign=`生肖`）：
+两个模块各 9 期已开奖行，页面判定与高亮 **0 不一致**（准 → 恰好 1 处黄底；错/未开奖 → 0 处）。
+
+契约测试：`frontend/test/twsaimahui-jy2x-sanqi-display-contract.mjs`（两个渲染器真跑 + 路由字段来源）、
+`backend/src/tests/unit/test_jyxiao2_xiao_width.py`（mode 251 候选宽度 = `xiao` 列）；
+`frontend/test/twsaimahui-api-audit.mjs` 的 `getSanqiXiao4new` 期望字段已加入 `periods`。
+
+---
+
 ## 六、常见根因速查
 
 | 现象 | 常见根因 | 处理 |

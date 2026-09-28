@@ -31,10 +31,16 @@ $.ajax({
                     xiaoV[i] = c[1] || '';
                     ma.push(...(c[1] || '').split(','));
                 }
+                // 绝杀半波（mode 58）是排除玩法：特码半波不在候选半波里才算杀中。
+                // 高亮必须与本期判定绑定：判定「准」（杀中）才给候选加黄底，
+                // 判定「错」时整行零黄底（原先按「开码不在杀号池」逐项独立高亮，
+                // 多候选时会出现「错」仍带黄底，与 020ssx/024jsyw 口径不一致）。
+                let __verdict = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictOf(58, d) : 'unknown';
+                let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(__verdict) : '';
                 let c1 = [];
                 for (let i = 0; i < xiao.length; i++) {
                     let xp = xiao[i].split('');
-                    if (code && xiaoV[i].indexOf(code) === -1) {
+                    if (__verdict === 'ok') {
                         c1.push(`<span style="background-color: #FFFF00">${xp[0]}波${xp[1]}</span>`);
                     }else {
                         c1.push(`<span >${xp[0]}波${xp[1]}</span>`)
@@ -42,7 +48,6 @@ $.ajax({
                 }
 
                 //console.log(ma)
-                    let __verdictTxt = window.legacyPredictionVerdict ? window.legacyPredictionVerdict.verdictText(window.legacyPredictionVerdict.verdictOf(58, d)) : '';
                 htmlBoxList = htmlBoxList + ` 
 		
 	<tr>
