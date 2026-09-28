@@ -259,15 +259,36 @@
     })[0] || "";
   }
 
+  // 本期**预测**的家禽/野兽分类：优先用接口注记 `domestic_wild_prediction_category`，
+  // 缺注记时从本期正文解析（`家禽|牛,狗,猪,羊,马,鸡` 或 JSON 数组形态）。
+  // 不能用 `domestic_wild_category`（那是按**特别生肖**推导的开奖分类）——用它展示
+  // 会让卡片恒为「准」，因为展示值本身就是答案。
+  function predictionDomesticWildCategory(row) {
+    var direct = String(rawValue(row, "domestic_wild_prediction_category") || "").trim();
+    if (direct === "家禽" || direct === "野兽") return direct;
+    var candidates = [];
+    var rawContent = rawValue(row, "content");
+    if (typeof rawContent === "string") candidates.push(rawContent);
+    labels(row).forEach(function (label) { candidates.push(String(label)); });
+    for (var index = 0; index < candidates.length; index += 1) {
+      var parts = candidates[index].split(/[;；]/);
+      for (var partIndex = 0; partIndex < parts.length; partIndex += 1) {
+        var label = parts[partIndex].split("|")[0].replace(/[\[\]"]/g, "").trim();
+        if (label === "家禽" || label === "野兽") return label;
+      }
+    }
+    return "";
+  }
+
   function renderBuyWhatOpens(modules) {
     var sourceRows = distinctRows(modules.title_14);
     rows(section("msks")).forEach(function (node, index) {
       var source = sourceRows[index];
       if (!source) return writeRow(node, "", "暂无后端资料", "");
       var parts = resultParts(source);
-      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野〈〈待开奖〉〉", "待开奖", "？00");
-      // 展示的分类优先取后端注记；缺注记时退回「本期 jia/ye 里含特肖的那一类」。
-      var category = domesticWildCategory(source) || predictedDomesticWildCategory(source);
+      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈待开奖〉〉", "？00");
+      // 展示本期**预测**分类；只有历史行缺预测正文时才退回按开奖分类兜底。
+      var category = predictionDomesticWildCategory(source) || domesticWildCategory(source) || predictedDomesticWildCategory(source);
       // 判定 = 特别号生肖是否落在该分类的固定分组里（fixed_data 家禽|野兽 全组）。
       var hit = Boolean(category && canonicalDomesticWildCategory(parts.zodiac) === category);
       var verdict = hit ? "准" : "错";

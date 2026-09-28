@@ -41,11 +41,30 @@ def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def domestic_wild_prediction_category(row: dict[str, Any]) -> str:
+    """本期资料给出的家禽/野兽**预测**分类（正文里 `标签|组成员` 的左半段）。
+
+    与 `domestic_wild_category`（按**特别生肖**推导的开奖分类）不同：这个值来自本期
+    预测正文，与开奖结果无关，所以「展示预测分类 + 按固定分组判定」才不会恒为「准」。
+    """
+    raw = str(row.get("content") or "")
+    match = re.search(r"(家禽|野兽)\s*\|", raw)
+    if match:
+        return match.group(1)
+    # 正文只有标签（没有 `|` 与成员表）时，整体就是分类
+    stripped = raw.strip().strip("[]").strip().strip('"').strip()
+    return stripped if stripped in ("家禽", "野兽") else ""
+
+
 def attach_domestic_wild_result_category(
     rows: list[dict[str, Any]],
     zodiac_category_map: dict[str, str],
 ) -> list[dict[str, Any]]:
-    """Attach the fixed-data domestic/wild category of each opened special zodiac."""
+    """Attach the fixed-data domestic/wild category of each opened special zodiac.
+
+    `domestic_wild_category` 仍是「开奖分类」（供对照/兼容），另附
+    `domestic_wild_prediction_category` = 本期预测正文里的分类，供站点展示与判定使用。
+    """
     annotated_rows: list[dict[str, Any]] = []
     for row in rows:
         annotated = dict(row)
@@ -53,6 +72,9 @@ def attach_domestic_wild_result_category(
         category = str(zodiac_category_map.get(special["zodiac"], "") or "").strip()
         if category:
             annotated["domestic_wild_category"] = category
+        predicted = domestic_wild_prediction_category(annotated)
+        if predicted:
+            annotated["domestic_wild_prediction_category"] = predicted
         annotated_rows.append(annotated)
     return annotated_rows
 

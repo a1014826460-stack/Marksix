@@ -69,3 +69,27 @@ def test_composite_outcome_carries_the_number_element():
 def test_tiandi_groups_match_site_tables():
     assert TIANDI_ZODIACS["天肖"] == ("兔", "马", "猴", "猪", "牛", "龙")
     assert TIANDI_ZODIACS["地肖"] == ("鼠", "虎", "蛇", "羊", "鸡", "狗")
+
+
+def test_domestic_wild_prediction_category_comes_from_the_prediction_text():
+    """预测分类取正文（预测），不取按特别生肖推导的开奖分类 —— 否则卡片恒为「准」。"""
+    assert api.domestic_wild_prediction_category({"content": '["家禽|牛,狗,猪,羊,马,鸡"]'}) == "家禽"
+    assert api.domestic_wild_prediction_category({"content": '["野兽|兔,猴,虎,蛇,鼠,龙"]'}) == "野兽"
+    assert api.domestic_wild_prediction_category({"content": "家禽|牛,马"}) == "家禽"
+    assert api.domestic_wild_prediction_category({"content": '["家禽"]'}) == "家禽"
+    assert api.domestic_wild_prediction_category({"content": ""}) == ""
+    assert api.domestic_wild_prediction_category({"content": "暂无后端资料"}) == ""
+
+
+def test_annotation_exposes_both_result_and_prediction_category():
+    rows = [
+        # 预测「野兽」，开奖特肖 马 → 开奖分类是家禽：两者必须都能拿到，展示用预测值。
+        {"res_code": "01,02,37", "res_sx": "鼠,牛,马", "content": '["野兽|兔,猴,虎,蛇,鼠,龙"]'},
+        {"res_code": "", "res_sx": "", "content": "家禽|牛,马"},
+    ]
+    annotated = api.attach_domestic_wild_result_category(rows, {"马": "家禽", "牛": "家禽"})
+
+    assert annotated[0]["domestic_wild_category"] == "家禽"
+    assert annotated[0]["domestic_wild_prediction_category"] == "野兽"
+    assert annotated[1]["domestic_wild_prediction_category"] == "家禽"
+    assert "domestic_wild_category" not in annotated[1]  # 未开奖没有开奖分类

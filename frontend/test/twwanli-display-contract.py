@@ -116,17 +116,20 @@ def row(issue, *, tokens=None, text=None, raw=None, groups=None,
 def build_modules():
     """270 = 用户报障期（37 马）；269 = 对照（未命中）；268 = 未开奖。"""
     modules = [
-        # 买啥开啥（title_14）：270 展示「家禽」且 37 马 ∈ 家禽全组 → 准；
-        # 269 展示「野兽」而 37 马 属家禽 → 错。接口 isCorrect 故意给 False，
-        # 用来证明适配器不再依赖 vendor 判定。
+        # 买啥开啥（title_14）：展示**本期预测分类**并按其固定分组判定。
+        # 270 预测「家禽」+ 37 马（马 ∈ 家禽）→ 准；
+        # 269 预测「野兽」+ 37 马 → 错（注意该行 domestic_wild_category=家禽，即开奖分类，
+        # 用它展示/判定就会恒「准」——这条断言专门防止退回旧口径）。
         {"moduleKey": "title_14", "rows": [
             row("2026270", raw={"jia": ["牛", "马", "羊", "鸡"], "ye": ["鼠", "虎", "兔", "龙"],
+                                "domestic_wild_prediction_category": "家禽",
+                                "domestic_wild_category": "家禽"},
+                code="37", zodiac="马", is_correct=True),
+            row("2026269", raw={"jia": ["牛", "狗", "猪", "羊"], "ye": ["鼠", "虎", "兔", "龙"],
+                                "domestic_wild_prediction_category": "野兽",
                                 "domestic_wild_category": "家禽"},
                 code="37", zodiac="马", is_correct=False),
-            row("2026269", raw={"jia": ["牛", "狗", "猪", "羊"], "ye": ["鼠", "虎", "兔", "龙"],
-                                "domestic_wild_category": "野兽"},
-                code="37", zodiac="马", is_correct=False),
-            row("2026268", raw={"jia": ["牛"], "ye": ["鼠"]}, opened=False),
+            row("2026268", raw={"content": '["家禽|牛,狗,猪,羊,马,鸡"]'}, opened=False),
         ]},
         # 天地生肖（title_5）：270 「天肖+兔鸡」开 37 马 → 马 ∈ 天肖组 → 对；
         # 269 「地肖+兔鸡」开 37 马 → 都不含 → 错；267 「天肖+兔鸡」开 鸡 → 命中两肖之一 → 对。
@@ -233,8 +236,8 @@ def main() -> None:
         if sorted(item["hits"]) != sorted(expect_hits):
             problems.append(f"{label}: 高亮应为 {expect_hits}，实际 {item['hits']}（{item['text']}）")
 
-    check(data["msks"], 0, "家禽", "准", ["家禽"], "买啥开啥 270期（家禽 + 37马）")
-    check(data["msks"], 1, "野兽", "错", [], "买啥开啥 269期（野兽 + 37马）")
+    check(data["msks"], 0, "家禽", "准", ["家禽"], "买啥开啥 270期（预测家禽 + 37马）")
+    check(data["msks"], 1, "野兽", "错", [], "买啥开啥 269期（预测野兽 + 37马，开奖分类是家禽）")
     check(data["msks"], 2, "待开奖", "待开奖", [], "买啥开啥 268期（未开奖）")
 
     check(data["tdsx"], 0, "天肖+兔鸡", "对", ["天肖"], "天地生肖 270期（天肖+兔鸡，开37马）")
