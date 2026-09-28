@@ -25,9 +25,9 @@
 |---|---|---|
 | `#top_xiao_code` | 9 肖前 8/5/3/1 肖、24 码前 10/6/1 码（7 格共用 8 组） | 逐格用该格展示的那几个候选 |
 | `#qixiao` | 9 肖前 7 肖 | 特肖 ∈ 前 7 肖 |
-| `#gold6xiao` | 9 肖前 6 肖 + 平特一肖前 1 肖 | 两路任一命中即「对」，只点亮命中那一路 |
+| `#gold6xiao` | 9 肖前 6 肖 + 平特一肖前 1 肖 | 九肖按特肖、平特一肖按**七个开奖号码的生肖**，两路任一命中即「对」，只点亮命中那一路 |
 | `#winner12` | 精选22码前 12 码 | 特码 ∈ 前 12 码 |
-| `#five_no_hit` | 精选22码前 5 码 | 特码 ∈ 前 5 码 |
+| `#five_no_hit` | 精选22码前 5 码 | **不中口径 + 平特口径**：这 5 码在本期七个开奖号码里一个都不出现才算「对」，排除型零黄底（行内没有 res_code 时回退特码） |
 | `#lianma` | 24 码前 12 码 + 四段资料 | 两路任一命中即「对」 |
 | `#kill3wei` | 五尾资料前 3 尾 | 特码尾 ∈ 前 3 尾 |
 | `#danshuang` | 合数单双 + 合数大小 | 任一维度命中即「对」，只点亮命中那一项 |
@@ -41,8 +41,41 @@
 断言用的合成分组与 `public.fixed_data` sign='天地肖' 及各站 sx.html 一致：
 天肖 = 兔马猴猪牛龙；地肖 = 鼠虎蛇羊鸡狗。
 
+## 三、放大字号 + 多资料逐段分行 + 只标命中项（2026-09-30）
+
+缺陷形态（改前基线，均为 Playwright 真渲染实测）：
+
+1. **预测内容字号偏小**：539 个 `[data-prediction-content]` 槽位里 419 个 16px、120 个 14px，
+   `font-weight: 400`，在长表格里完全不突出。
+2. **整块/整行黄底**：`writeRow()` 在 `hit && !contentHtml` 时把 `data-prediction-hit` 打在
+   内容槽**本体**上，而槽位是 `display:block`，于是 `#fslx`/`#jiaye`/`#daxiao`/`#jiaye4xiao`/
+   `#pt1wei`/`#dssx`/`#qiw`/`#kill4xiao`/`#chengyu`/`#shuangbo` 共 13 行整行变黄
+   （连「五尾资料：」这种标签都黄）。
+3. **多份资料挤在同一行**：`#fslx`/`#jiaye`（2 段）、`#gold6xiao`（2 段）、`#lianma`（2 段）、
+   `#danshuang`（2 段）、`#hblvxiao`（2 段）、`#composite_kill`（4 段）全部挤在一行。
+
+统一口径：
+
+- **字号**：`index.html` 的共享样式块给 `[data-prediction-content]` 设 `font-size:24px`
+  （twsyw 原主字号 16px 的 1.5 倍，不照抄 twwanli 的 26px）+ `font-weight:700`；
+  期号与判定字保持原字号。契约断言**全页最小字号 ≥ 24px**且全部加粗。
+- **分行**：适配器新增 `segmentLines()`，把「；」拼接的多段资料渲染成 `…；<br>…` ——
+  段间保留「；」分隔符再换行，`textContent` 与改前**逐字相同**（既有文本断言不受影响），
+  换行体现在 `innerText`/视觉上。契约断言每个多资料模块**段数 = 行数**，且全页任何含「；」
+  的内容槽位都带换行标记。
+- **只标命中项**：`writeRow()` 不再把标记打到槽位本体；「展示的候选 = 该机制**完整**候选集」
+  的 12 个模块改用 `highlightOnly()` 逐项落点 + `hitWhenCorrect()` 门控 —— 判定字仍透传后端
+  `is_correct`（口径不变），但只有**判定为「对」且展示候选里确实能对上本期开奖属性**时才点亮
+  那一项（家禽野兽按特肖、24码按特码、大小按 01-24/25-49、四肖与九肖与单双四肖按特肖、
+  五尾按特码尾、三头按特码头、双波按特码波色、琴棋书画按 `raw.title`/`raw.content` 等分块
+  还原的艺名生肖组）。契约断言全页 **0 处整块黄**、**0 处标签黄**、错期/未开奖 **0 处**，
+  并按「对→恰好命中项 / 错→0 处 / 对但候选对不上→0 处 / 未开奖→0 处」逐模块锁定 34 行。
+
 **反向验证**：所有合成行的 `isCorrect` 都被故意设成与期望相反的假值（期望「对」的行给
 `False`，期望「错」的行给 `True`），因此任何一处只要还透传 `isCorrect`，对应断言必然 FAIL。
+（例外：`9xzt`/`ma24`/`shuangbo`/`3tou` 各 1 行给 `True` —— 它们只被「判定仍透传」的
+`#jiuxiao`/`#m24`/`#shuangbo`/`#santou` 读判定字，用来覆盖「对 → 恰好点亮命中项」的正例；
+其余读同一份资料的 section 都是本地复算，不受影响。）
 
 不连线上、不连数据库：本地静态服务（`frontend/public`）+ 桩 `lottery-site-data-client`
 + `add_init_script` 注入合成 payload + Playwright headless Chrome 真跑适配器后断言 DOM。
@@ -90,19 +123,38 @@ PROBE_JS = r"""
   const MONO = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const rowsOf = (root) => Array.from((root || document).querySelectorAll('tr'))
     .filter((tr) => tr.querySelector('[data-prediction-issue], [data-prediction-content], [data-prediction-result]'))
-    .map((tr) => ({
-      text: MONO(tr.textContent),
-      issue: MONO((tr.querySelector('[data-prediction-issue]') || {}).textContent || ''),
-      content: MONO((tr.querySelector('[data-prediction-content]') || {}).textContent || ''),
-      result: MONO((tr.querySelector('[data-prediction-result]') || {}).textContent || ''),
-      hits: Array.from(tr.querySelectorAll('[data-prediction-hit="true"]')).map((el) => MONO(el.textContent)),
-    }));
+    .map((tr) => {
+      const slot = tr.querySelector('[data-prediction-content]');
+      const hits = Array.from(tr.querySelectorAll('[data-prediction-hit="true"]'));
+      const content = MONO(slot ? slot.textContent : '');
+      const lines = String(slot ? slot.innerText : '').split(/\n+/).map(MONO).filter(Boolean);
+      const style = slot ? getComputedStyle(slot) : null;
+      return {
+        text: MONO(tr.textContent),
+        issue: MONO((tr.querySelector('[data-prediction-issue]') || {}).textContent || ''),
+        content,
+        contentHtml: slot ? slot.innerHTML : '',
+        result: MONO((tr.querySelector('[data-prediction-result]') || {}).textContent || ''),
+        hits: hits.map((el) => MONO(el.textContent)),
+        // 整块/整串黄底：命中标记就是内容槽本体（`display:block` 下等于整行黄底）。
+        slotMarked: Boolean(slot) && hits.indexOf(slot) >= 0,
+        // 打到资料标签（「XX资料：」）上的标记 —— 标签一律不许黄。
+        labelHits: hits.filter((el) => /[：:]|资料/.test(MONO(el.textContent))).map((el) => MONO(el.textContent)),
+        lineCount: lines.length,
+        segments: content.split('；').map(MONO).filter(Boolean).length,
+        fontSize: style ? style.fontSize : '',
+        fontWeight: style ? style.fontWeight : '',
+      };
+    });
 
   const nannv = rowsOf(document.querySelector('#nannv'));
 
   const SECTIONS = [
     'top_xiao_code', 'qixiao', 'gold6xiao', 'winner12', 'lianma',
     'danshuang', 'hblvxiao', 'kill3wei', 'five_no_hit', 'composite_kill',
+    // 2026-09-30 追加：全部「展示的候选 = 该机制完整候选集」的模块，逐个覆盖高亮落点。
+    'fslx', 'm24', 'daxiao', 'jiaye', 'jiaye4xiao', 'pt1wei', 'jiuxiao',
+    'dssx', 'santou', 'qiw', 'kill4xiao', 'chengyu', 'shuangbo', 'kill1tou',
   ];
   const sections = {};
   SECTIONS.forEach((id) => { sections[id] = rowsOf(document.querySelector('#' + id)); });
@@ -133,6 +185,23 @@ PROBE_JS = r"""
     }
   });
 
+  // 全页命中标记的落点体检：内容槽本体（整块黄）与资料标签（标签黄）。
+  const slotMarkers = [];
+  const labelMarkers = [];
+  Array.from(document.querySelectorAll('[data-prediction-hit="true"]')).forEach((el) => {
+    const tr = el.closest('tr');
+    const slot = tr ? tr.querySelector('[data-prediction-content]') : null;
+    if (slot && el === slot) slotMarkers.push(MONO(el.textContent).slice(0, 40));
+    if (/[：:]|资料/.test(MONO(el.textContent))) labelMarkers.push(MONO(el.textContent).slice(0, 40));
+  });
+
+  const slots = Array.from(document.querySelectorAll('[data-prediction-content]'));
+  const sizes = {};
+  slots.forEach((el) => { const s = getComputedStyle(el).fontSize; sizes[s] = (sizes[s] || 0) + 1; });
+  const px = (v) => parseFloat(String(v || '0')) || 0;
+  const weights = {};
+  slots.forEach((el) => { const w = getComputedStyle(el).fontWeight; weights[w] = (weights[w] || 0) + 1; });
+
   return {
     nannv,
     nannvHitSlots: Array.from(document.querySelectorAll('#nannv [data-prediction-hit="true"]')).map((el) => MONO(el.textContent)),
@@ -140,8 +209,13 @@ PROBE_JS = r"""
     wrongWithHighlight,
     pendingWithHighlight,
     strayYellow,
+    slotMarkers,
+    labelMarkers,
+    fontSizes: sizes,
+    fontWeights: weights,
+    minContentFontSize: slots.length ? Math.min.apply(null, slots.map((el) => px(getComputedStyle(el).fontSize))) : 0,
     totalHits: document.querySelectorAll('[data-prediction-hit="true"]').length,
-    contentSlots: document.querySelectorAll('[data-prediction-content]').length,
+    contentSlots: slots.length,
   };
 }
 """
@@ -156,9 +230,19 @@ def row(issue, *, tokens=None, text=None, raw=None, opened=True, code="", zodiac
     }
 
 
-def prow(issue, tokens, code="", zodiac="", opened=True, is_correct=False):
-    """合成资料行。`is_correct` 默认 `False`，需要「反口径」证明时显式传 `True`。"""
-    return row(issue, tokens=tokens, raw={}, opened=opened, code=code, zodiac=zodiac, is_correct=is_correct)
+def prow(issue, tokens, code="", zodiac="", opened=True, is_correct=False, res_code=""):
+    """合成资料行。`is_correct` 默认 `False`，需要「反口径」证明时显式传 `True`。
+
+    `res_code` 给「平特口径」用例：整期七个开奖号码（末位是特码）。留空时适配器回退特码，
+    用于覆盖回退路径。
+    """
+    raw = {"res_code": res_code} if res_code else {}
+    return row(issue, tokens=tokens, raw=raw, opened=opened, code=code, zodiac=zodiac, is_correct=is_correct)
+
+
+def text_row(issue, text, *, code="", zodiac="", opened=True, is_correct=None):
+    """正文型资料行（`prediction.text` 走文本解析，如家禽野兽的 `家禽|…;野兽|…`）。"""
+    return row(issue, text=text, raw={}, opened=opened, code=code, zodiac=zodiac, is_correct=is_correct)
 
 
 ZODIAC9 = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴"]  # 9肖：八肖=前8 五肖=前5 三肖=前3 一肖=前1
@@ -174,7 +258,9 @@ HEADS_B = ["3头", "4头", "0头"]
 
 # 9肖：供 #top_xiao_code（组 0-7 的 4 个肖格）、#qixiao（前7）、#gold6xiao（前6）、#jiuxiao
 NINE_ROWS = [
-    prow("2026270", ZODIAC9, code="37", zodiac="蛇"),  # 第6肖：八肖/七肖/六肖中；五肖/三肖/一肖不中
+    # 2026-09-30：`isCorrect` 改为 `True` —— `#jiuxiao` 的判定仍透传后端（展示的就是完整 9 肖），
+    # 这一行专门用来验证「对 + 候选命中 → 恰好点亮『蛇』，且不整串黄」。
+    prow("2026270", ZODIAC9, code="37", zodiac="蛇", is_correct=True),  # 第6肖：八肖/七肖/六肖中；五肖/三肖/一肖不中
     prow("2026269", ZODIAC9, code="03", zodiac="虎"),  # 第3肖：八肖/五肖/三肖/七肖/六肖中；一肖不中
     prow("2026268", ZODIAC9, code="01", zodiac="鼠"),  # 第1肖：全中
     prow("2026267", ZODIAC9, code="09", zodiac="猴"),  # 第9肖：八肖/七肖/六肖全不中（被裁掉的部分）
@@ -189,7 +275,7 @@ MA_ROWS = [
     prow("2026270", MA24, code="12", zodiac="马"),  # 第12码：10码/6码/1码全不中；连码前12命中
     prow("2026269", MA24, code="08", zodiac="羊"),  # 第8码：10码中；6码/1码不中
     prow("2026268", MA24, code="06", zodiac="蛇"),  # 第6码：10码/6码中；1码不中
-    prow("2026267", MA24, code="01", zodiac="鼠"),  # 第1码：全中
+    prow("2026267", MA24, code="01", zodiac="鼠", is_correct=True),  # 第1码：全中；`#m24` 用它验证「对 → 只黄 01」
     prow("2026266", MA24, code="20", zodiac="猪"),  # 第20码：全不中
     prow("2026265", MA24, code="18", zodiac="虎"),  # 第18码：全不中；连码靠四段 3段 救回
     prow("2026264", MA24, code="16", zodiac="猴"),  # 第16码：全不中
@@ -220,12 +306,16 @@ SEGMENT_ROWS = [
     prow("2026263", ["1段", "2段", "3段", "4段"], opened=False),
 ]
 
-# 精选22码：供 #winner12（前12）与 #five_no_hit（前5）
+# 精选22码：供 #winner12（前12，按特码）与 #five_no_hit（前5，**不中口径 + 平特口径**）
+#   · 2026270：res_code 含 03（在展示的前 5 码里）→ 不中失败 → 「错」；12 码那格另按特码判；
+#   · 2026269：不给 res_code → 回退特码 03（在展示的前 5 码里）→ 「错」；
+#   · 2026268：res_code 七个号码都不在前 5 码里 → 「对」；
+#   · 2026267：res_code 含 05 → 「错」。
 SEL_ROWS = [
-    prow("2026270", SEL22, code="15", zodiac="蛇", is_correct=True),  # 第15码：12码/5码全不中（旧口径会显示对）
-    prow("2026269", SEL22, code="03", zodiac="虎"),  # 第3码：12码/5码都中
-    prow("2026268", SEL22, code="08", zodiac="羊", is_correct=True),  # 第8码：12码中、5码不中
-    prow("2026267", SEL22, code="05", zodiac="龙"),  # 第5码：12码/5码都中
+    prow("2026270", SEL22, code="15", zodiac="蛇", is_correct=True, res_code="03,11,19,25,31,42,15"),
+    prow("2026269", SEL22, code="03", zodiac="虎"),
+    prow("2026268", SEL22, code="08", zodiac="羊", is_correct=True, res_code="07,20,33,41,46,49,08"),
+    prow("2026267", SEL22, code="05", zodiac="龙", res_code="05,14,23,32,41,46,08"),
     prow("2026266", SEL22, opened=False),
 ]
 
@@ -242,7 +332,7 @@ TITLE66_ROWS = [
 
 # 三头中特：供 #santou/#kill1tou（全3头）、#composite_kill（三头这一路）
 HEADS_ROWS = [
-    prow("2026270", HEADS_B, code="37", zodiac="马"),
+    prow("2026270", HEADS_B, code="37", zodiac="马", is_correct=True),  # 3头 ∈（`#santou`/`#kill1tou` 用它验证「对 → 只黄 3头」）
     prow("2026269", HEADS_B, code="15", zodiac="鼠"),
     prow("2026268", HEADS_B, code="34", zodiac="牛"),
     prow("2026267", HEADS_A, code="31", zodiac="牛"),
@@ -287,7 +377,7 @@ SIZE_ROWS = [
 SHUANGBO_ROWS = [
     prow("2026270", ["红波", "蓝波"], code="22", zodiac="蛇", is_correct=True),  # 22 → 绿波（被裁掉的第3波）
     prow("2026269", ["红波", "绿波"], code="37", zodiac="蛇"),  # 蓝波 ∉ 双波、∈ 一波
-    prow("2026268", ["蓝波", "绿波"], code="37", zodiac="虎"),  # 蓝波 ∈ 双波
+    prow("2026268", ["蓝波", "绿波"], code="37", zodiac="虎", is_correct=True),  # 蓝波 ∈ 双波（`#shuangbo` 用它验证「对 → 只黄蓝波」）
     prow("2026267", ["红", "波", "蓝", "波"], code="41", zodiac="鼠"),  # 单字 token 形态；41 → 蓝波 ∈
     prow("2026266", ["红波", "绿波"], code="05", zodiac="龙"),  # 05 → 绿波 ∈ 双波
     prow("2026265", ["红波", "蓝波"], code="46", zodiac="马"),  # 46 → 红波 ∈ 双波
@@ -305,6 +395,66 @@ WAVE1_ROWS = [
     prow("2026265", ["绿波"], code="46", zodiac="马"),
     prow("2026264", ["红波"], code="05", zodiac="羊"),
     prow("2026263", ["绿波"], opened=False),
+]
+
+
+# ── 2026-09-30 追加：「只标命中项 + 多资料逐段分行」新增覆盖的模块 ─────────
+# 这 5 个 moduleKey 供 `#fslx` / `#jiaye` / `#daxiao` / `#jiaye4xiao` / `#kill4xiao` /
+# `#dssx` / `#chengyu` 使用。每个模块 4 个用例行（编号 0-3），覆盖四种落点：
+#   · 0：「对」且展示候选里能对上本期开奖属性 → **恰好**点亮那一项（且不打在资料标签上）；
+#   · 1：「错」且展示候选里能对上 → **0 处**（判定为「错」的行一律零黄底）；
+#   · 2：「对」但展示候选里对不上 → **0 处**（绝不退回「整串/整块黄」）；
+#   · 3：未开奖 → 0 处。
+# 这 5 个模块展示的候选就是该机制的**完整候选集**（不是子集），所以判定字继续透传后端
+# `is_correct`；契约只锁定**高亮落点**（`data-prediction-hit` 只允许落在候选原子与
+# 命中项上），不改判定口径。
+
+TITLE14_TEXT = "家禽|牛,马,羊,鸡,狗,猪;野兽|鼠,虎,兔,龙,蛇,猴"
+TITLE14_ROWS = [
+    text_row("2026270", TITLE14_TEXT, code="37", zodiac="马", is_correct=True),   # 马 ∈ 家禽 → 对，只黄「马」
+    text_row("2026269", TITLE14_TEXT, code="37", zodiac="马", is_correct=False),  # 同一候选但判定「错」→ 0 处
+    text_row("2026268", TITLE14_TEXT, code="08", zodiac="羊", is_correct=True),   # 羊 ∈ 野兽 → 对，只黄「羊」
+    text_row("2026267", TITLE14_TEXT, opened=False),
+]
+
+DAXIAO_ROWS = [
+    prow("2026270", ["大"], code="37", zodiac="马", is_correct=True),   # 37 → 大 → 对，只黄「大」
+    prow("2026269", ["大"], code="37", zodiac="马", is_correct=False),  # 错 → 0 处
+    prow("2026268", ["小"], code="01", zodiac="鼠", is_correct=True),   # 01 → 小 → 对，只黄「小」
+    prow("2026267", ["大"], opened=False),
+]
+
+SIXIAO_ROWS = [
+    prow("2026270", ["鼠", "牛", "虎", "马"], code="37", zodiac="马", is_correct=True),   # 马 ∈ → 对，只黄「马」
+    prow("2026269", ["鼠", "牛", "虎", "马"], code="37", zodiac="马", is_correct=False),  # 错 → 0 处
+    prow("2026268", ["鼠", "牛", "虎", "兔"], code="37", zodiac="马", is_correct=True),   # 对但候选对不上 → 0 处
+    prow("2026267", ["鼠", "牛", "虎", "马"], opened=False),
+]
+
+DSSX_ROWS = [
+    prow("2026270", ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊"], code="37", zodiac="马", is_correct=True),
+    prow("2026269", ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊"], code="37", zodiac="马", is_correct=False),
+    prow("2026268", ["鼠", "牛", "虎", "兔", "龙", "蛇", "鸡", "狗"], code="37", zodiac="马", is_correct=True),
+    prow("2026267", ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊"], opened=False),
+]
+
+# 成语平特：展示的候选是**艺名**（琴/棋/书/画）；命中的艺名 = 其生肖组含本期特肖。
+# `raw.title` / `raw.content` 与后端 `format_qinqi_content` 同源（content 按 title 顺序等长展开）。
+QINQI_TITLE = "琴,棋,书"
+QINQI_CONTENT = "鸡,兔,蛇,鼠,牛,狗,虎,马,羊"  # 琴=[鸡,兔,蛇] 棋=[鼠,牛,狗] 书=[虎,马,羊]
+QINQI_TOKENS = ["琴", "棋", "书"]
+
+
+def qinqi_row(issue, code="", zodiac="", opened=True, is_correct=None):
+    return row(issue, tokens=QINQI_TOKENS, raw={"title": QINQI_TITLE, "content": QINQI_CONTENT},
+               opened=opened, code=code, zodiac=zodiac, is_correct=is_correct)
+
+
+QINQI_ROWS = [
+    qinqi_row("2026270", code="37", zodiac="马", is_correct=True),   # 马 ∈ 书 → 对，只黄「书」
+    qinqi_row("2026269", code="37", zodiac="马", is_correct=False),  # 错 → 0 处
+    qinqi_row("2026268", code="37", zodiac="猴", is_correct=True),   # 猴 ∉ 三组 → 对但候选对不上 → 0 处
+    qinqi_row("2026267", opened=False),
 ]
 
 
@@ -329,7 +479,7 @@ QIXIAO_EXPECT = [(0, True, ["蛇"]), (1, True, ["虎"]), (2, True, ["鼠"]), (3,
 GOLD6XIAO_EXPECT = [(0, True, ["蛇"]), (1, True, ["虎"]), (2, True, ["鼠", "鼠"]), (3, False, []),
                     (4, True, ["羊"]), (5, False, []), (6, True, ["龙"]), (7, None, [])]
 WINNER12_EXPECT = [(0, False, []), (1, True, ["03"]), (2, True, ["08"]), (3, True, ["05"]), (4, None, [])]
-FIVE_NO_HIT_EXPECT = [(0, False, []), (1, True, ["03"]), (2, False, []), (3, True, ["05"]), (4, None, [])]
+FIVE_NO_HIT_EXPECT = [(0, False, []), (1, False, []), (2, True, []), (3, False, []), (4, None, [])]
 LIANMA_EXPECT = [(0, True, ["12"]), (1, True, ["08"]), (2, True, ["06", "1段"]), (3, True, ["01", "1段"]),
                  (4, False, []), (5, True, ["3段"]), (6, False, []), (7, None, [])]
 KILL3WEI_EXPECT = [(0, False, []), (1, True, ["7尾"]), (2, True, ["3尾"]), (3, False, []),
@@ -379,6 +529,13 @@ def build_modules():
         {"moduleKey": "title_279", "rows": SIZE_ROWS},
         {"moduleKey": "shuangbo", "rows": SHUANGBO_ROWS},
         {"moduleKey": "title_143", "rows": WAVE1_ROWS},
+        # 2026-09-30 追加：来自家禽野兽 / 大小 / 四肖四码 / 单双四肖 / 琴棋书画的模块
+        # （`#fslx` / `#jiaye` / `#daxiao` / `#jiaye4xiao` / `#kill4xiao` / `#dssx` / `#chengyu`）。
+        {"moduleKey": "title_14", "rows": TITLE14_ROWS},
+        {"moduleKey": "daxiao", "rows": DAXIAO_ROWS},
+        {"moduleKey": "sixiao_sima", "rows": SIXIAO_ROWS},
+        {"moduleKey": "danshuang4xiao", "rows": DSSX_ROWS},
+        {"moduleKey": "qinqi", "rows": QINQI_ROWS},
     ]
     # 与 twwanli 契约同口径：`needsPredictionRefresh` 要求这几个 moduleKey 非空，
     # 否则会走清缓存重试分支（twsyw 现版本没有该分支，仍一并提供以防日后接入）。
@@ -591,6 +748,106 @@ def main() -> None:
         "综合绝杀 第0行（四路都展示）",
     )
 
+    # ══ 十二、2026-09-30：字号放大 + 多资料逐段分行 + 只标命中项 ═══════════
+    # ① 预测内容槽位字号明显放大（改前：16px/14px、font-weight 400）。
+    #    目标 24px = twsyw 现有 16px 主字号的 1.5 倍（与 twwanli 的 26px 不照抄数值）。
+    CONTENT_FONT_TARGET = 24.0
+    checks += 1
+    if data["minContentFontSize"] < CONTENT_FONT_TARGET:
+        problems.append(
+            f"预测内容字号: 全部 {data['contentSlots']} 个槽位的最小字号 {data['minContentFontSize']}px "
+            f"< 目标 {CONTENT_FONT_TARGET}px（分布 {data['fontSizes']}）")
+    checks += 1
+    thin = {weight: count for weight, count in data["fontWeights"].items() if int(weight) < 700}
+    if thin:
+        problems.append(f"预测内容未加粗（font-weight < 700 的槽位）: {thin}")
+
+    # ② 多资料行按「；」逐段分行：段数 = 行数，不得挤在一行。
+    #    先锁各模块应有的段数，再全页扫一遍「含「；」却只有一行」的漏网。
+    MULTI_SEGMENT = {"fslx": 2, "jiaye": 2, "gold6xiao": 2, "lianma": 2,
+                     "danshuang": 2, "hblvxiao": 2, "composite_kill": 4}
+    for section_id, expected in MULTI_SEGMENT.items():
+        checks += 1
+        multi = [row for row in data["sections"][section_id] if row["segments"] >= 2]
+        if not multi:
+            problems.append(f"#{section_id}: 没有多资料行，无法验证逐段分行")
+            continue
+        for row in multi:
+            if row["segments"] != expected:
+                problems.append(f"#{section_id}: 「；」段数应为 {expected}，实际 {row['segments']}｜{row['content']}")
+            if row["lineCount"] != row["segments"]:
+                problems.append(
+                    f"#{section_id}: 多资料仍挤在一行（段数 {row['segments']} ≠ 行数 {row['lineCount']}）"
+                    f"｜{row['content']}")
+    checks += 1
+    multi_rows = 0
+    for section_id, rows in data["sections"].items():
+        for row in rows or []:
+            if row["segments"] < 2:
+                continue
+            multi_rows += 1
+            if row["lineCount"] != row["segments"]:
+                problems.append(
+                    f"#{section_id}: 多资料未逐段分行（{row['segments']} 段 / {row['lineCount']} 行）｜{row['content']}")
+            if "<br" not in row["contentHtml"]:
+                problems.append(f"#{section_id}: 多资料行缺换行标记｜{row['contentHtml'][:80]}")
+    if multi_rows < 20:
+        problems.append(f"多资料行覆盖不足：全页只检查到 {multi_rows} 行（预期 ≥ 20）")
+
+    # ③ 命中标记只能落在**命中的候选项**上：不得打在内容槽本体（整块/整行黄）或资料标签上。
+    checks += 1
+    if data["slotMarkers"]:
+        problems.append(f"仍有整块/整行黄底（命中标记 == 内容槽本体）共 {len(data['slotMarkers'])} 处："
+                        f"{data['slotMarkers'][:5]}")
+    checks += 1
+    if data["labelMarkers"]:
+        problems.append(f"命中标记打在资料标签/判定文字上共 {len(data['labelMarkers'])} 处："
+                        f"{data['labelMarkers'][:5]}")
+
+    # ④ 逐模块锁定「对 → 恰好点亮命中项」「错 → 0 处」「对但候选对不上 → 0 处」「未开奖 → 0 处」。
+    M24_CONTENT = ".".join(f"{n:02d}" for n in range(1, 25))
+    T14_CONTENT = "家禽野兽资料：家禽 牛马羊鸡狗猪；野兽 鼠虎兔龙蛇猴"
+    TAIL5_CONTENT = "五尾资料：0尾 3尾 7尾 1尾 9尾"
+    HIGHLIGHT_CASES = [
+        ("fslx", 0, T14_CONTENT, "开:37马对", ["马"]),
+        ("fslx", 1, T14_CONTENT, "开:37马错", []),
+        ("fslx", 2, T14_CONTENT, "开:08羊对", ["羊"]),
+        ("fslx", 3, T14_CONTENT, "开:待开奖", []),
+        ("jiaye", 0, T14_CONTENT, "开:37马对", ["马"]),
+        ("jiaye", 1, T14_CONTENT, "开:37马错", []),
+        ("daxiao", 0, "大", "开:37马对", ["大"]),
+        ("daxiao", 1, "大", "开:37马错", []),
+        ("daxiao", 2, "小", "开:01鼠对", ["小"]),
+        ("daxiao", 3, "大", "开:待开奖", []),
+        ("m24", 0, M24_CONTENT, "开:12马错", []),
+        ("m24", 3, M24_CONTENT, "开:01鼠对", ["01"]),
+        ("jiuxiao", 0, "鼠牛虎兔龙蛇马羊猴", "开:37蛇对", ["蛇"]),
+        ("jiuxiao", 1, "鼠牛虎兔龙蛇马羊猴", "开:03虎错", []),
+        ("jiaye4xiao", 0, "四肖四码资料：鼠牛虎马", "开:37马对", ["马"]),
+        ("jiaye4xiao", 1, "四肖四码资料：鼠牛虎马", "开:37马错", []),
+        ("jiaye4xiao", 2, "四肖四码资料：鼠牛虎兔", "开:37马对", []),
+        ("kill4xiao", 0, "四肖资料：鼠牛虎马", "开:37马对", ["马"]),
+        ("kill4xiao", 2, "四肖资料：鼠牛虎兔", "开:37马对", []),
+        ("dssx", 0, "鼠牛虎兔龙蛇马羊", "开:37马对", ["马"]),
+        ("dssx", 1, "鼠牛虎兔龙蛇马羊", "开:37马错", []),
+        ("dssx", 2, "鼠牛虎兔龙蛇鸡狗", "开:37马对", []),
+        ("pt1wei", 0, TAIL5_CONTENT, "开:15蛇对", []),
+        ("pt1wei", 1, TAIL5_CONTENT, "开:37蛇错", []),
+        ("pt1wei", 3, TAIL5_CONTENT, "开:21鼠对", ["1尾"]),
+        ("qiw", 3, TAIL5_CONTENT, "开:21鼠对", ["1尾"]),
+        ("santou", 0, "3头.4头.0头", "开:37马对", ["3头"]),
+        ("santou", 1, "3头.4头.0头", "开:15鼠错", []),
+        ("kill1tou", 0, "三头资料：3头.4头.0头", "开:37马对", ["3头"]),
+        ("chengyu", 0, "琴棋书画资料：琴棋书", "开:37马对", ["书"]),
+        ("chengyu", 1, "琴棋书画资料：琴棋书", "开:37马错", []),
+        ("chengyu", 2, "琴棋书画资料：琴棋书", "开:37猴对", []),
+        ("shuangbo", 0, "红波蓝波", "开:22蛇对", []),
+        ("shuangbo", 2, "蓝波绿波", "开:37虎对", ["蓝波"]),
+    ]
+    for section_id, index, content, result, hits in HIGHLIGHT_CASES:
+        check(data["sections"][section_id], index, content, None, result, hits,
+              f"#{section_id} 第{index}行（{result}）")
+
     # ── 全页：错期 / 未开奖期不得有黄底 ─────────────────────────────────
     for item in data["wrongWithHighlight"]:
         problems.append(f"错期仍有黄底: {item['result']} → {item['hits']}")
@@ -601,6 +858,8 @@ def main() -> None:
             problems.append(f"非命中标记的黄底: <{item['cls']}> {item['text']}")
 
     print(f"#nannv 行数: {len(nannv)}；内容槽位总数: {data['contentSlots']}；命中标记总数 {data['totalHits']}")
+    print(f"预测内容字号分布: {data['fontSizes']}；font-weight 分布: {data['fontWeights']}；"
+          f"最小字号 {data['minContentFontSize']}px")
     for index, item in enumerate(nannv[:4]):
         print(f"  行{index}: {item['issue']} | {item['content']} | {item['result']} | hits={item['hits']}")
     print(f"断言数: {checks}")
@@ -609,6 +868,13 @@ def main() -> None:
         rows = data["sections"][section_id]
         print(f"  #{section_id}: {len(rows)} 行；首行 = {rows[0]['issue']} | {rows[0]['content']} | "
               f"{rows[0]['result']} | hits={rows[0]['hits']}")
+    for section_id in ("fslx", "m24", "daxiao", "jiaye4xiao", "pt1wei", "jiuxiao", "dssx",
+                       "santou", "kill4xiao", "chengyu", "shuangbo"):
+        rows = data["sections"][section_id]
+        print(f"  #{section_id}: {len(rows)} 行；首行 = {rows[0]['content']} | {rows[0]['result']} | "
+              f"hits={rows[0]['hits']} | {rows[0]['segments']} 段 / {rows[0]['lineCount']} 行")
+    print(f"多资料行（含「；」）共 {multi_rows} 行，全部 段数 == 行数；"
+          f"整块黄底 {len(data['slotMarkers'])} 处；标签黄底 {len(data['labelMarkers'])} 处")
     print(f"错期带黄底: {len(data['wrongWithHighlight'])}；未开奖带黄底: {len(data['pendingWithHighlight'])}；"
           f"杂散黄底: {len(data['strayYellow'])}")
 
@@ -618,7 +884,8 @@ def main() -> None:
             print(f"  - {line}")
         raise SystemExit(1)
 
-    print("\ntwsyw-display-contract: OK（#nannv 天地组∪两肖并集 + 10 处「展示即候选」逐格复算 + 只标命中项 + 错/未开奖零黄底）")
+    print("\ntwsyw-display-contract: OK（#nannv 天地组∪两肖并集 + 10 处「展示即候选」逐格复算 + "
+          f"预测内容 {int(data['minContentFontSize'])}px 加粗 + 多资料逐段分行 + 只标命中项/零整块黄）")
 
 
 if __name__ == "__main__":

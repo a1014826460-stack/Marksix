@@ -33,6 +33,15 @@
 [data-prediction-content-secondary] { font-size:22px; font-weight:700; }
 /* 命中高亮只由适配器给「命中的那一项」打标记；其余文字一律不带黄底。 */
 [data-prediction-hit="true"] { background-color:#FFFF00; }
+/* 一肖一码（#yxym）中列是号码展示区：7 码在 26px 粗体下实测宽 269px。
+   表格继承 style2.css 的 `table{table-layout:fixed}`，而首行是 colspan=3 的标题行，
+   fixed 布局把三列均分成 1/3（360px 视口下中列仅 116px）→ 7 码溢出 153px，
+   溢出部分被 `.box{overflow:hidden}` 裁掉。这里收回显式列宽：中列 50%
+   （360px 视口下 176px ≥ 一行 4 码的 150px），两侧各 25%。 */
+#yxym table.yxym { table-layout: auto; }
+#yxym table.yxym td.td1 { width: 25% !important; }
+#yxym table.yxym td.td2 { width: 50% !important; }
+#yxym table.yxym td.td3 { width: 25% !important; }
 </style>
 <script src="/vendor/_shared/forced-announcement.js"></script>
 </head>

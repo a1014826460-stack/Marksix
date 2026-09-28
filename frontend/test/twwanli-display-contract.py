@@ -6,6 +6,9 @@
    忠实显示接口判定。
 2. 【买啥开啥】〈〈家禽〉〉开 37 马 应为「对」——判定按 fixed_data 家禽/野兽**全组**
    （家禽=牛马羊鸡狗猪），不能用本期 jia/ye 的 4+4 子集反查。
+   2026-09-29 起该模块的数据源是**后端模块「家野中特」mode 63**（moduleKey `title_63`，
+   正文形如 `["家禽|牛,马,羊,鸡,狗,猪"]`：单个分类 + 该分类全组），不再读 title_14；
+   本契约用「诱饵 title_14」桩断言页面不再依赖 title_14。
 3. 【天地生肖】【天肖+兔鸡】开 37 马 应为「对」——特肖落在天地组或两肖任一即命中
    （vendor 只比对两肖）。
 
@@ -116,20 +119,45 @@ def row(issue, *, tokens=None, text=None, raw=None, groups=None,
 def build_modules():
     """270 = 用户报障期（37 马）；269 = 对照（未命中）；268 = 未开奖。"""
     modules = [
-        # 买啥开啥（title_14）：展示**本期预测分类**并按其固定分组判定。
-        # 270 预测「家禽」+ 37 马（马 ∈ 家禽）→ 准；
-        # 269 预测「野兽」+ 37 马 → 错（注意该行 domestic_wild_category=家禽，即开奖分类，
-        # 用它展示/判定就会恒「准」——这条断言专门防止退回旧口径）。
-        {"moduleKey": "title_14", "rows": [
-            row("2026270", raw={"jia": ["牛", "马", "羊", "鸡"], "ye": ["鼠", "虎", "兔", "龙"],
-                                "domestic_wild_prediction_category": "家禽",
-                                "domestic_wild_category": "家禽"},
-                code="37", zodiac="马", is_correct=True),
-            row("2026269", raw={"jia": ["牛", "狗", "猪", "羊"], "ye": ["鼠", "虎", "兔", "龙"],
-                                "domestic_wild_prediction_category": "野兽",
-                                "domestic_wild_category": "家禽"},
+        # 买啥开啥（**mode 63 = 家野中特 → moduleKey `title_63`**）：正文是「单个分类 + 该分类全组」，
+        # 展示那个分类、判定按 fixed_data 家禽/野兽 6+6 全组比对特肖。
+        # 270 预测「家禽」+ 特肖马（马 ∈ 家禽全组）→ 准；这里故意把桩里的
+        # `result.isCorrect` 置 false：判定必须本地按全组算，不能采信供应商字段。
+        # 269 预测「野兽」+ 特肖马 → 错（isCorrect 反而给 true，同样不得采信）。
+        # 268 未开奖 → 无判定、零高亮。
+        {"moduleKey": "title_63", "rows": [
+            row("2026270", tokens=["家禽|牛,马,羊,鸡,狗,猪"],
+                text='["家禽|牛,马,羊,鸡,狗,猪"]',
+                raw={"content": '["家禽|牛,马,羊,鸡,狗,猪"]'},
                 code="37", zodiac="马", is_correct=False),
-            row("2026268", raw={"content": '["家禽|牛,狗,猪,羊,马,鸡"]'}, opened=False),
+            row("2026269", tokens=["野兽|兔,猴,虎,蛇,鼠,龙"],
+                text='["野兽|兔,猴,虎,蛇,鼠,龙"]',
+                raw={"content": '["野兽|兔,猴,虎,蛇,鼠,龙"]'},
+                code="37", zodiac="马", is_correct=True),
+            row("2026268", tokens=["家禽|牛,马,羊,鸡,狗,猪"],
+                text='["家禽|牛,马,羊,鸡,狗,猪"]',
+                raw={"content": '["家禽|牛,马,羊,鸡,狗,猪"]'}, opened=False),
+        ]},
+        # title_14（家禽野兽两组）是**诱饵桩**：【买啥开啥】不得再读它。
+        # 这里给成明显不同的数据（期号 260-262、预测「野兽」、开奖分类「野兽」），
+        # 一旦适配器退回按 title_14 渲染，下面「页面不再依赖 title_14」的断言必失败。
+        # 只保留给 #jhtz 文章位（27.html）用的行数，避免影响其它段落。
+        {"moduleKey": "title_14", "rows": [
+            row("2026262", tokens=["野兽|鼠,虎,兔,龙"], text="野兽|鼠,虎,兔,龙;家禽|牛,马",
+                raw={"jia": ["鼠", "虎", "兔", "龙"], "ye": ["牛", "马"],
+                     "domestic_wild_prediction_category": "野兽",
+                     "domestic_wild_category": "野兽"},
+                code="37", zodiac="马", is_correct=True),
+            row("2026261", tokens=["野兽|鼠,虎,兔,龙"], text="野兽|鼠,虎,兔,龙;家禽|牛,马",
+                raw={"jia": ["鼠", "虎", "兔", "龙"], "ye": ["牛", "马"],
+                     "domestic_wild_prediction_category": "野兽",
+                     "domestic_wild_category": "野兽"},
+                code="37", zodiac="马", is_correct=True),
+            row("2026260", tokens=["野兽|鼠,虎,兔,龙"], text="野兽|鼠,虎,兔,龙;家禽|牛,马",
+                raw={"jia": ["鼠", "虎", "兔", "龙"], "ye": ["牛", "马"],
+                     "domestic_wild_prediction_category": "野兽",
+                     "domestic_wild_category": "野兽"},
+                code="37", zodiac="马", is_correct=True),
         ]},
         # 天地生肖（title_5）：270 「天肖+兔鸡」开 37 马 → 马 ∈ 天肖组 → 对；
         # 269 「地肖+兔鸡」开 37 马 → 都不含 → 错；267 「天肖+兔鸡」开 鸡 → 命中两肖之一 → 对。
@@ -236,9 +264,41 @@ def main() -> None:
         if sorted(item["hits"]) != sorted(expect_hits):
             problems.append(f"{label}: 高亮应为 {expect_hits}，实际 {item['hits']}（{item['text']}）")
 
-    check(data["msks"], 0, "家禽", "准", ["家禽"], "买啥开啥 270期（预测家禽 + 37马）")
-    check(data["msks"], 1, "野兽", "错", [], "买啥开啥 269期（预测野兽 + 37马，开奖分类是家禽）")
-    check(data["msks"], 2, "待开奖", "待开奖", [], "买啥开啥 268期（未开奖）")
+    check(data["msks"], 0, "家禽", "准", ["家禽"],
+          "买啥开啥 270期（mode63 title_63 家禽|牛,马,羊,鸡,狗,猪 + 特肖马 → 准）")
+    check(data["msks"], 1, "野兽", "错", [],
+          "买啥开啥 269期（mode63 预测野兽 + 特肖马 → 错，零黄底）")
+    check(data["msks"], 2, "待开奖", "待开奖", [],
+          "买啥开啥 268期（未开奖 → 零判定零黄底）")
+
+    # ── 买啥开啥：未开奖行不得出现判定（准/错），且零黄底 ────────────────
+    if len(data["msks"]) > 2:
+        unopened = data["msks"][2]
+        for verdict in ("准", "错"):
+            if verdict in unopened["result"] or verdict in unopened["content"]:
+                problems.append(f"买啥开啥 268期未开奖不得显示判定，实际 '{unopened['text']}'")
+        if unopened["hits"]:
+            problems.append(f"买啥开啥 268期未开奖不得有高亮，实际 {unopened['hits']}")
+
+    # ── 买啥开啥：数据源必须是 mode 63（title_63），页面不再依赖 title_14 ──
+    # 桩里的 title_14 给的是 262/261/260 期、预测「野兽」的诱饵数据；只要页面仍然显示
+    # mode 63 的期号与分类，就证明它读的是 title_63。
+    DECOY_ISSUES = ("2026262", "2026261", "2026260")
+    MODE63_ISSUES = ("2026270", "2026269", "2026268")
+    for index, (expected_issue, decoy_issue) in enumerate(zip(MODE63_ISSUES, DECOY_ISSUES)):
+        if len(data["msks"]) <= index:
+            problems.append(f"买啥开啥: 第 {index} 行未渲染，无法校验数据源")
+            continue
+        issue = data["msks"][index]["issue"]
+        if expected_issue not in issue:
+            problems.append(f"买啥开啥: 第 {index} 行期号应来自 mode 63（{expected_issue}），实际 '{issue}'")
+        if decoy_issue in issue:
+            problems.append(f"买啥开啥: 第 {index} 行仍在读 title_14 诱饵数据（{decoy_issue}）")
+    # 诱饵 title_14 的三行分类全是「野兽」，若页面退回 title_14，270 行会变成「野兽 + 错」。
+    if len(data["msks"]) > 0:
+        first = data["msks"][0]
+        if "家禽" not in first["content"] or "错" in first["result"]:
+            problems.append(f"买啥开啥 270期未按 mode 63 的家禽分类渲染：'{first['text']}'")
 
     check(data["tdsx"], 0, "天肖+兔鸡", "对", ["天肖"], "天地生肖 270期（天肖+兔鸡，开37马）")
     check(data["tdsx"], 1, "地肖+兔鸡", "错", [], "天地生肖 269期（地肖+兔鸡，开37马）")

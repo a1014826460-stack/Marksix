@@ -22,7 +22,7 @@ def _prediction_payload(lottery_type: int):
             "result": {"isOpened": index > 0, "code": "01,02,03,04,05,06,07", "zodiac": "鼠,牛,虎,兔,龙,蛇,马", "isCorrect": None if index == 0 else index % 2 == 0},
         })
     keys = [
-        "title_14", "selected_22_codes", "9xzt", "shuangbo", "juesha3xiao", "sixiao_sima", "daxiao", "title_66",
+        "title_14", "title_63", "selected_22_codes", "9xzt", "shuangbo", "juesha3xiao", "sixiao_sima", "daxiao", "title_66",
         "title_5", "ma24", "danshuang4xiao", "siduanzhongte", "yibo", "tiandi", "3tou",
         "title_279", "pt1xiao", "pt1wei", "sitouzhongte", "title_132", "qinqi", "3hang", "6xzt",
     ]
@@ -40,6 +40,12 @@ def _prediction_payload(lottery_type: int):
             for row in module_rows:
                 row["raw"]["jia"] = ["牛", "马", "羊", "鸡"]
                 row["raw"]["ye"] = ["鼠", "虎", "兔", "龙"]
+        elif key == "title_63":
+            # 【买啥开啥】的数据源 = 后端模块「家野中特」mode 63：正文是
+            # 「单个分类 + 该分类全组」的 JSON 数组形态。
+            for row in module_rows:
+                row["prediction"]["tokens"] = ["家禽|牛,马,羊,鸡,狗,猪"]
+                row["raw"]["content"] = '["家禽|牛,马,羊,鸡,狗,猪"]'
         elif key == "qinqi":
             for row in module_rows:
                 row["raw"]["title"] = ["画", "琴", "棋"]
@@ -245,13 +251,6 @@ def test_twwanli_formats_sum_qinqi_and_buy_what_opens_from_structured_rows():
         ("01", "马", True),
     ]
     qinqi_titles = ["画,琴,棋", "画,棋,书", "棋,琴,书", "书,琴,棋", "书,琴,棋"]
-    domestic_rows = [
-        (["牛", "马", "羊", "鸡"], ["鼠", "虎", "兔", "龙"]),
-        (["牛", "马", "羊", "鸡"], ["鼠", "虎", "兔", "龙"]),
-        (["牛", "马", "羊", "鸡"], ["鼠", "虎", "兔", "龙"]),
-        (["牛", "马", "羊", "鸡"], ["鼠", "虎", "兔", "龙"]),
-        (["牛", "马", "羊", "鸡"], ["鼠", "虎", "兔", "龙"]),
-    ]
     for index, (code, zodiac, opened) in enumerate(outcomes):
         result = {
             "isOpened": opened,
@@ -268,11 +267,10 @@ def test_twwanli_formats_sum_qinqi_and_buy_what_opens_from_structured_rows():
         modules["qinqi"]["rows"][index]["raw"]["title"] = qinqi_titles[index]
         modules["qinqi"]["rows"][index]["raw"]["qinqi_reference"] = "琴:兔蛇鸡　棋:鼠牛狗\n书:虎龙马　画:羊猴猪"
         modules["qinqi"]["rows"][index]["result"] = result
-        jia, ye = domestic_rows[index]
-        modules["title_14"]["rows"][index]["raw"]["jia"] = jia
-        modules["title_14"]["rows"][index]["raw"]["ye"] = ye
-        modules["title_14"]["rows"][index]["raw"]["domestic_wild_category"] = "家禽" if zodiac == "马" else "野兽" if opened else ""
-        modules["title_14"]["rows"][index]["result"] = result
+        # mode 63 正文：预测「野兽」全组；第 2 行特肖龙 ∈ 野兽 → 准（本地按 fixed_data 全组判定）。
+        modules["title_63"]["rows"][index]["prediction"] = {"text": '["野兽|兔,猴,虎,蛇,鼠,龙"]', "tokens": ["野兽|兔,猴,虎,蛇,鼠,龙"]}
+        modules["title_63"]["rows"][index]["raw"]["content"] = '["野兽|兔,猴,虎,蛇,鼠,龙"]'
+        modules["title_63"]["rows"][index]["result"] = result
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -311,12 +309,16 @@ def test_twwanli_formats_sum_qinqi_and_buy_what_opens_from_structured_rows():
             "2300期:",
         ]
         assert frame.locator("#qqsh [data-prediction-content]").all_inner_texts()[:2] == ["琴棋书画→画琴棋", "琴棋书画→画棋书"]
-        assert frame.locator("#qqsh [data-prediction-result]").all_inner_texts()[:2] == ["开:？00", "开:龙03"]
+        # 结果槽由共享 `resultText()` 渲染：未开奖「开:待开奖」，已开奖「开:号码生肖+对/错」。
+        assert frame.locator("#qqsh [data-prediction-result]").all_inner_texts()[:2] == ["开:待开奖", "开:03龙对"]
+        # 【买啥开啥】数据源 = mode 63（`title_63`）：第 1 行未开奖、第 2 行预测「野兽」+ 特肖龙 → 准。
+        # 注意 `data-prediction-issue/-content/-result` 是同一行里的三个兄弟 span，
+        # 期号槽只含期号（分类与判定分别在内容槽、结果槽）。
         assert frame.locator("#msks [data-prediction-issue]").all_inner_texts()[:2] == [
-            "2301期:火爆家野〈〈待开奖〉〉",
-            "2300期:火爆家野〈〈野兽〉〉",
+            "2301期:火爆家野",
+            "2300期:火爆家野",
         ]
-        assert frame.locator("#msks [data-prediction-content]").all_inner_texts()[:2] == ["待开奖", "准"]
+        assert frame.locator("#msks [data-prediction-content]").all_inner_texts()[:2] == ["〈〈待开奖〉〉", "〈〈野兽〉〉"]
         assert frame.locator("#msks [data-prediction-result]").all_inner_texts()[:2] == ["？00", "龙03准"]
         browser.close()
 

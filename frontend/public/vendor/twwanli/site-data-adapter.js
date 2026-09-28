@@ -112,7 +112,10 @@
     }
     if (secondarySlot) secondarySlot.textContent = secondary || "";
     if (resultSlot) resultSlot.textContent = result || "";
-    if (!hit || contentHtml) return;
+    if (!hit) return;
+    // contentHtml 调用方通常自己在候选项内部标命中项（整格不上黄底，见波色/买啥开啥）；
+    // 「一肖一码」整格即候选项，调用方传 hitSlot="content" 显式要求整格高亮。
+    if (contentHtml && hitSlot !== "content") return;
     var target = hitSlot === "secondary" ? secondarySlot : contentSlot;
     if (!target) target = contentSlot || secondarySlot;
     if (target) target.setAttribute("data-prediction-hit", "true");
@@ -149,6 +152,19 @@
       var value = format(source);
       writeRow(row, issueOf(source) + "期", value, resultText(source), "", source.result && source.result.isCorrect === true);
     });
+  }
+
+  // 号码展示区一行最多 4 码（`01.02.03.04` 在 26px 粗体下约 150px，放得进
+  // 360px 视口下 #yxym 中列的 50% ≈ 176px）；超出就均衡折行（7 码 → 4+3，5 码 → 3+2）。
+  var CODES_PER_LINE = 4;
+  function codeLineHtml(codes) {
+    var lineCount = Math.ceil(codes.length / CODES_PER_LINE);
+    var perLine = Math.ceil(codes.length / lineCount);
+    var lines = [];
+    for (var index = 0; index < codes.length; index += perLine) {
+      lines.push(codes.slice(index, index + perLine).map(escapeHtml).join("."));
+    }
+    return lines.join("<br>");
   }
 
   function renderOneCodeOneXiaoTable(modules) {
@@ -200,8 +216,16 @@
             hitWave && waves.indexOf(hitWave) >= 0 ? highlightOnly(waves, hitWave) : waves.map(escapeHtml).join("+")
           );
         }
-        var value = codeCount ? codeValues(source).slice(0, codeCount).join(".") : labels(source).slice(0, xiaoCount).join("");
-        writeRow(row, issue, value || "暂无后端资料", resultText(source), "", source.result && source.result.isCorrect === true);
+        var hit = Boolean(source.result && source.result.isCorrect === true);
+        if (codeCount) {
+          var codes = codeValues(source).slice(0, codeCount);
+          if (!codes.length) return writeRow(row, issue, "暂无后端资料", resultText(source), "", hit);
+          // 7 码在 26px 粗体下宽 269px、5 码 190px，360px 视口的中列只有 ~176px，
+          // 必须显式折行；用 writeRow 既有的 contentHtml 通道插入 <br>（不新增 DOM 手法）。
+          return writeRow(row, issue, "", resultText(source), "", hit, "content", codeLineHtml(codes));
+        }
+        var value = labels(source).slice(0, xiaoCount).join("");
+        writeRow(row, issue, value || "暂无后端资料", resultText(source), "", hit);
       });
     });
   }
@@ -229,12 +253,6 @@
     return { isOpened: result.isOpened === true, code: code || "00", zodiac: zodiac || "？" };
   }
 
-  function domesticWildCategory(row) {
-    var raw = row && row.raw || {};
-    var category = String(raw.domestic_wild_category || "").trim();
-    return category === "家禽" || category === "野兽" ? category : "";
-  }
-
   // 家禽 / 野兽的**固定分组**（与 `public.fixed_data` sign='家禽|野兽' 一致）。
   // 判定必须用这 6+6 全组，不能用本期 `jia`/`ye` 抽出的子集：例如 270 期预测
   // 〈〈家禽〉〉、特码 37 马 —— 马 ∈ 家禽全组，应为「对」；旧实现拿 jia/ye 子集
@@ -252,28 +270,22 @@
     })[0] || "";
   }
 
-  function predictedDomesticWildCategory(row) {
-    var zodiac = resultParts(row).zodiac;
-    return ["家禽", "野兽"].filter(function (label) {
-      return listValue(rawValue(row, label === "家禽" ? "jia" : "ye")).indexOf(zodiac) >= 0;
-    })[0] || "";
-  }
-
-  // 本期**预测**的家禽/野兽分类：优先用接口注记 `domestic_wild_prediction_category`，
-  // 缺注记时从本期正文解析（`家禽|牛,狗,猪,羊,马,鸡` 或 JSON 数组形态）。
-  // 不能用 `domestic_wild_category`（那是按**特别生肖**推导的开奖分类）——用它展示
-  // 会让卡片恒为「准」，因为展示值本身就是答案。
+  // 【买啥开啥】的数据源是 mode 63（家野中特，`modules.title_63`）：正文形如
+  // `["家禽|牛,马,羊,鸡,狗,猪"]` —— **单个分类 + 该分类全组**，展示值就是 `|` 前的
+  // 分类名（需剥掉 JSON 引号/方括号残留）。取不到分类即无数据，退回兜底文案：
+  // 既不能用开奖分类 `domestic_wild_category` 反推（那是答案本身，卡片会恒「准」），
+  // 也不能退回旧 title_14 的 `jia`/`ye` 4+4 子集反查（特肖没被抽中就会把「准」误判成「错」）。
   function predictionDomesticWildCategory(row) {
-    var direct = String(rawValue(row, "domestic_wild_prediction_category") || "").trim();
-    if (direct === "家禽" || direct === "野兽") return direct;
     var candidates = [];
     var rawContent = rawValue(row, "content");
     if (typeof rawContent === "string") candidates.push(rawContent);
+    var text = row && row.prediction && row.prediction.text;
+    if (typeof text === "string") candidates.push(text);
     labels(row).forEach(function (label) { candidates.push(String(label)); });
     for (var index = 0; index < candidates.length; index += 1) {
-      var parts = candidates[index].split(/[;；]/);
+      var parts = String(candidates[index]).split(/[;；]/);
       for (var partIndex = 0; partIndex < parts.length; partIndex += 1) {
-        var label = parts[partIndex].split("|")[0].replace(/[\[\]"]/g, "").trim();
+        var label = parts[partIndex].split("|")[0].replace(/[\[\]"']/g, "").trim();
         if (label === "家禽" || label === "野兽") return label;
       }
     }
@@ -281,23 +293,24 @@
   }
 
   function renderBuyWhatOpens(modules) {
-    var sourceRows = distinctRows(modules.title_14);
+    // 后端模块「家野中特」= mode 63 → moduleKey `title_63`；不再读 title_14（家禽野兽）。
+    var sourceRows = distinctRows(modules.title_63);
     rows(section("msks")).forEach(function (node, index) {
       var source = sourceRows[index];
       if (!source) return writeRow(node, "", "暂无后端资料", "");
       var parts = resultParts(source);
       if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈待开奖〉〉", "？00");
-      // 展示本期**预测**分类；只有历史行缺预测正文时才退回按开奖分类兜底。
-      var category = predictionDomesticWildCategory(source) || domesticWildCategory(source) || predictedDomesticWildCategory(source);
+      // 展示本期**预测**分类（mode 63 正文里的那一个分类）；无正文即无数据。
+      var category = predictionDomesticWildCategory(source);
+      if (!category) return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈暂无后端资料〉〉", "");
       // 判定 = 特别号生肖是否落在该分类的固定分组里（fixed_data 家禽|野兽 全组）。
-      var hit = Boolean(category && canonicalDomesticWildCategory(parts.zodiac) === category);
+      var hit = canonicalDomesticWildCategory(parts.zodiac) === category;
       var verdict = hit ? "准" : "错";
-      var shown = category || "暂无后端资料";
       // 分类名写进预测内容槽，只有它是候选；命中时仅把分类名包进命中标记
       // （期号、〈〈 〉〉、「准/错」、开奖号码一律不黄）。
-      var contentHtml = "〈〈" + (hit && category
+      var contentHtml = "〈〈" + (hit
         ? '<span data-prediction-hit="true">' + escapeHtml(category) + "</span>"
-        : escapeHtml(shown)) + "〉〉";
+        : escapeHtml(category)) + "〉〉";
       writeRow(
         node,
         issueOf(source) + "期:火爆家野",

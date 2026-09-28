@@ -102,7 +102,9 @@ for (const token of [
   "renderFiveElements",
   "renderLuckyOminousSixXiao",
   "renderBuyWhatOpens",
-  "domestic_wild_category",
+  // 【买啥开啥】2026-09-29 起改用后端模块「家野中特」mode 63（`title_63`）；
+  // 旧的 `domestic_wild_category`（按特肖反推的开奖分类）不再是本模块的数据源。
+  "modules.title_63",
   "renderSumBigSmall",
   "renderSumOddEven",
   "renderMusicChess",
