@@ -299,10 +299,14 @@
       var source = sourceRows[index];
       if (!source) return writeRow(node, "", "暂无后端资料", "");
       var parts = resultParts(source);
-      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈待开奖〉〉", "？00");
-      // 展示本期**预测**分类（mode 63 正文里的那一个分类）；无正文即无数据。
+      // 预测内容与开奖状态**无关**：未开奖期（如 2026272）后端 mode 63 已生成正文，
+      // 必须照常显示本期预测分类；「待开奖」只属于开奖槽，绝不能占用预测内容槽
+      // （旧实现的 `!isOpened → 待开奖占位` 会把已生成的预测整块吞掉）。
       var category = predictionDomesticWildCategory(source);
       if (!category) return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈暂无后端资料〉〉", "");
+      if (!parts.isOpened) {
+        return writeRow(node, issueOf(source) + "期:火爆家野", "〈〈" + escapeHtml(category) + "〉〉", "？00");
+      }
       // 判定 = 特别号生肖是否落在该分类的固定分组里（fixed_data 家禽|野兽 全组）。
       var hit = canonicalDomesticWildCategory(parts.zodiac) === category;
       var verdict = hit ? "准" : "错";
@@ -349,9 +353,17 @@
       var source = sourceRows[index];
       if (!source) return writeRow(node, "", "暂无后端资料", "");
       var parts = resultParts(source);
-      if (!parts.isOpened) return writeRow(node, issueOf(source) + "期", "天地〈〈待开奖〉〉", "？00");
       var sideLabel = labels(source).slice(0, 1).join("") || "天地肖";
       var chosen = listValue(rawValue(source, "xiao"));
+      // 同【买啥开啥】：未开奖期也要显示本期预测（天地组 + 两肖），只有开奖槽是待开奖。
+      if (!parts.isOpened) {
+        return writeRow(
+          node,
+          issueOf(source) + "期",
+          "【" + escapeHtml(sideLabel) + (chosen.length ? "+" + escapeHtml(chosen.join("")) : "") + "】",
+          "？00"
+        );
+      }
       // 天地生肖 = 天地选1 + 生肖选2：特肖落在**天地组**或**两肖**任一即命中。
       // vendor 接口的 is_correct 只比对那两肖（会让天地肖永远不参与判定，
       // 270 期「天肖+兔鸡」开 37 马应为对却显示错），所以这里本地复算，

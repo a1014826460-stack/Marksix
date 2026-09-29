@@ -165,6 +165,8 @@ def build_modules():
             row("2026270", tokens=["天肖"], raw={"xiao": ["兔", "鸡"]}, code="37", zodiac="马", is_correct=False),
             row("2026269", tokens=["地肖"], raw={"xiao": ["兔", "鸡"]}, code="37", zodiac="马", is_correct=False),
             row("2026267", tokens=["天肖"], raw={"xiao": ["兔", "鸡"]}, code="22", zodiac="鸡", is_correct=False),
+            # 268 未开奖：预测内容必须照常显示（天地组+两肖），只有开奖槽是待开奖。
+            row("2026268", tokens=["天肖"], raw={"xiao": ["兔", "鸡"]}, opened=False),
         ]},
         # 精准五行（3hang）：接口（后端按号码五行修正后）判定为 对。
         {"moduleKey": "3hang", "rows": [
@@ -268,8 +270,20 @@ def main() -> None:
           "买啥开啥 270期（mode63 title_63 家禽|牛,马,羊,鸡,狗,猪 + 特肖马 → 准）")
     check(data["msks"], 1, "野兽", "错", [],
           "买啥开啥 269期（mode63 预测野兽 + 特肖马 → 错，零黄底）")
-    check(data["msks"], 2, "待开奖", "待开奖", [],
-          "买啥开啥 268期（未开奖 → 零判定零黄底）")
+    check(data["msks"], 2, "家禽", "？00", [],
+          "买啥开啥 268期（未开奖 → 仍显示 mode63 已生成的预测「家禽」，开奖槽待开奖，零黄底）")
+
+    # ── 预测内容与开奖状态解耦：未开奖期不得把「待开奖」写进预测内容槽 ──────
+    # 后端 mode 63 对 2026272 已生成正文（线上实测 `["野兽|兔,猴,虎,蛇,鼠,龙"]`），
+    # 旧实现 `!isOpened → 〈〈待开奖〉〉` 会把已生成的预测整块吞掉。
+    adapter_path = REPO / "frontend" / "public" / "vendor" / "twwanli" / "site-data-adapter.js"
+    adapter = adapter_path.read_text(encoding="utf-8")
+    # 只匹配"带引号的代码用法"，避免误伤说明注释里的同一字面量。
+    for token in ('"〈〈待开奖〉〉"', '"天地〈〈待开奖〉〉"'):
+        if token in adapter:
+            problems.append(f"适配器仍把「待开奖」写进预测内容槽: {token}")
+    if "if (!parts.isOpened) {" not in adapter:
+        problems.append("适配器缺少「未开奖期照常显示预测」的分支")
 
     # ── 买啥开啥：未开奖行不得出现判定（准/错），且零黄底 ────────────────
     if len(data["msks"]) > 2:
@@ -303,6 +317,11 @@ def main() -> None:
     check(data["tdsx"], 0, "天肖+兔鸡", "对", ["天肖"], "天地生肖 270期（天肖+兔鸡，开37马）")
     check(data["tdsx"], 1, "地肖+兔鸡", "错", [], "天地生肖 269期（地肖+兔鸡，开37马）")
     check(data["tdsx"], 2, "天肖+兔鸡", "对", ["鸡"], "天地生肖 267期（天肖+兔鸡，开22鸡）")
+    if len(data["tdsx"]) > 3:
+        check(data["tdsx"], 3, "天肖+兔鸡", "？00", [],
+              "天地生肖 268期（未开奖 → 仍显示预测「天肖+兔鸡」，开奖槽待开奖，零黄底）")
+    else:
+        problems.append("天地生肖: 268 期（未开奖）未渲染，无法验证预测内容与开奖状态解耦")
 
     check(data["jz5x"], 0, "金+土+木", "对", ["金+土+木"], "精准五行 270期（金+土+木 开37马）")
     check(data["jz5x"], 1, "金+水+火", "错", [], "精准五行 269期（金+水+火 开37马）")

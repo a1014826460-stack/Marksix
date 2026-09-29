@@ -330,6 +330,19 @@
         }
       }
 
+      // 球下方小字 = 「五行/生肖」（如 25 号球显示「金/马」）。
+      // 五行取服务端 /api/latest-draw 每个球（含特码）自带的号码五行 element，权威表见
+      // backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS = frontend/lib/element-number-groups.ts
+      // （**不是**生肖五行 sign='五行肖'）。element 缺失时只显示生肖、绝不臆造五行；
+      // 两者都缺时返回空串，由调用方保持原空态「--」，不会留下「／--」这类残尾。
+      function ballSubLabelText(ball) {
+        if (!ball) return "";
+        var zodiacText = ball.zodiac ? String(ball.zodiac) : "";
+        var elementText = ball.element ? String(ball.element).trim() : "";
+        if (elementText && zodiacText) return elementText + "/" + zodiacText;
+        return elementText || zodiacText;
+      }
+
       function setBall(index, ball) {
         var valueNode = $(ballPrefixIds[index]);
         var zodiacNode = $(zodiacPrefixIds[index]);
@@ -339,7 +352,7 @@
         var color = ball && typeof ball.color === "string" ? ball.color : "";
         wrapNode.className = "kj-ball box " + (color ? "ball-" + color : "ball-empty");
         valueNode.textContent = ball && ball.value ? pad2(ball.value) : "--";
-        zodiacNode.textContent = ball && ball.zodiac ? String(ball.zodiac) : "--";
+        zodiacNode.textContent = ballSubLabelText(ball) || "--";
       }
 
       function fillEmpty() {
