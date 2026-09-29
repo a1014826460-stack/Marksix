@@ -14,8 +14,29 @@ import fs from "node:fs"
 import vm from "node:vm"
 
 const SOURCE = "frontend/public/vendor/twsaimahui/static/js/039heibai.js"
-const BUNDLE = "frontend/public/vendor/twsaimahui/static/js/bundle-7dad48220de20ecf.js"
 const INDEX = "frontend/public/vendor/twsaimahui/index.html"
+const MANIFEST = "frontend/public/vendor/twsaimahui/static/js/bundles.json"
+
+// bundle 名 = `sha256(源文件名+源文件内容)[:16]`，由 scripts/bundle-twsaimahui-modules.py
+// --rebuild 生成：**源文件一改，文件名就变**（vendor 静态资源带 immutable 长缓存，
+// 不换名就永远拿不到新代码）。所以这里动态解析，不写死哈希，避免重建后契约失效。
+function resolveBundle() {
+  const html = fs.readFileSync(INDEX, "utf8")
+  const srcs = [...html.matchAll(/src="(static\/js\/bundle-[0-9a-f]{16}\.js)"/g)].map((m) => m[1])
+  if (srcs.length === 0) throw new Error("index.html 未引用任何 bundle")
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST, "utf8"))
+  const heibaiRun = (manifest.runs || []).find((run) =>
+    (run.sources || []).some((name) => String(name).endsWith("/039heibai.js")),
+  )
+  if (!heibaiRun) throw new Error("bundles.json 里找不到包含 039heibai.js 的 bundle")
+  const manifestBundle = String(heibaiRun.bundle)
+  if (!srcs.includes(manifestBundle)) {
+    throw new Error(`bundles.json 与 index.html 不一致：${manifestBundle} 不在 index.html 引用里`)
+  }
+  return `frontend/public/vendor/twsaimahui/${manifestBundle}`
+}
+
+const BUNDLE = resolveBundle()
 
 // ── 1. 静态：两份文件都不得再出现"由开奖结果反推分组"的旧逻辑 ──────────
 const FORBIDDEN = [
@@ -42,7 +63,8 @@ for (const file of [SOURCE, BUNDLE]) {
     throw new Error(`${file} 仍在给分组标签标黄`)
   }
 }
-if (!fs.readFileSync(INDEX, "utf8").includes("static/js/bundle-7dad48220de20ecf.js")) {
+// 被修补的 bundle 必须就是 index.html 实际加载的那一份（名字由内容哈希决定）。
+if (!fs.readFileSync(INDEX, "utf8").includes(`static/js/${BUNDLE.split("/").pop()}`)) {
   throw new Error("index.html 不再加载被修补的 bundle，契约的 bundle 目标已失效")
 }
 
