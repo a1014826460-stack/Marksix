@@ -18,7 +18,7 @@ from database.connection import connect, detect_database_engine, utc_now
 
 
 MIGRATION_TABLE = "schema_migrations"
-CURRENT_SCHEMA_VERSION = 31
+CURRENT_SCHEMA_VERSION = 32
 ADVISORY_LOCK_KEY = 734_605_197
 
 
@@ -721,6 +721,145 @@ def _add_lottery_draws_opened_at(conn: Any) -> None:
     add_column_if_missing(conn, "lottery_draws", "opened_at", "TEXT")
 
 
+#: `sign='五行'` 是**号码五行**（号码 → 金/木/水/火/土），`sign='五行肖'` 是**生肖五行**，
+#: 两者对同一号码可能给出不同五行，迁移只允许重写前者。
+WUXING_FIXED_DATA_SIGN = "五行"
+
+#: 落库正文里带「五行标签|号码清单」的 `created` 表（本站生成的预测正文，含 mode 53/482 的
+#: `content` 与 mode 98「杀1行」的 `content`）。`public.mode_payload_*` 是供应商历史镜像，
+#: 本迁移不动；如需一并处理，用 `backend/scripts/repair_mode53_element_content.py --tables`。
+WUXING_ELEMENT_PAYLOAD_TABLES: tuple[str, ...] = (
+    "mode_payload_53",
+    "mode_payload_482",
+    "mode_payload_98",
+)
+
+
+def _normalized_codes(value: Any) -> tuple[str, ...]:
+    """把 `"3,04,…"` 之类的号码清单归一为两位字符串元组。"""
+
+    codes: list[str] = []
+    for raw_code in str(value or "").split(","):
+        text = raw_code.strip()
+        if not text:
+            continue
+        try:
+            codes.append(f"{int(text):02d}")
+        except (TypeError, ValueError):
+            continue
+    return tuple(codes)
+
+
+def _canonical_wuxing_groups() -> dict[str, tuple[str, ...]]:
+    """返回代码镜像里的权威号码五行分组（`predict.common.ELEMENT_NUMBER_GROUPS`）。"""
+
+    from predict.common import ELEMENT_NUMBER_GROUPS, ELEMENT_ORDER
+
+    return {label: tuple(ELEMENT_NUMBER_GROUPS[label]) for label in ELEMENT_ORDER}
+
+
+def _resync_fixed_data_wuxing_groups(conn: Any) -> int:
+    """按新表重写 `public.fixed_data` 中 `sign='五行'` 的分组正文。
+
+    只更新 `code` 一列，且仅在正文与权威清单**不同**时才写库 —— 重复执行不会产生
+    任何 UPDATE（该表没有 `updated_at`，也不改 `status`/`xu`/`type`）。
+    `sign='五行肖'`（生肖五行）与其它 sign 一律不匹配，绝不被触碰。
+    """
+
+    if not conn.table_exists("fixed_data"):
+        return 0
+    if not {"sign", "name", "code"}.issubset(set(conn.table_columns("fixed_data"))):
+        return 0
+    existing = conn.execute(
+        "SELECT id FROM fixed_data WHERE sign = ?",
+        (WUXING_FIXED_DATA_SIGN,),
+    ).fetchall()
+    if not existing:
+        return 0
+
+    groups = _canonical_wuxing_groups()
+    updated = 0
+    for label in groups:
+        code = ",".join(groups[label])
+        cursor = conn.execute(
+            """
+            UPDATE fixed_data
+            SET code = ?
+            WHERE sign = ? AND name = ? AND COALESCE(code, '') <> ?
+            """,
+            (code, WUXING_FIXED_DATA_SIGN, label, code),
+        )
+        updated += int(cursor.rowcount or 0)
+
+    _verify_fixed_data_wuxing_groups(conn, groups)
+    return updated
+
+
+def _verify_fixed_data_wuxing_groups(conn: Any, groups: dict[str, tuple[str, ...]]) -> None:
+    """写库后回读校验：已存在的每个五行标签都必须等于权威清单。"""
+
+    rows = conn.execute(
+        "SELECT name, code FROM fixed_data WHERE sign = ? ORDER BY id",
+        (WUXING_FIXED_DATA_SIGN,),
+    ).fetchall()
+    for row in rows:
+        record = dict(row) if not isinstance(row, dict) else row
+        label = str(record.get("name") or "").strip()
+        expected = groups.get(label)
+        if expected is None:
+            continue
+        actual = _normalized_codes(record.get("code"))
+        if actual != expected:
+            raise RuntimeError(
+                f"fixed_data sign='五行' 的 {label} 重写后仍与权威清单不一致："
+                f"{actual} != {expected}"
+            )
+
+
+def _resync_created_wuxing_element_content(conn: Any) -> int:
+    """按新表重写 `created.mode_payload_53` / `_482` / `_98` 正文里的五行号码清单。
+
+    复用既有修复路径（`utils.created_prediction_store`）：只写 `content` 一列，
+    带「定位列 + 原正文」比较条件；清单已是权威口径的行直接跳过（幂等）。
+    """
+
+    from utils.created_prediction_store import (
+        list_created_content_rows,
+        rewrite_element_group_content,
+        update_created_content_row,
+    )
+
+    groups = _canonical_wuxing_groups()
+    updated = 0
+    for table_name in WUXING_ELEMENT_PAYLOAD_TABLES:
+        for row in list_created_content_rows(conn, table_name):
+            rebuilt = rewrite_element_group_content(row.content, groups)
+            if rebuilt is None or rebuilt == row.content or not row.locatable:
+                continue
+            updated += update_created_content_row(
+                conn,
+                table_name,
+                locator=row.locator,
+                expected_content=row.content,
+                new_content=rebuilt,
+            )
+    return updated
+
+
+def _resync_wuxing_number_groups_and_element_content(conn: Any) -> None:
+    """把号码五行整体切到新表：先刷 `public.fixed_data`，再刷已落库的五行正文。
+
+    两段都是幂等的：源正文一致时不发出任何写语句。判定本身是**读时**由
+    `predict.common.ELEMENT_NUMBER_GROUPS` / `public.fixed_data` 计算的，因此改完映射
+    判定立即随新表变化；这里额外刷新的是**已经落库的展示正文**（候选号码清单）。
+
+    `public.mode_payload_*`（供应商历史镜像）不在本迁移范围内。
+    """
+
+    _resync_fixed_data_wuxing_groups(conn)
+    _resync_created_wuxing_element_content(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "baseline_schema", _baseline_schema),
     Migration(2, "sync_site_prediction_page_authorization", _sync_site_blueprint_profiles_to_page_manifest),
@@ -753,6 +892,11 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(29, "raise_history_publication_delay_to_eight_minutes", _raise_history_publication_delay_to_eight_minutes),
     Migration(30, "add_lottery_draws_opened_at", _add_lottery_draws_opened_at),
     Migration(31, "sync_twwanli_jiaye_zhongte_authorization", _sync_twwanli_jiaye_zhongte_authorization),
+    Migration(
+        32,
+        "resync_wuxing_number_groups_and_element_content",
+        _resync_wuxing_number_groups_and_element_content,
+    ),
 )
 
 

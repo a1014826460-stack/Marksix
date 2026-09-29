@@ -6,9 +6,11 @@
 // 回归背景：内联脚本旧实现用 `pickMatchedLabel(list, resultCode)`（正文里每个五行标签后的
 // **号码清单**）定位命中行，而历史落库正文清单是按**生肖五行**（fixed_data sign='五行肖'）
 // 拼的，不是号码五行（= backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS
-// = fixed_data sign='五行'）。两者对同一号码给出不同五行：
+// = fixed_data sign='五行'）。两者对同一号码给出不同五行（2026-09-29 整体改判为「新表」，
+// 相对上一版 25 个号码换组，规律 `new(x) = old(x-1)`、01 归水；下列期望值已按新表重算）：
 //   24 → 号码五行 木（生肖羊 → 生肖五行 土）
-//   37 → 号码五行 木（马 → 生肖五行 火）
+//   37 → 号码五行 土（马 → 生肖五行 火）
+//   45 → 号码五行 水（狗 → 生肖五行 土）
 //   04 → 号码五行 金（兔 → 生肖五行 木）
 //
 // 运行：node frontend/test/twcf888-home-shell-element-contract.mjs
@@ -49,13 +51,13 @@ const shellGroups = Object.fromEntries(
 )
 assertSameGroups(shellGroups, AUTHORITY_GROUPS, `${SHELL}（首页内联脚本）`)
 
-// 用户报障的关键分歧点：这三个号码的生肖五行与号码五行不同。
+// 用户报障的关键分歧点：这几个号码的生肖五行与号码五行不同（按新表重算）。
 assert.equal(elementOfCode("24"), "木", "24 的号码五行是木（生肖羊 → 生肖五行 土）")
-assert.equal(elementOfCode("37"), "木", "37 的号码五行是木（马 → 生肖五行 火）")
-assert.equal(elementOfCode("45"), "木", "45 的号码五行是木（狗 → 生肖五行 土）")
+assert.equal(elementOfCode("37"), "土", "37 的号码五行是土（马 → 生肖五行 火；旧表为木）")
+assert.equal(elementOfCode("45"), "水", "45 的号码五行是水（狗 → 生肖五行 土；旧表为木）")
 assert.equal(elementOfCode("04"), "金", "04 的号码五行是金（兔 → 生肖五行 木）")
-assert.equal(elementOfCode("49"), "土", "49 的号码五行是土")
-assert.equal(elementOfCode("5"), "土", "单位数号码必须补零后匹配")
+assert.equal(elementOfCode("49"), "火", "49 的号码五行是火（旧表为土）")
+assert.equal(elementOfCode("5"), "金", "单位数号码必须补零后匹配（05 → 金）")
 assert.equal(elementOfCode(""), "", "缺失号码不得给出五行（绝不回退生肖五行）")
 assert.equal(elementOfCode("50"), "", "非法号码不得给出五行")
 // 全 49 码逐一比对后端权威值（首页壳的 elementOfCode 必须与权威分组同源）。

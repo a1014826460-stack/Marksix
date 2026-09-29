@@ -114,8 +114,8 @@ def test_outcome_carries_special_zodiac_category_atom():
 
 
 def test_category_atom_never_comes_from_number_group_content():
-    """成员是号码的分组（土|05,06,… / 小单|01,03,…）不能被当成特肖分类。"""
-    atoms = _compute_outcome_from_row(_row("26", '["土|05,06,19,20,27"]')).split("|")
+    """成员是号码的分组（土|06,07,… / 小单|01,03,…）不能被当成特肖分类。"""
+    atoms = _compute_outcome_from_row(_row("26", '["土|06,07,20,21,28,29,36,37"]')).split("|")
     assert "金" in atoms  # 五行原子照旧（26 → 金），号码分组不参与
     assert "土" not in atoms
     atoms = _compute_outcome_from_row(_row("26", '["小单|01,03,05,07,09,11"]')).split("|")
@@ -220,13 +220,13 @@ def test_category_family_verdict_for_every_number(key: str, mode_id: int, sign: 
 def test_zodiac_and_element_plays_are_unaffected_by_category_atoms():
     """新增分类原子不得改变「候选本身就是生肖 / 五行」的玩法判定。"""
     three_hang = PREDICTION_CONFIGS["3hang"]
-    content = '["木|07,08,15,16,23,24,37,38,45,46", "金|03,04,11,12,25,26,33,34,41,42"]'
-    # 号码五行取权威分组：26 → 金 ∈ 候选 → 对；25 → 金 ∈ 候选 → 对
+    content = '["木|08,09,16,17,24,25,38,39,46,47", "金|04,05,12,13,26,27,34,35,42,43"]'
+    # 号码五行取权威新表：26 → 金 ∈ 候选 → 对；25 → 木 ∈ 候选 → 对
     assert serialize_public_history_row(_row("26", content), three_hang)["is_correct"] is True
     assert serialize_public_history_row(_row("25", content), three_hang)["is_correct"] is True
-    # 27 → 土 ∉ 候选 → 错；21 → 水 ∉ 候选 → 错
-    assert serialize_public_history_row(_row("27", content), three_hang)["is_correct"] is False
+    # 21 → 土 ∉ 候选 → 错；22 → 水 ∉ 候选 → 错
     assert serialize_public_history_row(_row("21", content), three_hang)["is_correct"] is False
+    assert serialize_public_history_row(_row("22", content), three_hang)["is_correct"] is False
 
     three_zxt = PREDICTION_CONFIGS["3zxt"]
     zodiacs = '["蛇","猴","鸡"]'

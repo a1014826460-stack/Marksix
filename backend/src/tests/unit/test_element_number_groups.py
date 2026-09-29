@@ -2,9 +2,13 @@
 
 回归背景（2026-09-29，用户报障）：
 `public/api.py` 曾维护一份过期的硬编码五行表（37 → 火），而 `public.fixed_data` /
-`mode_payload_53` 的号码分组是 37 → 木。结果 270 期「精准五行」预测 `金+土+木`、
-开奖特码 37（马）时：按生肖看马是火肖，按号码看 37 属木 —— 旧实现取到「火」，
-判定为「错」；正确口径应取号码五行「木」，落在预测三行内 → 「对」。
+`mode_payload_53` 的号码分组是 37 → 号码五行。结果 270 期「精准五行」预测 `金+土+木`、
+开奖特码 37（马）时：按生肖看马是火肖，按号码看 37 属号码五行 —— 旧实现取到「火」，
+判定为「错」；正确口径应取号码五行，落在预测三行内 → 「对」。
+
+2026-09-29 二次改判：号码五行整体切到用户给出的**新表**（相对上一版 25 个号码换组，
+规律 new(x)=old(x-1)，01 归水），`public.fixed_data` / `created.mode_payload_53` / `_482`
+由 versioned migration 32 同步重刷。本文件的期望值一律按**新表**重算。
 """
 
 from __future__ import annotations
@@ -30,19 +34,19 @@ def test_number_groups_cover_all_49_without_overlap():
 
 
 def test_element_groups_match_fixed_data_samples():
-    # 与 public.fixed_data sign='五行' / mode_payload_53 正文一致（用户给出的木组）。
-    assert ELEMENT_NUMBER_GROUPS["木"] == ("07", "08", "15", "16", "23", "24", "37", "38", "45", "46")
-    assert "37" in ELEMENT_NUMBER_GROUPS["木"]
-    assert "49" in ELEMENT_NUMBER_GROUPS["土"]
+    # 与 public.fixed_data sign='五行' / mode_payload_53 正文一致（用户给出的新表）。
+    assert ELEMENT_NUMBER_GROUPS["木"] == ("08", "09", "16", "17", "24", "25", "38", "39", "46", "47")
+    assert "37" in ELEMENT_NUMBER_GROUPS["土"]
+    assert "49" in ELEMENT_NUMBER_GROUPS["火"]
 
 
 def test_special_number_element_is_number_based_not_zodiac_based():
     mapping = canonical_element_number_map()
-    # 37 = 龙（生肖），但号码五行是木；马（火肖）的号码 11/23/35/47 属金/木/…，
-    # 一律不能用生肖五行替代号码五行。
-    assert mapping["37"] == "木"
+    # 37 的生肖是马（火肖），但号码五行是土；马（火肖）的号码 01/13/25/37/49
+    # 在新表里分属 水/金/木/土/火 —— 一律不能用生肖五行替代号码五行。
+    assert mapping["37"] == "土"
     assert mapping["04"] == "金"
-    assert mapping["49"] == "土"
+    assert mapping["49"] == "火"
     assert mapping["22"] == "水"
 
 
@@ -62,7 +66,7 @@ def test_composite_outcome_carries_the_number_element():
         "res_color": "red,red,red,red,red,red,green",
     }
     atoms = api._compute_outcome_from_row(row).split("|")
-    assert "木" in atoms, "37 的五行原子应为木"
+    assert "土" in atoms, "37 的五行原子应为土"
     assert "火" not in atoms, "不得用马的火肖替代号码五行"
 
 

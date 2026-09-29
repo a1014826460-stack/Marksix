@@ -6,10 +6,11 @@
 //     if (code && xiaoV[i].indexOf(code) !== -1) { zj = true; 黄底 }
 // 而历史落库的 mode 53 正文清单是按**生肖五行**（`fixed_data` sign='五行肖'）拼出来的，
 // 不是号码五行（= `backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS`
-// = `public.fixed_data` sign='五行'）。两者对同一号码给出不同五行：
+// = `public.fixed_data` sign='五行'）。两者对同一号码给出不同五行（2026-09-29 整体改判为
+// 「新表」：相对上一版 25 个号码换组，规律 `new(x) = old(x-1)`、01 归水；下列期望值已按新表重算）：
 //   24 → 号码五行 木（生肖羊 → 生肖五行 土）
-//   37 → 号码五行 木（马 → 生肖五行 火）
-//   45 → 号码五行 木（狗 → 生肖五行 土）
+//   37 → 号码五行 土（马 → 生肖五行 火）
+//   45 → 号码五行 水（狗 → 生肖五行 土）
 //   04 → 号码五行 金（兔 → 生肖五行 木）
 // 于是「生肖五行 ∈ 三行、号码五行 ∉ 三行」的期会被判成「准」并把黄底点在错行上。
 //
@@ -215,7 +216,8 @@ assert.deepEqual(yellowSpans(renderedMiss), [], `错期必须零黄底：${rende
 assert.ok(renderedMiss.includes("错"), "未命中必须显示「错」")
 assert.ok(!renderedMiss.includes("准"), "未命中不得显示「准」")
 
-// 45（号码五行木、生肖狗 → 生肖五行土）是同一类分歧：正文旧清单把它写在【土】组。
+// 45（新表号码五行水、生肖狗 → 生肖五行土）是同一类分歧：正文旧清单把它写在【土】组，
+// 而新表下 45 = 水 ∈ «土木水» → 准，且黄底必须落在【水】。
 const TERM_45 = row({
   term: "265",
   content: LEGACY_CONTENT_53,
@@ -223,8 +225,20 @@ const TERM_45 = row({
   resSx: "牛,马,狗,龙,猪,蛇,狗",
 })
 const rendered45 = renderSanhang([TERM_45])
-assert.deepEqual(yellowSpans(rendered45), ["木"], `45 的号码五行是木，黄底必须落在【木】：${rendered45.slice(0, 400)}`)
+assert.deepEqual(yellowSpans(rendered45), ["水"], `45 的号码五行是水，黄底必须落在【水】：${rendered45.slice(0, 400)}`)
 assert.ok(rendered45.includes("准"), "45 号码五行落在三行内 → 必须「准」")
+
+// 37（新表号码五行土、生肖马 → 生肖五行火）同类：生肖五行口径把它写在【火】，
+// 新表下 37 = 土 ∈ «土木水» → 准，黄底落在【土】。
+const TERM_37 = row({
+  term: "264",
+  content: LEGACY_CONTENT_53,
+  resCode: "05,11,19,31,42,07,37",
+  resSx: "牛,马,狗,龙,猪,蛇,马",
+})
+const rendered37 = renderSanhang([TERM_37])
+assert.deepEqual(yellowSpans(rendered37), ["土"], `37 的号码五行是土，黄底必须落在【土】：${rendered37.slice(0, 400)}`)
+assert.ok(rendered37.includes("准"), "37 号码五行落在三行内 → 必须「准」")
 
 // ── 5. 未开奖：不显示判定且零高亮 ─────────────────────────────────────
 const PENDING_ROW = row({ term: "268", content: LEGACY_CONTENT_53, resCode: ",,,,,,", resSx: ",,,,,," })

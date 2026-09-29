@@ -54,12 +54,12 @@ assertSameGroups(
   `${VERDICT_FILE} 运行期 elementNumberGroups`,
 )
 
-// 号码五行 vs 生肖五行：这三组是用户报障里的关键分歧点。
+// 号码五行 vs 生肖五行：这几组是用户报障里的关键分歧点（已按 2026-09-29 新表重算）。
 assert.equal(verdictApi.specialElement("24"), "木", "24 的号码五行是木（生肖羊 → 生肖五行土：不得混用）")
-assert.equal(verdictApi.specialElement("37"), "木", "37 的号码五行是木（生肖马 → 生肖五行火：不得混用）")
-assert.equal(verdictApi.specialElement("45"), "木", "45 的号码五行是木（生肖狗 → 生肖五行土：不得混用）")
-assert.equal(verdictApi.specialElement("04"), "金", "04 的号码五行是金")
-assert.equal(verdictApi.specialElement("49"), "土", "49 的号码五行是土")
+assert.equal(verdictApi.specialElement("37"), "土", "37 的号码五行是土（生肖马 → 生肖五行火：不得混用；旧表为木）")
+assert.equal(verdictApi.specialElement("45"), "水", "45 的号码五行是水（生肖狗 → 生肖五行土：不得混用；旧表为木）")
+assert.equal(verdictApi.specialElement("04"), "金", "04 的号码五行是金（生肖兔 → 生肖五行木：不得混用）")
+assert.equal(verdictApi.specialElement("49"), "火", "49 的号码五行是火（旧表为土）")
 // 全 49 码逐一比对后端权威值（判定 API 必须与权威分组同源）。
 for (let number = 1; number <= 49; number += 1) {
   const code = String(number).padStart(2, "0")

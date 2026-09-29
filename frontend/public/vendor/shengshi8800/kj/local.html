@@ -330,7 +330,8 @@
         }
       }
 
-      // 球下方小字 = 「五行/生肖」（如 25 号球显示「金/马」）。
+      // 球下方小字 = 「五行/生肖」（如 25 号球显示「木/马」；号码五行表 2026-09-29 已整体
+      // 改判为「新表」，25 = 木，旧表下为金）。
       // 五行取服务端 /api/latest-draw 每个球（含特码）自带的号码五行 element，权威表见
       // backend/src/predict/common.py::ELEMENT_NUMBER_GROUPS = frontend/lib/element-number-groups.ts
       // （**不是**生肖五行 sign='五行肖'）。element 缺失时只显示生肖、绝不臆造五行；

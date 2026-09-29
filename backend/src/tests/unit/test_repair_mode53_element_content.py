@@ -1,15 +1,20 @@
 """`created.mode_payload_53` / `mode_payload_482` 五行正文清单修复（统一号码五行口径）。
 
-回归背景（2026-09-29）：
-`public.fixed_data` 里有两套五行分组 —— `sign='五行'`（**号码五行**，权威口径，37→木）
+回归背景 1（2026-09-29）：
+`public.fixed_data` 里有两套五行分组 —— `sign='五行'`（**号码五行**，权威口径）
 与 `sign='五行肖'`（**生肖五行**，37 是马 → 火肖）。后端判定链
 （`predict.common.ELEMENT_NUMBER_GROUPS` / `public.api._compute_outcome_from_row` 的
 element 原子 / mode 53、482 的 `special_element_from_row`）用的是号码五行，但历史上
 落库的 mode 53/482 正文里每个五行标签后的**号码清单**是按生肖五行拼出来的，
 于是「判定说中，展示的候选清单里却找不到那个号码」（反之亦然）。
 
+回归背景 2（2026-09-29 二次改判）：号码五行整体切到**新表**（25 个号码换组）。
+已落库的 mode 53/482 正文因此又变成旧号码五行清单，由 versioned migration 32
+（`_resync_created_wuxing_element_content`）按同一修复路径重刷。
+
 本测试锁定修复的四个不变量：
-1. 清单按**号码五行**重写（标签、条目顺序、其它列都不变）；
+1. 清单按**号码五行新表**重写（标签、条目顺序、其它列都不变），
+   且能从「旧号码五行清单」和「生肖五行清单」两种历史正文迁移过来；
 2. 幂等（改后清单已正确就跳过，第二次执行不会二次改动）；
 3. 只写 `content` 一列（UPDATE 语句不含任何其它列，且必须带原正文比较条件）；
 4. 生成侧口径统一（`mode 53/482` 的 `labels_loader` / `explanation` 不再依赖
@@ -58,16 +63,36 @@ CANON: dict[str, tuple[str, ...]] = {
     label: tuple(ELEMENT_NUMBER_GROUPS[label]) for label in ELEMENT_ORDER
 }
 
+#: 迁移 32 之前的**号码五行**分组（上一版 `public.fixed_data` `sign='五行'` 正文）。
+PREVIOUS_WUXING_CODES: dict[str, str] = {
+    "金": "03,04,11,12,25,26,33,34,41,42",
+    "木": "07,08,15,16,23,24,37,38,45,46",
+    "水": "13,14,21,22,29,30,43,44",
+    "火": "01,02,09,10,17,18,31,32,39,40,47,48",
+    "土": "05,06,19,20,27,28,35,36,49",
+}
+PREVIOUS_WUXING_GROUPS: dict[str, tuple[str, ...]] = {
+    label: tuple(PREVIOUS_WUXING_CODES[label].split(",")) for label in PREVIOUS_WUXING_CODES
+}
+
 LEGACY_53 = (
     '["木|04,05,16,17,28,29,40,41", "土|03,06,09,12,15,18,21,24,27,30,33,36,39,42,45,48", '
     '"水|07,08,19,20,31,32,43,44"]'
 )
-CANONICAL_53 = (
+#: 上一版**号码五行**清单（迁移 32 之前实际落库的正文，25 个号码与新表不同）。
+PREVIOUS_ELEMENT_53 = (
     '["木|07,08,15,16,23,24,37,38,45,46", "土|05,06,19,20,27,28,35,36,49", '
     '"水|13,14,21,22,29,30,43,44"]'
 )
-COMPACT_CANONICAL_53 = (
+PREVIOUS_ELEMENT_COMPACT_53 = (
     '["木|07,08,15,16,23,24,37,38,45,46","土|05,06,19,20,27,28,35,36,49","水|13,14,21,22,29,30,43,44"]'
+)
+CANONICAL_53 = (
+    '["木|08,09,16,17,24,25,38,39,46,47", "土|06,07,20,21,28,29,36,37", '
+    '"水|01,14,15,22,23,30,31,44,45"]'
+)
+COMPACT_CANONICAL_53 = (
+    '["木|08,09,16,17,24,25,38,39,46,47","土|06,07,20,21,28,29,36,37","水|01,14,15,22,23,30,31,44,45"]'
 )
 
 
@@ -79,12 +104,36 @@ def test_legacy_lists_are_zodiac_element_derived_and_differ_from_canonical():
 
     for label in ELEMENT_ORDER:
         assert set(LEGACY_SX_GROUPS[label]) != set(CANON[label])
-    # 37：号码五行=木，生肖=马 → 生肖五行=火。
-    assert "37" in CANON["木"]
+    # 37：号码五行=土，生肖=马 → 生肖五行=火。
+    assert "37" in CANON["土"]
     assert "37" in LEGACY_SX_GROUPS["火"]
-    # 45：号码五行=木，生肖=狗 → 生肖五行=土。
-    assert "45" in CANON["木"]
+    # 45：号码五行=水，生肖=狗 → 生肖五行=土。
+    assert "45" in CANON["水"]
     assert "45" in LEGACY_SX_GROUPS["土"]
+
+
+def test_previous_number_element_lists_differ_from_the_new_table():
+    """迁移 32 的输入（旧号码五行清单）确实与新表不同 —— 否则迁移是空操作。"""
+
+    for label in ELEMENT_ORDER:
+        assert set(PREVIOUS_WUXING_GROUPS[label]) == set(
+            PREVIOUS_WUXING_CODES[label].split(",")
+        )
+    assert "37" in PREVIOUS_WUXING_GROUPS["木"]
+    assert "37" not in CANON["木"]
+    assert "37" in CANON["土"]
+    assert "01" in CANON["水"]
+    assert "01" in PREVIOUS_WUXING_GROUPS["火"]
+
+
+def test_rewrite_migrates_the_previous_number_element_lists_to_the_new_table():
+    """迁移 32 的实际数据路径：旧号码五行清单 → 新表清单。"""
+
+    assert rewrite_element_group_content(PREVIOUS_ELEMENT_53, CANON) == CANONICAL_53
+    assert (
+        rewrite_element_group_content(PREVIOUS_ELEMENT_COMPACT_53, CANON)
+        == COMPACT_CANONICAL_53
+    )
 
 
 def test_rewrite_replaces_number_lists_with_number_element_groups():
@@ -112,7 +161,7 @@ def test_rewrite_preserves_original_separator_style():
 
 def test_rewrite_leaves_unknown_labels_and_non_element_items_alone():
     content = '["木|04,05,16,17,28,29,40,41", "其它|01,02"]'
-    assert rewrite_element_group_content(content, CANON) == '["木|07,08,15,16,23,24,37,38,45,46", "其它|01,02"]'
+    assert rewrite_element_group_content(content, CANON) == '["木|08,09,16,17,24,25,38,39,46,47", "其它|01,02"]'
 
 
 @pytest.mark.parametrize(
@@ -263,17 +312,17 @@ def test_element_groups_are_read_from_fixed_data_sign_wu_xing_not_wu_xing_xiao()
 
     conn = _FakeConn(
         rows=[
-            {"name": "金", "code": "03,04,11,12,25,26,33,34,41,42"},
-            {"name": "木", "code": "07,08,15,16,23,24,37,38,45,46"},
-            {"name": "水", "code": "13,14,21,22,29,30,43,44"},
-            {"name": "火", "code": "01,02,09,10,17,18,31,32,39,40,47,48"},
-            {"name": "土", "code": "05,06,19,20,27,28,35,36,49"},
+            {"name": "金", "code": "04,05,12,13,26,27,34,35,42,43"},
+            {"name": "木", "code": "08,09,16,17,24,25,38,39,46,47"},
+            {"name": "水", "code": "01,14,15,22,23,30,31,44,45"},
+            {"name": "火", "code": "02,03,10,11,18,19,32,33,40,41,48,49"},
+            {"name": "土", "code": "06,07,20,21,28,29,36,37"},
         ]
     )
     groups = load_element_number_groups(conn)
 
     assert groups["木"] == tuple(ELEMENT_NUMBER_GROUPS["木"])
-    assert "37" in groups["木"]
+    assert "37" in groups["土"]
     assert "37" not in groups["火"]
     sql, params = [call for call in conn.calls if "fixed_data" in call[0]][0]
     assert params == ("五行",)
@@ -349,10 +398,10 @@ def test_element_content_formatter_emits_number_element_lists(key: str):
     formatted = formatter(("金", "木"), None)
 
     assert formatted == [f"金|{','.join(CANON['金'])}", f"木|{','.join(CANON['木'])}"]
-    # 37 属木：必须出现在木组，不得出现在火组（生肖五行口径会把 37 放进火）
-    assert "37" in CANON["木"]
+    # 37 属土：必须出现在土组，不得出现在火组（生肖五行口径会把 37 放进火）
+    assert "37" in CANON["土"]
     assert "37" not in CANON["火"]
-    assert "45" in CANON["木"]
+    assert "45" in CANON["水"]
 
 
 def test_format_element_groups_covers_all_49_numbers_exactly_once():

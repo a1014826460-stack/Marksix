@@ -4,7 +4,9 @@
 // ELEMENT_NUMBER_GROUPS` = `public.fixed_data` sign='五行'）、**1 份前端权威源**
 // （`frontend/lib/element-number-groups.ts`）以及若干**必须自包含**的浏览器原生
 // （vendor）拷贝（`<script src>` 无法 import ESM）。拷贝一旦漂移，同一个特码会在不同
-// 站点被判成不同五行 —— 这正是「24 从木漂到土 / 37 从木漂到火」这类报障的根因。
+// 站点被判成不同五行 —— 这正是「24 从木漂到土 / 37 从木漂到火」这类报障的根因
+// （那是把**生肖五行**当号码五行用造成的口径漂移；2026-09-29 号码五行表本身也已整体
+// 改判为「新表」，见文末说明）。
 //
 // 本契约**不手写任何期望值**：期望值一律从后端权威源解析出来，再去比对
 //   1. `frontend/lib/element-number-groups.ts`（前端唯一权威源）；
@@ -16,7 +18,11 @@
 // 反向验证（本契约必须能抓到漂移）：
 //   - vendor 漂移：把任意一份 vendor 拷贝里的 24 从「木」挪到「土」→ 本契约 FAIL；
 //   - 后端漂移：`ELEMENT_AUTHORITY_COMMON_PY=<临时副本> node frontend/test/element-number-groups-contract.mjs`，
-//     副本里把 37 从「木」挪到「火」→ 本契约 FAIL（不必改 `backend/**`）。
+//     副本里把 37 从「土」挪到「火」→ 本契约 FAIL（不必改 `backend/**`）。
+//
+// 说明：2026-09-29 号码五行整体改判为「新表」（相对上一版 25 个号码换组，规律
+// `new(x) = old(x-1)`、01 归水）。本文件的期望值仍**不手写**：全部从后端权威源解析；
+// 只有「与生肖五行分歧」的说明性 KEY_POINTS 需要跟着新表重算。
 //
 // 运行：node frontend/test/element-number-groups-contract.mjs
 import assert from "node:assert/strict"
@@ -38,20 +44,28 @@ import {
   twsaimahuiBundlesFor,
 } from "./lib/element-authority.mjs"
 
-/** 号码五行与生肖五行会给出不同结果的关键号码（用户报障的分歧点）。 */
+/**
+ * 号码五行与生肖五行会给出不同结果的关键号码（用户报障的分歧点）。
+ *
+ * 生肖五行（`fixed_data` sign='五行肖'）：虎兔木、蛇马火、猴鸡金、猪鼠水、牛羊龙狗土；
+ * 本仓库样本期（2026 丙午马年）的号码→生肖为 `01 起「马」逆序`（01/13/25/37/49 = 马）。
+ * 第三项是说明性备注，供人核对；对错由上面的后端权威值兜底。
+ * 2026-09-29 换新表后按新表重算（旧值见 git 历史）：以下 12 组已全部按新表核对。
+ */
 const KEY_POINTS = [
   ["24", "木", "生肖羊 → 生肖五行 土"],
-  ["37", "木", "生肖马 → 生肖五行 火"],
-  ["45", "木", "生肖狗 → 生肖五行 土"],
+  ["37", "土", "生肖马 → 生肖五行 火（旧表为木，已改判）"],
+  ["45", "水", "生肖狗 → 生肖五行 土（旧表为木，已改判）"],
   ["04", "金", "生肖兔 → 生肖五行 木"],
-  ["17", "火", "生肖虎 → 生肖五行 木"],
-  ["49", "土", ""],
-  ["01", "火", ""],
-  ["13", "水", ""],
-  ["03", "金", ""],
-  ["05", "土", ""],
-  ["06", "土", ""],
+  ["13", "金", "生肖马 → 生肖五行 火（旧表为水，已改判）"],
+  ["01", "水", "生肖马 → 生肖五行 火（旧表为火，已改判）"],
+  ["05", "金", "生肖虎 → 生肖五行 木（旧表为土，已改判）"],
+  ["03", "火", "生肖龙 → 生肖五行 土（旧表为金，已改判）"],
+  ["07", "土", "生肖鼠 → 生肖五行 水（旧表为木，已改判）"],
+  ["17", "木", "生肖虎 → 生肖五行 木（旧表为火，换表后与生肖五行一致）"],
+  ["49", "火", "（旧表为土，已改判）"],
   ["02", "火", ""],
+  ["06", "土", ""],
 ]
 
 // ── 1. 后端权威值（唯一期望值来源）────────────────────────────────────
@@ -165,13 +179,13 @@ for (const [code, element, note] of KEY_POINTS) {
     `${ELEMENT_GROUPS_TS}: elementOfCode("${code}") 必须是「${element}」${note ? `（${note}）` : ""}`,
   )
 }
-assert.equal(elementOfCode("5"), "土", `${ELEMENT_GROUPS_TS}: 单位数号码必须补零后匹配`)
-assert.equal(elementOfCode("49"), "土", `${ELEMENT_GROUPS_TS}: 49 必须补零后匹配`)
+assert.equal(elementOfCode("5"), "金", `${ELEMENT_GROUPS_TS}: 单位数号码必须补零后匹配（05 → 金）`)
+assert.equal(elementOfCode("49"), "火", `${ELEMENT_GROUPS_TS}: 49 必须补零后匹配（49 → 火）`)
 assert.equal(elementOfCode(""), "", `${ELEMENT_GROUPS_TS}: 缺失号码不得给出五行（绝不回退生肖五行）`)
 assert.equal(elementOfCode("50"), "", `${ELEMENT_GROUPS_TS}: 非法号码不得给出五行`)
 assert.equal(normalizeElementLabel(" 土行 "), "土", `${ELEMENT_GROUPS_TS}: 正文标签需归一化（去空白与「行」后缀）`)
-assert.equal(elementHitJudgement(["水", "木", "金", "土"], "37"), true, "37（木）落在预测四行内 → 命中")
-assert.equal(elementHitJudgement(["水", "火", "金", "土"], "37"), false, "37（木）不在预测四行内 → 未命中")
+assert.equal(elementHitJudgement(["水", "木", "金", "土"], "37"), true, "37（土）落在预测四行内 → 命中")
+assert.equal(elementHitJudgement(["水", "木", "金", "火"], "37"), false, "37（土）不在预测四行内 → 未命中")
 assert.equal(elementHitJudgement([], "37"), null, "没有预测标签时不可判定")
 assert.equal(elementHitJudgement(["木"], ""), null, "没有特码时不可判定")
 

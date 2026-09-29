@@ -112,15 +112,19 @@ assert.ok(
 // ── 3. 行为样本 ─────────────────────────────────────────────────────────
 // 线上真实一期（2026-09-28 实测）：
 //   curl.exe -s "https://www.tw8800.com/api/latest-draw?lottery_type=3"
-// 七个球（含特码）element 全部非空。
+// 七个球（含特码）element 全部非空。号码与生肖是**那一期的真实开奖**（不变）；
+// element 由权威号码五行表派生，2026-09-29 该表整体改判为「新表」（相对上一版 25 码换组，
+// `new(x) = old(x-1)`、01 归水），所以下面这一列 element 已按新表重算：
+//   36→土 32→火 39→木 12→金 25→木 33→火 35→金（旧表依次为 土 火 火 金 金 金 土）。
+// 七个球不再覆盖五行全集（这是真实一期的固有分布），五行走遍由下面的 five-elements 场景负责。
 const LIVE_PAIRS = [
   ["36", "羊", "土", "blue"],
   ["32", "猪", "火", "green"],
-  ["39", "龙", "火", "green"],
+  ["39", "龙", "木", "green"],
   ["12", "羊", "金", "red"],
-  ["25", "马", "金", "blue"],
-  ["33", "狗", "金", "green"],
-  ["35", "猴", "土", "red"], // 特码
+  ["25", "马", "木", "blue"],
+  ["33", "狗", "火", "green"],
+  ["35", "猴", "金", "red"], // 特码
 ]
 for (const [code, zodiac, element] of LIVE_PAIRS) {
   assert.equal(elementOf(code), element, `线上样本自洽：${code} 的号码五行应是 ${element}（号码五行与年份无关）`)
@@ -159,9 +163,9 @@ const ballOf = (code, extra = {}) => ({
 })
 const labelOf = (code) => `${elementOf(code)}/${zodiacOfCode(code)}`
 
-// 六个正码 + 第 7 个特码覆盖五个五行。
-const FIVE_ELEMENT_CODES = ["01", "03", "07", "13", "05", "25"] // 火 金 木 水 土 金
-const FIVE_ELEMENT_SPECIAL = "49" // 土
+// 六个正码 + 第 7 个特码覆盖五个五行（element 由权威表派生，注释按新表重算）。
+const FIVE_ELEMENT_CODES = ["01", "03", "07", "13", "05", "25"] // 水 火 土 金 金 木
+const FIVE_ELEMENT_SPECIAL = "49" // 火
 assert.deepEqual(
   [...new Set([...FIVE_ELEMENT_CODES, FIVE_ELEMENT_SPECIAL].map(elementOf))].sort(),
   [...ELEMENTS].sort(),

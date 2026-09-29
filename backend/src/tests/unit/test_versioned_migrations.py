@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -18,9 +20,9 @@ def test_latest_migration_creates_forced_announcement_tables():
     conn = _Connection()
     latest = versioned_migrations.MIGRATIONS[-1]
 
-    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 31
-    assert latest.version == 31
-    assert latest.name == "sync_twwanli_jiaye_zhongte_authorization"
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 32
+    assert latest.version == 32
+    assert latest.name == "resync_wuxing_number_groups_and_element_content"
     # forced_announcements 表由迁移 27 创建，验证它仍然存在
     forced = next(m for m in versioned_migrations.MIGRATIONS if m.version == 27)
     assert forced.name == "create_forced_announcements"
@@ -832,3 +834,224 @@ def test_backup_numeric_configuration_rejects_negative_values(key):
     from runtime_config import validate_config_value
 
     assert validate_config_value(key, -1, "int") == (False, f"'{key}' 不能为负数，当前值: -1")
+
+
+# ── 迁移 32：号码五行整体改判（fixed_data + 已落库五行正文）──────────────
+
+#: 迁移前 `public.fixed_data` `sign='五行'` 的旧分组正文（新表有 25 个号码换组）。
+LEGACY_WUXING_CODES: dict[str, str] = {
+    "金": "03,04,11,12,25,26,33,34,41,42",
+    "木": "07,08,15,16,23,24,37,38,45,46",
+    "水": "13,14,21,22,29,30,43,44",
+    "火": "01,02,09,10,17,18,31,32,39,40,47,48",
+    "土": "05,06,19,20,27,28,35,36,49",
+}
+
+#: `sign='五行肖'`（**生肖五行**）—— 迁移必须一字不动。
+WUXING_XIAO_ROWS: tuple[tuple[str, str], ...] = (
+    ("金肖", "鸡,猴"),
+    ("木肖", "兔,虎"),
+    ("水肖", "鼠,猪"),
+    ("火肖", "蛇,马"),
+    ("土肖", "牛,龙,羊,狗"),
+)
+
+
+def _create_fixed_data_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE fixed_data (
+            id INTEGER PRIMARY KEY,
+            year TEXT, sign TEXT, type INTEGER, name TEXT,
+            xu INTEGER, code TEXT, status INTEGER
+        )
+        """
+    )
+
+
+def test_migration_thirty_two_rewrites_the_wuxing_number_groups_idempotently(tmp_path):
+    """`sign='五行'` 按新表重写；值一致时不写库；`sign='五行肖'` 不被触碰。"""
+    from db import connect
+    from database.versioned_migrations import _resync_fixed_data_wuxing_groups
+    from predict.common import ELEMENT_NUMBER_GROUPS, ELEMENT_ORDER
+
+    db_path = str(tmp_path / "wuxing-groups-migration.sqlite3")
+    with connect(db_path) as conn:
+        _create_fixed_data_table(conn)
+        row_id = 0
+        for label in ELEMENT_ORDER:
+            row_id += 1
+            conn.execute(
+                "INSERT INTO fixed_data (id, year, sign, type, name, xu, code, status) "
+                "VALUES (?, '2026', '五行', 2, ?, 1, ?, 1)",
+                (row_id, label, LEGACY_WUXING_CODES[label]),
+            )
+        for label, code in WUXING_XIAO_ROWS:
+            row_id += 1
+            conn.execute(
+                "INSERT INTO fixed_data (id, year, sign, type, name, xu, code, status) "
+                "VALUES (?, '', '五行肖', 1, ?, 0, ?, 1)",
+                (row_id, label, code),
+            )
+
+        first = _resync_fixed_data_wuxing_groups(conn)
+        second = _resync_fixed_data_wuxing_groups(conn)
+        wuxing = {
+            str(row["name"]): str(row["code"])
+            for row in conn.execute(
+                "SELECT name, code FROM fixed_data WHERE sign = '五行' ORDER BY id"
+            ).fetchall()
+        }
+        xiao = {
+            str(row["name"]): str(row["code"])
+            for row in conn.execute(
+                "SELECT name, code FROM fixed_data WHERE sign = '五行肖' ORDER BY id"
+            ).fetchall()
+        }
+
+    assert first == 5  # 五个标签的正文都换了
+    assert second == 0  # 幂等：第二次不发出任何 UPDATE
+    assert wuxing == {
+        label: ",".join(ELEMENT_NUMBER_GROUPS[label]) for label in ELEMENT_ORDER
+    }
+    assert xiao == dict(WUXING_XIAO_ROWS)  # 生肖五行一字未动
+    covered = sorted(number for codes in wuxing.values() for number in codes.split(","))
+    assert covered == [f"{index:02d}" for index in range(1, 50)]  # 49 码互斥全覆盖
+
+
+class _FakePayloadCursor:
+    def __init__(self, rows=None, rowcount: int = 1) -> None:
+        self._rows = list(rows or [])
+        self.rowcount = rowcount
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+CREATED_PAYLOAD_COLUMNS: tuple[str, ...] = (
+    "id", "content", "web_id", "web", "type", "year", "term",
+)
+
+
+class _FakePayloadConn:
+    """最小假 PostgreSQL 连接：只实现「重写 created 五行正文」走到的语句。"""
+
+    engine = "postgres"
+    target = "postgresql://fake/db"
+
+    def __init__(self, tables: dict[str, list[dict]]) -> None:
+        self.tables = tables
+        self.updates: list[tuple[str, str]] = []
+
+    def execute(self, sql_text, params=None):
+        sql = " ".join(str(sql_text).split())
+        if "information_schema.tables" in sql:
+            _schema, table = params
+            return _FakePayloadCursor([{"?column?": 1}] if table in self.tables else [])
+        if "pg_attribute" in sql:
+            return _FakePayloadCursor(
+                [{"column_name": name, "column_type": "text"} for name in CREATED_PAYLOAD_COLUMNS]
+            )
+        if sql.upper().startswith("SELECT"):
+            table = re.search(r'FROM "created"\."(mode_payload_\d+)"', sql).group(1)
+            return _FakePayloadCursor(list(self.tables[table]))
+        if sql.upper().startswith("UPDATE"):
+            table = re.search(r'UPDATE "created"\."(mode_payload_\d+)"', sql).group(1)
+            new_content, row_id, expected_content = params
+            affected = 0
+            for row in self.tables[table]:
+                if str(row["id"]) == str(row_id) and row["content"] == expected_content:
+                    row["content"] = new_content
+                    affected += 1
+            self.updates.append((table, str(row_id)))
+            return _FakePayloadCursor(rowcount=affected)
+        raise AssertionError(f"未预期的 SQL：{sql}")
+
+
+def test_migration_thirty_two_rewrites_created_element_payloads_idempotently():
+    """重写 `created.mode_payload_53` / `_482` / `_98` 的 `content`，第二次不再写。"""
+    from database.versioned_migrations import (
+        WUXING_ELEMENT_PAYLOAD_TABLES,
+        _resync_created_wuxing_element_content,
+    )
+
+    legacy_53 = (
+        '["木|07,08,15,16,23,24,37,38,45,46", "土|05,06,19,20,27,28,35,36,49", '
+        '"水|13,14,21,22,29,30,43,44"]'
+    )
+    expected_53 = (
+        '["木|08,09,16,17,24,25,38,39,46,47", "土|06,07,20,21,28,29,36,37", '
+        '"水|01,14,15,22,23,30,31,44,45"]'
+    )
+    legacy_482 = (
+        '["金|03,04,11,12,25,26,33,34,41,42",'
+        '"火|01,02,09,10,17,18,31,32,39,40,47,48"]'
+    )
+    expected_482 = (
+        '["金|04,05,12,13,26,27,34,35,42,43",'
+        '"火|02,03,10,11,18,19,32,33,40,41,48,49"]'
+    )
+    # mode 98「杀1行」：本站生成的正文只列被杀的 1 行。
+    legacy_98 = '["金|03,04,11,12,25,26,33,34,41,42"]'
+    expected_98 = '["金|04,05,12,13,26,27,34,35,42,43"]'
+    zodiac_content = '["鼠|01,13", "牛|02,14"]'
+    # 供应商镜像的 mode_payload_129 不在范围内（created 侧为空表，仅作守门样本）。
+    out_of_scope = '["火|01,02,09,10,17,18,31,32,39,40,47,48"]'
+
+    conn = _FakePayloadConn(
+        {
+            "mode_payload_53": [
+                {"id": "c14", "content": legacy_53, "web_id": 4, "type": 2, "year": "2026", "term": "37"},
+                {"id": "c15", "content": zodiac_content, "web_id": 4, "type": 2, "year": "2026", "term": "38"},
+            ],
+            "mode_payload_482": [
+                {"id": "c303", "content": legacy_482, "web_id": 7, "type": 3, "year": "2026", "term": "27"},
+            ],
+            "mode_payload_98": [
+                {"id": "c26", "content": legacy_98, "web_id": 8, "type": 2, "year": "2026", "term": "152"},
+            ],
+            "mode_payload_129": [
+                {"id": "c1", "content": out_of_scope, "web_id": 5, "type": 3, "year": "2026", "term": "124"},
+            ],
+        }
+    )
+
+    assert WUXING_ELEMENT_PAYLOAD_TABLES == (
+        "mode_payload_53", "mode_payload_482", "mode_payload_98",
+    )
+
+    assert _resync_created_wuxing_element_content(conn) == 3
+    assert conn.tables["mode_payload_53"][0]["content"] == expected_53
+    assert conn.tables["mode_payload_482"][0]["content"] == expected_482
+    assert conn.tables["mode_payload_98"][0]["content"] == expected_98
+    # 非五行正文的行一字未动
+    assert conn.tables["mode_payload_53"][1]["content"] == zodiac_content
+    # 目标表之外（供应商镜像 mode 129）不在本次修复范围
+    assert conn.tables["mode_payload_129"][0]["content"] == out_of_scope
+
+    conn.updates.clear()
+    assert _resync_created_wuxing_element_content(conn) == 0
+    assert conn.updates == []  # 幂等：清单已是权威口径时不再发 UPDATE
+
+
+def test_migration_thirty_two_runs_both_stages(monkeypatch):
+    from database import versioned_migrations
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        versioned_migrations,
+        "_resync_fixed_data_wuxing_groups",
+        lambda _conn: calls.append("fixed_data"),
+    )
+    monkeypatch.setattr(
+        versioned_migrations,
+        "_resync_created_wuxing_element_content",
+        lambda _conn: calls.append("created_content"),
+    )
+
+    versioned_migrations._resync_wuxing_number_groups_and_element_content(object())
+
+    assert calls == ["fixed_data", "created_content"]

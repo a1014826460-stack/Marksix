@@ -1024,7 +1024,7 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
         explanation=(
             "3行中特从 金、木、水、火、土 五行中选出 3 行作为 content。",
             "五行口径取 public.fixed_data 的 sign='五行'（号码五行，与 predict.common.ELEMENT_NUMBER_GROUPS 一致；"
-            "37 属木），不使用生肖五行 sign='五行肖'（37 是马 → 火肖）。",
+            "37 属土），不使用生肖五行 sign='五行肖'（37 是马 → 火肖）。",
             "开奖结果 res_code 最后一个号码按特码处理，特码号码所属五行落入预测的 3 行即按命中计算。",
             "脚本滚动浏览历史开奖记录，回测多个窗口和策略，选择历史命中率最接近 65% 的策略生成本次 content。",
         ),

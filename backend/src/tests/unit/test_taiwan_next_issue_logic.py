@@ -149,12 +149,17 @@ def test_public_latest_draw_includes_draw_time(tmp_path):
         )
         conn.execute(
             "INSERT INTO fixed_data (sign, name, code) VALUES (?, ?, ?)",
-            ("五行", "火", "01,02"),
+            ("五行", "水", "01,14,15,22,23,30,31,44,45"),
+        )
+        conn.execute(
+            "INSERT INTO fixed_data (sign, name, code) VALUES (?, ?, ?)",
+            ("五行", "火", "02,03,10,11,18,19,32,33,40,41,48,49"),
         )
 
     payload = get_public_latest_draw(db_path, 3)
 
     assert payload["current_issue"] == "2026131"
     assert payload["draw_time"] == "2026-05-14 22:30:00"
-    assert payload["result_balls"][0]["element"] == "火"
+    # 号码五行按 authoritative 新表：01 → 水，02 → 火（与 sign='五行肖' 生肖五行无关）。
+    assert payload["result_balls"][0]["element"] == "水"
     assert payload["result_balls"][1]["element"] == "火"
