@@ -2389,28 +2389,26 @@ $.ajax({
                     ma.push(...c[1].split(','));
                 }
 
-                // 供应商原样式每期只渲染一个分组标签（`黑白生肖:白肖 开:虎27准`）。
-                // 之前把内容里的两组标签一起拼出来，页面会出现「黑肖白肖」。
+                // 项目约定（与 twbst528 mode 45「黑白各3肖」一致）：显示**生成内容本身**
+                // 的两组 3 肖，而不是由开奖结果反查出来的单一分组标签。
+                // 命中 = 特码生肖 ∈ 任一组；标黄只标命中的那个生肖（未开奖/未命中零标黄）。
                 let c1 = [];
                 let zj = false;
-                let hitXiao = '';
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiaoV[i] && xiaoV[i].indexOf(sx) !== -1) {
-                        zj = true;
-                        hitXiao = xiao[i];
-                        break;
-                    }
-                }
-                let shownXiao = hitXiao || xiao[0] || '';
-                if (shownXiao) {
-                    c1.push(zj
-                        ? `<span style="background-color: #FFFF00">${shownXiao}肖</span>`
-                        : `${shownXiao}肖`);
+                    let zodiacs = String(xiaoV[i] || '').split(',');
+                    let hit = !!sx && zodiacs.indexOf(sx) !== -1;
+                    if (hit) zj = true;
+                    let tokens = zodiacs.map(function (z) {
+                        return hit && z === sx
+                            ? `<span style="background-color: #FFFF00">${z}</span>`
+                            : z;
+                    }).join('');
+                    if (tokens) c1.push(xiao[i] + '肖：' + tokens);
                 }
                 htmlBoxList += ` 
  <tr>
 <td align='center' height=40 class='stylelxz'><strong>
-${d.term}期</strong><span class='styleliao'><strong>黑白生肖</strong></span>:<span class='stylezi'><strong>${c1.join('')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
+${d.term}期</strong><span class='styleliao'><strong>黑白生肖</strong></span>:<span class='stylezi'><strong>${c1.join(' ')}</strong></span><strong> 开:${sx||'？'}${code||'00'}${ (sx?( zj?'准':'错'):'??')}
 </strong>
 </td>
 </tr>
