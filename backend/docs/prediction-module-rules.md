@@ -127,7 +127,9 @@ generic rule.
 | 117 | sanxiao_siwei_xiao | 三肖四尾 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 123 | sanxiao_siwei_wei | 四尾八码 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 132 | title_132 | 合数单双 | combined_parity | special digit-sum parity is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 133 | qianhou_shengxiao | 前后生肖 | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 143 | title_143 | 一波中特 | wave | special number wave is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 155 | jimei_xiongchou | 吉美凶丑（2选1，全肖） | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
 | 197 | title_197 | 三期4肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 198 | title_198 | 逢买必中 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 219 | qianhou_texiao | 前后特肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |

@@ -50,7 +50,6 @@ def test_twbst528_page_manifest_authorizes_homepage_and_reviewed_article_modules
         "title_197",
         "juesha2xiao",
         "dxztt1",
-        "qianhou_texiao",
         "sihangzhongte",
         "siji3",
         "siduanzhongte",
@@ -64,10 +63,19 @@ def test_twbst528_page_manifest_authorizes_homepage_and_reviewed_article_modules
         "tw_pmt_image",
         "sxztu",
         "pmtj_image",
+        "jimei_xiongchou",
+        "sanxiao_siwei_xiao",
+        "qianhou_shengxiao",
     }
     assert required_mode_ids_for_site_key("twbst528") == (
-        50, 38, 44, 43, 58, 54, 57, 51, 56, 5, 47, 470, 472, 28, 20,
+        50, 38, 44, 43, 58, 54, 57, 51, 56, 5, 47, 155, 117, 470, 472, 28, 20,
         42, 12, 26, 49, 15, 74, 46, 484, 8, 481, 60, 45, 48, 69,
-        197, 473, 108, 219, 482, 61, 479, 485, 486, 487, 488, 489, 490, 491, 478,
+        197, 473, 108, 133, 482, 61, 479, 485, 486, 487, 488, 489, 490, 491, 478,
         474, 476, 198, 483, 14, 279, 66, 53, 132,
     )
+    # 【前后中特】从 mode 219「前后特肖」（只比 2 肖）改绑 mode 133「前后生肖」（2选1 全肖），
+    # 219 在本站已无页面引用，因此不再出现在清单里。
+    assert 219 not in required_mode_ids_for_site_key("twbst528")
+    assert 155 in required_mode_ids_for_site_key("twbst528")
+    assert 117 in required_mode_ids_for_site_key("twbst528")
+    assert 133 in required_mode_ids_for_site_key("twbst528")

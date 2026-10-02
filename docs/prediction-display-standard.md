@@ -980,6 +980,73 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 3. 【平特③肖连】（153/31/41/57.html 静态文章）继续走七码平特口径，与本站 `平特①肖`/`平特一尾`
    一致，本轮未改动。
 
+### 同日第三轮：三块面板改绑**权威 mode**（155 / 117 / 133）+ 数据链路
+
+用户随后指定数据源：「吉美丑凶 改为使用后端预测模块 mode_id=155、前后中特 mode_id=133、
+③肖防③码 mode_id=117」，并要求「注意判断的正确性和前端显示预测内容的合理性」。
+上表三块面板当时仍在**借**别的模块的行（`pt3xiao` / `qianhou_texiao`），本轮换成语义对应的权威 mode，
+并把数据链路一起补齐（本地 dev 库此前这三个 mode 对 web=10 一行都没有）。
+
+| 面板 | 新数据源 | 正文形态 | 展示 | 判定 |
+| --- | --- | --- | --- | --- |
+| 吉美丑凶 | 155「吉美凶丑（2选1，全肖）」`jimei_xiongchou` | `["凶丑肖|鼠,牛,虎,猴,狗,猪"]` | `凶丑肖【鼠牛虎猴狗猪】` | 特肖 ∈ 该分组（同后端：outcome 把特肖映射成分组名 + `contains_hit`） |
+| 前后中特 | 133「前后生肖」`qianhou_shengxiao` | `["后肖|马,羊,猴,鸡,狗,猪"]` | `后肖` | 特肖 ∈ 该分组 |
+| ③肖防③码 | 117「3肖4码」`sanxiao_siwei_xiao` | `["虎|05","马|01","狗|09"]` | `虎马狗+05.01.09` | 特肖 ∈ 3 肖（同后端 `hit_checker=contains_hit`、`RULE_BY_MODE_ID[117]=zodiac`）；**码组只展示**，号码半区在平台里属于 mode 123「4尾8码」 |
+
+后端/数据链路改动（这一轮必须做，否则三块面板会因为没有行而整块空掉）：
+
+1. **机制配置**（`backend/src/predict/mechanisms.py`）：新增 `jimei_xiongchou`（155）与
+   `qianhou_shengxiao`（133）两个静态配置，与 mode 480「凶吉六肖」同族（候选 = 分组名、
+   `label_count=1`、`content_formatter` 输出 `分组名|成员生肖`），并新增
+   `special_jimei_from_row` / `special_qianhou_from_row`（特肖 → 分组名，成员表取自
+   `fixed_data` sign='凶丑吉美生肖' / '前后肖'，同一份静态表兜底）、`format_jimei_groups` /
+   `format_qianhou_groups`。
+2. **受控生成规则**（`domains/prediction/generation_rules.py`）：155/133 登记
+   `rule_id="zodiac_group"`（真实目标 = 特肖所属**分组名**，否则「候选是分组名」的玩法每期都会被判不中）；
+   117 沿用已登记的 `zodiac`。`rule_documentation` 增补该 rule_id 的说明，`backend/docs/prediction-module-rules.md`
+   已按渲染器重算。
+3. **站点授权**（`domains/prediction/site_page_dependencies.py`）：twbst528 首页清单加入
+   155/117/133；219「前后特肖」在本站已无页面引用，移出清单（其站点授权行仍在库里，只不再进清单）。
+4. **迁移 33** `sync_twbst528_zhongte_mode_authorization`：建 `created.mode_payload_155/133/117`
+   三张 payload 表 + 同步站点 10 的授权行（`sync_site_prediction_modules` 只写站点 10，
+   不复制任何其它站点的历史）。
+5. **展示层**（`frontend/public/vendor/twbst528/site-data-adapter.js`）：`groupMembers` /
+   `groupMemberJudgement`（155/133 通用，成员从行内容解析）/ `sanxiaoSiweiJudgement`（117），
+   替换上一轮的 `zodiacPanelJudgement` / `sanxiaoFangSanmaJudgement`；`displayedNumberList`
+   改为按 `|` 之后逐个取码（供应商样本 `牛|17,05` 这类一肖两码不能整串当数字）。
+   `XIONGJI_GROUP` 同时收「凶丑肖」（mode 155 正文）与「丑凶肖」（本站面板/模板文案）——
+   只认一种写法会让另一组候选丢成员、判定退回接口值（实测 268/271 期）。
+6. **生成侧三期唯一**（`prediction_generation/diversity.py`）：133 与 155 同族（2 选 1 全肖、
+   正文单个分组标签），加入 `THREE_PERIOD_UNIQUE_MODE_IDS`，避免同一分组连续多期（本地实测
+   未纳入时出现过连续 5 期「后肖」）。
+
+#### 验收（本地，未部署）
+
+- `python frontend/test/twbst528-zhongte-verdict-contract.py`（新增/重写，桩 payload）：
+  三个模块的 `isCorrect` **故意填成与本地判定相反**的值，逐行断言 155 的 274 期「吉美肖 + 开 24 羊 → 对」、
+  272 期「凶丑肖 + 开 12 羊 → 错」、270 期「丑凶肖」写法同样解析成员；133 的 274/273 期「对」、
+  272 期「错」、270 期「行内容只列马,羊 → 错」；117 的 274 期「虎马狗 + 开 37 马 → 对」、
+  273 期「错」、272 期「码组含 05、开 05 虎 → 仍判错（号码半区不参与判定）」；
+  以及全页零幽灵标记 / 零杂散黄底。
+- `node frontend/test/twbst528-display-contract.mjs`：第 20 节重写为「绑定 155/117/133 + 口径函数 +
+  旧函数不得残留 + 别名字典」。
+- `python frontend/test/twbst528-live-mapping-contract.py`：三个新模块夹具 + 509 期「错」断言。
+- 其余 twbst528 契约（tiandi / zonghe / static-article / live-mapping.mjs）全绿。
+- 真实本地数据端到端：三彩种各生成 8 期历史 + 1 期未来期（web=10，共 27 行/模块），
+  面板逐行显示与判定一致（`凶丑肖【鼠牛虎猴狗猪】 开:11猴对`、`虎马狗+05.01.10 开:37马对`、
+  `后肖 开:37马对` …）。
+- 展示审计：`rows=371 js_errors=0 error=0 warn=16`（13 R4 + 3 R5）。R4 同上一轮（共享桶 `.center.f13`
+  的归并产物）；新增的 R5 是 `?|吉美肖` 桶：审计按「行内标签」把同一分组的期次归到一个模块，
+  于是「同组多期」天然同值 —— 三期唯一规则已保证没有**连续** 3 期同值，属审计口径产物。
+
+#### 遗留
+
+1. 审计 13 条 R4（见上一小节的说明）与 `?|吉美肖`/`?|绿肖`/`?|蓝单` 三条 R5 均为审计**按容器
+   class / 行内标签归并模块**的产物：前者是另外 11 个面板既有的「命中无高亮」缺口（含排除型面板的
+   零黄底设计），后者是 2 选 1 分组玩法的固有形态。均不改展示层，登记为已知项。
+2. mode 117 的号码半区（4 码）在平台里属于 mode 123「4尾8码」，③肖防③码 面板只展示、不判定；
+   若日后要按「防码命中也算对」展示，需产品侧确认口径（会与后端 `RULE_BY_MODE_ID[117]` 不一致）。
+
 ---
 
 ## 六、常见根因速查

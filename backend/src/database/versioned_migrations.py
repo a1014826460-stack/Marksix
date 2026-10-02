@@ -449,6 +449,21 @@ def _sync_twbst528_exact_image_modules(conn: Any) -> None:
     _install_twbst528_site_profile(conn)
 
 
+def _sync_twbst528_zhongte_mode_authorization(conn: Any) -> None:
+    """Authorize the site-10 中特 panels' authoritative modes (155 / 117 / 133).
+
+    2026-10-01：【吉美丑凶】/【③肖防③码】/【前后中特】从「借 `pt3xiao` / `qianhou_texiao` 的行」
+    改为各自的权威 mode（155 吉美凶丑 2选1 全肖 / 117 3肖4码 / 133 前后生肖）。
+    这里先建好三张 `created.mode_payload_*` 表，再把站点授权行同步成清单里的集合
+    （`sync_site_prediction_modules` 只写站点 10 的行，不复制任何其它站点的历史数据）。
+    """
+    from database.connection import auto_increment_primary_key
+    from database.schema.legacy import ensure_twbst528_prediction_tables
+
+    ensure_twbst528_prediction_tables(conn, auto_increment_primary_key("id", conn.engine))
+    _install_twbst528_site_profile(conn)
+
+
 def _install_twjsz666_site_profile(conn: Any) -> None:
     """Register Taiwan Golden Finger site 11 with reviewed shared modules."""
     from domains.prediction.site_page_dependencies import required_mode_ids_for_site_key
@@ -897,6 +912,7 @@ MIGRATIONS: tuple[Migration, ...] = (
         "resync_wuxing_number_groups_and_element_content",
         _resync_wuxing_number_groups_and_element_content,
     ),
+    Migration(33, "sync_twbst528_zhongte_mode_authorization", _sync_twbst528_zhongte_mode_authorization),
 )
 
 

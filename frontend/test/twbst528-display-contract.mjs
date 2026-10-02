@@ -153,7 +153,7 @@ assert(
   "胆大生肖必须是 牛虎马猴狗猪",
 )
 assert(
-  /XIONGJI_GROUP = \{ "吉美肖": \["兔", "龙", "蛇", "马", "羊", "鸡"\]/.test(adapter),
+  /XIONGJI_GROUP = \{[\s\S]{0,80}"吉美肖": \["兔", "龙", "蛇", "马", "羊", "鸡"\]/.test(adapter),
   "吉美肖必须是 兔龙蛇马羊鸡",
 )
 // 分组归属按多数，而不是「第一个命中的分组」
@@ -292,8 +292,8 @@ assert(
   "【天地+②肖】必须绑定 mode 5 = title_5（天地生肖：天地组 + 两肖），不得绑 0 行的 tiandi_2xiao",
 )
 assert(
-  /renderQianhouZhongteHistory\(modules\.qianhou_texiao\)/.test(adapter),
-  "【前后中特】必须继续绑定 qianhou_texiao（前后特肖），口径一致",
+  /renderQianhouZhongteHistory\(modules\.qianhou_shengxiao\)/.test(adapter),
+  "【前后中特】必须绑定 mode 133「前后生肖」（qianhou_shengxiao），与面板展示的前/后分组同口径",
 )
 for (const title of ["日夜特肖", "左右中特", "阴阳⑧码中特"]) {
   assert(
@@ -655,58 +655,83 @@ assert(
   "适配器里不得再引用旧标题「八肖来袭」",
 )
 
-// ── 20. 2026-10-01 三个中特面板的判定口径（吉美丑凶 / ③肖防③码 / 前后中特）────
-// 用户报障（274 期）：【吉美丑凶】「丑凶肖【牛蛇鼠】」开 24 羊 显示「对」、
-// 【③肖防③码】「牛蛇鼠+…」开 24 羊 显示「对」、【前后中特】「后肖」开 24 羊 显示「错」。
-// 根因：前两块的数据源 `pt3xiao`（平特3肖）被套上七码平特口径（三个生肖里有一个以平码
-// 开出即「对」），【前后中特】则沿用接口「只比 xiao 两肖」的判定。三个面板展示的都是
-// 「本期押的生肖 / 前后分组」，命中口径必须是**特肖落在展示候选里**。
+// ── 20. 2026-10-01 三个中特面板：绑定权威 mode（155 / 117 / 133）──────────────
+// 上一轮（同日）先把判定改成本地中特口径，但数据源仍是借来的模块；本轮按需求换成
+// 语义对应的权威 mode：
+//   【吉美丑凶】← 155「吉美凶丑（2选1，全肖）」= `jimei_xiongchou`
+//   【③肖防③码】← 117「3肖4码」= `sanxiao_siwei_xiao`
+//   【前后中特】← 133「前后生肖」= `qianhou_shengxiao`（原 219「前后特肖」只比 2 肖）
+// 口径：
+//   155/133 展示「分组名 + 6 个成员生肖」，命中 = 特肖 ∈ 该分组成员（与后端
+//   `outcome_loader` 把特肖映射成分组名 + `contains_hit` 同口径）；
+//   117 展示「3 肖 + 4 码」，命中 = 特肖 ∈ 3 肖（与后端 `hit_checker=contains_hit`、
+//   `RULE_BY_MODE_ID[117]=zodiac` 一致；码组只展示，号码半区属于 mode 123）。
 // 语义与 DOM 级回归见 `frontend/test/twbst528-zhongte-verdict-contract.py`；这里只钉
-// 源码级事实（口径函数存在、面板真的接上、模块键不变）。
+// 源码级事实（口径函数存在、面板真的接上新模块、旧模块不再被首页面板引用）。
 for (const token of [
   "function displayedZodiacList", "function displayedNumberList",
   "function specialZodiacOf", "function specialCodeOf",
-  "function zodiacPanelJudgement", "function sanxiaoFangSanmaJudgement",
-  "function qianhouGroup", "function qianhouJudgement", "var QIANHOU_GROUP",
+  "function groupMembers", "function groupMemberJudgement",
+  "function qianhouJudgement", "function jimeiXiongchouJudgement",
+  "function sanxiaoSiweiJudgement", "var QIANHOU_GROUP",
 ]) {
   assert(adapter.includes(token), `面板级中特口径缺少 ${token}`)
 }
-// 吉美丑凶：展示三肖 + 判定接中特口径 + 结果格用本地判定覆盖。
+for (const gone of ["function zodiacPanelJudgement", "function sanxiaoFangSanmaJudgement"]) {
+  assert(!adapter.includes(gone), `${gone} 已被权威 mode 的实现取代，不得残留`)
+}
+// 三块面板必须绑到新模块键，且不得再引用借来的模块。
 assert(
-  /function renderSanxiaoLiumaHistory[\s\S]{0,1200}displayedZodiacList\(row, 3\)[\s\S]{0,400}zodiacPanelJudgement\(row, 3, 3, 6\)/.test(adapter),
-  "【吉美丑凶】必须按「展示三肖 + 码组」的中特口径判定（不是七码平特）",
+  /renderSanxiaoLiumaHistory\(modules\.jimei_xiongchou\)/.test(adapter),
+  "【吉美丑凶】必须绑 mode 155 = `jimei_xiongchou`",
 )
 assert(
-  /function renderSanxiaoLiumaHistory[\s\S]{0,2000}writeResultCell\(cells\[2\], judged \? withResultCorrect\(row, judged\.correct\) : row\)/.test(adapter),
+  /renderSanxiaoFangSanmaHistory\(modules\.sanxiao_siwei_xiao\)/.test(adapter),
+  "【③肖防③码】必须绑 mode 117 = `sanxiao_siwei_xiao`",
+)
+assert(
+  /renderQianhouZhongteHistory\(modules\.qianhou_shengxiao\)/.test(adapter),
+  "【前后中特】必须绑 mode 133 = `qianhou_shengxiao`",
+)
+for (const stale of [
+  "renderSanxiaoLiumaHistory(modules.pt3xiao)",
+  "renderSanxiaoFangSanmaHistory(modules.pt3xiao",
+  "renderQianhouZhongteHistory(modules.qianhou_texiao)",
+]) {
+  assert(!adapter.includes(stale), `首页面板不得再引用借来的模块：${stale}`)
+}
+// 吉美丑凶：展示「分组名 + 成员」，判定走 `jimeiXiongchouJudgement`，结果格写本地判定。
+assert(
+  /function renderSanxiaoLiumaHistory[\s\S]{0,1200}groupMembers\(row, XIONGJI_GROUP\)[\s\S]{0,300}jimeiXiongchouJudgement\(row\)/.test(adapter),
+  "【吉美丑凶】必须展示 mode 155 的分组与成员，并按 `jimeiXiongchouJudgement` 判定",
+)
+assert(
+  /function renderSanxiaoLiumaHistory[\s\S]{0,2200}writeResultCell\(cells\[2\], judged \? withResultCorrect\(row, judged\.correct\) : row\)/.test(adapter),
   "【吉美丑凶】结果格必须写本地判定（`judged`），未判定时才回退接口值",
 )
-// ③肖防③码：判定同时看三个生肖与（真号码时的）三个防码，并且要覆盖到卡片头部的开奖段。
+// 「凶丑肖 / 丑凶肖」两种写法都要能解析（mode 155 用前者，本站面板/模板用后者）。
 assert(
-  /function renderSanxiaoFangSanmaHistory[\s\S]{0,1200}sanxiaoFangSanmaJudgement\(row, codeRow\)/.test(adapter),
-  "【③肖防③码】必须走 `sanxiaoFangSanmaJudgement`（三肖 + 三防码）",
+  /var XIONGJI_GROUP = \{[\s\S]{0,300}"凶丑肖"[\s\S]{0,200}"丑凶肖"/.test(adapter),
+  "XIONGJI_GROUP 必须同时收「凶丑肖」（mode 155 正文）与「丑凶肖」（本站面板文案）",
+)
+// ③肖防③码：展示 3 肖 + 码组，判定看 3 肖，卡片头部的开奖段也要用本地判定。
+assert(
+  /function renderSanxiaoFangSanmaHistory[\s\S]{0,900}sanxiaoSiweiJudgement\(row\)[\s\S]{0,400}writeCardHeader\(cell, judged \? withResultCorrect\(row, judged\.correct\) : row\)/.test(adapter),
+  "【③肖防③码】必须走 `sanxiaoSiweiJudgement` 并把结果写进卡片头部",
 )
 assert(
-  /sanxiaoFangSanmaJudgement\(row, codeRow\)[\s\S]{0,300}writeCardHeader\(cell, judged \? withResultCorrect\(resultRow, judged\.correct\) : resultRow\)/.test(adapter),
-  "【③肖防③码】卡片头部的开奖段必须写本地判定，否则显示的还是接口（平特）口径",
+  /function sanxiaoSiweiJudgement[\s\S]{0,600}token: hit \? zodiac : ""/.test(adapter),
+  "【③肖防③码】只点亮命中的特肖（码组不参与判定）",
 )
 // 前后中特：分组从行内容解析，特肖落在组内即「对」，命中点亮分组名。
 assert(
-  /function qianhouGroup[\s\S]{0,700}rawValue\(row, "content"\)/.test(adapter) &&
-    /var members = group\.members\.length \? group\.members : QIANHOU_GROUP\[group\.label\] \|\| \[\];/.test(adapter),
-  "【前后中特】分组必须从行内容（`content`）解析，缺成员时退回面板图例 QIANHOU_GROUP",
+  /function groupMembers[\s\S]{0,900}rawValue\(row, "content"\)/.test(adapter) &&
+    /function groupMemberJudgement[\s\S]{0,700}token: hit \? \(tokenKind === "label" \? group\.label : zodiac\) : ""/.test(adapter),
+  "分组必须从行内容（`content`）解析，缺成员时用兜底表；命中项按面板展示形态决定",
 )
 assert(
-  /function renderQianhouZhongteHistory[\s\S]{0,900}qianhouJudgement\(row\)[\s\S]{0,400}withResultCorrect\(row, judged\.correct\)/.test(adapter),
-  "【前后中特】必须用 `qianhouJudgement` 本地复算（特肖 ∈ 展示分组），不得沿用接口两肖判定",
-)
-// 只标命中项：判定「错」的期次零黄底（S3 由 highlightTokens 拦，中特口径由 token 为空拦）。
-assert(
-  /function zodiacPanelJudgement[\s\S]{0,900}token: zodiacHit \? zodiac : codeHit \? code : ""/.test(adapter),
-  "【吉美丑凶】只点亮真正命中的那一项（生肖或防码），未命中给空 token",
-)
-assert(
-  /function qianhouJudgement[\s\S]{0,600}return \{ correct: hit, token: hit \? group\.label : "" \};/.test(adapter),
-  "【前后中特】命中时点亮分组名（前肖 / 后肖），未命中给空 token",
+  /function qianhouJudgement\(row\) \{[\s\S]{0,200}groupMemberJudgement\(row, QIANHOU_GROUP, "label"\)/.test(adapter),
+  "【前后中特】必须按展示分组判定（点亮分组名），不得沿用接口两肖判定",
 )
 // 候选格拆包后写纯文本 + 单点 marker：`.mtbl td:nth-child(2) span` 会被 CSS 染成芥末黄。
 assert(

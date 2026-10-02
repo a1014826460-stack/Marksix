@@ -176,6 +176,7 @@ def _semantic_notes() -> str:
 def _outcome_description(rule_id: str) -> str:
     descriptions = {
         "zodiac": "special zodiac is in any candidate",
+        "zodiac_group": "special zodiac's group is the selected group candidate",
         "zodiac_flat": "any drawn number's zodiac is in any candidate",
         "tail_flat": "any drawn number's tail is in any candidate",
         "zodiac_exclusion": "special zodiac is absent from every candidate",

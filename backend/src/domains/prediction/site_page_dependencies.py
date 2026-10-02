@@ -64,6 +64,15 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("pt1xiao", 56, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("title_5", 5, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("title_47", 47, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            # 2026-10-01：【吉美丑凶】/【③肖防③码】原来借 `pt3xiao`（平特3肖）的行，判定被
+            # 平特七码口径污染（三个生肖里有一个以平码开出就判「对」，20 期里 19 期恒「对」）。
+            # 改绑语义对应的权威 mode：
+            #   【吉美丑凶】→ 155「吉美凶丑（2选1，全肖）」= `jimei_xiongchou`
+            #   【③肖防③码】→ 117「3肖4码」= `sanxiao_siwei_xiao`
+            #   【前后中特】→ 133「前后生肖」= `qianhou_shengxiao`（原绑 219「前后特肖」只比 2 肖，
+            #     面板展示的是整个前/后分组，口径不一致；219 在本站再无页面引用，已移出清单）
+            ("jimei_xiongchou", 155, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("sanxiao_siwei_xiao", 117, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("pt3xiao", 470, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("juesha1xiao", 472, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("danshuangtema", 28, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
@@ -86,7 +95,7 @@ _DEPENDENCIES: tuple[SitePageDependency, ...] = (
             ("title_197", 197, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("juesha2xiao", 473, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("dxztt1", 108, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
-            ("qianhou_texiao", 219, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
+            ("qianhou_shengxiao", 133, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("sihangzhongte", 482, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("siji3", 61, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),
             ("siduanzhongte", 479, "/vendor/twbst528/index.html", "frontend/public/vendor/twbst528/site-data-adapter.js"),

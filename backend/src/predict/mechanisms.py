@@ -604,6 +604,95 @@ def format_xiongjiliuxiao_groups(labels: tuple[str, ...], conn: sqlite3.Connecti
     return result
 
 
+#: 「吉美凶丑（2选1，全肖）」(mode 155) 与「前后生肖」(mode 133) 的分组口径。
+#:
+#: 这两个玩法的候选是**分组名**（不是单个生肖），命中 = 「开奖特肖属于所选分组」，
+#: 所以 `outcome_loader` 要把特肖映射成分组名，再由 `hit_checker=contains_hit`
+#: 与候选分组名比对；正文沿用 `分组名|成员生肖` 结构（与供应商正文一致：
+#: `["吉美肖|兔,龙,蛇,马,羊,鸡"]` / `["前肖|鼠,牛,虎,兔,龙,蛇"]`）。
+#:
+#: 成员表优先读 `public.fixed_data`（sign='凶丑吉美生肖' / '前后肖'），并用同一份静态表
+#: 兜底：fixed_data 某年缺行时，展示的成员与命中判定仍来自同一张表，不会出现
+#: 「展示 6 肖、判定另算」的口径分裂。
+JIMEI_LABELS = ("吉美肖", "凶丑肖")
+QIANHOU_LABELS = ("前肖", "后肖")
+JIMEI_LABEL_FALLBACK = {
+    "吉美肖": ("兔", "龙", "蛇", "马", "羊", "鸡"),
+    "凶丑肖": ("鼠", "牛", "虎", "猴", "狗", "猪"),
+}
+QIANHOU_LABEL_FALLBACK = {
+    "前肖": ("鼠", "牛", "虎", "兔", "龙", "蛇"),
+    "后肖": ("马", "羊", "猴", "鸡", "狗", "猪"),
+}
+
+
+def group_label_for_zodiac(
+    zodiac: str,
+    mapping: dict[str, tuple[str, ...]],
+    labels: tuple[str, ...],
+    fallback: dict[str, tuple[str, ...]],
+) -> str:
+    """特肖 → 所属分组名；先查 fixed_data 映射，缺行时用静态兜底表。"""
+    if not zodiac:
+        return ""
+    for source in (mapping, fallback):
+        for label in labels:
+            if zodiac in tuple(source.get(label, ()) or ()):
+                return label
+    return ""
+
+
+def special_jimei_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    """吉美凶丑（mode 155）：特肖 → 「吉美肖」/「凶丑肖」。"""
+    return group_label_for_zodiac(
+        special_zodiac_from_number_map(row, conn),
+        load_fixed_value_map(conn, "凶丑吉美生肖", JIMEI_LABELS),
+        JIMEI_LABELS,
+        JIMEI_LABEL_FALLBACK,
+    )
+
+
+def special_qianhou_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    """前后生肖（mode 133）：特肖 → 「前肖」/「后肖」。"""
+    return group_label_for_zodiac(
+        special_zodiac_from_number_map(row, conn),
+        load_fixed_value_map(conn, "前后肖", QIANHOU_LABELS),
+        QIANHOU_LABELS,
+        QIANHOU_LABEL_FALLBACK,
+    )
+
+
+def format_group_member_groups(
+    labels: tuple[str, ...],
+    mapping: dict[str, tuple[str, ...]],
+    fallback: dict[str, tuple[str, ...]],
+) -> list[str]:
+    """`分组名|成员生肖` 正文（成员缺失时用静态兜底表）。"""
+    result: list[str] = []
+    for label in labels:
+        values = tuple(item for item in (mapping.get(label, ()) or ()) if str(item).strip())
+        if not values:
+            values = tuple(fallback.get(label, ()) or ())
+        result.append(f"{label}|{','.join(values)}")
+    return result
+
+
+def format_jimei_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
+    return format_group_member_groups(
+        labels,
+        load_fixed_value_map(conn, "凶丑吉美生肖", labels),
+        JIMEI_LABEL_FALLBACK,
+    )
+
+
+def format_qianhou_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> list[str]:
+    return format_group_member_groups(
+        labels,
+        load_fixed_value_map(conn, "前后肖", labels),
+        QIANHOU_LABEL_FALLBACK,
+    )
+
+
 def format_domestic_wild_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
     grouped = format_split_zodiac_columns(("jia", "ye"), (4, 4))(labels, conn)
     jia = str(grouped.get("jia") or "")
@@ -1328,8 +1417,55 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "输出沿用分类+生肖列表结构，优先读取 fixed_data 中的凶丑吉美生肖映射。",
         ),
     ),
-    "sanxiao15ma": PredictionConfig(
-        key="sanxiao15ma",
+    # 吉美凶丑（2选1，全肖）(mode 155) —— twbst528【吉美丑凶】面板的权威数据源。
+    #
+    # 与 mode 480「凶吉六肖」同族（候选 = 分类名、`label_count=1`、正文 = `分类|成员生肖`），
+    # 差别只在标签文案：mode 155 的供应商正文写「吉美肖 / 凶丑肖」，mode 480 写「吉美 / 凶丑」。
+    # 厂商 `mode_payload_155` 历史行（web 5/6/7/20）实测就是
+    # `["吉美肖|兔,龙,蛇,马,羊,鸡"]` / `["凶丑肖|鼠,牛,虎,猴,狗,猪"]`。
+    "jimei_xiongchou": PredictionConfig(
+        key="jimei_xiongchou",
+        title="吉美凶丑（2选1，全肖）",
+        default_table="mode_payload_155",
+        default_modes_id=155,
+        labels=JIMEI_LABELS,
+        label_count=1,
+        outcome_loader=special_jimei_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_jimei_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("凶丑吉美生肖", JIMEI_LABELS),
+        explanation=(
+            "吉美凶丑把 12 生肖分成吉美肖（兔龙蛇马羊鸡）与凶丑肖（鼠牛虎猴狗猪）两组，2 选 1。",
+            "开奖特肖落在所选分组的 6 个生肖里即命中；正文输出「分组名|成员生肖」。",
+        ),
+    ),
+    # 前后生肖 (mode 133) —— twbst528【前后中特】面板的权威数据源。
+    #
+    # 前肖 = 鼠牛虎兔龙蛇、后肖 = 马羊猴鸡狗猪（`public.fixed_data` sign='前后肖'），2 选 1；
+    # 厂商历史正文实测 `["前肖|鼠,牛,虎,兔,龙,蛇"]` / `["后肖|马,羊,猴,鸡,狗,猪"]`。
+    # 与 mode 219「前后特肖」的区别：219 的候选是 `xiao` 列的 **2 个生肖**，
+    # 133 的候选是**整个前后分组**（全肖），两者不是同一口径，不能互换绑定。
+    "qianhou_shengxiao": PredictionConfig(
+        key="qianhou_shengxiao",
+        title="前后生肖",
+        default_table="mode_payload_133",
+        default_modes_id=133,
+        labels=QIANHOU_LABELS,
+        label_count=1,
+        outcome_loader=special_qianhou_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_qianhou_groups,
+        hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("前后肖", QIANHOU_LABELS),
+        explanation=(
+            "前肖 = 鼠牛虎兔龙蛇，后肖 = 马羊猴鸡狗猪，2 选 1。",
+            "开奖特肖落在所选分组的 6 个生肖里即命中；正文输出「分组名|成员生肖」。",
+        ),
+    ),
+    "sanxiao15ma": PredictionConfig(        key="sanxiao15ma",
         title="三肖15码中特",
         default_table="mode_payload_72",
         default_modes_id=72,

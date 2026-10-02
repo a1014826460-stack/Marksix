@@ -98,6 +98,57 @@ def _special_head_parity(truth: DrawTruth, _conn: Any) -> str:
     return head + ("双" if number % 2 == 0 else "单")
 
 
+def _group_label_for_zodiac(
+    truth: DrawTruth,
+    conn: Any,
+    *,
+    mapping_key: str,
+    labels: tuple[str, ...],
+    fallback: dict[str, tuple[str, ...]],
+) -> str:
+    """分组玩法（mode 155/133）的真实目标：特肖 → 所属分组名。
+
+    这两个玩法的候选是**分组名**（吉美肖/凶丑肖、前肖/后肖），`hit_checker=contains_hit`
+    比的是「目标分组名 ∈ 本轮候选分组名」，所以受控生成的真实目标必须是分组名，
+    不能像单肖玩法那样直接给特肖 —— 否则每一期都会被判成「不中」。
+    分组成员表与渲染层同源：优先 `public.fixed_data`，缺行时用同一张静态兜底表。
+    """
+    zodiac = str(truth.special_zodiac or "").strip()
+    if not zodiac:
+        return ""
+    mapping: dict[str, tuple[str, ...]] = {}
+    if conn is not None:
+        try:
+            from predict.common import load_fixed_value_map
+
+            mapping = load_fixed_value_map(conn, mapping_key, labels)
+        except Exception:  # noqa: BLE001 - 缺 fixed_data 时退回静态表
+            mapping = {}
+    for source in (mapping, fallback):
+        for label in labels:
+            if zodiac in tuple(source.get(label, ()) or ()):
+                return label
+    return ""
+
+
+def _jimei_group(truth: DrawTruth, conn: Any) -> str:
+    """吉美凶丑（mode 155）：特肖 → 「吉美肖」/「凶丑肖」。"""
+    from predict.mechanisms import JIMEI_LABEL_FALLBACK, JIMEI_LABELS
+
+    return _group_label_for_zodiac(
+        truth, conn, mapping_key="凶丑吉美生肖", labels=JIMEI_LABELS, fallback=JIMEI_LABEL_FALLBACK
+    )
+
+
+def _qianhou_group(truth: DrawTruth, conn: Any) -> str:
+    """前后生肖（mode 133）：特肖 → 「前肖」/「后肖」。"""
+    from predict.mechanisms import QIANHOU_LABEL_FALLBACK, QIANHOU_LABELS
+
+    return _group_label_for_zodiac(
+        truth, conn, mapping_key="前后肖", labels=QIANHOU_LABELS, fallback=QIANHOU_LABEL_FALLBACK
+    )
+
+
 def _combined_parity(truth: DrawTruth, _conn: Any) -> str:
     number = _normalized_code(truth)
     return "合单" if ((number // 10) + (number % 10)) % 2 else "合双"
@@ -187,6 +238,11 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     72: _rule("zodiac", _special_zodiac),
     78: _rule("zodiac", _special_zodiac),
     117: _rule("zodiac", _special_zodiac),
+    # 吉美凶丑（mode 155）/ 前后生肖（mode 133）：候选是**分组名**（吉美肖/凶丑肖、前肖/后肖），
+    # 真实目标是「特肖所属分组」而不是特肖本身，所以用专用 truth_outcome。
+    # 登记日期 2026-10-01（twbst528【吉美丑凶】【前后中特】两个面板改绑这两个 mode）。
+    155: _rule("zodiac_group", _jimei_group),
+    133: _rule("zodiac_group", _qianhou_group),
     197: _rule("zodiac", _special_zodiac),
     219: _rule("zodiac", _special_zodiac),
     470: _rule("zodiac_flat", _flat_zodiacs),

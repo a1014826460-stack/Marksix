@@ -381,7 +381,16 @@
     "画": ["羊", "猴", "猪"],
   };
   var DANXIAO_GROUP = { "胆大": ["牛", "虎", "马", "猴", "狗", "猪"], "胆小": ["鼠", "兔", "龙", "蛇", "羊", "鸡"] };
-  var XIONGJI_GROUP = { "吉美肖": ["兔", "龙", "蛇", "马", "羊", "鸡"], "丑凶肖": ["鼠", "牛", "虎", "猴", "狗", "猪"] };
+  // 「吉美 / 凶丑」分组。**两种写法都要收**：
+  //   · 本站面板与供应商模板写「丑凶肖」（吉美丑凶：吉美 ↔ 凶丑）；
+  //   · 后端 mode 155「吉美凶丑（2选1，全肖）」的正文写「凶丑肖」（`["凶丑肖|鼠,…"]`）。
+  // 只认一种写法会让另一组候选在解析时被当成「非分组标签」丢掉，面板只剩一个组名、没有成员，
+  // 判定也会退回接口值（实测：type=3 的 268/271 期「凶丑肖」行只显示「凶丑肖」）。
+  var XIONGJI_GROUP = {
+    "吉美肖": ["兔", "龙", "蛇", "马", "羊", "鸡"],
+    "凶丑肖": ["鼠", "牛", "虎", "猴", "狗", "猪"],
+    "丑凶肖": ["鼠", "牛", "虎", "猴", "狗", "猪"],
+  };
 
   function zodiactsOf(row) {
     return tokens(row).map(function (value) {
@@ -745,7 +754,7 @@
   //
   // `pt3xiao`（平特3肖，mode 470）**不在这里**：本站首页没有任何「平特③肖」面板，
   // 它只作为【吉美丑凶】【③肖防③码】的数据源，这两个面板不是平特玩法，按
-  // `zodiacPanelJudgement` 的**中特口径**判定（见下方「面板级中特口径」）。
+  // `jimeiXiongchouJudgement` 的**中特口径**判定（见下方「面板级中特口径」）。
   // 需要七码口径的【平特③肖连】在 `static-article-data-adapter.js` 里，不受这里影响。
   var FLAT_MODULE_KINDS = {
     pt1xiao: "zodiac",
@@ -765,23 +774,25 @@
 
   // ── 面板级「中特」口径（展示即候选）────────────────────────────────────
   // 【吉美丑凶】【③肖防③码】【前后中特】三个面板**不是平特玩法**：面板展示的就是本期
-  // 押的生肖（或前/后肖分组），命中口径是「**特肖**落在展示候选里」（③肖防③码/三肖六码
-  // 形态还含展示的码组，按特码比对）。它们的接口判定却是**另一种口径**：
-  //   · 数据源 `pt3xiao`（平特3肖，mode 470）后端是七码平特口径 → 三个生肖里只要有一个
-  //     以平码开出就判「对」：线上 274 期【吉美丑凶】「丑凶肖【牛蛇鼠】」开 24 羊仍显示
-  //     「对」、273 期「吉美肖【鸡牛龙】」开 19 鼠仍显示「对」；【③肖防③码】同样
-  //     （274 期「牛蛇鼠+…」开 24 羊显示「对」）。实测该口径下这两块 20 期里 19 期恒「对」。
-  //   · 数据源 `qianhou_texiao`（前后特肖，mode 219）后端只比 `xiao` 那 2 肖 →
-  //     面板展示的是「后肖」，开奖特肖是羊（∈ 后肖：马羊猴鸡狗猪）却判「错」（274 期）。
-  // 供应商模板的对/错列就是本口径，且**逐个可复核**：
-  //   吉美丑凶 323「【吉美】【马鸡龙】」开 12 马→对、320「【凶丑】【虎猴鼠】」开 34 猴→对、
-  //   319「【凶丑】【鼠猴狗】」开 47 羊→错、322/321 开马/牛（不在三肖里）→错；
-  //   前后中特 323/322/320/319「后肖」开 12/36/34/47 马马猴羊→对、321「后肖」开 41 牛→错。
-  // 展示层复算的理由与 `tiandiJudgement` 相同：接口口径与展示候选不一致时，
-  // 页面必须与**自己列出的候选**自洽。
+  // 押的生肖 / 分组 / 码组，命中口径是「**特肖**落在展示候选里」。
   //
-  // 前/后肖的分组**从行内容自己解析**（`["后肖|马,羊,猴,鸡,狗,猪"]`），
-  // 不写死分组表；内容缺成员时退回面板图例（`QIANHOU_GROUP`，与 index.html 图例一致）。
+  // 2026-10-01 起，三块面板各自绑定语义对应的**权威 mode**（此前分别借 `pt3xiao`
+  // 平特3肖与 `qianhou_texiao` 前后特肖的行，判定被数据源模块的口径污染）：
+  //   · 【吉美丑凶】← mode 155「吉美凶丑（2选1，全肖）」= `jimei_xiongchou`
+  //       正文 `["凶丑肖|鼠,牛,虎,猴,狗,猪"]`：候选是**整个分组**（6 肖），
+  //       命中 = 特肖 ∈ 该分组（后端 outcome 把特肖映射成分组名 + `contains_hit`）。
+  //   · 【前后中特】← mode 133「前后生肖」= `qianhou_shengxiao`
+  //       正文 `["后肖|马,羊,猴,鸡,狗,猪"]`，同一口径（2 选 1 全肖）。
+  //   · 【③肖防③码】← mode 117「3肖4码」= `sanxiao_siwei_xiao`
+  //       正文 `["虎|05","马|01","狗|09"]`：候选是 **3 个生肖**，命中 = 特肖 ∈ 3 肖；
+  //       号码半区（4 尾/4 码）是同一玩法的另一半，平台里由 mode 123「4尾8码」承担，
+  //       **不参与 mode 117 的判定** —— 所以这里按 3 肖判定，与后端机制/RULE_BY_MODE_ID
+  //       的 `zodiac` 规则完全一致（码组照常展示，只是不作为命中项）。
+  //
+  // 为什么还要在展示层复算：接口 `is_correct` 与本地面板展示的候选必须始终自洽，
+  // 而 mode 155/133 的候选是「分组」、UI 展示的是分组的成员生肖（155）或分组名（133），
+  // 一旦后端口径调整或字段缺失，本地面板仍要给出与展示一致的判定；
+  // 拿不到开奖或候选时返回 null，沿用接口判定（不凭空造「错」）。
   var QIANHOU_GROUP = {
     "前肖": ["鼠", "牛", "虎", "兔", "龙", "蛇"],
     "后肖": ["马", "羊", "猴", "鸡", "狗", "猪"],
@@ -795,17 +806,23 @@
   }
 
   /**
-   * 展示候选里的号码（三肖六码 / ③肖防③码 的码组）。
+   * 展示候选里的号码（`生肖|号码` 形态的码组，如 mode 117「3肖4码」的代表号码）。
    *
-   * 与展示链路同口径：取 token 里的数字（`牛|06` → `06`）。**生肖名不产生号码** ——
-   * 拿不到码组时 `pt3xiao` 会退化成 `牛蛇鼠+牛,蛇,鼠`，那时码组为空，
-   * 判定只能靠生肖，绝不能把「牛」当成一个号码去比开奖号码。
+   * 与展示链路同口径：取 `|` 之后的号码部分（`虎|05` → `05`；供应商样本里
+   * `牛|17,05` 这种一肖两码要**逐个**取，不能整串当数字 —— 否则 `1705` 会被长度守卫丢掉）。
+   * 没有 `|` 的裸号码 token 仍按整串取（向后兼容）。
    */
   function displayedNumberList(row, offset, limit) {
-    return tokens(row).slice(offset || 0).map(function (value) {
-      var digits = String(value).replace(/[^\d]/g, "");
-      return digits && digits.length <= 2 ? digits.padStart(2, "0") : "";
-    }).filter(Boolean).slice(0, limit || 99);
+    var out = [];
+    tokens(row).slice(offset || 0).forEach(function (value) {
+      var parts = String(value).split("|");
+      var codePart = parts.length > 1 ? parts.slice(1).join("|") : parts[0];
+      codePart.split(/[,，、\s]+/).forEach(function (item) {
+        var digits = String(item).replace(/[^\d]/g, "");
+        if (digits && digits.length <= 2) out.push(digits.padStart(2, "0"));
+      });
+    });
+    return out.slice(0, limit || 99);
   }
 
   /** 开奖**特肖** / **特码**（`result.code` / `result.zodiac` 可能是七码串，末位才是特码）。 */
@@ -818,82 +835,75 @@
   }
 
   /**
-   * 「三肖 + N 码」面板的中特判定：特肖 ∈ 展示生肖，或特码 ∈ 展示号码。
+   * 行内容里的「分组名|成员生肖」（`["凶丑肖|鼠,牛,虎,猴,狗,猪"]` / `["后肖|马,…"]`）。
    *
-   * @param {object} row         判定所依据的行（拿开奖与生肖候选）
-   * @param {number} zodiacLimit 展示的生肖个数（三肖面板 = 3）
-   * @param {number} codeOffset  码组在 token 串里的起点（`三肖六码` = 3）
-   * @param {number} codeLimit   码组个数（`三肖六码` = 6、`③肖防③码` = 3）
-   * @returns {{correct: boolean, token: string}|null} null = 不做本地判定（沿用接口判定）
+   * 成员从**行内容自己解析**，只在内容缺成员时按 `fallback` 表兜底，
+   * 保证「展示什么就按什么判」。
    */
-  function zodiacPanelJudgement(row, zodiacLimit, codeOffset, codeLimit) {
-    var result = row && row.result || {};
-    if (!result.isOpened) return null;
-    var zodiac = specialZodiacOf(row);
-    var code = specialCodeOf(row);
-    if (!zodiac && !code) return null;
-    var zodiacs = displayedZodiacList(row, zodiacLimit);
-    var codes = displayedNumberList(row, codeOffset, codeLimit);
-    if (!zodiacs.length && !codes.length) return null;
-    var zodiacHit = Boolean(zodiac) && zodiacs.indexOf(zodiac) !== -1;
-    var codeHit = Boolean(code) && codes.indexOf(code) !== -1;
-    return {
-      correct: zodiacHit || codeHit,
-      // 只点亮真正命中的那一项：命中生肖 → 点亮那个生肖；命中码组 → 点亮那个号码。
-      token: zodiacHit ? zodiac : codeHit ? code : ""
-    };
-  }
-
-  /** 【③肖防③码】：生肖来自三肖模块，码组来自码模块（拿不到号码时退化为生肖文本）。 */
-  function sanxiaoFangSanmaJudgement(row, codeRow) {
-    var result = row && row.result || {};
-    if (!result.isOpened) return null;
-    var zodiac = specialZodiacOf(row);
-    var code = specialCodeOf(row);
-    var zodiacs = displayedZodiacList(row, 3);
-    var codes = displayedNumberList(codeRow || row, 0, 3);
-    if ((!zodiacs.length && !codes.length) || (!zodiac && !code)) return null;
-    var zodiacHit = Boolean(zodiac) && zodiacs.indexOf(zodiac) !== -1;
-    var codeHit = Boolean(code) && codes.indexOf(code) !== -1;
-    return {
-      correct: zodiacHit || codeHit,
-      token: zodiacHit ? zodiac : codeHit ? code : ""
-    };
-  }
-
-  /** 行内容里的「前肖/后肖」分组（`["后肖|马,羊,猴,鸡,狗,猪"]` → 标签 + 6 肖）。 */
-  function qianhouGroup(row) {
+  function groupMembers(row, fallback) {
     var source = String(rawValue(row, "content") || displayLabels(row, "") || "")
       .replace(/[【】\[\]"]/g, "");
     var found = { label: "", members: [] };
     source.split(/[;；]/).forEach(function (piece) {
       var parts = String(piece).split("|");
       var name = String(parts[0] || "").trim();
-      if (!QIANHOU_GROUP[name]) return;
+      if (!name || (fallback && !fallback[name])) return;
       found = {
         label: name,
         members: String(parts[1] || "").split(/[,，、\s]+/).map(function (value) {
           return value.trim();
-        }).filter(Boolean)
+        }).filter(function (value) { return ZODIAC_CHAR_SET[value]; })
       };
     });
+    if (!found.members.length && fallback && fallback[found.label]) {
+      found.members = fallback[found.label].slice();
+    }
     return found;
   }
 
   /**
-   * 【前后中特】的中特判定：特肖 ∈ 展示的「前肖 / 后肖」分组成员。
+   * 「2选1 全肖」面板（mode 155 / 133）的本地判定：特肖 ∈ 展示分组成员。
    *
-   * 接口（mode 219）只比 `xiao` 那 2 肖，与本面板展示的分组不是一回事，必须本地复算。
+   * @param {object} row      行（拿开奖特肖与分组内容）
+   * @param {object} fallback 内容缺成员时的兜底分组表
+   * @param {string} tokenKind 命中时点亮谁：`"zodiac"` = 点亮组内那个生肖（155 展示 6 肖）；
+   *                           `"label"` = 点亮分组名（133 只展示「前肖/后肖」）。
    */
-  function qianhouJudgement(row) {
+  function groupMemberJudgement(row, fallback, tokenKind) {
     var result = row && row.result || {};
     var zodiac = specialZodiacOf(row);
-    var group = qianhouGroup(row);
-    var members = group.members.length ? group.members : QIANHOU_GROUP[group.label] || [];
-    if (!result.isOpened || !zodiac || !members.length) return null;
-    var hit = members.indexOf(zodiac) !== -1;
-    // 展示的候选就是「前肖 / 后肖」这个分组名，命中时点亮分组名（与供应商模板一致）。
-    return { correct: hit, token: hit ? group.label : "" };
+    var group = groupMembers(row, fallback);
+    if (!result.isOpened || !zodiac || !group.members.length) return null;
+    var hit = group.members.indexOf(zodiac) !== -1;
+    return {
+      correct: hit,
+      token: hit ? (tokenKind === "label" ? group.label : zodiac) : ""
+    };
+  }
+
+  /** 【前后中特】(mode 133)：展示的是「前肖/后肖」分组名，命中点亮分组名。 */
+  function qianhouJudgement(row) {
+    return groupMemberJudgement(row, QIANHOU_GROUP, "label");
+  }
+
+  /** 【吉美丑凶】(mode 155)：展示的是分组 + 6 个成员生肖，命中点亮那个生肖。 */
+  function jimeiXiongchouJudgement(row) {
+    return groupMemberJudgement(row, XIONGJI_GROUP, "zodiac");
+  }
+
+  /**
+   * 【③肖防③码】(mode 117「3肖4码」) 的本地判定：**特肖 ∈ 展示的 3 个生肖**。
+   *
+   * 与后端 `sanxiao_siwei_xiao` 的 `hit_checker=contains_hit`（候选 = 3 肖）逐字一致；
+   * 码组只展示、不参与判定（号码半区属于 mode 123「4尾8码」）。
+   */
+  function sanxiaoSiweiJudgement(row) {
+    var result = row && row.result || {};
+    var zodiac = specialZodiacOf(row);
+    var zodiacs = displayedZodiacList(row, 3);
+    if (!result.isOpened || !zodiac || !zodiacs.length) return null;
+    var hit = zodiacs.indexOf(zodiac) !== -1;
+    return { correct: hit, token: hit ? zodiac : "" };
   }
 
   // ── 标黄口径 ─────────────────────────────────────────────────────────
@@ -1402,11 +1412,13 @@
     }, "title_47");
   }
 
-  // 第 6 项：【三肖六码】改名【吉美丑凶】，展示“吉美肖”或“丑凶肖”+ 三个生肖（+ 有码组时第二行）。
+  // 第 6 项：【三肖六码】改名【吉美丑凶】，绑定 mode 155「吉美凶丑（2选1，全肖）」
+  // （`jimei_xiongchou`，2026-10-01 起；此前借 `pt3xiao` 平特3肖的行）。
   //
-  // 判定：**中特口径**（`zodiacPanelJudgement`：特肖 ∈ 展示的三个生肖，或有码组时特码 ∈ 码组），
-  // 与数据源模块 `pt3xiao`（平特3肖，mode 470）的七码平特口径**无关** —— 详见文件上方
-  // 「面板级中特口径」的说明与供应商模板的对/错列。
+  // 展示：`凶丑肖【鼠牛虎猴狗猪】` —— 分组名 + 该分组的 6 个成员生肖（正文
+  // `["凶丑肖|鼠,牛,虎,猴,狗,猪"]` 的标签与成员就是候选本身）。
+  // 判定：**中特口径** `jimeiXiongchouJudgement`（特肖 ∈ 分组成员，命中点亮组内那个生肖），
+  // 与后端 `jimei_xiongchou`（`outcome_loader` 把特肖映射成分组名 + `contains_hit`）同口径。
   function renderSanxiaoLiumaHistory(module) {
     var section = sectionByTitle("吉美丑凶");
     if (!section) return;
@@ -1414,15 +1426,14 @@
     rowsFor(section).forEach(function (tr, index) {
       var cells = tr.querySelectorAll(":scope > td");
       var row = resolveRow(cellText(cells[0]), index);
-      var values = row ? tokens(row) : [];
-      var zodiacs = row ? displayedZodiacList(row, 3) : [];
-      // 第 6 项：显示「吉美肖【龙猪鼠】」/「丑凶肖【虎猪鼠】」；`三肖六码` 形态第二行是码组。
-      var firstLine = row ? groupLabelFor(row, XIONGJI_GROUP, "") + "【" + zodiacs.join("") + "】" : "";
-      var secondLine = values.slice(3, 9).join("-");
-      var judged = row ? zodiacPanelJudgement(row, 3, 3, 6) : null;
+      var group = row ? groupMembers(row, XIONGJI_GROUP) : { label: "", members: [] };
+      var firstLine = row && group.label
+        ? group.label + "【" + group.members.join("") + "】"
+        : row ? displayLabels(row, "") : "";
+      var judged = row ? jimeiXiongchouJudgement(row) : null;
       writeCell(cells[0], row ? termValue(row) : "暂无后端资料");
       // 候选格是 `.mtbl td:nth-child(2)`：必须先把模板预埋的黄底 span **拆包**（只清样式会
-      // 留下空黄底 → 判定「错」的期次照样有黄底、R3），再按行写纯文本叶子，
+      // 留下空黄底 → 判定「错」的期次照样有黄底、R3），再写纯文本叶子，
       // 命中项用 inline 黄底 marker 单独标出（不新建宿主 span，见 `markTokenInLeaf`）。
       clearMarkers(cells[1], true);
       var groups = lineGroups(cells[1]);
@@ -1432,7 +1443,8 @@
         writePlainLine(groups[1], "");
       } else {
         writePlainLine(groups[0], firstLine, hits);
-        writePlainLine(groups[1], secondLine ? "【" + secondLine + "】" : "", secondLine ? hits : []);
+        // 模板第二行是「三肖六码」时代烤死的 6 个样例码，本站 mode 155 没有码组 → 清空。
+        writePlainLine(groups[1], "");
       }
       writeResultCell(cells[2], judged ? withResultCorrect(row, judged.correct) : row);
       tr.setAttribute("data-prediction-row", String(index));
@@ -1772,29 +1784,25 @@
     });
   }
 
-  // 第 3 项：③肖防③码 = 「三个生肖 + 三个防码」。候选是两个模块的行：
-  // 生肖用 `+` 与码组分开，码之间用 `.` 分隔，避免 `虎猪鼠+虎,猪,鼠` 这种重复挤在一起的输出。
+  // 第 3 项：③肖防③码，绑定 mode 117「3肖4码」（`sanxiao_siwei_xiao`，2026-10-01 起；
+  // 此前借 `pt3xiao` 平特3肖的行 + 把生肖名当码组的退化文本）。
   //
-  // 判定：**中特口径**（特肖 ∈ 展示的三个生肖，或有真号码时特码 ∈ 三个防码），
-  // 与数据源模块 `pt3xiao`（平特3肖，mode 470）的七码平特口径无关 —— 详见文件上方
-  // 「面板级中特口径」的说明与供应商模板的对/错列。
-  // 注意：本站 `pt3xiao` 只有生肖、没有号码，所以码组会退化成生肖名（`牛蛇鼠+牛,蛇,鼠`），
-  // 此时 `displayedNumberList` 拿不到号码，判定只按生肖。
-  function renderSanxiaoFangSanmaHistory(zodiacModule, codeModule) {
-    var resolveZodiacRow = makeRowResolver(zodiacModule);
-    var resolveCodeRow = makeRowResolver(codeModule);
+  // 展示：`虎马狗+05.01.09` —— 三个候选生肖（正文 `生肖|号码` 的生肖半边）
+  // 与它们自带的代表号码（号码半边）。生肖用 `+` 与码组分开、码之间用 `.`。
+  // 判定：**特肖 ∈ 展示的三个生肖**（`sanxiaoSiweiJudgement`），与后端 `sanxiao_siwei_xiao`
+  // 的 `hit_checker=contains_hit`（候选 = 3 肖）以及 `RULE_BY_MODE_ID[117]` 的 `zodiac`
+  // 规则完全一致。号码半边是同一玩法的另一半（平台里由 mode 123「4尾8码」承担），
+  // 因此**不参与判定**，只随正文展示。
+  function renderSanxiaoFangSanmaHistory(module) {
+    var resolveRow = makeRowResolver(module);
     var section = sectionByTitle("③肖防③码");
     cardRows(section).forEach(function (tr, index) {
       var cell = tr.querySelector("td");
       var header = cell && cell.querySelector("p b");
       var templateText = String(header && header.textContent || cellText(cell));
-      var row = resolveZodiacRow(templateText, index);
-      var codeRow = resolveCodeRow(templateText, index);
-      // 判定必须走**中特口径**本地复算（`sanxiaoFangSanmaJudgement`），不能沿用
-      // `pt3xiao` 的七码平特判定；拿不到开奖/候选时返回 null，沿用接口判定。
-      var judged = row ? sanxiaoFangSanmaJudgement(row, codeRow) : null;
-      var resultRow = row || codeRow;
-      writeCardHeader(cell, judged ? withResultCorrect(resultRow, judged.correct) : resultRow);
+      var row = resolveRow(templateText, index);
+      var judged = row ? sanxiaoSiweiJudgement(row) : null;
+      writeCardHeader(cell, judged ? withResultCorrect(row, judged.correct) : row);
       var detail = cell && cell.querySelector(":scope > span");
       if (!detail) return;
       if (!row) {
@@ -1802,15 +1810,11 @@
         return;
       }
       var zodiacs = displayedZodiacList(row, 3).join("");
-      var codes = tokens(codeRow || {}).map(function (value) {
-        var digits = String(value).replace(/[^\d]/g, "");
-        return digits ? digits.padStart(2, "0") : "";
-      }).filter(Boolean);
-      // 码组取前三个有效号码；拿不到号码时退化为原有的 `生肖+号码` 文本。
-      var codeText = codes.length ? codes.slice(0, 3).join(".") : predictionText(codeRow || row, ",");
+      var codes = displayedNumberList(row, 0, 4);
+      var codeText = codes.length ? codes.join(".") : "";
       writeLineValues(
         detail,
-        [zodiacs + "+" + codeText],
+        [codeText ? zodiacs + "+" + codeText : zodiacs],
         judged && judged.correct && judged.token ? [judged.token] : []
       );
     });
@@ -2198,8 +2202,9 @@
     // 平特类模块（pt1xiao / pt1wei / pt2xiao）先把判定统一改成**七码口径**；
     // 之后所有用到这些模块的**平特面板**（平特①肖 / 平特一尾 / 三期计划的平特·平尾计划）
     // 拿到的都是同一套判定，不必各写一份。
-    // `pt3xiao`（平特3肖）不在其中：本站首页没有平特③肖面板，它只作为【吉美丑凶】
-    // 【③肖防③码】的数据源，这两个面板走各自的中特口径（`zodiacPanelJudgement`）。
+    // `pt3xiao`（平特3肖）不在其中：本站首页没有平特③肖面板，它的数据只由静态文章
+    // 【平特③肖连】（`static-article-data-adapter.js`）使用；【吉美丑凶】【③肖防③码】
+    // 分别绑 mode 155 / 117，走各自的中特口径（见下方面板渲染器）。
     applyFlatVerdicts(modules);
     // 没有后端数据的板块（天地+②肖 / 18码中特）整块隐藏，不留「暂无后端资料」空壳。
     hideUnbackedPanels(modules);
@@ -2220,7 +2225,8 @@
     renderPredictionImage("sxztu", modules.sxztu);
     renderPredictionImage("pmtj_image", modules.pmtj_image);
     renderSizhongteHistory(modules.title_47);
-    renderSanxiaoLiumaHistory(modules.pt3xiao);
+    // 【吉美丑凶】绑 mode 155「吉美凶丑（2选1，全肖）」。
+    renderSanxiaoLiumaHistory(modules.jimei_xiongchou);
     renderJueshaYixiaoHistory(modules.juesha1xiao);
     renderJueshaYiboHistory(modules.jueshabanbo);
     renderDanshuangErxiaoHistory(modules.danshuangtema);
@@ -2260,7 +2266,8 @@
     // 该板块在 hideEmptyPanels() 里整块隐藏（保留 DOM 与这条「必须空态」的渲染路径，
     // 防止将来有人把别的模块接进来）。
     renderShibamaHistory(null);
-    renderSanxiaoFangSanmaHistory(modules.pt3xiao, modules.pt3xiao);
+    // 【③肖防③码】绑 mode 117「3肖4码」。
+    renderSanxiaoFangSanmaHistory(modules.sanxiao_siwei_xiao);
     // site_page_dependencies 把「8肖16码」面板绑到 mode_id 60 = `9xiao12ma`
     // （不是 `liuxiao18ma`；后者属于「六肖十八码」面板，复用会让两个面板显示同一组 18 码）。
     renderBaxiaoShiliumaHistory(modules["9xiao12ma"]);
@@ -2275,9 +2282,10 @@
     // `qianhou_texiao`（前后肖）与 `title_5`（天地肖）顶上 → 面板图例是日/夜、左/右，
     // 内容却是前/后、天/地。现按「无数据 → 不借别的模块」处理：两个板块在
     // hideEmptyPanels() 里整块隐藏（保留 DOM，后端补数据后可还原映射）。
-    // 【前后中特】的 `qianhou_texiao` 本身就是「前后特肖」：模块键保持不变，
-    // 但判定改由 `qianhouJudgement` 本地复算（特肖 ∈ 展示分组），不沿用接口的两肖口径。
-    renderQianhouZhongteHistory(modules.qianhou_texiao);
+    // 【前后中特】绑 mode 133「前后生肖」（2026-10-01 起；此前绑 219「前后特肖」，
+    // 而 219 的候选只有 `xiao` 列的 2 肖，与面板展示的整个前/后分组不是同一口径）：
+    // 判定由 `qianhouJudgement` 本地复算（特肖 ∈ 展示分组），与后端同口径。
+    renderQianhouZhongteHistory(modules.qianhou_shengxiao);
     renderQiweiSixingHistory(modules.title_74, modules.sihangzhongte);
     renderSijiJiuxiaoHistory(modules.siji3, modules.siji3);
     renderDoubleWaveHistory(modules.shuangbo_12ma);

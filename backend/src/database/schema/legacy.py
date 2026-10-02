@@ -582,6 +582,12 @@ def ensure_twbst528_prediction_tables(conn: Any, pk_sql: str) -> None:
         (488, "头数单双"),
         (490, "杀两半波"),
         (491, "公式四尾"),
+        # 2026-10-01：【吉美丑凶】/【前后中特】/【③肖防③码】改绑权威 mode 后需要各自的
+        # payload 表（正文都是 `content` 单列：`["吉美肖|兔,…"]` / `["前肖|鼠,…"]` /
+        # `["龙|02","鼠|30","牛|17"]`）。
+        (155, "吉美凶丑（2选1，全肖）"),
+        (133, "前后生肖"),
+        (117, "3肖4码"),
     ):
         ensure_basic_prediction_payload_table(
             conn,

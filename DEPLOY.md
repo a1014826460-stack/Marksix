@@ -2654,3 +2654,66 @@ web=10 的生成行 —— 所以这三个板块**不可能**显示正确的左/
 #### 五、未部署
 
 本轮只做本地改动与验收：**未连接服务器、未 `git pull`/`push`、未部署**。
+
+---
+
+### twbst528 三块中特面板改绑权威 mode（155 / 117 / 133）+ 数据链路补齐（2026-10-01 第十六轮）
+
+用户指令：「吉美丑凶 改为使用后端预测模块 mode_id=155、前后中特 mode_id=133、
+③肖防③码 mode_id=117」，并要求「注意判断的正确性和前端显示预测内容的合理性」。
+
+#### 一、先说结论：只切绑定不够
+
+本地 dev 库与线上代码里这三个 mode 对 twbst528(web=10) **一行数据都没有**：
+
+| mode | 标题 | 机制配置 | 受控生成规则 | web=10 厂商抓取 | web=10 数据 |
+| --- | --- | --- | --- | --- | --- |
+| 155 | 吉美凶丑（2选1，全肖） | 本轮新增 | 本轮新增 | 无 | 0 → 本轮生成 |
+| 133 | 前后生肖 | 本轮新增 | 本轮新增 | 无 | 0 → 本轮生成 |
+| 117 | 3肖4码 | 已有 `sanxiao_siwei_xiao` | 已有 `zodiac` | 无 | 0 → 本轮生成 |
+
+twbst528 的厂商 mode 列表（`public.fetched_modes`）不含这三个 mode，所以只能走**本地受控生成**。
+只改前端绑定会让三块面板因为没有行而整块空掉，因此本轮把配置、规则、授权、迁移、生成一并补齐。
+
+#### 二、改动
+
+| 层 | 文件 | 改动 |
+| --- | --- | --- |
+| 机制配置 | `backend/src/predict/mechanisms.py` | 新增 `jimei_xiongchou`(155) / `qianhou_shengxiao`(133)：候选 = 分组名、`label_count=1`、正文 `分组名|成员生肖`；新增 `special_jimei_from_row` / `special_qianhou_from_row` / `format_jimei_groups` / `format_qianhou_groups`（成员表取自 `fixed_data`，同一份静态表兜底） |
+| 生成规则 | `backend/src/domains/prediction/generation_rules.py` | 155/133 登记 `rule_id="zodiac_group"`（真实目标 = 特肖所属**分组名**）；`rule_documentation.py` 增补说明；`backend/docs/prediction-module-rules.md` 重算 |
+| 站点授权 | `backend/src/domains/prediction/site_page_dependencies.py` | 首页清单加入 155/117/133；219「前后特肖」已无页面引用 → 移出清单 |
+| 迁移 | `backend/src/database/versioned_migrations.py` + `schema/legacy.py` | 迁移 33 `sync_twbst528_zhongte_mode_authorization`：建 `created.mode_payload_155/133/117` + 同步站点 10 授权行（只写站点 10） |
+| 生成多样性 | `backend/src/prediction_generation/diversity.py` | 133 加入 `THREE_PERIOD_UNIQUE_MODE_IDS`（与 155 同族：2 选 1 全肖，避免连续多期同一分组） |
+| 展示层 | `frontend/public/vendor/twbst528/site-data-adapter.js` | 三块面板改绑 `modules.jimei_xiongchou` / `modules.qianhou_shengxiao` / `modules.sanxiao_siwei_xiao`；新增 `groupMembers`/`groupMemberJudgement`/`sanxiaoSiweiJudgement`，移除上一轮的 `zodiacPanelJudgement`/`sanxiaoFangSanmaJudgement`；`displayedNumberList` 按 `|` 后逐个取码；`XIONGJI_GROUP` 同时收「凶丑肖 / 丑凶肖」 |
+| 生成执行 | 本地脚本（`.scratch/`，不入库） | `bulk_generate_site_predictions`：三彩种各 8 期历史 + 1 期未来期 |
+
+#### 三、本地生成结果（dev 库，web=10）
+
+- 香港彩：历史 2026/079–086、未来期 087；澳门彩：历史 212–222、未来期 223；
+  台湾彩：历史 263–270、未来期 271（每期 3 行，共 27 行/模块）。
+- 正文形态与厂商 `mode_payload_155/133/117` 一致：`["凶丑肖|鼠,牛,虎,猴,狗,猪"]` /
+  `["后肖|马,羊,猴,鸡,狗,猪"]` / `["虎|05","马|01","狗|09"]`。
+- 历史行带回填结果（`res_code`/`res_sx`），面板显示对/错；未来行显示「待开奖」。
+
+#### 四、验收（本地）
+
+- 新增/重写 `python frontend/test/twbst528-zhongte-verdict-contract.py`：把三个模块的 `isCorrect`
+  故意设成与本地判定相反的值，逐行断言 155/133 的分组成员判定、117 的 3 肖判定（含「码组含开奖特码
+  仍判错」）、别名字典、行内容驱动的分组解析，并断言全页零幽灵标记 / 零杂散黄底 → **OK**。
+- `node frontend/test/twbst528-display-contract.mjs`（第 20 节重写）、
+  `python frontend/test/twbst528-live-mapping-contract.py`（三个新模块夹具）、
+  `twbst528-tiandi-display-contract.py`、`twbst528-zonghe-juesha-contract.py`、
+  `twbst528-live-mapping-contract.mjs`、`twbst528-static-article-contract.mjs` → 全绿。
+- 后端：`tests/unit/test_twbst528_exact_prediction_modules.py`（+2 用例）、
+  `test_twbst528_page_dependencies.py`、新增 `test_twbst528_zhongte_mode_rules.py`（规则/目标换算/
+  正文 formatter）、`test_prediction_three_period_unique.py`、`test_prediction_rule_documentation.py` → 通过。
+- 真实本地数据端到端（探针读页面）：`凶丑肖【鼠牛虎猴狗猪】 开:11猴对`、
+  `虎马狗+05.01.10 开:37马对`、`后肖 开:37马对` 等逐行一致；「对」行各 1 处黄底、「错」行零黄底。
+- 展示审计：`rows=371 js_errors=0 error=0 warn=16`（13 R4 + 3 R5，均为审计按容器 class /
+  行内标签归并模块的产物，详见 `docs/prediction-display-standard.md` 五之十五第三轮）。
+
+#### 五、未部署
+
+本轮同样只做本地改动与验收。**上线需要**：`git push` → 两节点 `deploy-*.sh` → 服务器执行
+迁移 33 → 为 web=10 生成三彩种的三模块预测（历史 + 未来期）→ `reconcile_site_prediction_modules`
+→ 复核线上 `error=0`。该操作需用户按 `AGENTS.md` 单独授权服务器与范围。
