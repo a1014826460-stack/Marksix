@@ -20,9 +20,9 @@ def test_latest_migration_creates_forced_announcement_tables():
     conn = _Connection()
     latest = versioned_migrations.MIGRATIONS[-1]
 
-    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 32
-    assert latest.version == 32
-    assert latest.name == "resync_wuxing_number_groups_and_element_content"
+    assert versioned_migrations.CURRENT_SCHEMA_VERSION == 33
+    assert latest.version == 33
+    assert latest.name == "sync_twbst528_zhongte_mode_authorization"
     # forced_announcements 表由迁移 27 创建，验证它仍然存在
     forced = next(m for m in versioned_migrations.MIGRATIONS if m.version == 27)
     assert forced.name == "create_forced_announcements"
