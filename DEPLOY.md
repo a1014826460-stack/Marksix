@@ -2733,8 +2733,14 @@ twbst528 的厂商 mode 列表（`public.fetched_modes`）不含这三个 mode�
 | 收尾 | 两节点 `/tmp` 临时脚本已清理 |
 
 **线上审计注意**：`scripts/audit-prediction-display.py twbst528` 内置 12 s 等待，而 twbst528 线上首屏
-（供应商聚合 ~756 KB payload）约 39 s 才渲染预测行 → 该窗口内 `rows=0`（审计空跑）。
-把等待加到 60 s 后：`rows=404 js_errors=0 error=11 warn=6`，其中 11 条 `R2 verdict_pending` 全部来自
-`#jinzita_jinzita` 面板（该面板不在 `site_page_dependencies`/适配器里，保留厂商模板行 `开:????准`，
-属既有），3 条 R4 + 3 条 R8 亦为厂商模板行/共享容器归并产物；**三块本轮面板**在完整渲染后
-无任何模板残留（专用探针逐 frame 校验 `+48,27,45`、`????准` 等样例文本均已消失）。
+（供应商聚合 ~756 KB payload）约 39 s 才渲染预测行 → 该窗口内只会扫到供应商模板行（`rows` 偏少，
+甚至出现 `R2 verdict_pending` 之类「模板 `开:????准`」error）。本轮给审计脚本加了可选
+`--wait-ms`（默认仍是 12000，行为不变），慢站显式加长即可：
+
+```
+python scripts/audit-prediction-display.py twbst528 --wait-ms 95000
+→ rows=371 js_errors=0 error=0 warn=15
+```
+
+warn=15（13 R4 + 2 R5）与本地同量级：均为审计按容器 class / 行内标签归并模块的产物
+（详见 `docs/prediction-display-standard.md` 五之十五第三轮）。

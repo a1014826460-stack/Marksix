@@ -554,7 +554,13 @@ def audit_legends(site_key: str, legends: list[dict[str, Any]]) -> list[Finding]
     return findings
 
 
-def audit_site(site: dict[str, Any], *, headless: bool = True, base_url: str = "") -> SiteReport:
+def audit_site(
+    site: dict[str, Any],
+    *,
+    headless: bool = True,
+    base_url: str = "",
+    wait_ms: int = 12000,
+) -> SiteReport:
     from playwright.sync_api import sync_playwright
 
     url = site["url"]
@@ -573,7 +579,11 @@ def audit_site(site: dict[str, Any], *, headless: bool = True, base_url: str = "
         page.on("pageerror", lambda exc: report.errors.append(str(exc)[:200]))
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=180000)
-            page.wait_for_timeout(12000)
+            # 「站点数据客户端 + 供应商聚合 payload」的站点首屏可能要几十秒才渲染预测行
+            # （twbst528 线上实测约 39 s），等待窗口太短会只扫到供应商模板行，
+            # 线上审计因此空跑（rows 偏少甚至 0）。默认仍保持历史上的 12 s，
+            # 慢站用 `--wait-ms` 显式加长。
+            page.wait_for_timeout(max(1000, int(wait_ms)))
             frames = [frame for frame in page.frames]
         except Exception as exc:  # noqa: BLE001
             report.errors.append(f"goto failed: {exc}")
@@ -604,6 +614,12 @@ def main() -> int:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--base-url", default="", help="本地预检：替换站点域名为该地址（如 http://127.0.0.1:3000）")
     parser.add_argument("--dump-rows", default="", help="把抓到的每一行（module/text/highlights）写到该 JSON，便于人工复核")
+    parser.add_argument(
+        "--wait-ms",
+        type=int,
+        default=12000,
+        help="页面加载后等待渲染的毫秒数（默认 12000；慢站如 twbst528 线上建议 90000）",
+    )
     args = parser.parse_args()
 
     targets = [site for site in SITES if not args.sites or site["key"] in args.sites]
@@ -614,7 +630,12 @@ def main() -> int:
     reports: list[SiteReport] = []
     for site in targets:
         print(f"=== auditing {site['key']} …", flush=True)
-        report = audit_site(site, headless=not args.headed, base_url=args.base_url)
+        report = audit_site(
+            site,
+            headless=not args.headed,
+            base_url=args.base_url,
+            wait_ms=args.wait_ms,
+        )
         reports.append(report)
         errors = [f for f in report.findings if f.level == "error"]
         warns = [f for f in report.findings if f.level == "warn"]
