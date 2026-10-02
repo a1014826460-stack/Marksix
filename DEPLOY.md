@@ -2717,3 +2717,24 @@ twbst528 的厂商 mode 列表（`public.fetched_modes`）不含这三个 mode�
 本轮同样只做本地改动与验收。**上线需要**：`git push` → 两节点 `deploy-*.sh` → 服务器执行
 迁移 33 → 为 web=10 生成三彩种的三模块预测（历史 + 未来期）→ `reconcile_site_prediction_modules`
 → 复核线上 `error=0`。该操作需用户按 `AGENTS.md` 单独授权服务器与范围。
+
+#### 六、上线记录（2026-10-02 已部署）
+
+用户授权「两节点全套 + 三彩种生成」后执行，发布提交 `512f344`（含 `ea23786` / `da885ee`）。
+
+| 步骤 | 结果 |
+| --- | --- |
+| `git push origin main` | `74c03f6..512f344` |
+| 中心节点 `207.56.3.82`（跳板 `8.163.93.151`） | 备份 `.deploy-backups/twbst528-zhongte-20261002T164557Z`；ff-only 到 `512f344`；重建 `db-migrate`/`python-api`/`scheduler-worker`/`frontend` 全部 healthy；`db-migrate` 日志 `Applied schema migrations: 33` |
+| 前端节点 `207.56.2.71` | 备份 `.deploy-backups/twbst528-zhongte-20261002T170027Z`；仅重建 `frontend`；`nginx -t` 通过；六站自检（含 `www.twbst528.com`）全 200 |
+| 生成预测（容器内 `bulk_generate_site_predictions`） | 香港彩：历史 2026/097–104 + 未来 105（24+3 行）；澳门彩：历史 268–275 + 未来 276；台湾彩：历史 268–275（调度已生成，skipped=24）+ 未来 276 |
+| 授权收尾 | `reconcile_site_prediction_modules_to_blueprint(site 10)`：禁用 219；另禁用遗留动态 key `title_155`/`title_133`；审计 `missing_from_runtime=[]`、`enabled_outside_blueprint=[]` |
+| 线上验收 | `GET /api/sites/twbst528/prediction-modules`：三彩种都返回 `jimei_xiongchou` / `qianhou_shengxiao` / `sanxiao_siwei_xiao`（各 8 行，含 274/275 期回填判定）；页面探针（75 s）三块面板逐行显示与判定正确（`凶丑肖【牛狗猪猴虎鼠】 开:12羊错`、`马虎羊+01.05.12 开:24羊对`、`后肖 开:24羊对` 且命中项黄底），`pageerror=[]` |
+| 收尾 | 两节点 `/tmp` 临时脚本已清理 |
+
+**线上审计注意**：`scripts/audit-prediction-display.py twbst528` 内置 12 s 等待，而 twbst528 线上首屏
+（供应商聚合 ~756 KB payload）约 39 s 才渲染预测行 → 该窗口内 `rows=0`（审计空跑）。
+把等待加到 60 s 后：`rows=404 js_errors=0 error=11 warn=6`，其中 11 条 `R2 verdict_pending` 全部来自
+`#jinzita_jinzita` 面板（该面板不在 `site_page_dependencies`/适配器里，保留厂商模板行 `开:????准`，
+属既有），3 条 R4 + 3 条 R8 亦为厂商模板行/共享容器归并产物；**三块本轮面板**在完整渲染后
+无任何模板残留（专用探针逐 frame 校验 `+48,27,45`、`????准` 等样例文本均已消失）。
