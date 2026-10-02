@@ -99,7 +99,14 @@ def prediction_payload(lottery_type: str):
                     for row in rows
                 ]},
                 {"moduleKey": "title_47", "rows": rows},
-                {"moduleKey": "pt3xiao", "rows": rows},
+                # 平特3肖（mode 470）：本站只用它喂【吉美丑凶】【③肖防③码】两个**中特**面板，
+                # 判定由面板本地复算（特肖 ∈ 展示三肖，或有真号码时特码 ∈ 码组），不再套用
+                # 七码平特口径。mock 三肖「牛蛇鼠」不含开奖特肖马 → 509 期必须显示「错」
+                # （七码口径会因为牛/蛇/鼠以平码开出而显示「对」，这正是 274 期的报障）。
+                {"moduleKey": "pt3xiao", "rows": [
+                    {**row, "prediction": {"tokens": ["牛", "蛇", "鼠"], "text": "牛,蛇,鼠"}}
+                    for row in rows
+                ]},
                 # 绝杀①肖：内容显示同样重复三次（鸡鸡鸡）；判定仍走接口（按最后一个开奖号码）。
                 {"moduleKey": "juesha1xiao", "rows": [
                     {**row, "prediction": {"tokens": ["鸡"], "text": "鸡"}} for row in rows
@@ -305,6 +312,29 @@ def main() -> None:
                 rendered_rows = [history_rows.nth(index).inner_text() for index in range(history_rows.count())]
                 assert any("第509期" in value and "开:36马错" in value for value in rendered_rows), (title, rendered_rows)
                 assert not any("第323期" in value or "????" in value for value in rendered_rows), (title, rendered_rows)
+
+            # 【吉美丑凶】/【③肖防③码】/【前后中特】的口径（2026-10-01 报障）：
+            # 三肖面板按「特肖 ∈ 展示三肖」判定，mock 三肖「牛蛇鼠」不含开奖特肖马 →
+            # 509 期必须「错」（七码平特口径会显示「对」，正是 274 期的报障）；
+            # 【前后中特】按展示分组判定，mock 展示「前肖」（鼠牛虎兔龙蛇）不含马 → 同样「错」。
+            jimei = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="吉美丑凶")).first
+            jimei_rows = [jimei.locator("table.mtbl tbody > tr").nth(index).inner_text()
+                          for index in range(jimei.locator("table.mtbl tbody > tr").count())]
+            assert any("牛蛇鼠" in value for value in jimei_rows), jimei_rows
+            assert any("第509期" in value and "开:36马错" in value for value in jimei_rows), jimei_rows
+            assert jimei.locator("[data-prediction-hit]").count() == 0, jimei.inner_text()[:200]
+
+            fangma = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="③肖防③码")).first
+            fangma_text = fangma.inner_text()
+            assert "牛蛇鼠+牛,蛇,鼠" in fangma_text, fangma_text[:200]
+            assert "509期" in fangma_text and "36马错" in fangma_text, fangma_text[:300]
+            assert fangma.locator("[data-prediction-hit]").count() == 0, fangma_text[:200]
+
+            qianhou = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="前后中特")).first
+            qianhou_rows = [qianhou.locator("table.mtbl tbody > tr").nth(index).inner_text()
+                            for index in range(qianhou.locator("table.mtbl tbody > tr").count())]
+            assert any("前肖" in value for value in qianhou_rows), qianhou_rows
+            assert any("第509期" in value and "开:36马错" in value for value in qianhou_rows), qianhou_rows
 
             # 【平特①肖】七码口径 + 生肖 ×3：候选「猪」是 509 期的平码（特肖是马），
             # 只比特码会判「错」，七码口径必须判「对」。

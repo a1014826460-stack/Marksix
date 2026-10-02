@@ -2583,3 +2583,74 @@ web=10 的生成行 —— 所以这三个板块**不可能**显示正确的左/
 本轮只做本地改动与验收：**未连接服务器、未 `git pull`/`push`、未部署**。
 上线需用户按 `AGENTS.md` 单独授权服务器与操作范围；发布前请按
 `docs/prediction-display-standard.md`「五之十四」复核线上 `error=0`。
+
+---
+
+### twbst528 三个中特面板判定口径修正（2026-10-01 第十五轮，本地验收完成、未部署）
+
+用户报障（原话「判断机制存在问题」，274/273 期）：
+
+| 面板 | 线上显示 | 用户判定 |
+| --- | --- | --- |
+| 【吉美丑凶】 | 274 期 `丑凶肖【牛蛇鼠】 开:24羊对`、273 期 `吉美肖【鸡牛龙】 开:19鼠对` | 应「错」 |
+| 【③肖防③码】 | 274 期 `牛蛇鼠+牛,蛇,鼠 开:24羊对`、273 期 `鸡牛龙+鸡,牛,龙 开:19鼠对` | 应「错」 |
+| 【前后中特】 | 274 期 `后肖 开:24羊错`、273 期 `前肖 开:19鼠错` | 应「对」 |
+
+#### 一、根因
+
+三个面板展示的是「本期押的生肖 / 前后分组」，判定却取自**数据源模块的接口口径**：
+
+- 【吉美丑凶】【③肖防③码】的数据源是 `pt3xiao`（mode 470 平特3肖），上一轮给它套了
+  **七码平特口径**（三个生肖里只要一个以平码开出即「对」）—— 274 期开 24 羊，牛/蛇/鼠 以平码开出，
+  两个面板都显示「对」；实测该口径下这两块 20 期里 19 期恒「对」。
+- 【前后中特】的数据源 `qianhou_texiao`（mode 219 前后特肖）后端 `contains_hit` 只比 `xiao` 列的
+  **2 个生肖**，而面板展示的是「后肖」（马羊猴鸡狗猪）—— 开奖特肖是羊却判「错」。
+
+供应商模板（`frontend/public/vendor/twbst528/index.html`）的对/错列印证了正确口径
+= 「特肖 ∈ 展示候选」：吉美丑凶 323/320 期对、319/322/321 期错；前后中特 323/322/320/319 期对、
+321 期错（详见 `docs/prediction-display-standard.md` 五之十五）。
+
+#### 二、改动（只动 `frontend/public/vendor/twbst528/site-data-adapter.js`）
+
+1. `pt3xiao` 从 `FLAT_MODULE_KINDS` 移除（首页没有「平特③肖」面板；【平特③肖连】静态文章走
+   `static-article-data-adapter.js`，七码口径不变）。
+2. 新增面板级中特口径：`displayedZodiacList` / `displayedNumberList` / `specialZodiacOf` /
+   `specialCodeOf` / `zodiacPanelJudgement` / `sanxiaoFangSanmaJudgement` / `qianhouGroup` /
+   `qianhouJudgement`（拿不到开奖或候选 → `null`，沿用接口判定）。
+3. 【吉美丑凶】按「三肖 + 三肖六码形态的 6 码」判定，候选格先拆包模板黄底再写纯文本叶子
+   （`.mtbl td:nth-child(2)` 的新 span 会被 `home.css` 染成芥末黄 `#d1be18`），命中项用
+   inline `#FFFF00` marker 单点标出。
+4. 【③肖防③码】判定接 `sanxiaoFangSanmaJudgement`，**卡片头的开奖段**也改写为本地判定。
+5. 【前后中特】改用专属 `renderQianhouZhongteHistory`，判定 = 特肖 ∈ 从行内容解析的分组成员
+   （缺成员才退回面板图例），命中点亮「前肖 / 后肖」；模块绑定仍是 `qianhou_texiao`。
+
+#### 三、验收（本地 `127.0.0.1:3000` + dev 库）
+
+- 新增契约 `python frontend/test/twbst528-zhongte-verdict-contract.py`（Playwright + 桩 payload，
+  离线）：两个数据源模块的 `is_correct` **故意填接口口径的错误答案**，逐行断言 274/273 期两个「错」、
+  272 期「对」只亮「猴」、「三肖六码」形态按码命中只亮「23」、前后中特 274/273 期「对」亮
+  「后肖/前肖」、272 期「错」、非标准分组（内容只列「马,羊」）按内容判「错」；全页零幽灵标记、
+  零杂散黄底 → **OK**。
+- `node frontend/test/twbst528-display-contract.mjs`（新增第 20 节源码级断言）、
+  `python frontend/test/twbst528-live-mapping-contract.py`（夹具改真实形态 + 显式断言三块面板 509 期
+  必须「错」）、`twbst528-tiandi-display-contract.py`、`twbst528-zonghe-juesha-contract.py`、
+  `twbst528-live-mapping-contract.mjs`、`twbst528-static-article-contract.mjs` → 全绿。
+- 真实本地数据端到端（探针读页面 + 同源 payload 复算）：三块面板共 15 行判定与高亮全部一致
+  （「对」的行各 1 处黄底、「错」的行零黄底）。
+- 展示审计：`python scripts/audit-prediction-display.py twbst528 --base-url http://127.0.0.1:3000`
+  → `rows=371 js_errors=0 error=0 warn=15`。
+
+#### 四、遗留与说明
+
+1. 审计 warn 由 2 升到 15：新增 13 条全是 `R4 highlight_hit`，全部归到共享桶 `.center.f13`
+   （审计按容器 class 归并模块，③肖防③码 的候选格正是 `.center.f13.black.l150`）。R4 的门槛是
+   「同桶内已有高亮行才检查」，③肖防③码 现在会正确标黄 → 门槛打开，于是同桶**既有**的 13 行
+   「判定对却零黄底」被报出；这些行属于另外 11 个面板（多数是排除型：杀号类零黄底是设计正确，
+   属审计误报；少数是命中型面板的既有高亮缺口）。`error=0 / js_errors=0` 门槛保持。
+2. 【③肖防③码】的码组数据源仍是 `pt3xiao`（无号码），展示退化为 `牛蛇鼠+牛,蛇,鼠`；
+   判定已按「展示即候选」处理，真实防码需数据侧提供「三肖 + 三码」模块。
+3. 【平特③肖连】静态文章继续走七码平特口径，本轮未改动。
+
+#### 五、未部署
+
+本轮只做本地改动与验收：**未连接服务器、未 `git pull`/`push`、未部署**。
