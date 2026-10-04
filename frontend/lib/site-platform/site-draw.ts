@@ -1,8 +1,16 @@
 export type SiteDrawSource = {
   current_issue?: string | number | null
   draw_time?: string | null
+  // 服务端分片揭示字段（backend/src/public/draw_reveal.py）：
+  // 号码按 reveal_start + 25s×N 逐球开放，前端据 revealed_count/is_complete 决定是否继续轮询。
+  reveal_start?: string | null
   result_balls?: SiteDrawBallSource[]
   special_ball?: SiteDrawBallSource | null
+  revealed_count?: number | null
+  total_balls?: number | null
+  reveal_interval_seconds?: number | null
+  is_complete?: boolean | null
+  next_reveal_at?: string | null
 }
 
 export type SiteDrawBallSource = {
@@ -20,6 +28,12 @@ export type SiteDrawDeadlineSource = {
 export type NormalizedSiteDraw = {
   current_issue: string
   opened_at: string | null
+  reveal_start: string | null
+  revealed_count: number | null
+  total_balls: number
+  reveal_interval_seconds: number
+  is_complete: boolean
+  next_reveal_at: string | null
   next_issue: string | null
   next_draw_at: string | number | null
   balls: Array<{
@@ -61,18 +75,38 @@ function normalizeBall(ball: SiteDrawBallSource, isSpecial: boolean) {
   }
 }
 
+function normalizeCount(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return Math.floor(parsed)
+}
+
 export function normalizeSiteDraw(
   latest: SiteDrawSource,
   deadline: SiteDrawDeadlineSource
 ): NormalizedSiteDraw {
+  const balls = [
+    ...(latest.result_balls || []).map((ball) => normalizeBall(ball, false)),
+    ...(latest.special_ball ? [normalizeBall(latest.special_ball, true)] : []),
+  ]
+  const totalBalls = normalizeCount(latest.total_balls) ?? 7
+  const revealedCount = normalizeCount(latest.revealed_count)
+  const isComplete = typeof latest.is_complete === "boolean"
+    ? latest.is_complete
+    : revealedCount !== null
+      ? revealedCount >= totalBalls
+      : balls.length >= totalBalls
   return {
     current_issue: String(latest.current_issue || "").trim(),
     opened_at: latest.draw_time || null,
+    reveal_start: latest.reveal_start || latest.draw_time || null,
+    revealed_count: revealedCount,
+    total_balls: totalBalls,
+    reveal_interval_seconds: normalizeCount(latest.reveal_interval_seconds) ?? 25,
+    is_complete: isComplete,
+    next_reveal_at: latest.next_reveal_at || null,
     next_issue: deadline.next_issue == null ? null : String(deadline.next_issue).trim() || null,
     next_draw_at: deadline.next_time || null,
-    balls: [
-      ...(latest.result_balls || []).map((ball) => normalizeBall(ball, false)),
-      ...(latest.special_ball ? [normalizeBall(latest.special_ball, true)] : []),
-    ],
+    balls,
   }
 }

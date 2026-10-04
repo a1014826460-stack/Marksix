@@ -158,7 +158,14 @@ for (const line of panel.split("\n")) {
   }
 }
 const REVEAL_STATE_ASSIGN = {
-  _revealedCount: ["0", "nextCount", "Math.max(1, _computeRevealCountForTime(_revealStartSec, getServerNowSeconds()))"],
+  _revealedCount: [
+    "0",
+    "nextCount",
+    "Math.max(1, _computeRevealCountForTime(_revealStartSec, getServerNowSeconds()))",
+    // 服务端分片揭示：revealed_count 由后端按同一锚点 + 25 秒节拍算出，面板直接采用
+    // （见下方对 backend/src/public/draw_reveal.py 的同时间线断言）。
+    "_serverRevealCountForPayload(payload)",
+  ],
   _revealStartSec: ["0", "_resolveRevealStartSec(payload)"],
 }
 for (const [variable, allowed] of Object.entries(REVEAL_STATE_ASSIGN)) {
@@ -170,6 +177,34 @@ for (const [variable, allowed] of Object.entries(REVEAL_STATE_ASSIGN)) {
     if (!allowed.includes(rhs)) {
       throw new Error(`${variable} 只能由全局锚点/服务端时间推出，出现非法赋值: ${rhs}`)
     }
+  }
+}
+// 服务端分片揭示（2026-10-04）后进度可以由后端下发，但后端必须与面板共用同一条
+// 时间线：同一个 25 秒间隔、同一个锚点（reveal_start 优先 draw_time）、同一个
+// floor(已过秒/25)+1 公式。否则「准时轮询」就退化成各算各的。
+const revealModule = fs.readFileSync("backend/src/public/draw_reveal.py", "utf8")
+const revealTimeline = [
+  ["REVEAL_INTERVAL_SECONDS = 25", "后端分片间隔必须是 25 秒"],
+  ['for key in ("reveal_start", "draw_time"):', "后端锚点必须 reveal_start 优先、退回 draw_time"],
+  ["int(elapsed_seconds // max(1, int(interval_seconds))) + 1", "后端揭示数必须是 floor(已过秒/25)+1"],
+  ["result[\"special_ball\"] = revealed[DRAW_BALL_COUNT - 1] if is_complete else None", "后端只在第 7 个号码开放时才下发特码"],
+]
+for (const [token, why] of revealTimeline) {
+  if (!revealModule.includes(token)) throw new Error(`后端分片揭示不变量丢失（${why}）: ${token}`)
+}
+// 面板必须只采用服务端进度，不得再自己按页面加载时刻算一遍。
+if (!panel.includes("_revealedCount = _serverRevealCountForPayload(payload);")) {
+  throw new Error("服务端分片揭示必须以 revealed_count 为权威进度")
+}
+// 拿不到全部 7 个号码时必须降级为「同步中」，而不是清空面板或报错。
+for (const token of [
+  "function _markRevealStalled() {",
+  "resultSyncPending:",
+  "var stalled = _serverPacedReveal && _revealedCount < 7;",
+  "function _keepPollingUntilComplete(payload, issue) {",
+]) {
+  if (!panel.includes(token)) {
+    throw new Error(`部分号码降级路径缺失: ${token}`)
   }
 }
 // 台湾彩（3）必须走定时揭示，而不是香港彩（1）的轮序发布分支。

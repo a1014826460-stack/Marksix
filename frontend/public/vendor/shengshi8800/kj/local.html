@@ -171,6 +171,9 @@
       var _lastRenderedIssue = "";
       var _loadingLatestDraw = false;
       var _lastProgressiveBallCount = 0;
+      // 服务端分片揭示进行中：后端按 reveal_start + 25s×N 逐球下发号码，
+      // 面板只画「此刻可用」的球并继续轮询，直到 7 个号码齐全。
+      var _serverPacedReveal = false;
       var _scheduledCurrentIssue = "";
       var _scheduledNextIssue = "";
       var _revealTargetIssue = "";
@@ -204,6 +207,7 @@
         refreshFailed: "刷新失败",
         historyLink: "查看历史记录",
         loadErrorPrefix: "开奖结果加载失败：",
+        resultSyncPending: "开奖结果同步中...",
         unknownError: "未知错误"
       };
 
@@ -473,6 +477,68 @@
         return false;
       }
 
+      // ── 服务端分片揭示（后端 public/draw_reveal.py 为唯一节奏来源）──────────
+      // 后端在响应边界上按 reveal_start + 25s×N 裁号码，并在载荷里带上
+      // revealed_count / total_balls / is_complete。面板不再自己造时间线：
+      // 它只画「此刻可用」的号码，未开放的槽位保持空态占位（--），
+      // 并继续 5 秒轮询，直到 7 个号码齐全为止。
+      // 旧部署/旧快照没有 revealed_count 时返回 null，走原有定时揭示逻辑。
+      function _serverRevealedCount(payload) {
+        if (!payload) return null;
+        var raw = payload.revealed_count;
+        if (typeof raw !== "number" || !isFinite(raw)) return null;
+        return Math.max(0, Math.min(7, Math.floor(raw)));
+      }
+
+      /**
+       * 服务端分片揭示的权威进度：后端按同一个锚点（reveal_start 优先 draw_time）
+       * 和同一个 25 秒节拍算出 revealed_count，面板直接采用，避免本地时钟、
+       * 页面加载时刻或刷新次数造成进度漂移。
+       */
+      function _serverRevealCountForPayload(payload) {
+        var count = _serverRevealedCount(payload);
+        return count === null ? 0 : count;
+      }
+
+      /** 载荷里已下发的号码，补齐到 7 个槽位（缺失为 null，画成 --）。 */
+      function _serverPayloadBalls(payload) {
+        var balls = [];
+        if (payload && Array.isArray(payload.result_balls)) {
+          balls = payload.result_balls.slice(0, 6);
+        }
+        if (payload && payload.special_ball) {
+          balls.push(payload.special_ball);
+        }
+        while (balls.length < 7) {
+          balls.push(null);
+        }
+        return balls;
+      }
+
+      function _renderServerPacedStep(payload) {
+        var balls = _serverPayloadBalls(payload);
+        var count = _serverRevealedCount(payload);
+        if (count === null) count = 0;
+        for (var i = 0; i < 7; i++) {
+          setBall(i, i < count && balls[i] ? balls[i] : null);
+        }
+      }
+
+      /**
+       * 兜底：载荷不足 7 个号码、又没有 revealed_count（老后端 / 旧快照）时，
+       * 只要还在揭示窗口内就继续轮询，避免面板停在「半个结果」上不动。
+       */
+      function _keepPollingUntilComplete(payload, issue) {
+        if (!issue || _revealPolling || _revealActive || isProgressiveReveal) return;
+        if (_hasFullBalls(payload)) return;
+        var anchorSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        if (!(anchorSec > 0)) return;
+        var elapsedSec = getServerNowSeconds() - anchorSec;
+        if (elapsedSec < 0 || elapsedSec > REVEAL_WINDOW_SEC) return;
+        beginRevealPolling(true);
+        _revealWindowEndsAtSec = anchorSec + REVEAL_WINDOW_SEC;
+      }
+
       function _renderRevealStep() {
         for (var i = 0; i < 7; i++) {
           if (i < _revealedCount && _pendingBalls && i < _pendingBalls.length) {
@@ -608,6 +674,12 @@
           badge.style.borderColor = "#e53e3e";
           return;
         }
+        if (_serverPacedReveal && _revealPolling) {
+          // 号码正按服务端节拍逐个开放：显示「开奖中...」，而不是「核验中」。
+          badge.textContent = UI_TEXT.countdownRevealing;
+          badge.style.borderColor = "#e53e3e";
+          return;
+        }
         if (_revealPolling) {
           badge.textContent = UI_TEXT.countdownWaiting;
           badge.style.borderColor = "#e53e3e";
@@ -672,9 +744,9 @@
         updateCountdownDisplay();
       }
 
-      function beginRevealPolling() {
+      function beginRevealPolling(keepRendered) {
         if (_revealActive) return;
-        if (_scheduledNextIssue) {
+        if (_scheduledNextIssue && !keepRendered) {
           _revealTargetIssue = _scheduledNextIssue;
           showPendingIssue(_revealTargetIssue);
         }
@@ -695,12 +767,30 @@
         _revealPollTimerId = setInterval(function () {
           if (_revealActive) return;
           if (!isProgressiveReveal && _revealWindowEndsAtSec > 0 && getServerNowSeconds() > _revealWindowEndsAtSec) {
+            // 揭示窗口结束：号码齐全时正常收尾；只拿到部分号码（服务端未开放完、
+            // 上游数据缺失或网络中断）时保留已开放的球，仅把状态文案改成
+            // 「开奖结果同步中...」，既不整排清空也不抛错。
+            var stalled = _serverPacedReveal && _revealedCount < 7;
             stopRevealPolling();
-            fetchCountdownDeadline();
+            fetchCountdownDeadline().then(function () {
+              countdownExpired = false;
+              updateCountdownDisplay();
+              if (stalled) _markRevealStalled();
+            });
             return;
           }
           load({ reveal: true, background: true, preserveWhenPending: true });
         }, REVEAL_POLL_INTERVAL_MS);
+      }
+
+      /** 揭示窗口结束时仍不足 7 个号码：保留已渲染的球，只提示同步中。 */
+      function _markRevealStalled() {
+        _serverPacedReveal = false;
+        var badge = $("countdownBadge");
+        if (badge) {
+          badge.textContent = UI_TEXT.resultSyncPending;
+          badge.style.borderColor = "#ff7a00";
+        }
       }
 
       function updateBeijingDate() {
@@ -896,6 +986,7 @@
           var progressiveBallCount = _progressiveBallCount(payload);
           var hasProgressiveBalls = isProgressiveReveal && progressiveBallCount > 0;
           var progressiveGrew = hasProgressiveBalls && progressiveBallCount > _lastProgressiveBallCount;
+          var serverRevealedCount = _serverRevealedCount(payload);
           debugLog("latest-draw:evaluated", {
             issue: issue,
             payloadCurrentIssue: payload && payload.current_issue,
@@ -913,6 +1004,7 @@
             shouldStartRevealFromPolling: shouldStartRevealFromPolling,
             hasFullBalls: hasFullBalls,
             progressiveBallCount: progressiveBallCount,
+            serverRevealedCount: serverRevealedCount,
             drawTime: payload && payload.draw_time ? payload.draw_time : "",
             revealStart: _revealStartRaw(payload)
           });
@@ -948,6 +1040,61 @@
             return;
           }
 
+          // ── 服务端分片揭示（非港彩走这里；港彩仍走上面的轮序发布分支）────────
+          // 后端已按 reveal_start + 25s×N 裁好号码（港彩再按源站已入库球数封顶），
+          // 面板只渲染「此刻可用」的球，未开放的槽位保持空态占位，
+          // 并继续 5 秒轮询到 7 个号码齐全。
+          //
+          // 例外：正在等新一期时（_revealTargetIssue 比载荷期号新），载荷可能还是
+          // 上一期的**完整**结果（快照/短缓存陈旧）。这种「旧期已完整」不能当成
+          // 本轮收尾 —— 否则轮询会被停掉，面板将永远停在上一期。
+          // 这类载荷交给下面的 shouldHoldPendingTarget 分支：保持待揭示空态 + 继续轮询。
+          var serverPacedStaleTarget = serverRevealedCount !== null
+            && !!_revealTargetIssue
+            && comparedToRevealTarget < 0;
+          if (!hasProgressiveBalls && serverRevealedCount !== null && issue && !serverPacedStaleTarget) {
+            var serverCompleted = serverRevealedCount >= 7;
+            var justCompleted = serverCompleted && _serverPacedReveal;
+            debugLog("latest-draw:branch-server-paced", {
+              issue: issue,
+              revealedCount: serverRevealedCount,
+              isComplete: serverCompleted,
+              revealStart: _revealStartRaw(payload)
+            });
+            _pendingBalls = _serverPayloadBalls(payload);
+            _revealedCount = _serverRevealCountForPayload(payload);
+            _revealStartSec = _resolveRevealStartSec(payload);
+            _revealTargetIssue = issue;
+            updateIssueInfo(payload || {});
+            _renderServerPacedStep(payload);
+            _lastRenderedIssue = issue;
+            if (serverCompleted) {
+              _serverPacedReveal = false;
+              if (justCompleted) {
+                _stopReveal(true);
+              } else {
+                stopRevealPolling(true);
+              }
+              if (isManual) {
+                setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+              }
+              return;
+            }
+            _serverPacedReveal = true;
+            if (!_revealPolling) {
+              beginRevealPolling(true);
+              // 窗口按揭示锚点计算：晚开盘时也要留够 7 个号码的开放时间。
+              if (_revealStartSec > 0) {
+                _revealWindowEndsAtSec = _revealStartSec + REVEAL_WINDOW_SEC;
+              }
+            }
+            updateCountdownDisplay();
+            if (isManual) {
+              setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+            }
+            return;
+          }
+
           if (shouldStartTargetReveal || shouldStartRevealFromPolling || shouldRevealCurrentPayload) {
             if (issue) {
               _revealTargetIssue = issue;
@@ -966,6 +1113,11 @@
               revealTargetIssue: _revealTargetIssue
             });
             showPendingIssue(_revealTargetIssue);
+            // 待揭示的新期还没出现：确保 5 秒轮询仍在跑。
+            // （例如上一轮轮询曾被「陈旧但完整的上一期载荷」误停时，这里把它接回去。）
+            if (!_revealPolling && !_revealActive) {
+              beginRevealPolling(true);
+            }
           } else {
             if (_revealTargetIssue && !isRevealTargetIssue && (isOlderThanRevealTarget || !isNewIssue) && !keepCurrentWhenPending) {
               debugLog("latest-draw:branch-manual-keep-pending-target", {
@@ -981,6 +1133,7 @@
                 lastRenderedIssue: _lastRenderedIssue
               });
               render(payload || {});
+              _keepPollingUntilComplete(payload, issue);
             }
             if (_revealTargetIssue && hasFullBalls && compareIssues(issue, _revealTargetIssue) >= 0) {
               debugLog("latest-draw:clear-reveal-target", {

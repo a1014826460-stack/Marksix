@@ -507,7 +507,7 @@ def load_public_draw_snapshot(
     with connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT year, term, numbers, draw_time
+            SELECT year, term, numbers, draw_time, opened_at
             FROM lottery_draws
             WHERE lottery_type_id = ?
               AND is_opened = 1
@@ -522,6 +522,8 @@ def load_public_draw_snapshot(
         if not row:
             return {
                 "current_issue": "",
+                "draw_time": "",
+                "reveal_start": "",
                 "result_balls": [],
                 "special_ball": None,
             }
@@ -540,6 +542,11 @@ def load_public_draw_snapshot(
 
     return {
         "current_issue": f"{latest_draw.get('year') or ''}{latest_draw.get('term') or ''}",
+        # 揭示锚点：与 /public/latest-draw 同源（opened_at 优先、退回 draw_time），
+        # 站点聚合出口据此在响应边界上逐球开放号码。
+        "draw_time": str(latest_draw.get("draw_time") or ""),
+        "reveal_start": str(latest_draw.get("opened_at") or "")
+        or str(latest_draw.get("draw_time") or ""),
         "result_balls": balls[:-1],
         "special_ball": balls[-1] if balls else None,
     }

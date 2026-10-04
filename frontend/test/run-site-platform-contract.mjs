@@ -31,6 +31,37 @@ if (config.bridge.runtime.draw_selector !== ".KJ-TabBox" || config.bridge.runtim
 
 const draw = normalizeSiteDraw({ current_issue: "2026125", result_balls: [{ value: "1", color: "red", zodiac: "馬" }], special_ball: { value: "49", color: "green", zodiac: "雞" } }, { next_issue: "2026126", next_time: "2026-05-21 21:30:00" })
 if (draw.balls.length !== 2 || draw.balls[0].value !== "01" || !draw.balls[1].is_special || draw.balls[0].zodiac !== "马") throw new Error("draw normalization must pad values, normalize zodiac, and mark special balls")
+// 服务端分片揭示（backend/src/public/draw_reveal.py）：进度字段必须透传给站点桥，
+// 前端据此补齐占位槽并继续轮询；缺字段的旧后端不做时间推断，只按实际号码数判断是否完整。
+if (draw.revealed_count !== null || draw.total_balls !== 7 || draw.reveal_interval_seconds !== 25 || draw.is_complete !== false) {
+  throw new Error("legacy draw payload without reveal fields must fall back to ball-count completeness")
+}
+const legacyComplete = normalizeSiteDraw({
+  current_issue: "2026125",
+  result_balls: [1, 2, 3, 4, 5, 6].map((value) => ({ value: String(value), color: "red", zodiac: "鼠" })),
+  special_ball: { value: "49", color: "green", zodiac: "鸡" },
+}, { next_issue: "2026126", next_time: "2026-05-21 21:30:00" })
+if (legacyComplete.is_complete !== true || legacyComplete.revealed_count !== null) {
+  throw new Error("legacy draw payload with 7 balls must be treated as complete")
+}
+const slicedDraw = normalizeSiteDraw({
+  current_issue: "2026125",
+  draw_time: "2026-10-04 22:32:00",
+  reveal_start: "2026-10-04 22:32:02",
+  result_balls: [{ value: "7", color: "red", zodiac: "鼠" }],
+  special_ball: null,
+  revealed_count: 1,
+  total_balls: 7,
+  reveal_interval_seconds: 25,
+  is_complete: false,
+  next_reveal_at: "2026-10-04 22:32:27",
+}, { next_issue: "2026126", next_time: "2026-05-21 21:30:00" })
+if (slicedDraw.revealed_count !== 1 || slicedDraw.is_complete !== false || slicedDraw.balls.length !== 1) {
+  throw new Error("server-paced draw payload must expose its reveal progress")
+}
+if (slicedDraw.reveal_start !== "2026-10-04 22:32:02" || slicedDraw.next_reveal_at !== "2026-10-04 22:32:27") {
+  throw new Error("server-paced draw payload must carry the reveal anchor and next reveal time")
+}
 
 const invalidRouteInput = { identity: { siteKey: "route-site", domains: ["example.test"], routePath: "/custom-route", siteId: 1, webId: 1, defaultLotteryType: 3 }, frontend: { renderMode: "iframe-vendor", vendorIndexPath: "/vendor/route-site/index.html", legacyPublicBasePath: "/vendor/route-site", defaultGame: "taiwan", forumTitle: "Route" }, bridge: { api: { httpApiBase: "", kaijiangApiBase: "/api/kaijiang" }, autoLoad: { draw: false, prediction: false }, predictionModuleKeys: [] }, brand: { siteName: "Route", navigation: [], footer: { copyright: "" } }, security: { externalScriptOrigins: [], externalNavigationOrigins: [] } }
 let invalidRouteRejected = false

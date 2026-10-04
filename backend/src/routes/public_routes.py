@@ -13,6 +13,7 @@ from public.api import (
     get_public_next_draw_deadline,
     get_public_site_page_data,
 )
+from public.draw_reveal import apply_reveal_slice
 
 from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
@@ -81,16 +82,16 @@ def site_page(ctx: RequestContext) -> None:
     # 站点资料聚合实测 588 KB / 7.5 秒；只有 site_id 与 lottery_type 都明确时才快照，
     # 否则键无法稳定，直接按原路径构建。
     if site_id in (None, "") or lottery_type in (None, ""):
-        ctx.send_json(build())
+        _send_site_page(ctx, build())
         return
     try:
         site_token = int(site_id)
         lottery_token = int(lottery_type)
     except (TypeError, ValueError):
-        ctx.send_json(build())
+        _send_site_page(ctx, build())
         return
     if site_token <= 0 or lottery_token <= 0:
-        ctx.send_json(build())
+        _send_site_page(ctx, build())
         return
 
     selector = _site_page_selector(
@@ -101,7 +102,8 @@ def site_page(ctx: RequestContext) -> None:
         mode_ids,
         ctx.query_value("domain"),
     )
-    ctx.send_json(
+    _send_site_page(
+        ctx,
         read_through(
             ctx.state.get("prediction_snapshots"),
             kind=KIND_SITE,
@@ -110,8 +112,21 @@ def site_page(ctx: RequestContext) -> None:
             selector=selector,
             builder=build,
             db_path=ctx.db_path,
-        )
+        ),
     )
+
+
+def _send_site_page(ctx: RequestContext, payload: Any) -> None:
+    """站点聚合出口：模块资料照常缓存，开奖号码在响应边界上按服务器时间逐球开放。
+
+    快照里保存的是**完整**载荷，因此同一条快照在不同时刻会返回不同的号码前缀，
+    既不会把半个结果冻进缓存，也不会让任何人一次拿到全部 7 个号码。
+    """
+    if isinstance(payload, dict):
+        draw = payload.get("draw")
+        if isinstance(draw, dict):
+            payload = {**payload, "draw": apply_reveal_slice(draw)}
+    ctx.send_json(payload)
 
 
 def _site_page_selector(
@@ -159,13 +174,14 @@ def latest_draw(ctx: RequestContext) -> None:
         except CacheUnavailable:
             cached = None
         if cached is not None:
-            ctx.send_json(cached)
+            # 缓存里始终是完整载荷；号码按服务器时间在响应边界上逐球开放。
+            ctx.send_json(apply_reveal_slice(cached))
             return
 
     # A just-published result must not wait for a replica to catch up.
     payload = get_public_latest_draw(ctx.write_db_path, lottery_type)
     _backfill_latest_draw(snapshots, lottery_type, payload)
-    ctx.send_json(payload)
+    ctx.send_json(apply_reveal_slice(payload))
 
 
 def next_draw_deadline(ctx: RequestContext) -> None:

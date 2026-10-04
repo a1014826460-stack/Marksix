@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
@@ -235,7 +235,9 @@
             var shengarr = res.zodiac.split(',');
             var wavearr = res.wave.split(',');
             var wuxinarr = res.wuxin.split(',');
-            for (var i =0; i <ballarr.length; i++){
+            // 服务端按 25 秒一个号码逐球开放：号码没到齐时只画到当前已开放的个数，
+            // 但槽位固定 7 个（未开放显示「官网正在搅珠中」），避免整排消失或错位。
+            for (var i =0; i <7; i++){
                 var bg = 'hui.png';
                 if(wavearr[i]=='blue'){
                     bg = 'static/image/b.png';

@@ -29,6 +29,22 @@
     return Object.assign({}, previous || {}, incoming, { balls: balls });
   }
 
+  // 服务端分片揭示：号码按 reveal_start + 25s×N 逐球开放（backend/src/public/draw_reveal.py），
+  // 因此 `balls` 在揭示窗口内会少于 7 个。渲染时必须补齐占位槽，并在号码没齐时继续轮询，
+  // 否则这个板块会停在「半个结果」上不动。
+  var DRAW_POLL_INTERVAL_MS = 5000;
+  var DRAW_POLL_WINDOW_MS = 210000;
+  var KNOWN_TOTAL_BALLS = 7;
+
+  function drawRevealPending(draw) {
+    if (!draw) return false;
+    if (draw.is_complete === true) return false;
+    var total = Number(draw.total_balls) > 0 ? Number(draw.total_balls) : KNOWN_TOTAL_BALLS;
+    var revealed = Number(draw.revealed_count);
+    if (!isFinite(revealed)) return false;
+    return revealed < total;
+  }
+
   function renderDraw(config, draw, loading) {
     var mount = target(config, "draw_selector");
     if (!mount) return;
@@ -37,18 +53,30 @@
     var title = node("div", "vendor-shared-draw-title", draw ? "第 " + text(draw.current_issue) + " 期开奖号码" : "开奖资料");
     box.appendChild(title);
     var balls = node("div", "vendor-shared-draw-balls");
-    if (draw && draw.balls && draw.balls.length) {
-      draw.balls.forEach(function (ball) {
+    var drawBalls = (draw && Array.isArray(draw.balls)) ? draw.balls : [];
+    if (drawBalls.length) {
+      var total = Number(draw.total_balls) > 0 ? Number(draw.total_balls) : KNOWN_TOTAL_BALLS;
+      var slots = drawRevealPending(draw) ? total : drawBalls.length;
+      for (var index = 0; index < slots; index += 1) {
+        var ball = drawBalls[index];
+        if (!ball || !text(ball.value).trim()) {
+          // 尚未开放的槽位：保持占位，避免整排消失或错位。
+          balls.appendChild(node("span", "vendor-shared-ball vendor-shared-ball-pending", "--"));
+          continue;
+        }
         var ballNode = node("span", "vendor-shared-ball vendor-shared-ball-" + (ball.color || "red") + (ball.is_special ? " is-special" : ""));
         ballNode.appendChild(node("b", "vendor-shared-ball-value", ball.value));
         ballNode.appendChild(node("small", "vendor-shared-ball-zodiac", ball.zodiac));
         balls.appendChild(ballNode);
-      });
+      }
     } else {
       balls.appendChild(node("span", "vendor-shared-loading", loading ? "开奖数据加载中..." : "暂无开奖结果"));
     }
     box.appendChild(balls);
     if (draw && draw.next_issue) box.appendChild(node("div", "vendor-shared-next", "下期：" + text(draw.next_issue)));
+    if (drawRevealPending(draw)) {
+      box.appendChild(node("div", "vendor-shared-draw-pending", "开奖中..."));
+    }
     mount.appendChild(box);
   }
 
@@ -129,7 +157,7 @@
     if (document.getElementById("vendor-shared-runtime-style")) return;
     var style = document.createElement("style");
     style.id = "vendor-shared-runtime-style";
-    style.textContent = ".vendor-shared-nav-fixed{position:fixed!important;top:0;left:0;right:0;z-index:10001}.vendor-shared-kj-tabs{height:auto;overflow:visible;color:#333;background:#fff;font-family:Arial,sans-serif}.vendor-shared-kj-tabs ul{display:flex;list-style:none;margin:0;padding:8px;border-bottom:2px solid #fff}.vendor-shared-kj-tabs li{flex:1;margin:0 4px;padding:6px;text-align:center;border-radius:4px;background:#eee;cursor:pointer}.vendor-shared-kj-tabs li.cur{color:#fff;background:#1fb61d}.vendor-shared-kj-tabs li:nth-child(2).cur{background:#e71607}.vendor-shared-kj-tabs li:nth-child(3).cur{background:#2389e9}.vendor-shared-draw,.vendor-shared-predictions,.vendor-shared-footer{max-width:800px;margin:8px auto;text-align:center}.vendor-shared-draw{padding:8px;background:#fff;border:1px solid #ddd}.vendor-shared-draw-title,.vendor-shared-predictions-title{font-weight:bold;color:#fff;background:#0a5cda;padding:7px}.vendor-shared-draw-balls{display:flex;justify-content:center;gap:6px;padding:8px;flex-wrap:wrap}.vendor-shared-ball{display:inline-flex;flex-direction:column;justify-content:center;width:38px;height:38px;border-radius:50%;color:#fff}.vendor-shared-ball-red{background:#d71920}.vendor-shared-ball-blue{background:#1677d2}.vendor-shared-ball-green{background:#1ca64c}.vendor-shared-ball.is-special{box-shadow:0 0 0 3px #f4d000}.vendor-shared-ball-zodiac{font-size:10px}.vendor-shared-prediction-card{border:1px solid #ddd;background:#fff;margin:8px 0}.vendor-shared-prediction-title{color:#333;background:#fff6bf}.vendor-shared-prediction-row{padding:8px;border-top:1px solid #eee}.vendor-shared-loading{padding:12px;color:#777}.vendor-shared-error{padding:8px;color:#c00}.vendor-shared-footer img{display:block;width:100%;margin:8px 0}.vendor-shared-footer a{display:inline-block;margin:0 8px}.vendor-shared-footer-copyright{padding:8px;color:#666}";
+    style.textContent = ".vendor-shared-nav-fixed{position:fixed!important;top:0;left:0;right:0;z-index:10001}.vendor-shared-kj-tabs{height:auto;overflow:visible;color:#333;background:#fff;font-family:Arial,sans-serif}.vendor-shared-kj-tabs ul{display:flex;list-style:none;margin:0;padding:8px;border-bottom:2px solid #fff}.vendor-shared-kj-tabs li{flex:1;margin:0 4px;padding:6px;text-align:center;border-radius:4px;background:#eee;cursor:pointer}.vendor-shared-kj-tabs li.cur{color:#fff;background:#1fb61d}.vendor-shared-kj-tabs li:nth-child(2).cur{background:#e71607}.vendor-shared-kj-tabs li:nth-child(3).cur{background:#2389e9}.vendor-shared-draw,.vendor-shared-predictions,.vendor-shared-footer{max-width:800px;margin:8px auto;text-align:center}.vendor-shared-draw{padding:8px;background:#fff;border:1px solid #ddd}.vendor-shared-draw-title,.vendor-shared-predictions-title{font-weight:bold;color:#fff;background:#0a5cda;padding:7px}.vendor-shared-draw-balls{display:flex;justify-content:center;gap:6px;padding:8px;flex-wrap:wrap}.vendor-shared-ball{display:inline-flex;flex-direction:column;justify-content:center;width:38px;height:38px;border-radius:50%;color:#fff}.vendor-shared-ball-red{background:#d71920}.vendor-shared-ball-blue{background:#1677d2}.vendor-shared-ball-green{background:#1ca64c}.vendor-shared-ball.is-special{box-shadow:0 0 0 3px #f4d000}.vendor-shared-ball-pending{background:#e4e4e4!important;color:#8a8a8a}.vendor-shared-draw-pending{padding:0 0 8px;color:#ff7a00}.vendor-shared-ball-zodiac{font-size:10px}.vendor-shared-prediction-card{border:1px solid #ddd;background:#fff;margin:8px 0}.vendor-shared-prediction-title{color:#333;background:#fff6bf}.vendor-shared-prediction-row{padding:8px;border-top:1px solid #eee}.vendor-shared-loading{padding:12px;color:#777}.vendor-shared-error{padding:8px;color:#c00}.vendor-shared-footer img{display:block;width:100%;margin:8px 0}.vendor-shared-footer a{display:inline-block;margin:0 8px}.vendor-shared-footer-copyright{padding:8px;color:#666}";
     document.head.appendChild(style);
   }
 
@@ -139,13 +167,40 @@
     window.LotterySiteRuntimeMounted = true;
     var activationEpoch = 0;
     var drawState = null;
+    var drawPollTimerId = null;
+    var drawPollStartedAt = 0;
     function scheduleIdle(callback) {
       if (typeof window.requestIdleCallback === "function") return window.requestIdleCallback(callback, { timeout: 120 });
       return window.setTimeout(callback, 0);
     }
+    function stopDrawPolling() {
+      if (drawPollTimerId === null) return;
+      window.clearTimeout(drawPollTimerId);
+      drawPollTimerId = null;
+    }
+    function pollDrawUntilComplete(config, epoch, query) {
+      if (epoch !== activationEpoch) return;
+      if (!drawRevealPending(drawState)) return;
+      if (drawPollStartedAt && Date.now() - drawPollStartedAt > DRAW_POLL_WINDOW_MS) return;
+      drawPollTimerId = window.setTimeout(function () {
+        drawPollTimerId = null;
+        if (epoch !== activationEpoch) return;
+        bridge.getDraw(query).then(function (draw) {
+          if (epoch !== activationEpoch) return;
+          drawState = mergeDraw(drawState, draw);
+          renderDraw(config, drawState, false);
+          pollDrawUntilComplete(config, epoch, query);
+        }).catch(function () {
+          // 拿不到新号码时保持已渲染内容，继续在当前窗口内重试。
+          pollDrawUntilComplete(config, epoch, query);
+        });
+      }, DRAW_POLL_INTERVAL_MS);
+    }
     function activate(config) {
       var epoch = ++activationEpoch;
       drawState = null;
+      stopDrawPolling();
+      drawPollStartedAt = 0;
       installStyles();
       enableStickyNavigation(config);
       renderFooter(config);
@@ -156,6 +211,9 @@
           if (epoch !== activationEpoch) return;
           drawState = mergeDraw(drawState, draw);
           renderDraw(config, drawState, false);
+          // 服务端分片揭示进行中：号码没齐就继续轮询到齐全或窗口结束。
+          drawPollStartedAt = Date.now();
+          pollDrawUntilComplete(config, epoch, query);
         }).catch(function () { if (epoch === activationEpoch) renderDraw(config, null, false); });
       }
       if (config.bridge.auto_load.prediction) {

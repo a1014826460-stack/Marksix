@@ -18,6 +18,34 @@
 
 ## 概览
 
+### 开奖号码服务端分片揭示（2026-10-04，本地实现，待发布）
+
+- 问题：`/api/public/latest-draw` 过去在 `is_opened=1` 那一刻一次性下发 6 平码 + 特码；
+  面板「每 25 秒一个球」只是前端定时器动画，任何直接请求接口 / 看 DevTools Network /
+  抓包的人都能在开盘瞬间拿到全部 7 码（比看动画的人早约 2.5 分钟）。
+- 改造：新增 `backend/src/public/draw_reveal.py`，在**响应边界**按
+  `reveal_start + 25s×N`（锚点 = `opened_at`，缺失退回 `draw_time`）逐球开放，并下发
+  `revealed_count` / `total_balls` / `reveal_interval_seconds` / `is_complete` / `next_reveal_at`。
+  缓存与 outbox 快照仍保存**完整**载荷（`routes/public_routes.py::latest_draw` 只在
+  `send_json` 前切片），因此同一时刻所有客户端拿到的号码数完全一致。
+- 面板：`frontend/public/vendor/shengshi8800/kj/local.html` 改为以 `revealed_count` 为权威进度，
+  未开放槽位保持空态占位并继续 5 秒轮询到 7 个号码齐全；揭示窗口按锚点 + 210 秒计算
+  （晚开盘也留够 7 球时间）；拿不到 7 个号码时保留已开放的球并显示「开奖结果同步中...」，
+  不清空面板、不抛错。
+- 兼容：全部彩种统一 25 秒节奏（香港彩源站逐个补全，可见数量再按「已入库球数」封顶）；
+  `/api/sites/<key>/draw`、`/wy.json` 经同一后端出口自动继承分片；
+  twsaimahui 共享开奖板块补齐占位槽并在未完整时轮询；
+  twcaibawang `wy.html` 固定渲染 7 个槽位（未开放显示「官网正在搅珠中」）。
+- 本地验收：后端 `python -m pytest -q` → 1195 passed / 17 skipped / 1 failed（既有 Nginx
+  健康代理契约，与本轮无关）；`pnpm site:test-kj-panel` 四条契约通过；
+  `node frontend/test/run-site-platform-contract.mjs` 通过；
+  `python scripts/check-latest-draw-reveal.py --seed-local --database-url "$env:DATABASE_URL" --duration 230`
+  现场核验号码逐球开放且特码只在第 7 球出现。
+- 上线步骤（需另行授权）：两节点备份 → `git fetch` + `merge --ff-only` → 重建 `python-api` 与
+  `frontend` → 开奖窗口内跑
+  `python scripts/check-latest-draw-reveal.py --base-url https://www.tw8800.com --lottery-type 3 --duration 260`
+  → 十站展示审计要求 `error=0 / js_errors=0`。
+
 ### twsyw 隐藏脚本加载器清理（2026-09-30）
 
 - 代码提交 `f88470f`：用官方 jQuery 1.10.2 替换 twsyw 夹带外部脚本加载器的 `jquery.js`，53 个页面更新缓存版本参数。

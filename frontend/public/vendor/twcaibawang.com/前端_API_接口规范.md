@@ -117,10 +117,16 @@ function getKaijiangApi() {
 
 ### 4.4 字段定义
 
+> **服务端分片揭示（2026-10-04 起）**：`/api/latest-draw`（以及本文件描述的 `/wy.json`）
+> 的号码由后端按 `reveal_start + 25s×N` 逐球开放，因此开盘后前 150 秒内
+> `openCode` / `zodiac` / `wave` / `wuxin` 的 CSV 长度会小于 7，逐球增长到 7 为止。
+> `wy.html` 固定渲染 7 个槽位，未开放的槽位显示「官网正在搅珠中」。
+> 展示层不得把「长度不足 7」当作错误或空结果。
+
 | 字段 | 类型 | 必填 | 说明 | 前端使用位置 |
 | --- | --- | --- | --- | --- |
 | `expect` | string | 是 | 当前开奖期号 | `#q` |
-| `openCode` | string | 是 | 7 个号码 CSV，建议保留前导 0，例如 `01,02,...,49` | 渲染 6 个正码 + 1 个特码 |
+| `openCode` | string | 是 | 号码 CSV，建议保留前导 0，例如 `01,02,...,49` | 渲染 6 个正码 + 1 个特码 |
 | `zodiac` | string | 是 | 7 个生肖 CSV | 每个号码下方显示 `生肖/五行` |
 | `wave` | string | 是 | 7 个波色 CSV，值必须是 `red/blue/green` | 决定球背景 `r.png/g.png/b.png` |
 | `wuxin` | string | 是 | 7 个五行 CSV | 每个号码下方显示 |

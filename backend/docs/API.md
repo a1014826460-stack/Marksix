@@ -493,6 +493,13 @@ const data = await res.json()
 }
 ```
 
+开奖号码揭示：
+
+- `draw` 段与 `/api/public/latest-draw` 同源同节奏：号码从 `reveal_start` 起每 25 秒开放一个，
+  并按 `revealed_count` / `total_balls` / `is_complete` / `next_reveal_at` 报告进度。
+- 聚合快照（`KIND_SITE`）里保存的是**完整**号码，逐球开放发生在响应边界，
+  因此同一条快照在不同时刻返回不同的号码前缀，不会把半个结果冻进缓存。
+
 curl 示例：
 
 ```bash
@@ -525,7 +532,10 @@ const data = await res.json()
 
 ### GET `/api/public/latest-draw`
 
-接口说明：返回指定彩种最近一期已开奖数据。
+接口说明：返回指定彩种最近一期已开奖数据。号码按**服务端分片揭示**逐球开放：
+从 `reveal_start`（开盘瞬间的 `opened_at`，缺失时退回 `draw_time`）起每 25 秒开放一个号码，
+第 7 个号码（特码）在 `reveal_start + 150` 秒开放；节奏由 `public/draw_reveal.py` 唯一决定，
+与请求次数、页面刷新、浏览器时钟无关。
 
 鉴权要求：
 
@@ -543,27 +553,71 @@ const data = await res.json()
 {}
 ```
 
-成功响应：
+成功响应（开盘第 1 秒，只开放了第 1 个号码）：
 
 ```json
 {
-  "current_issue": "2026125",
+  "current_issue": "2026277",
+  "draw_time": "2026-10-04 22:32:00",
+  "reveal_start": "2026-10-04 22:32:02",
   "result_balls": [
-    { "value": "04", "color": "blue", "zodiac": "兔" }
+    { "value": "04", "color": "blue", "zodiac": "兔", "element": "木" }
+  ],
+  "special_ball": null,
+  "revealed_count": 1,
+  "total_balls": 7,
+  "reveal_interval_seconds": 25,
+  "is_complete": false,
+  "next_reveal_at": "2026-10-04 22:32:27"
+}
+```
+
+`reveal_start + 150` 秒之后（号码齐全）：
+
+```json
+{
+  "current_issue": "2026277",
+  "draw_time": "2026-10-04 22:32:00",
+  "reveal_start": "2026-10-04 22:32:02",
+  "result_balls": [
+    { "value": "04", "color": "blue", "zodiac": "兔", "element": "木" }
   ],
   "special_ball": {
     "value": "40",
     "color": "red",
-    "zodiac": "兔"
-  }
+    "zodiac": "兔",
+    "element": "土"
+  },
+  "revealed_count": 7,
+  "total_balls": 7,
+  "reveal_interval_seconds": 25,
+  "is_complete": true,
+  "next_reveal_at": ""
 }
 ```
+
+揭示进度字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `revealed_count` | int | 此刻允许对外可见的号码个数（`0..7`）；`0` 表示还没到 `reveal_start` |
+| `total_balls` | int | 一期号码总数，固定 `7` |
+| `reveal_interval_seconds` | int | 相邻号码的开放间隔，固定 `25` |
+| `is_complete` | bool | `revealed_count >= 7` 时为 `true`（特码此时才出现在 `special_ball`） |
+| `next_reveal_at` | string | 下一个号码的开放时刻（北京时间 `YYYY-MM-DD HH:MM:SS`）；已完整时为 `""` |
+
+边界说明：
+
+- 所有彩种共用同一条 25 秒节奏；香港彩由源站逐个补全号码，因此它的可见数量还会被
+  「源站已入库球数」封顶——揭示只会延后，永远不会一次放出多个号码。
+- 没有 `reveal_start` / `draw_time` 的旧载荷（例如历史空数据）不返回上述进度字段，行为与改造前一致。
 
 失败响应：
 
 ```json
 {
   "current_issue": "",
+  "reveal_start": "",
   "result_balls": [],
   "special_ball": null
 }
@@ -596,6 +650,9 @@ const data = await res.json()
 
 - 该接口只读取 `lottery_draws.is_opened = 1` 的记录
 - 不会因为未开奖期已经抓到 `numbers` 就提前对外展示
+- 号码可见数量只由「服务器时间 - `reveal_start`」决定：缓存里始终保存完整载荷，
+  分片发生在响应边界（`routes/public_routes.py::latest_draw` → `public/draw_reveal.py`），
+  因此同一时刻任何客户端拿到的号码个数都相同
 
 ### GET `/api/public/next-draw-deadline`
 
