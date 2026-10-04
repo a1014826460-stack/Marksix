@@ -53,6 +53,7 @@ globalThis.__hooks = {
   },
   setRevealTarget: function (issue) { _revealTargetIssue = normalizeIssue(issue); },
   polling: function () { return _revealPolling; },
+  manualRefresh: function () { return refreshWithDeadlineSync(); },
   notifications: function () { return notifications; },
 };
 `
@@ -130,6 +131,7 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
   sandbox.notifications = notifications
   sandbox.__state = state
   sandbox.__hooks.setPayload = (next) => { state.payload = next }
+  sandbox.__hooks.setDeadline = (next) => { state.deadline = next }
   return sandbox
 }
 
@@ -298,6 +300,51 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   if (state.painted !== 2) throw new Error(`new issue must paint its 2 revealed balls, got ${state.painted}`)
   if (!state.polling) throw new Error("new issue must keep polling until complete")
   if (state.revealedCount !== 2) throw new Error(`revealedCount must follow the server, got ${state.revealedCount}`)
+}
+
+// ── 7. 手动刷新不得清屏（2026-10-05 用户反馈）────────────────────────────
+// 修复前：揭示轮询中点击「刷新」会 showPendingIssue() 把 7 个球清成 `--`，
+// 然后直接返回等下一次 5 秒轮询，用户看到"号码全没了、几秒后才回来"。
+// 现在固定：刷新期间当前号码原地保留，新载荷与倒计时并发获取，原地替换。
+{
+  const nowSec = Math.floor(Date.now() / 1000)
+  const panel = loadPanel({
+    payload: slicedPayload({ issue: "2026275", revealedCount: 7, revealStartSec: nowSec - 600 }),
+    deadline: { next_issue: "2026276", next_time: nowSec + 60 },
+  })
+  panel.__hooks.setNow(nowSec)
+  await settle()
+  await panel.__hooks.load({ revealOnLoad: true })
+  await settle()
+  if (panel.__hooks.state().painted !== 7) throw new Error("baseline must show 7 balls")
+
+  // 刷新进行中（尚未 await）：号码必须还在屏幕上。
+  const refresh = panel.__hooks.manualRefresh()
+  if (panel.__hooks.state().painted !== 7) {
+    throw new Error("manual refresh must not clear the rendered balls")
+  }
+  await refresh
+  await settle()
+  if (panel.__hooks.state().painted !== 7) {
+    throw new Error("manual refresh must keep the balls after it settles")
+  }
+
+  // 倒计时已过、新期待揭示：刷新同样不清屏，并继续轮询等新期。
+  panel.__hooks.setDeadline({ next_issue: "2026276", next_time: nowSec - 1 })
+  await panel.__hooks.manualRefresh()
+  await settle()
+  let state = panel.__hooks.state()
+  if (state.painted !== 7) {
+    throw new Error(`refresh while waiting for a new issue must keep the balls, got ${state.painted}`)
+  }
+  if (!state.polling) throw new Error("refresh while waiting for a new issue must keep polling")
+
+  // 新期号码到达 → 原地替换成新期已开放的号码。
+  panel.__hooks.setPayload(slicedPayload({ issue: "2026276", revealedCount: 3 }))
+  await panel.__hooks.load({ reveal: true, background: true, preserveWhenPending: true })
+  await settle()
+  state = panel.__hooks.state()
+  if (state.painted !== 3) throw new Error(`new issue must replace the old balls once it arrives, got ${state.painted}`)
 }
 
 console.log("kj panel server-paced reveal contract passed")

@@ -746,9 +746,15 @@
 
       function beginRevealPolling(keepRendered) {
         if (_revealActive) return;
-        if (_scheduledNextIssue && !keepRendered) {
+        if (_scheduledNextIssue) {
+          // 无论是否保留已渲染号码，都要标记「待揭示期」：
+          // 这样轮询期间收到的上一期完整载荷不会走收尾分支（见服务端分片分支的 stale 判定）。
           _revealTargetIssue = _scheduledNextIssue;
-          showPendingIssue(_revealTargetIssue);
+          // 只有屏幕上还什么都没有时才铺空态占位；已经显示着上一期结果时原地保留，
+          // 等新期号码到达后替换（避免开奖瞬间/点刷新时号码"全没了"）。
+          if (!keepRendered && !_lastRenderedIssue) {
+            showPendingIssue(_revealTargetIssue);
+          }
         }
         debugLog("reveal-polling:start", {
           revealTargetIssue: _revealTargetIssue,
@@ -850,39 +856,55 @@
           revealTargetIssue: _revealTargetIssue,
           lastRenderedIssue: _lastRenderedIssue
         });
-        await fetchCountdownDeadline();
-        if (_revealPolling || _revealActive) {
-          debugLog("manual-refresh:reuse-reveal-state", {
-            revealActive: _revealActive,
-            revealPolling: _revealPolling,
-            revealTargetIssue: _revealTargetIssue
+        try {
+          // 刷新不清屏（2026-10-05）：过去这里会先 showPendingIssue() 把 7 个球清成
+          // `--`，再等下一次 5 秒轮询才重画，用户看到"一点刷新号码全没了、几秒后才回来"。
+          // 现在改成：当前已渲染的号码原地保留，最新载荷与倒计时**并发**获取，
+          // 数据到达后原地替换（只有真的换期才换号码）。
+          var reload = load({
+            manual: true,
+            reveal: true,
+            background: true,
+            preserveWhenPending: true
           });
-          if (_revealActive) {
-            _syncRevealProgress();
+          var sync = fetchCountdownDeadline();
+          await Promise.all([reload, sync]);
+
+          if (_revealPolling || _revealActive) {
+            debugLog("manual-refresh:reuse-reveal-state", {
+              revealActive: _revealActive,
+              revealPolling: _revealPolling,
+              revealTargetIssue: _revealTargetIssue
+            });
+            if (_revealActive) {
+              _syncRevealProgress();
+            }
+            if (_revealPolling) return;
           }
-          if (!_revealActive && _revealTargetIssue) {
-            showPendingIssue(_revealTargetIssue);
+          if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
+            countdownExpired = true;
+            debugLog("manual-refresh:enter-reveal-polling", {
+              countdownDeadline: countdownDeadline,
+              serverNow: getServerNowSeconds(),
+              scheduledNextIssue: _scheduledNextIssue
+            });
+            // keepRendered：只标记待揭示期并继续轮询，不清空正在显示的号码。
+            beginRevealPolling(true);
+            return;
           }
-          setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
-          return;
-        }
-        if (countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline) {
-          countdownExpired = true;
-          debugLog("manual-refresh:enter-reveal-polling", {
+          debugLog("manual-refresh:plain-load", {
             countdownDeadline: countdownDeadline,
             serverNow: getServerNowSeconds(),
+            scheduledCurrentIssue: _scheduledCurrentIssue,
             scheduledNextIssue: _scheduledNextIssue
           });
-          beginRevealPolling();
-          return;
+        } finally {
+          // load() 被"进行中请求去重"挡住时不会再改按钮状态，这里兜底恢复。
+          var refreshButton = $("refreshButton");
+          if (refreshButton && refreshButton.classList.contains("is-loading")) {
+            setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+          }
         }
-        debugLog("manual-refresh:plain-load", {
-          countdownDeadline: countdownDeadline,
-          serverNow: getServerNowSeconds(),
-          scheduledCurrentIssue: _scheduledCurrentIssue,
-          scheduledNextIssue: _scheduledNextIssue
-        });
-        load({ manual: true, revealOnLoad: true });
       }
 
       // ── /api/latest-draw 读取层（短缓存 + 进行中请求去重）────────────────
@@ -1110,9 +1132,20 @@
           } else if (shouldHoldPendingTarget) {
             debugLog("latest-draw:branch-keep-pending-target", {
               issue: issue,
-              revealTargetIssue: _revealTargetIssue
+              revealTargetIssue: _revealTargetIssue,
+              lastRenderedIssue: _lastRenderedIssue
             });
-            showPendingIssue(_revealTargetIssue);
+            if (_lastRenderedIssue) {
+              // 屏幕上已经显示着上一期的结果：原地保留，等新期号码到达后替换，
+              // 不再清成 `--`（2026-10-05 反馈：等到新期/点刷新时不该"全没了"）。
+              debugLog("latest-draw:keep-rendered-while-pending", {
+                issue: issue,
+                keptIssue: _lastRenderedIssue,
+                revealTargetIssue: _revealTargetIssue
+              });
+            } else {
+              showPendingIssue(_revealTargetIssue);
+            }
             // 待揭示的新期还没出现：确保 5 秒轮询仍在跑。
             // （例如上一轮轮询曾被「陈旧但完整的上一期载荷」误停时，这里把它接回去。）
             if (!_revealPolling && !_revealActive) {
