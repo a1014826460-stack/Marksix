@@ -18,7 +18,7 @@
 
 ## 概览
 
-### 开奖号码服务端分片揭示（2026-10-04，本地实现，待发布）
+### 开奖号码服务端分片揭示（2026-10-04 本地实现 / 2026-10-05 上线）
 
 - 问题：`/api/public/latest-draw` 过去在 `is_opened=1` 那一刻一次性下发 6 平码 + 特码；
   面板「每 25 秒一个球」只是前端定时器动画，任何直接请求接口 / 看 DevTools Network /
@@ -36,15 +36,42 @@
   `/api/sites/<key>/draw`、`/wy.json` 经同一后端出口自动继承分片；
   twsaimahui 共享开奖板块补齐占位槽并在未完整时轮询；
   twcaibawang `wy.html` 固定渲染 7 个槽位（未开放显示「官网正在搅珠中」）。
-- 本地验收：后端 `python -m pytest -q` → 1195 passed / 17 skipped / 1 failed（既有 Nginx
+- 本地验收：后端 `python -m pytest -q` → 1196 passed / 17 skipped / 1 failed（既有 Nginx
   健康代理契约，与本轮无关）；`pnpm site:test-kj-panel` 四条契约通过；
   `node frontend/test/run-site-platform-contract.mjs` 通过；
-  `python scripts/check-latest-draw-reveal.py --seed-local --database-url "$env:DATABASE_URL" --duration 230`
+  `python scripts/check-latest-draw-reveal.py --seed-local --database-url "$env:DATABASE_URL"`
   现场核验号码逐球开放且特码只在第 7 球出现。
-- 上线步骤（需另行授权）：两节点备份 → `git fetch` + `merge --ff-only` → 重建 `python-api` 与
-  `frontend` → 开奖窗口内跑
+- 本地演练（2026-10-04 23:45 / 23:52 / 00:02 / 00:12 四期台湾彩）暴露并修复一个真回归：
+  倒计时归零后开始轮询新期，但开盘瞬间快照/短缓存仍可能返回**上一期的完整结果**，被误判为
+  「本轮已收尾」而停掉轮询，面板会永久停在上一期（23:52 实测复现）。修复后「比待揭示期更旧的
+  完整载荷」不再走收尾分支，交给待揭示分支保持空态并继续轮询；轮询被误停时自动接回。
+  契约场景见 `frontend/test/kj-panel-server-reveal-contract.mjs`（场景 6）。
+
+**上线记录（2026-10-05 00:39–00:52 北京，提交 `3d6ca6a`）**
+
+- 代码提交 `3d6ca6a` 已推送 `origin/main`（`58f4434..3d6ca6a`）。
+- 经跳板机对两节点执行既定脚本 `deploy/deploy-scripts/deploy-center.sh` /
+  `deploy-frontend.sh`，标签 `draw-reveal-slice`，发布前两节点均为 `512f344`：
+  备份 `.deploy-backups/draw-reveal-slice-20261004T163903Z`；`git fetch` + `merge --ff-only`
+  到 `3d6ca6a`（顺带带上前两个文档/审计提交 `f4929c8`、`58f4434`）。
+- 中心重建 `db-migrate` / `python-api` / `scheduler-worker` / `frontend`
+  （`db-migrate` 输出 "Schema migrations are already current"）；前端节点仅重建 `frontend`，
+  未触碰 nginx/TLS 与其他容器。两节点 `nginx -t` 通过、容器 healthy；前端节点六站首页 200。
+- 线上验收（公网）：
+  - `/api/latest-draw?lottery_type=3`（tw8800 / twbst528）、`/central-api/api/public/latest-draw`
+    均返回 `revealed_count=7/7`、`reveal_interval_seconds=25`、`is_complete=true`、
+    `reveal_start=2026-10-04 22:32:02`（277 期已完整）。
+  - `/central-api/api/public/site-page?site_id=10&lottery_type=3` 的 `draw` 段同样带揭示字段；
+    `/api/sites/twbst528/draw` 返回 `balls=7` + 揭示字段；`/wy.json` 7 码正常（旧站兼容未破）。
+  - `/api/draw-history?lottery_type=3` 最新仍为 277（未来期 278+ 未外泄）。
+  - 十站展示审计：`error=0`、`js_errors=0`，共 3,978 行（435/292/655/469/451/282/371/276/202/545），
+    警告 0–13 条为既有遗留，与本轮无关。
+  - 两节点 `/vendor/shengshi8800/kj/local.html` 均含 `serverPacedStaleTarget`（事故修复）与
+    `_serverRevealCountForPayload` / `resultSyncPending`（分片揭示）。
+- 逐球节奏的实况只能在开奖窗口内观察；开奖日 22:32–22:40 可用
   `python scripts/check-latest-draw-reveal.py --base-url https://www.tw8800.com --lottery-type 3 --duration 260`
-  → 十站展示审计要求 `error=0 / js_errors=0`。
+  复验（脚本会校验节奏、进度不回退、特码只在第 7 球出现）。
+- 本条目自身的更新（文档-only）未随本次发布，两节点 HEAD 仍是 `3d6ca6a`。
 
 ### twsyw 隐藏脚本加载器清理（2026-09-30）
 
