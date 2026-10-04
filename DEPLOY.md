@@ -18,6 +18,30 @@
 
 ## 概览
 
+### 开奖面板「刷新」不清屏 + 十站历史开奖记录入口统一（2026-10-05 上线）
+
+- 用户反馈：点开奖模块的「刷新」，已经出现的号码会全部消失，要等几秒才恢复。
+- 根因：`kj/local.html::refreshWithDeadlineSync` 在揭示轮询状态下会先 `showPendingIssue()`
+  把 7 个球清成 `--`，然后直接 `return`，要等下一次 5 秒轮询才重画（本地实测清屏 4–6 秒）。
+- 修复：刷新改为**不清屏**——当前号码原地保留，最新载荷与倒计时**并发**获取、到达后原地替换；
+  开奖瞬间/等待新期时若屏幕上已有上一期结果同样原地保留（只在空屏时才铺空态占位），
+  徽标照常显示「开奖核验中...」；待揭示期仍会被标记，避免上一期完整载荷误停轮询；
+  刷新请求被「进行中请求去重」挡住时兜底恢复「已刷新」状态，不再卡在「刷新中」。
+- 十站历史入口统一：`twjinniu` / `twcf888` / `twssz` 补上「开奖记录」入口（→ `/history?type=3`）；
+  至此十个站点都有可见的历史开奖记录入口（共享面板内「查看历史记录」+ 站点导航/页脚）。
+- 本地验收：04:00 / 04:15 两期台湾彩到点开盘、25 秒逐球、特码落在 +150 秒；无头 Chrome
+  在完整态与揭示中（已开放 2 球）点「刷新」各采样 20 / 30 次，`painted` 从未回落、清屏 0 次；
+  面板四契约与十站展示契约全绿。
+- **上线记录**：提交 `916a554`（含前一条文档提交 `47192a4`）推送 `origin/main`；经跳板机按既定
+  脚本对两节点执行标签 `draw-refresh-fix`，备份 `.deploy-backups/draw-refresh-fix-20261004T201816Z`，
+  `ff-only` 到 `916a554`（中心重建 `db-migrate/python-api/scheduler-worker/frontend`，
+  前端节点仅重建 `frontend`）；两节点 `nginx -t` 通过、容器 healthy、六站/十站首页 200。
+- 线上验收：两节点面板 HTML 均含 `var reload = load(`、`keep-rendered-while-pending`、
+  `serverPacedStaleTarget`；`www.twtongtian.com` / `www.twcf888.com` / `www.twssz.com`
+  页面均带 `kj-history` 入口；`/api/latest-draw` 仍返回 `revealed_count=7/7`、
+  `reveal_interval_seconds=25`、`is_complete=true`；十站展示审计 `error=0`、`js_errors=0`
+  （3,978 行；twssz 新增的「平特一肖 连续 3 期展示值相同」属既有数据类警告）。
+
 ### 开奖号码服务端分片揭示（2026-10-04 本地实现 / 2026-10-05 上线）
 
 - 问题：`/api/public/latest-draw` 过去在 `is_opened=1` 那一刻一次性下发 6 平码 + 特码；
@@ -71,7 +95,7 @@
 - 逐球节奏的实况只能在开奖窗口内观察；开奖日 22:32–22:40 可用
   `python scripts/check-latest-draw-reveal.py --base-url https://www.tw8800.com --lottery-type 3 --duration 260`
   复验（脚本会校验节奏、进度不回退、特码只在第 7 球出现）。
-- 本条目自身的更新（文档-only）未随本次发布，两节点 HEAD 仍是 `3d6ca6a`。
+- 本条目自身的更新（文档-only）随后由下一轮 `916a554` 上线一并带上两节点。
 
 ### twsyw 隐藏脚本加载器清理（2026-09-30）
 
