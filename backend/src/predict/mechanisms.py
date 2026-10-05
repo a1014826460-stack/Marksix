@@ -616,6 +616,7 @@ def format_xiongjiliuxiao_groups(labels: tuple[str, ...], conn: sqlite3.Connecti
 #: 「展示 6 肖、判定另算」的口径分裂。
 JIMEI_LABELS = ("吉美肖", "凶丑肖")
 QIANHOU_LABELS = ("前肖", "后肖")
+TIANDI_LABELS = ("天肖", "地肖")
 JIMEI_LABEL_FALLBACK = {
     "吉美肖": ("兔", "龙", "蛇", "马", "羊", "鸡"),
     "凶丑肖": ("鼠", "牛", "虎", "猴", "狗", "猪"),
@@ -624,6 +625,13 @@ QIANHOU_LABEL_FALLBACK = {
     "前肖": ("鼠", "牛", "虎", "兔", "龙", "蛇"),
     "后肖": ("马", "羊", "猴", "鸡", "狗", "猪"),
 }
+#: 天肖 / 地肖分组（与 `public.fixed_data` sign='天地生肖' 一致；缺行时静态兜底）。
+TIANDI_LABEL_FALLBACK = {
+    "天肖": ("兔", "马", "猴", "猪", "牛", "龙"),
+    "地肖": ("鼠", "虎", "蛇", "羊", "鸡", "狗"),
+}
+#: 天地生肖第二维展示槽（面板 `【天肖+兔马】`）的宽度。
+TIANDI_XIAO_WIDTH = 2
 
 
 def group_label_for_zodiac(
@@ -660,6 +668,41 @@ def special_qianhou_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
         QIANHOU_LABELS,
         QIANHOU_LABEL_FALLBACK,
     )
+
+
+def special_tiandi_from_row(row: sqlite3.Row, conn: sqlite3.Connection) -> str:
+    """天地生肖（mode 5）：特肖 → 「天肖」/「地肖」。"""
+    return group_label_for_zodiac(
+        special_zodiac_from_number_map(row, conn),
+        load_fixed_value_map(conn, "天地生肖", TIANDI_LABELS),
+        TIANDI_LABELS,
+        TIANDI_LABEL_FALLBACK,
+    )
+
+
+def format_tiandi_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> dict[str, str]:
+    """天地生肖（mode 5）正文：`分组名|成员生肖`，并把两肖槽位写成**该分组内**的两肖。
+
+    历史退化的教训（2026-10-05 线上实测 269–278 期全为「天肖」）：mode 5 过去挂在
+    `format_content_xiao_columns` 上，分组是从**历史 content 池按出现次数降序**里挑
+    「与预测两肖不重叠」的第一条、兜底再取出现最多的那条 —— 哪位分组历史上多就永远是它，
+    形成频率锁死，与真实开奖无关（那 9 期特肖 4 天 5 地，命中仅 4/9）。
+
+    现在分组是**受控候选**（`generation_rules` 登记 `zodiac_group`，真实目标 = 特肖所属分组），
+    正文按分组输出；`xiao` 槽取该分组的前 `TIANDI_XIAO_WIDTH` 个成员生肖，保证
+    「特肖落在分组 或 落在两肖」两个口径恒同向（两肖 ⊆ 分组），面板与平台判定不会互相矛盾。
+    """
+    try:
+        mapping = load_fixed_value_map(conn, "天地生肖", labels)
+    except Exception:  # noqa: BLE001 - 无连接/缺表时只用静态兜底
+        mapping = {}
+    groups = format_group_member_groups(labels, mapping, TIANDI_LABEL_FALLBACK)
+    content = groups[0] if groups else ""
+    members = content.split("|", 1)[1].split(",") if "|" in content else []
+    return {
+        "content": content,
+        "xiao": ",".join(members[:TIANDI_XIAO_WIDTH]),
+    }
 
 
 def format_group_member_groups(
@@ -1887,21 +1930,32 @@ PREDICTION_CONFIGS: dict[str, PredictionConfig] = {
             "特码生肖落入预测生肖则命中。",
         ),
     ),
+    # 天地生肖 (mode 5) —— twsaimahui【天地生肖】、twbst528/twssz/twwanli/twsyw
+    # 【天地+②肖】等处共用的数据源，与 mode 155/133 同构（候选 = 分类名、`label_count=1`、
+    # 正文 = `分类|成员生肖`）。
+    #
+    # 2026-10-05 修正：此前它是 `content+xiao` 玩法（候选 = 2 个生肖），分组由
+    # `format_content_xiao_columns` 从**历史 content 池按出现次数**里挑，导致分组被历史众数
+    # 锁死（线上 twsaimahui 269–278 期全「天肖」，本地 created 12 期里 10 期天肖）。
+    # 现在分组进入受控候选域：真实目标 = 特肖所属分组（`special_tiandi_from_row`），
+    # 命中 = 特肖落在所选分组的 6 个生肖里；`xiao` 槽改为该分组内的两肖（展示维度）。
     "title_5": PredictionConfig(
         key="title_5",
         title="天地生肖（天地选1，生肖选2）",
         default_table="mode_payload_5",
         default_modes_id=5,
-        labels=tuple(ZODIAC_ORDER),
-        label_count=2,
-        outcome_loader=special_zodiac_from_number_map,
-        content_loader=xiao_or_content_content_loader("xiao", "content"),
-        content_parser=parse_zodiac_content,
-        content_formatter=format_content_xiao_columns("mode_payload_5", "xiao", "content"),
+        labels=TIANDI_LABELS,
+        label_count=1,
+        outcome_loader=special_tiandi_from_row,
+        content_loader=default_content_from_row,
+        content_parser=parse_pipe_label_content,
+        content_formatter=format_tiandi_groups,
         hit_checker=contains_hit,
+        labels_loader=labels_from_fixed("天地生肖", TIANDI_LABELS),
         explanation=(
-            "天地生肖按天肖/地肖分类，content 存储分类标签与生肖池，xiao 列存储最终候选生肖。",
-            "特码生肖落入 xiao 列的候选生肖则命中。",
+            "天地生肖把 12 生肖分成天肖（兔马猴猪牛龙）与地肖（鼠虎蛇羊鸡狗）两组，2 选 1。",
+            "开奖特肖落在所选分组的 6 个生肖里即命中；正文输出「分组名|成员生肖」，",
+            "`xiao` 槽取该分组内的两肖（第二维展示，恒为分组子集）。",
         ),
     ),
     "title_15": PredictionConfig(

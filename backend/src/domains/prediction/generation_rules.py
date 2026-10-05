@@ -149,6 +149,21 @@ def _qianhou_group(truth: DrawTruth, conn: Any) -> str:
     )
 
 
+def _tiandi_group(truth: DrawTruth, conn: Any) -> str:
+    """天地生肖（mode 5）：特肖 → 「天肖」/「地肖」。
+
+    修正前 mode 5 没有登记规则，正文分组由 `format_content_xiao_columns` 按
+    **历史 content 出现次数**挑选（兜底取出现最多的那条），于是分组被历史众数锁死：
+    线上 twsaimahui 269–278 期 10/10 全「天肖」，而同期特肖是 4 天 5 地。
+    登记后分组成为受控候选：目标分组 = 特肖所属分组，命中口径与 155/133 一致。
+    """
+    from predict.mechanisms import TIANDI_LABEL_FALLBACK, TIANDI_LABELS
+
+    return _group_label_for_zodiac(
+        truth, conn, mapping_key="天地生肖", labels=TIANDI_LABELS, fallback=TIANDI_LABEL_FALLBACK
+    )
+
+
 def _combined_parity(truth: DrawTruth, _conn: Any) -> str:
     number = _normalized_code(truth)
     return "合单" if ((number // 10) + (number % 10)) % 2 else "合双"
@@ -238,9 +253,12 @@ _RULE_BY_MODE_ID: dict[int, PredictionGenerationRule] = {
     72: _rule("zodiac", _special_zodiac),
     78: _rule("zodiac", _special_zodiac),
     117: _rule("zodiac", _special_zodiac),
-    # 吉美凶丑（mode 155）/ 前后生肖（mode 133）：候选是**分组名**（吉美肖/凶丑肖、前肖/后肖），
-    # 真实目标是「特肖所属分组」而不是特肖本身，所以用专用 truth_outcome。
-    # 登记日期 2026-10-01（twbst528【吉美丑凶】【前后中特】两个面板改绑这两个 mode）。
+    # 吉美凶丑（mode 155）/ 前后生肖（mode 133）/ 天地生肖（mode 5）：候选是**分组名**
+    # （吉美肖/凶丑肖、前肖/后肖、天肖/地肖），真实目标是「特肖所属分组」而不是特肖本身，
+    # 所以用专用 truth_outcome。
+    # 155/133 登记日期 2026-10-01；mode 5 登记日期 2026-10-05（此前分组被历史众数锁死，
+    # 线上 twsaimahui 269–278 期全「天肖」，与真实开奖无关）。
+    5: _rule("zodiac_group", _tiandi_group),
     155: _rule("zodiac_group", _jimei_group),
     133: _rule("zodiac_group", _qianhou_group),
     197: _rule("zodiac", _special_zodiac),

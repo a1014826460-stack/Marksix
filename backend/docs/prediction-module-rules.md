@@ -81,7 +81,7 @@ generic rule.
 | mode_id | key | title | rule | outcome semantics | assurance | future control | uniqueness |
 |---:|---|---|---|---|---|---|---|
 | 3 | rcca | 肉菜草肖 | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
-| 5 | title_5 | 天地生肖（天地选1，生肖选2） | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
+| 5 | title_5 | 天地生肖（天地选1，生肖选2） | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 8 | hllx | 红蓝绿肖（3选2） | blocked_pending_rule | blocked_pending_rule | history_only | blocked: missing_verified_rule | cross-site prefix: 1; adjacent: full ordered signature |
 | 9 | title_9 | 16码 | number | special number is in any candidate | controlled_future | supported | cross-site prefix: 2; unordered number set: no positional rotation; adjacent: display order differs |
 | 12 | 3tou | 3头中特 | head | special number head is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
@@ -127,7 +127,7 @@ generic rule.
 | 117 | sanxiao_siwei_xiao | 三肖四尾 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 123 | sanxiao_siwei_wei | 四尾八码 | tail | special number tail is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 132 | title_132 | 合数单双 | combined_parity | special digit-sum parity is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
-| 133 | qianhou_shengxiao | 前后生肖 | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
+| 133 | qianhou_shengxiao | 前后生肖 | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
 | 143 | title_143 | 一波中特 | wave | special number wave is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
 | 155 | jimei_xiongchou | 吉美凶丑（2选1，全肖） | zodiac_group | special zodiac's group is the selected group candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature; adjacent 3 periods: display value differs |
 | 197 | title_197 | 三期4肖 | zodiac | special zodiac is in any candidate | controlled_future | supported | cross-site prefix: 1; adjacent: full ordered signature |
