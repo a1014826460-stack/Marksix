@@ -394,4 +394,30 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   }
 }
 
+// ── 9. 港澳口径：后端一次性给全（2026-10-05 用户口径）────────────────────
+// 港澳彩源站本来就公开号码，后端不再按 25 秒节流：载荷首帧就是 revealed_count=7、
+// is_complete=true、next_reveal_at=""。面板必须立刻画满、不进轮播、不再轮询，
+// 也不能给父页发「开奖中」门控（那会让港澳看起来还在逐球揭晓）。
+{
+  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 7 }) })
+  panel.__hooks.setNow(T)
+  await settle()
+  await panel.__hooks.load({ revealOnLoad: true })
+  await settle()
+  const state = panel.__hooks.state()
+  if (state.painted !== 7) {
+    throw new Error(`HK/Macau payload must paint all 7 balls at once, got ${state.painted}`)
+  }
+  if (state.polling) throw new Error("HK/Macau payload must not keep polling once complete")
+  if (state.serverPaced) throw new Error("HK/Macau complete payload must not enter the paced path")
+  const gates = panel.notifications.filter((message) => message.kind === "legacy-draw-reveal-gate")
+  if (gates.length !== 0) {
+    throw new Error(`HK/Macau must not gate the parent page, got ${gates.length} gate message(s)`)
+  }
+  const completions = panel.notifications.filter((message) => message.kind === "legacy-draw-reveal-complete")
+  if (completions.length > 1) {
+    throw new Error(`completion must be notified at most once, got ${completions.length}`)
+  }
+}
+
 console.log("kj panel server-paced reveal contract passed")

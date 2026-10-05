@@ -10,6 +10,12 @@
 - 特码只在 ``revealed_count == 7`` 时出现；
 - ``is_complete`` 与 ``next_reveal_at`` 与进度自洽。
 
+彩种口径（2026-10-05 用户口径）
+------------------------------
+只有**台湾彩（3）**走 25 秒/球的服务端节拍；港澳彩（1/2）源站本来就公开号码，
+已入库几个就下发几个、``next_reveal_at`` 恒为空串、不叠加时间闸门。
+因此 ``--lottery-type 1|2`` 时脚本只校验「一次给全 + 不倒退 + 特码不提前」。
+
 用法
 ----
 现场观察（线上/本地均可，默认台湾彩）::
@@ -22,7 +28,8 @@
 
 ``--seed-local`` 会写入一条临时期（默认借 ``lottery_type_id=3`` 且期号 ``901``，
 因为 ``lottery_draws.lottery_type_id`` 有指向 ``lottery_types`` 的外键），
-同时打印该期的 ``reveal_start``，并在结束后删除该行。仅用于本地开发库。
+同时打印该期的 ``reveal_start``，并在结束后删除该行。仅用于本地开发库；
+``--seed-lottery-type 1|2`` 时写入的港澳行属于「非节拍」口径，脚本按非节拍校验。
 """
 
 from __future__ import annotations
@@ -40,6 +47,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_SRC = REPO_ROOT / "backend" / "src"
 if str(BACKEND_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_SRC))
+
+from public.draw_reveal import is_paced_lottery_type  # noqa: E402
 
 DEFAULT_INTERVAL_SECONDS = 5.0
 SEED_TERM = 901
@@ -123,6 +132,8 @@ def main() -> int:
     failures: list[str] = []
     started = time.time()
     last_count = -1
+    paced = is_paced_lottery_type(lottery_type)
+    print(f"[mode] lottery_type={lottery_type} 揭示口径={'台湾彩 25 秒/球（服务端节拍）' if paced else '港澳彩 一次性全量（不节流）'}")
     try:
         while time.time() - started <= args.duration:
             payload = _fetch(args.base_url, lottery_type)
@@ -152,10 +163,19 @@ def main() -> int:
                     failures.append(f"特码提前下发：revealed_count={count}")
                 if bool(payload.get("is_complete")) != (count >= 7):
                     failures.append(f"is_complete 与进度不一致：count={count}")
-                if elapsed is not None and elapsed >= 0:
-                    expected = min(7, int(elapsed // 25) + 1)
-                    if abs(count - expected) > 1:
-                        failures.append(f"节奏偏差：elapsed={elapsed:.1f}s 期望约 {expected}，实际 {count}")
+                if paced:
+                    if elapsed is not None and elapsed >= 0:
+                        expected = min(7, int(elapsed // 25) + 1)
+                        if abs(count - expected) > 1:
+                            failures.append(f"节奏偏差：elapsed={elapsed:.1f}s 期望约 {expected}，实际 {count}")
+                else:
+                    # 港澳彩：不节流，拿到几个就是几个；不承诺下一次揭示时间。
+                    if str(payload.get("next_reveal_at") or "").strip():
+                        failures.append(
+                            f"非节拍彩种不应下发 next_reveal_at：{payload.get('next_reveal_at')!r}"
+                        )
+                    if count >= 7 and delivered != 7:
+                        failures.append(f"已完整但下发号码数不为 7：delivered={delivered}")
 
             if last_count >= 7:
                 print("[done] 7 个号码已全部开放")

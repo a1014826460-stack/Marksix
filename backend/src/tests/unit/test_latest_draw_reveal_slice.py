@@ -1,10 +1,11 @@
-"""服务端分片揭示契约：号码按 reveal_start + 25s×N 逐球开放。
+"""服务端分片揭示契约：台湾彩按 reveal_start + 25s×N 逐球开放。
 
 固定行为：
-1. 第 1 球在 reveal_start 当刻可见；第 7 球（特码）在 +150 秒可见。
+1. 台湾彩：第 1 球在 reveal_start 当刻可见；第 7 球（特码）在 +150 秒可见。
 2. 任何时刻对外可见的号码个数只由「服务器时间 - 锚点」决定，与请求次数无关。
 3. 锚点之前不下发号码（revealed_count=0）；没有锚点的旧载荷原样返回。
-4. 香港彩保持源站轮序发布（按已入库球数下发），不叠加时间闸门。
+4. 港澳彩（源站本来就公开号码）**不叠加时间闸门**：已入库几个就下发几个，
+   `next_reveal_at` 为空串；台湾彩是提前入库的未来真值，必须逐球放行。
 5. 缓存/发布链路拿到的始终是**完整**载荷，分片只发生在对外响应边界。
 """
 
@@ -18,8 +19,10 @@ import pytest
 from core.time_utils import BEIJING_TZ
 from public.draw_reveal import (
     DRAW_BALL_COUNT,
+    PACED_REVEAL_LOTTERY_TYPES,
     REVEAL_INTERVAL_SECONDS,
     apply_reveal_slice,
+    is_paced_lottery_type,
     reveal_anchor,
     reveal_count,
 )
@@ -27,6 +30,9 @@ from routes import public_routes
 from tests.helpers.api_contract import make_ctx, response_json
 
 ANCHOR = datetime(2026, 10, 4, 22, 32, 2, tzinfo=BEIJING_TZ)
+TAIWAN = 3
+HONGKONG = 1
+MACAU = 2
 
 
 def _payload(*, reveal_start: str = "2026-10-04 22:32:02", balls: int = 7) -> dict:
@@ -95,10 +101,22 @@ def test_reveal_anchor_prefers_reveal_start_then_draw_time():
     assert reveal_anchor({}) is None
 
 
+def test_only_taiwan_is_paced_and_unknown_types_fail_safe_to_paced():
+    assert PACED_REVEAL_LOTTERY_TYPES == frozenset({TAIWAN})
+    assert is_paced_lottery_type(TAIWAN) is True
+    assert is_paced_lottery_type("3") is True
+    assert is_paced_lottery_type(HONGKONG) is False
+    assert is_paced_lottery_type(MACAU) is False
+    # 漏传/非法彩种按节拍处理：只会多一段节拍，绝不会提前放号
+    assert is_paced_lottery_type(None) is True
+    assert is_paced_lottery_type("") is True
+    assert is_paced_lottery_type("taiwan") is True
+
+
 # ── 纯函数：切片 ────────────────────────────────────────────────────────────
 
 def test_slice_hides_unrevealed_balls_and_reports_progress():
-    sliced = apply_reveal_slice(_payload(), now=_at(0))
+    sliced = apply_reveal_slice(_payload(), lottery_type_id=TAIWAN, now=_at(0))
 
     assert sliced["revealed_count"] == 1
     assert sliced["total_balls"] == DRAW_BALL_COUNT
@@ -111,8 +129,8 @@ def test_slice_hides_unrevealed_balls_and_reports_progress():
 
 
 def test_slice_reveals_special_ball_only_at_the_end():
-    before = apply_reveal_slice(_payload(), now=_at(149))
-    after = apply_reveal_slice(_payload(), now=_at(150))
+    before = apply_reveal_slice(_payload(), lottery_type_id=TAIWAN, now=_at(149))
+    after = apply_reveal_slice(_payload(), lottery_type_id=TAIWAN, now=_at(150))
 
     assert before["revealed_count"] == 6
     assert before["special_ball"] is None
@@ -126,7 +144,7 @@ def test_slice_reveals_special_ball_only_at_the_end():
 
 
 def test_slice_sends_no_numbers_before_the_anchor():
-    sliced = apply_reveal_slice(_payload(), now=_at(-30))
+    sliced = apply_reveal_slice(_payload(), lottery_type_id=TAIWAN, now=_at(-30))
 
     assert sliced["revealed_count"] == 0
     assert sliced["result_balls"] == []
@@ -137,13 +155,13 @@ def test_slice_sends_no_numbers_before_the_anchor():
 def test_slice_without_anchor_leaves_legacy_payload_untouched():
     legacy = {"current_issue": "2026277", "draw_time": "2026-08-07", "result_balls": [{"value": "01"}], "special_ball": None}
 
-    assert apply_reveal_slice(legacy, now=_at(0)) == legacy
+    assert apply_reveal_slice(legacy, lottery_type_id=TAIWAN, now=_at(0)) == legacy
 
 
 def test_slice_does_not_mutate_the_complete_payload_used_for_cache():
     complete = _payload()
 
-    apply_reveal_slice(complete, now=_at(0))
+    apply_reveal_slice(complete, lottery_type_id=TAIWAN, now=_at(0))
 
     assert len(complete["result_balls"]) == 6
     assert complete["special_ball"]["value"] == "49"
@@ -151,14 +169,45 @@ def test_slice_does_not_mutate_the_complete_payload_used_for_cache():
 
 
 def test_slice_keeps_partial_source_data_incomplete():
-    # 源站只补到 3 个号码（港彩）：可以下发 3 个，但绝不因此判定已完整。
-    sliced = apply_reveal_slice(_payload(balls=3), now=_at(600))
+    # 台湾彩源站只补到 3 个号码：可以下发 3 个，但绝不因此判定已完整。
+    sliced = apply_reveal_slice(_payload(balls=3), lottery_type_id=TAIWAN, now=_at(600))
 
     assert sliced["revealed_count"] == 3
     assert sliced["is_complete"] is False
     assert len(sliced["result_balls"]) == 3
     assert sliced["special_ball"] is None
     assert sliced["next_reveal_at"]
+
+
+# ── 港澳彩：不叠加时间闸门（源站本来就公开）────────────────────────────────
+
+@pytest.mark.parametrize("lottery_type_id", [HONGKONG, MACAU])
+def test_hk_macau_reveal_everything_already_available(lottery_type_id):
+    """港澳彩一拿到号码就全量下发，不受 reveal_start + 25s 节拍限制。"""
+    at_anchor = apply_reveal_slice(_payload(), lottery_type_id=lottery_type_id, now=_at(0))
+    assert at_anchor["revealed_count"] == 7
+    assert at_anchor["is_complete"] is True
+    assert at_anchor["next_reveal_at"] == ""
+    assert [ball["value"] for ball in at_anchor["result_balls"]] == [
+        "01", "02", "03", "04", "05", "06"
+    ]
+    assert at_anchor["special_ball"]["value"] == "49"
+    # 锚点之前也一样（港澳没有「等待开盘」语义，载荷里有多少就是多少）
+    before = apply_reveal_slice(_payload(), lottery_type_id=lottery_type_id, now=_at(-300))
+    assert before["revealed_count"] == 7
+    assert before["is_complete"] is True
+
+
+@pytest.mark.parametrize("lottery_type_id", [HONGKONG, MACAU])
+def test_hk_macau_partial_source_data_is_returned_as_is(lottery_type_id):
+    sliced = apply_reveal_slice(_payload(balls=4), lottery_type_id=lottery_type_id, now=_at(0))
+
+    assert sliced["revealed_count"] == 4
+    assert sliced["is_complete"] is False
+    assert len(sliced["result_balls"]) == 4
+    assert sliced["special_ball"] is None
+    # 不承诺下一次揭示时间：前端按 5 秒轮询补齐
+    assert sliced["next_reveal_at"] == ""
 
 
 # ── 路由边界：缓存里保留完整载荷 ────────────────────────────────────────────
@@ -208,12 +257,12 @@ def test_route_slices_snapshot_payload_at_response_boundary():
 
 
 def test_site_page_route_slices_the_draw_section_at_the_boundary():
-    """站点聚合快照里保存完整号码，聚合出口按同一节奏逐球开放。"""
+    """站点聚合快照里保存完整号码，台湾彩聚合出口按同一节奏逐球开放。"""
     ctx = make_ctx("/api/public/site-page?site_id=10&lottery_type=3")
     payload = {"site": {"id": 10}, "draw": _payload(), "modules": []}
 
     with patch("public.draw_reveal.beijing_now", return_value=_at(25)):
-        public_routes._send_site_page(ctx, payload)
+        public_routes._send_site_page(ctx, payload, TAIWAN)
 
     body = response_json(ctx)
     assert body["draw"]["revealed_count"] == 2
@@ -222,6 +271,38 @@ def test_site_page_route_slices_the_draw_section_at_the_boundary():
     # 传给快照的完整载荷不被改写
     assert len(payload["draw"]["result_balls"]) == 6
     assert "revealed_count" not in payload["draw"]
+
+
+@pytest.mark.parametrize("lottery_type_id", [HONGKONG, MACAU])
+def test_site_page_route_sends_every_hk_macau_ball_immediately(lottery_type_id):
+    """港澳彩站点聚合出口：拿到几个就下发几个，不按 25 秒节拍裁号。"""
+    ctx = make_ctx(f"/api/public/site-page?site_id=10&lottery_type={lottery_type_id}")
+    payload = {"site": {"id": 10}, "draw": _payload(), "modules": []}
+
+    with patch("public.draw_reveal.beijing_now", return_value=_at(0)):
+        public_routes._send_site_page(ctx, payload, lottery_type_id)
+
+    body = response_json(ctx)
+    assert body["draw"]["revealed_count"] == 7
+    assert body["draw"]["is_complete"] is True
+    assert body["draw"]["next_reveal_at"] == ""
+    assert body["draw"]["special_ball"]["value"] == "49"
+    assert len(payload["draw"]["result_balls"]) == 6
+    assert "revealed_count" not in payload["draw"]
+
+
+def test_latest_draw_route_sends_every_macau_ball_immediately():
+    complete = _payload()
+    ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=2"), _Snapshots(latest=complete))
+
+    with patch("public.draw_reveal.beijing_now", return_value=_at(0)):
+        public_routes.latest_draw(ctx)
+
+    body = response_json(ctx)
+    assert body["revealed_count"] == 7
+    assert body["is_complete"] is True
+    assert body["next_reveal_at"] == ""
+    assert body["special_ball"]["value"] == "49"
 
 
 def test_route_backfills_snapshot_with_complete_payload():

@@ -18,9 +18,12 @@
 
 边界
 ----
-- 所有彩种共用同一条节奏：可见数量 = `min(源站已入库球数, floor(已过秒/25)+1)`。
-  香港彩源站逐个补全号码，因此它的可见数量天然受「已入库球数」封顶，但同样不会
-  在开盘瞬间把多个号码一次性放出去。
+- **只有台湾彩（lottery_type=3）走节拍**：它的 7 个号码是提前写入库的未来真值，不按节拍放行
+  就等于开盘瞬间把全部号码交给任何请求接口的人。港彩源站逐个补全、澳门彩源站一次给全，
+  两者本来就是公开数据，拿到几个就返回几个，不再人为拖 150 秒。
+- 节拍彩种：可见数量 = `min(源站已入库球数, floor(已过秒/25)+1)`。
+- 非节拍彩种：可见数量 = `源站已入库球数`（`is_complete` 仍按 7 个判断，未齐时 `next_reveal_at`
+  为空串，前端按 5 秒轮询补齐）。
 - 没有 ``reveal_start`` / ``draw_time`` 的旧载荷原样返回（兼容旧部署、旧快照与
   无开奖数据的空载荷），不新增任何字段。
 - 本模块只做纯计算，不碰数据库、不写缓存；缓存里始终保留**完整**载荷，分片只发生在
@@ -39,6 +42,25 @@ from domains.lottery.draw_time import parse_draw_datetime
 DRAW_BALL_COUNT = 7
 #: 相邻两个号码的开放间隔（秒）。
 REVEAL_INTERVAL_SECONDS = 25
+
+#: 需要服务端控节奏的彩种：只有台湾彩。
+#: 台湾彩的号码是**提前入库的未来真值**，必须由服务端逐个放行；
+#: 港澳彩源站本来就公开号码，拿到即全开（2026-10-05 用户口径）。
+PACED_REVEAL_LOTTERY_TYPES = frozenset({3})
+
+
+def is_paced_lottery_type(lottery_type_id: Any) -> bool:
+    """该彩种是否走「25 秒一球」的服务端节拍。
+
+    无法识别的彩种按**节拍**处理（fail-safe）：漏传彩种只会多一段节拍，
+    绝不会把本该逐球开放的号码一次性放出去。
+    """
+    if lottery_type_id in (None, ""):
+        return True
+    try:
+        return int(lottery_type_id) in PACED_REVEAL_LOTTERY_TYPES
+    except (TypeError, ValueError):
+        return True
 
 
 def reveal_anchor(payload: Mapping[str, Any]) -> datetime | None:
@@ -97,10 +119,14 @@ def _beijing_text(value: datetime) -> str:
 def apply_reveal_slice(
     payload: Mapping[str, Any] | None,
     *,
+    lottery_type_id: Any = None,
     now: datetime | None = None,
     interval_seconds: int = REVEAL_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
-    """按服务器时间裁掉尚未开放的号码，并补充揭示进度字段。
+    """按彩种口径裁掉尚未开放的号码，并补充揭示进度字段。
+
+    - 节拍彩种（台湾彩）：从锚点起每 ``interval_seconds`` 放行一个号码。
+    - 非节拍彩种（港澳彩）：已入库多少就下发多少，`next_reveal_at` 为空串。
 
     返回新字典；入参不会被修改。没有锚点的旧载荷原样返回（浅拷贝）。
     """
@@ -113,12 +139,16 @@ def apply_reveal_slice(
         return result
 
     available = public_balls(result)
-    count = reveal_count(
-        anchor=anchor,
-        available=len(available),
-        now=now,
-        interval_seconds=interval_seconds,
-    )
+    if is_paced_lottery_type(lottery_type_id):
+        count = reveal_count(
+            anchor=anchor,
+            available=len(available),
+            now=now,
+            interval_seconds=interval_seconds,
+        )
+    else:
+        count = min(len(available), DRAW_BALL_COUNT)
+
     revealed = available[:count]
     is_complete = count >= DRAW_BALL_COUNT
 
@@ -130,7 +160,7 @@ def apply_reveal_slice(
     result["is_complete"] = is_complete
     result["next_reveal_at"] = (
         ""
-        if is_complete
+        if is_complete or not is_paced_lottery_type(lottery_type_id)
         else _beijing_text(anchor + timedelta(seconds=int(interval_seconds) * count))
     )
     return result

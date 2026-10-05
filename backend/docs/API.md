@@ -495,8 +495,8 @@ const data = await res.json()
 
 开奖号码揭示：
 
-- `draw` 段与 `/api/public/latest-draw` 同源同节奏：号码从 `reveal_start` 起每 25 秒开放一个，
-  并按 `revealed_count` / `total_balls` / `is_complete` / `next_reveal_at` 报告进度。
+- `draw` 段与 `/api/public/latest-draw` 同源同节奏：台湾彩从 `reveal_start` 起每 25 秒开放一个，
+  港澳彩一次性全量下发；两者都按 `revealed_count` / `total_balls` / `is_complete` / `next_reveal_at` 报告进度。
 - 聚合快照（`KIND_SITE`）里保存的是**完整**号码，逐球开放发生在响应边界，
   因此同一条快照在不同时刻返回不同的号码前缀，不会把半个结果冻进缓存。
 
@@ -532,10 +532,12 @@ const data = await res.json()
 
 ### GET `/api/public/latest-draw`
 
-接口说明：返回指定彩种最近一期已开奖数据。号码按**服务端分片揭示**逐球开放：
-从 `reveal_start`（开盘瞬间的 `opened_at`，缺失时退回 `draw_time`）起每 25 秒开放一个号码，
-第 7 个号码（特码）在 `reveal_start + 150` 秒开放；节奏由 `public/draw_reveal.py` 唯一决定，
-与请求次数、页面刷新、浏览器时钟无关。
+接口说明：返回指定彩种最近一期已开奖数据。号码揭示口径由彩种决定（`public/draw_reveal.py` 唯一决定，
+与请求次数、页面刷新、浏览器时钟无关）：
+
+- **台湾彩（3）**：服务端分片揭示，从 `reveal_start`（开盘瞬间的 `opened_at`，缺失时退回 `draw_time`）
+  起每 25 秒开放一个号码，第 7 个号码（特码）在 `reveal_start + 150` 秒开放；
+- **港澳彩（1/2）**：源站本来就公开号码，已入库几个就下发几个，不做时间节流。
 
 鉴权要求：
 
@@ -608,8 +610,13 @@ const data = await res.json()
 
 边界说明：
 
-- 所有彩种共用同一条 25 秒节奏；香港彩由源站逐个补全号码，因此它的可见数量还会被
-  「源站已入库球数」封顶——揭示只会延后，永远不会一次放出多个号码。
+- **只有台湾彩（`lottery_type=3`）走 25 秒/球的服务端节拍**：它的 7 个号码是提前入库的未来真值，
+  必须逐球放行，否则开盘瞬间任何请求接口的人都能拿到全部号码。
+- 港澳彩（`1`/`2`）源站本来就公开号码，**不叠加时间闸门**：已入库几个就下发几个，
+  `next_reveal_at` 恒为 `""`；源站只补到部分号码时 `revealed_count` 就是那几个，前端按 5 秒轮询补齐。
+- 节拍彩种（台湾彩）的可见数量 = `min(源站已入库球数, floor((now - reveal_start)/25) + 1)`：
+  揭示只会延后，永远不会一次放出多个号码。
+- 未传/无法识别的彩种按**节拍**处理（fail-safe）：漏传彩种只会多一段节拍，绝不会提前放号。
 - 没有 `reveal_start` / `draw_time` 的旧载荷（例如历史空数据）不返回上述进度字段，行为与改造前一致。
 
 失败响应：

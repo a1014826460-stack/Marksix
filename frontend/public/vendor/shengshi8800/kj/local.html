@@ -236,6 +236,10 @@
 
       function notifyRevealGate(payload) {
         if (!payload) return;
+        // 号码已经全部下发（港澳彩一次性给全、或台湾彩揭示已完成）→ 没有需要门控的等待窗口。
+        // 否则港澳彩会继续给父页发「开奖中」并锁到 reveal_start+150s，看起来还在逐球揭晓。
+        if (payload.is_complete === true) return;
+        if (Number(payload.revealed_count) >= 7) return;
         var issue = normalizeIssue(payload.current_issue);
         var revealStartSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
         if (!issue || !(revealStartSec > 0)) return;
