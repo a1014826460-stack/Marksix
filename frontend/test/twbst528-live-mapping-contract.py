@@ -321,9 +321,11 @@ def main() -> None:
             # 「八肖来袭」改名为「七肖来袭」，板块名以站点当前文案为准。
             # 平特①肖 不在这里逐行断言「错」：它的判定已改成**七码口径**，
             # mock 里的候选「猪」是平码 → 509 期应为「对」，单独断言（见下）。
+            # 胆大胆小 也不在这里断言「错」：它的判定已改成**所显示 6 肖分组**口径，
+            # 开奖特肖马 ∈ 胆大肖 → 509 期应为「对」，单独断言（见下）。
             for title in (
                 "两波突围", "七肖来袭", "家野中特", "杀两半波", "平特一尾", "大小中特",
-                "暴富⑦肖", "胆大胆小", "吉美丑凶",
+                "暴富⑦肖", "吉美丑凶",
                 "绝杀①肖", "绝杀①波", "单双二肖", "绝杀一肖一尾",
             ):
                 if title == "杀两半波":
@@ -333,6 +335,18 @@ def main() -> None:
                 rendered_rows = [history_rows.nth(index).inner_text() for index in range(history_rows.count())]
                 assert any("第509期" in value and "开:36马错" in value for value in rendered_rows), (title, rendered_rows)
                 assert not any("第323期" in value or "????" in value for value in rendered_rows), (title, rendered_rows)
+
+            # 【胆大胆小】口径（2026-10-05 报障：277 期显示「胆大」、开奖猴 ∈ 胆大肖却判「错」）：
+            # 面板显示的是 胆大/胆小 6 肖分组，判定必须跟着**所显示的组**走。
+            # mock 的 mode 47 候选不是真生肖 → 组名回落「胆大」；开奖特肖马 ∈ 胆大肖
+            # （牛虎马猴狗猪）→ 509 期必须显示「开:36马对」，且旧口径的「错」不得残留。
+            danxiao = frame.locator(".lxlm").filter(has=frame.locator(".pb-tit", has_text="胆大胆小")).first
+            danxiao_rows = danxiao.locator("table.mtbl tbody > tr")
+            rendered_danxiao = [
+                danxiao_rows.nth(index).inner_text() for index in range(danxiao_rows.count())
+            ]
+            assert any("第509期" in value and "开:36马对" in value for value in rendered_danxiao), rendered_danxiao
+            assert not any("第509期" in value and "开:36马错" in value for value in rendered_danxiao), rendered_danxiao
 
             # 【吉美丑凶】/【③肖防③码】/【前后中特】的口径（2026-10-01 报障）：
             # 三块面板已改绑权威 mode（155/133/117）：

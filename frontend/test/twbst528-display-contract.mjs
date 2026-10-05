@@ -10,11 +10,14 @@
  *      （老实现只依赖预埋 span，导致琴棋书画/家野中特等板块永远标不出黄底）；
  *   4. 改期号配对：不得再出现按行号取行的写法（`data[index]` 等），必须走 makeRowResolver；
  *   5. 第 4/5/6 项的语义与改名；
- *   6. 第 2 项「码友来料参考」每期必须带开奖与判定。
+ *   6. 第 2 项「码友来料参考」每期必须带开奖与判定；
+ *   7. 【胆大胆小】判定必须按**所显示的 6 肖分组**复算（2026-10-05 线上 277 期
+ *      「显示胆大、开奖猴（∈胆大肖）却判错」），并做行为级验证。
  *
  * 运行：node frontend/test/twbst528-display-contract.mjs
  */
 import fs from "node:fs"
+import vm from "node:vm"
 
 const ROOT = "frontend/public/vendor/twbst528"
 const ADAPTER = `${ROOT}/site-data-adapter.js`
@@ -739,6 +742,134 @@ assert(
     /function writePlainLine[\s\S]{0,400}markTokenInLeaf\(group\[0\], text, hitTokens\)/.test(adapter),
   "【吉美丑凶】候选格必须用 `writePlainLine` 写纯文本叶子并只给命中项加 inline 黄底 marker",
 )
+
+// ── 7. 【胆大胆小】：按所显示的 6 肖分组判定（2026-10-05 线上 277 期）───────
+// 用户报障：277 期显示「胆大」、开奖 23 猴（猴 ∈ 胆大肖）却显示「错」。
+// 根因：面板显示的组由 mode 47 的 4 个候选**多数归属**得出，而接口 is_correct 用的是
+// mode 47 的「特肖 ∈ 本期 4 个候选」——两套口径不一致。修法：按所显示的组复算。
+assert(
+  /function danxiaoJudgement\(row\)[\s\S]{0,700}members\.indexOf\(zodiac\) !== -1/.test(adapter),
+  "【胆大胆小】必须按所显示的 6 肖分组判定",
+)
+assert(
+  /function renderSizhongteHistory[\s\S]{0,600}danxiaoJudgement\(row\)[\s\S]{0,400}withResultCorrect\(row, judged\.correct\)/.test(adapter),
+  "【胆大胆小】必须把本地判定交给 resultResolver（覆盖接口 is_correct）",
+)
+assert(
+  /function renderSizhongteHistory[\s\S]{0,600}judged\.token \? \[judged\.token\] : \[\]/.test(adapter),
+  "【胆大胆小】命中时必须点亮组名（错期零黄底）",
+)
+
+// 行为级：把适配器放进 vm（注入一行探针导出），直接调用真实的 danxiaoJudgement()。
+// 数据取线上实况（web=10 / type=3 / 2026 期 273–278）。
+{
+  const probeSource = adapter.replace(
+    "  window.Twbst528SiteData = { selectLottery: selectLottery };",
+    "  window.__probe = { danxiaoJudgement: danxiaoJudgement, groupLabelFor: groupLabelFor };\n" +
+      "  window.Twbst528SiteData = { selectLottery: selectLottery };",
+  )
+  assert(probeSource !== adapter, "探针注入失败：适配器出口写法变了")
+
+  const noop = () => {}
+  const node = {
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    addEventListener: noop,
+    setAttribute: noop,
+    removeAttribute: noop,
+    getAttribute: () => null,
+    classList: { add: noop, remove: noop, contains: () => false },
+    style: {},
+    childNodes: [],
+    appendChild: noop,
+  }
+  const doc = {
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    addEventListener: noop,
+    createElement: () => node,
+    createTextNode: () => node,
+    body: node,
+    documentElement: node,
+  }
+  const sandbox = {
+    window: {
+      Twbst528SiteConfig: { siteKey: "twbst528", lotteries: [{ lotteryType: 3 }, { lotteryType: 2 }] },
+      LotterySiteDataClient: { create: () => ({}) },
+      document: doc,
+      addEventListener: noop,
+      dispatchEvent: noop,
+      CustomEvent: function CustomEvent() {},
+      location: { href: "", search: "" },
+      console,
+    },
+    document: doc,
+    console,
+    JSON,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Math,
+    Date,
+    Error,
+    isFinite,
+    parseInt,
+    parseFloat,
+    setTimeout: noop,
+    clearTimeout: noop,
+    encodeURIComponent,
+    decodeURIComponent,
+  }
+  vm.createContext(sandbox)
+  vm.runInContext(probeSource, sandbox, { filename: "site-data-adapter.js" })
+  const probe = sandbox.window.__probe
+  assert(probe && typeof probe.danxiaoJudgement === "function", "适配器未暴露 danxiaoJudgement 探针")
+
+  /** 一行 mode 47 数据：`result.zodiac` 与线上一样是七肖串（末位才是特肖）。 */
+  function danxiaoRow({ tokens, special, opened = true }) {
+    const zodiac = ["猪", "马", "羊", "兔", "鼠", "羊", special].join(",")
+    return {
+      term: "2026277",
+      prediction: { tokens, text: tokens.join(",") },
+      result: { isOpened: opened, isCorrect: false, code: "20,37,24,28,19,48,36", zodiac },
+    }
+  }
+
+  const cases = [
+    { tokens: ["鼠", "狗", "马", "虎"], special: "猴", label: "胆大", correct: true },
+    { tokens: ["马", "羊", "猪", "牛"], special: "虎", label: "胆大", correct: true },
+    { tokens: ["牛", "兔", "羊", "鸡"], special: "羊", label: "胆小", correct: true },
+    { tokens: ["鼠", "蛇", "龙", "兔"], special: "羊", label: "胆小", correct: true },
+    { tokens: ["鸡", "狗", "牛", "龙"], special: "鼠", label: "胆大", correct: false },
+  ]
+  for (const item of cases) {
+    const row = danxiaoRow(item)
+    assert(
+      probe.groupLabelFor(row, { 胆大: ["牛", "虎", "马", "猴", "狗", "猪"], 胆小: ["鼠", "兔", "龙", "蛇", "羊", "鸡"] }, "胆大") ===
+        item.label,
+      `候选 ${item.tokens.join(",")} 应显示「${item.label}」`,
+    )
+    const judged = probe.danxiaoJudgement(row)
+    assert(judged, `候选 ${item.tokens.join(",")} 应给出判定`)
+    assert(
+      judged.correct === item.correct,
+      `${item.tokens.join(",")} + 开${item.special} 应判「${item.correct ? "对" : "错"}」，实际 ${judged.correct}`,
+    )
+    assert(
+      judged.token === (item.correct ? item.label : ""),
+      `命中时点亮组名、错期零黄底（实际 token=${JSON.stringify(judged.token)}）`,
+    )
+  }
+
+  // 未开奖 / 拿不到候选 → 返回 null，交给接口判定（不得凭空判「对/错」）。
+  assert(probe.danxiaoJudgement(danxiaoRow({ tokens: ["鼠", "狗", "马", "虎"], special: "猴", opened: false })) === null,
+    "未开奖期不得本地判定")
+  assert(probe.danxiaoJudgement({ prediction: { tokens: [] }, result: { isOpened: true, zodiac: "猴" } }) === null,
+    "没有候选时不得本地判定")
+}
 
 console.log("twbst528-display-contract: OK")
 

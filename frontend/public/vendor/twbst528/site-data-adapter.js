@@ -466,6 +466,30 @@
     return bestLabel || fallback || "";
   }
 
+  /**
+   * 第 5 项【胆大胆小】的判定口径：**开奖特肖 ∈ 面板所显示的 6 肖分组**。
+   *
+   * 2026-10-05 用户反馈：线上 277 期显示「胆大」、开奖 `23 猴`（猴 ∈ 胆大肖）却判「错」。
+   * 根因是两套口径不一致：面板显示的「胆大 / 胆小」是把 mode 47（四肖中特）的 4 个候选
+   * 按**多数归属**得到的分组，而接口 `is_correct` 用的是 mode 47 自己的口径
+   * 「特肖 ∈ 本期 4 个候选」——「候选里没有猴、但猴属于所显示的胆大组」的期次就被判成「错」。
+   *
+   * 站点公示的玩法就是 胆大肖 / 胆小肖 各 6 肖（`DANXIAO_GROUP`），所以展示层按
+   * **所显示的组**复算：特肖 ∈ 该组 → 对，并点亮组名（与供应商模板
+   * `<span style="background-color:#FFFF00">胆大肖</span>` 一致）。与【前后中特】的
+   * `groupMemberJudgement(..., "label")` 同口径、同返回契约：判不出来返回 `null`，
+   * 调用方退回接口判定。
+   */
+  function danxiaoJudgement(row) {
+    var result = row && row.result || {};
+    var label = groupLabelFor(row, DANXIAO_GROUP, "");
+    var members = label ? DANXIAO_GROUP[label] || [] : [];
+    var zodiac = specialZodiacOf(row);
+    if (!result.isOpened || !zodiac || !members.length) return null;
+    var hit = members.indexOf(zodiac) !== -1;
+    return { correct: hit, token: hit ? label : "" };
+  }
+
   function unavailableThreeColumn(title) {
     renderThreeColumnRows(sectionByTitle(title), null, function () { return ""; });
   }
@@ -1406,10 +1430,20 @@
   }
 
   // 第 5 项：【四肖中特】改名【胆大胆小】，展示“胆大”或“胆小”。
+  //
+  // 判定（2026-10-05 修复）：按**所显示的 6 肖分组**复算（`danxiaoJudgement`），
+  // 不再直接用 mode 47 接口的「特肖 ∈ 本期 4 个候选」——那是另一套口径，会让
+  // 「显示胆大、开奖猴（∈胆大肖）」的期次显示成「错」。命中时点亮组名。
   function renderSizhongteHistory(module) {
     renderThreeColumnRows(sectionByTitle("胆大胆小"), module, function (row) {
       return groupLabelFor(row, DANXIAO_GROUP, "胆大");
-    }, "title_47");
+    }, "title_47", function (row) {
+      var judged = danxiaoJudgement(row);
+      return judged && judged.token ? [judged.token] : [];
+    }, function (row) {
+      var judged = danxiaoJudgement(row);
+      return judged ? withResultCorrect(row, judged.correct) : null;
+    });
   }
 
   // 第 6 项：【三肖六码】改名【吉美丑凶】，绑定 mode 155「吉美凶丑（2选1，全肖）」
