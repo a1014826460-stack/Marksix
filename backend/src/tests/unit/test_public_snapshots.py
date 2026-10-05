@@ -70,6 +70,41 @@ def test_publish_opened_latest_draw_makes_only_complete_payload_visible():
     }
 
 
+def test_republish_without_explicit_timestamp_reuses_the_first_one():
+    """站点/接口重建路径不带 `published_at` 时也必须逐字节可复现。
+
+    版本键不可变，而 envelope 带发布时间：若每次都用当前时钟，同一载荷重复发布就会
+    写出不同字节并被拒绝（2026-10-05 同 prediction-snapshot 的时钟粒度问题）。
+    """
+    cache = MemoryCacheStore()
+    ticks = iter([500.0, 500.25])
+    snapshots = PublicDrawSnapshots(cache, ttl_seconds=300, clock=lambda: next(ticks))
+    payload = _latest_draw_payload()
+    version_key = latest_draw_snapshot_keys(3, "2026-131").version_key
+
+    assert snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True) is True
+    first = json.loads(cache.get(version_key))
+
+    assert snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True) is True
+    second = json.loads(cache.get(version_key))
+
+    assert first == second
+    assert first["published_at"] == 500.0
+    assert snapshots.get_latest_draw(3) == payload
+
+
+def test_outbox_retry_keeps_its_own_explicit_timestamp():
+    """显式传入 `published_at`（outbox 重试）时必须原样使用，不被首次发布时刻覆盖。"""
+    cache = MemoryCacheStore()
+    snapshots = PublicDrawSnapshots(cache, ttl_seconds=300, clock=lambda: 900.0)
+    payload = _latest_draw_payload()
+
+    snapshots.publish_latest_draw(3, payload, version="2026-131", is_opened=True, published_at=777.0)
+
+    envelope = json.loads(cache.get(latest_draw_snapshot_keys(3, "2026-131").version_key))
+    assert envelope["published_at"] == 777.0
+
+
 def test_future_issue_is_not_published_and_cannot_replace_opened_snapshot():
     cache = MemoryCacheStore()
     snapshots = PublicDrawSnapshots(cache)

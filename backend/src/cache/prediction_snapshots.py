@@ -24,6 +24,7 @@ from time import perf_counter, time
 from typing import Any, Callable, Mapping
 
 from cache.contracts import CacheUnavailable, CacheStore
+from cache.versioned_envelope import stable_published_at
 
 
 logger = logging.getLogger("cache.prediction_snapshots")
@@ -329,7 +330,11 @@ class PublicPredictionSnapshots:
             "site_ref": site_ref,
             "lottery_type_id": int(lottery_type_id),
             "selector": selector,
-            "published_at": self._clock(),
+            # 版本键是内容寻址的、不可变，所以发布时间必须**首次写定后复用**：
+            # 否则同一载荷在时钟刻度改变后重复发布会写出不同字节，被两套缓存一致拒绝
+            # （2026-10-05：test_prediction_snapshots 时钟粒度偶发；线上「指针过期、
+            # 版本仍在」的重建窗口也挂不回指针）。
+            "published_at": stable_published_at(self._cache, keys.version_key, self._clock),
             "payload": public_payload,
         }
         encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

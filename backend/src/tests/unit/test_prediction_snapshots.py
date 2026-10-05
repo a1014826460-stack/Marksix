@@ -66,6 +66,79 @@ def test_invalidate_drops_pointer():
     assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-abc") is None
 
 
+# ── 版本键不可变 vs envelope 时间戳（2026-10-05 时钟粒度偶发）────────────────
+
+def _version_key(payload=None, selector: str = "getTou-abc"):
+    return snapshot_keys(
+        KIND_LEGACY,
+        "web9",
+        3,
+        selector,
+        snapshot_version(_validated(payload if payload is not None else LEGACY_PAYLOAD)),
+        "0.0",
+    )
+
+
+def _validated(payload):
+    """发布时会先过 `_validate_payload`，版本哈希按校验后的载荷算。"""
+    from cache.prediction_snapshots import _validate_payload
+
+    return _validate_payload(KIND_LEGACY, payload, 3)
+
+
+def test_republish_reuses_first_published_at_so_the_version_stays_immutable():
+    """同一载荷重复发布必须逐字节一致——时钟跨刻度也不许变。
+
+    版本键只按载荷哈希寻址，而 envelope 里带 `published_at = clock()`；两次发布一旦
+    跨过时钟刻度（Windows `time()` 约 15.6ms 粒度）就写出不同字节，被内存/Redis 两套
+    缓存一致的「版本键不可变」校验拒绝（Redis 侧 `_PUBLISH_VERSIONED_SCRIPT` 返回 0）。
+    """
+    cache = MemoryCacheStore()
+    ticks = iter([1000.0, 1000.02, 1000.04])
+    snapshots = PublicPredictionSnapshots(cache, ttl_seconds=300, clock=lambda: next(ticks))
+
+    assert snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", LEGACY_PAYLOAD) is True
+    first = json.loads(cache.get(_version_key().version_key).decode("utf-8"))
+
+    assert snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", LEGACY_PAYLOAD) is True
+    second = json.loads(cache.get(_version_key().version_key).decode("utf-8"))
+
+    assert first == second, "同一载荷重复发布必须逐字节一致"
+    assert first["published_at"] == 1000.0, "published_at 必须复用首次发布时刻"
+    assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-abc") == LEGACY_PAYLOAD
+
+
+def test_republish_recreates_a_dropped_pointer_after_the_clock_moved_on():
+    """指针 TTL 比版本早 1 秒到期时，重建发布必须能把指针挂回去（不能抛 CacheUnavailable）。"""
+    cache = MemoryCacheStore()
+    ticks = iter([2000.0, 2000.05])
+    snapshots = PublicPredictionSnapshots(cache, ttl_seconds=300, clock=lambda: next(ticks))
+
+    snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", LEGACY_PAYLOAD)
+    cache.delete(_version_key().pointer_key)  # 模拟「指针已过期、版本键还在」
+
+    assert snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", LEGACY_PAYLOAD) is True
+    assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-abc") == LEGACY_PAYLOAD
+
+
+def test_changed_payload_still_gets_its_own_timestamp_and_version():
+    """内容真的变了 → 新版本键 + 新时间戳，旧版本键（内容寻址）保持不变。"""
+    cache = MemoryCacheStore()
+    ticks = iter([3000.0, 3000.5])
+    snapshots = PublicPredictionSnapshots(cache, ttl_seconds=300, clock=lambda: next(ticks))
+    updated = {"data": [{"content": "虎,兔", "term": "266", "res_code": "", "res_sx": ""}]}
+
+    old_key = _version_key().version_key
+    snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", LEGACY_PAYLOAD)
+    snapshots.publish(KIND_LEGACY, "web9", 3, "getTou-abc", updated)
+
+    assert snapshots.get(KIND_LEGACY, "web9", 3, "getTou-abc") == updated
+    new_key = _version_key(updated).version_key
+    assert new_key != old_key
+    assert json.loads(cache.get(new_key).decode("utf-8"))["published_at"] == 3000.5
+    assert json.loads(cache.get(old_key).decode("utf-8"))["published_at"] == 3000.0
+
+
 @pytest.mark.parametrize("field", ["_simulation_should_hit", "should_hit", "truth_source", "future_truth"])
 def test_publish_rejects_internal_marker_fields(field):
     snapshots = _snapshots()

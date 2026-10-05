@@ -14,6 +14,7 @@ from time import time
 from typing import Any, Callable, Mapping
 
 from cache.contracts import CacheStore
+from cache.versioned_envelope import stable_published_at
 
 
 _KEY_VERSION = "v1"
@@ -145,7 +146,13 @@ class PublicDrawSnapshots:
             "snapshot_type": snapshot_type,
             "lottery_type_id": lottery_type,
             # A retried Outbox event must reproduce its immutable bytes exactly.
-            "published_at": self._clock() if published_at is None else published_at,
+            # 没有调用方时间戳的路径（站点/接口重建）用「版本键已存在则复用首次发布时间」，
+            # 保证同一版本逐字节可复现（见 cache/versioned_envelope.py）。
+            "published_at": (
+                published_at
+                if published_at is not None
+                else stable_published_at(self._cache, snapshot_keys.version_key, self._clock)
+            ),
             "payload": public_payload,
         }
         encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
