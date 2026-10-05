@@ -19,7 +19,15 @@ import fs from "node:fs"
 import vm from "node:vm"
 
 const PANEL_PATH = "frontend/public/vendor/twsaimahui/static/js/043tiandi.js"
-const BUNDLE_PATH = "frontend/public/vendor/twsaimahui/static/js/bundle-78c5cb0f22e5ec36.js"
+// bundle 名是内容哈希、由 scripts/bundle-twsaimahui-modules.py 重建后改名，
+// 所以从 bundles.json 取当前文件名，避免每次重建都要手改契约。
+const MANIFEST_PATH = "frontend/public/vendor/twsaimahui/static/js/bundles.json"
+const BUNDLE_PATH = (() => {
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"))
+  const first = manifest.runs?.[0]?.bundle
+  if (!first) throw new Error("bundles.json 未记录首页 bundle")
+  return `frontend/public/vendor/twsaimahui/${first}`
+})()
 
 function loadPanel() {
   const source = fs.readFileSync(PANEL_PATH, "utf8")
@@ -55,6 +63,17 @@ function row({ term, group, members, resSx, resCode }) {
     term: String(term),
     content: JSON.stringify([`${group}|${members}`]),
     xiao: "猴,虎",
+    res_code: resCode || "",
+    res_sx: resSx || "",
+  }
+}
+
+/** 一行 mode 5 记录：正文是**裸串**（非 JSON 数组）——异常/历史写入形态。 */
+function plainRow({ term, content, resSx, resCode }) {
+  return {
+    term: String(term),
+    content,
+    xiao: "蛇,羊",
     res_code: resCode || "",
     res_sx: resSx || "",
   }
@@ -128,6 +147,54 @@ const FIXED_GROUPS = [
   }
   if (!bundle.includes("tx = tx || c[1].replaceAll(',','');")) {
     throw new Error("bundle 内未把 content 推断改成兜底")
+  }
+  // 裸串正文兜底：043tiandi.js（.l22 面板）与 075tiandi.js 两处副本都必须同步
+  const plainFallbacks = bundle.split("content = [d.content.trim()];").length - 1
+  if (plainFallbacks < 2) {
+    throw new Error(`bundle 内裸串正文兜底缺少副本（找到 ${plainFallbacks} 处，应为 2 处）`)
+  }
+  for (const source of [PANEL_PATH, "frontend/public/vendor/twsaimahui/static/js/075tiandi.js"]) {
+    if (!fs.readFileSync(source, "utf8").includes("content = [d.content.trim()];")) {
+      throw new Error(`${source} 缺少裸串正文兜底`)
+    }
+  }
+}
+
+// ── 5. 正文是裸串（非 JSON 数组）时不得整行丢弃 ───────────────────────────
+// 2026-10-05 线上事故：mode 5 的 content 曾被写成裸串 `天肖|兔,马,猴,猪,牛,龙`，
+// 渲染层 safeParseJSON 失败 → 每行 continue → 面板只剩表头（用户看到「显示为空」）。
+{
+  const panel = loadPanel()
+  panel.ajaxConfig.success({
+    data: [plainRow({ term: 292, content: "地肖|蛇,羊,鸡,狗,鼠,虎" })],
+    groups: FIXED_GROUPS,
+  })
+  const html = panel.html()
+  if (!html.includes("292期")) {
+    throw new Error(`裸串正文被整行丢弃（线上表现：面板只剩表头）：${html.slice(0, 200)}`)
+  }
+  if (!html.includes(">地肖</strong>")) {
+    throw new Error(`裸串正文未渲染出分组标签：${html.slice(0, 240)}`)
+  }
+  // 头部仍由 fixed_data 分组补齐（不依赖每期正文）
+  if (!html.includes("天肖</span>:<span class='stylezi'>兔马猴猪牛龙")) {
+    throw new Error("裸串正文场景下头部天肖缺失")
+  }
+  if (!html.includes("地肖</span>:<span class='stylezi'>蛇羊鸡狗鼠虎")) {
+    throw new Error("裸串正文场景下头部地肖缺失")
+  }
+}
+
+// ── 6. 没有任何历史行时，头部仍必须完整 ───────────────────────────────────
+{
+  const panel = loadPanel()
+  panel.ajaxConfig.success({ data: [], groups: FIXED_GROUPS })
+  const html = panel.html()
+  if (!html.includes("天肖</span>:<span class='stylezi'>兔马猴猪牛龙")) {
+    throw new Error("空数据时头部天肖缺失")
+  }
+  if (!html.includes("地肖</span>:<span class='stylezi'>蛇羊鸡狗鼠虎")) {
+    throw new Error("空数据时头部地肖缺失")
   }
 }
 

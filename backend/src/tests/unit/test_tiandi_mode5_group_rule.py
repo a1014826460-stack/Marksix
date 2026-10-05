@@ -109,13 +109,46 @@ def test_controlled_generation_can_only_target_a_group_of_the_real_zodiac():
 
 def test_format_tiandi_groups_emits_group_members_and_two_zodiac_slot():
     assert format_tiandi_groups(("天肖",), None) == {
-        "content": "天肖|兔,马,猴,猪,牛,龙",
+        "content": '["天肖|兔,马,猴,猪,牛,龙"]',
         "xiao": "兔,马",
     }
     assert format_tiandi_groups(("地肖",), None) == {
-        "content": "地肖|鼠,虎,蛇,羊,鸡,狗",
+        "content": '["地肖|鼠,虎,蛇,羊,鸡,狗"]',
         "xiao": "鼠,虎",
     }
+
+
+def test_content_is_json_encoded_so_the_panel_can_parse_it():
+    """正文必须是 JSON 数组字符串（2026-10-05 线上【天地生肖】显示为空）。
+
+    `build_generated_prediction_row_data` 只在 formatter 返回 list 时 `json.dumps`；
+    返回 dict 时按列原样写入。dict 里的 content 若写成裸串 `天肖|兔,…`，
+    旧站渲染层 `safeParseJSON` 解析失败 → `if (!content.length) continue;` 逐行丢弃
+    → 面板只剩表头。这里同时锁 formatter 与落库编码两层。
+    """
+    import json
+
+    from domains.prediction.generation_service import build_generated_prediction_row_data
+    from predict.common import parse_pipe_label_content
+
+    for label in TIANDI_LABELS:
+        generated = format_tiandi_groups((label,), None)
+        parsed = json.loads(generated["content"])
+        assert isinstance(parsed, list) and len(parsed) == 1
+        assert parsed[0].startswith(f"{label}|")
+        # 判定链路（正文 → 标签）必须仍然解得出来
+        assert parse_pipe_label_content(generated["content"]) == (label,)
+
+        row_data = build_generated_prediction_row_data(
+            mode_id=5,
+            lottery_type="3",
+            year="2026",
+            term="292",
+            web_value="6",
+            generated_content=generated,
+        )
+        assert row_data["content"] == generated["content"]
+        assert json.loads(row_data["content"]) == parsed
 
 
 def test_two_zodiac_slot_is_always_a_subset_of_the_group():

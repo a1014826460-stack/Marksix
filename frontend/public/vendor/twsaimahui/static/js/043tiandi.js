@@ -33,6 +33,13 @@ $.ajax({
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
+                if (!content.length && typeof d.content === 'string' && d.content.trim()) {
+                    // 历史/异常写入可能把正文落成**裸串**（`天肖|兔,马,猴,猪,牛,龙`
+                    // 而不是 JSON 数组）。safeParseJSON 会返回 []，旧逻辑直接 continue，
+                    // 整块面板就只剩表头（2026-10-05 线上 twsaimahui 实测「显示为空」）。
+                    // 这种单条正文按一条处理，诚实展示该期分组。
+                    content = [d.content.trim()];
+                }
                 if (!content.length) {
                     continue;
                 }

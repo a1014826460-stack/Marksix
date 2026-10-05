@@ -1,4 +1,4 @@
-﻿$.ajax({
+$.ajax({
     url: httpApi + `/api/kaijiang/getTdsx1?web=${web}&type=${type}&num=2`,
     type: 'GET',
     dataType: 'json',
@@ -19,6 +19,10 @@
                 let xiaoV = [];
                 let ma = [];
                 let content = safeParseJSON(d.content, []);
+                if (!content.length && typeof d.content === 'string' && d.content.trim()) {
+                    // 裸串正文（非 JSON 数组）按单条处理，见 043tiandi.js 的说明。
+                    content = [d.content.trim()];
+                }
                 for (let i in content) {
                     let c = content[i].split('|');
                     xiao.push(c[0])

@@ -2,7 +2,7 @@
   "generated_by": "scripts/bundle-twsaimahui-modules.py --rebuild",
   "runs": [
     {
-      "bundle": "static/js/bundle-78c5cb0f22e5ec36.js",
+      "bundle": "static/js/bundle-2cfe6cfcf4c2976a.js",
       "sources": [
         "static/js/061jy2x.js",
         "static/js/033zuoyou.js",
@@ -62,7 +62,7 @@
         "static/js/048hllx.js",
         "static/js/052qqsh.js"
       ],
-      "bytes": 347561
+      "bytes": 349124
     },
     {
       "bundle": "static/js/bundle-9ee7cc06abf3af07.js",

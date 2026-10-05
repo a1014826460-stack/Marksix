@@ -691,6 +691,13 @@ def format_tiandi_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> d
     现在分组是**受控候选**（`generation_rules` 登记 `zodiac_group`，真实目标 = 特肖所属分组），
     正文按分组输出；`xiao` 槽取该分组的前 `TIANDI_XIAO_WIDTH` 个成员生肖，保证
     「特肖落在分组 或 落在两肖」两个口径恒同向（两肖 ⊆ 分组），面板与平台判定不会互相矛盾。
+
+    正文编码（2026-10-05 线上事故）：本表的正文与 mode 133/155 等同形，必须是
+    **JSON 数组字符串** ``["天肖|兔,马,猴,猪,牛,龙"]``。`domains.prediction.generation_service`
+    的 `build_generated_prediction_row_data` 只在 formatter 返回 list 时做 `json.dumps`，
+    返回 dict 时**按列原样写入**；因此这里必须自己编码。少了这一层，`043tiandi.js` 的
+    `safeParseJSON` 会解析失败返回 `[]`，渲染层 `if (!content.length) continue;` 逐行
+    丢弃 → 线上 twsaimahui【天地生肖】只剩表头（前端表现即「显示为空」）。
     """
     try:
         mapping = load_fixed_value_map(conn, "天地生肖", labels)
@@ -700,7 +707,7 @@ def format_tiandi_groups(labels: tuple[str, ...], conn: sqlite3.Connection) -> d
     content = groups[0] if groups else ""
     members = content.split("|", 1)[1].split(",") if "|" in content else []
     return {
-        "content": content,
+        "content": json.dumps([content], ensure_ascii=False) if content else "",
         "xiao": ",".join(members[:TIANDI_XIAO_WIDTH]),
     }
 
