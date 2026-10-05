@@ -2850,3 +2850,44 @@ python scripts/audit-prediction-display.py twbst528 --wait-ms 95000
 
 warn=15（13 R4 + 2 R5）与本地同量级：均为审计按容器 class / 行内标签归并模块的产物
 （详见 `docs/prediction-display-standard.md` 五之十五第三轮）。
+
+### 天地生肖（mode 5）正文编码修复 + bundle 改版（2026-10-05 第十七轮，已部署）
+
+用户报障：`www.twsaimahui.com`【天地生肖】面板只剩表头（`天肖:` / `地肖:` 皆空）。
+
+根因（两个叠加）：
+
+1. 上一轮提交 `a67936d` 把 mode 5 分组改为受控候选后，正文 formatter 换成 `format_tiandi_groups`
+   （**dict** 形式）。`build_generated_prediction_row_data` 只在 formatter 返回 `list` 时
+   `json.dumps`，dict 的 value **原样写库** → 正文落成裸串 `天肖|兔,马,猴,猪,牛,龙`
+   （mode 133/155 一直是 `["…"]` 数组）。旧站 `043tiandi.js` 的 `safeParseJSON` 解析失败返回 `[]`，
+   `if (!content.length) continue;` 逐行丢弃 → 面板只剩表头。
+2. `static/js/**` 是 `cache-control: public, max-age=31536000, immutable`：上一轮 `f84ef8b`
+   原地改 bundle 根本到不了老用户，所以「地肖补齐」也没有生效。
+
+改动（`eb684bc`）：
+
+- `format_tiandi_groups` 输出 `["天肖|兔,马,猴,猪,牛,龙"]`；`xiao` 仍取分组内两肖。
+- 043/075 与 bundle 两处副本加兜底：裸串正文按单条渲染，不再整行丢弃。
+- `python scripts/bundle-twsaimahui-modules.py --rebuild --apply` →
+  `bundle-78c5cb0f22e5ec36.js` 改名为 `bundle-2cfe6cfcf4c2976a.js`，`index.html` + `bundles.json`
+  同步（新 URL 绕开 immutable 缓存）。
+- 测试：`tests/unit/test_tiandi_mode5_group_rule.py` 锁 formatter + 落库编码 + 判定链路可解析；
+  `frontend/test/twsaimahui-tiandi-display-contract.mjs` 加「裸串正文不得丢行」「无历史行时头部仍完整」
+  两例，bundle 路径改从 `bundles.json` 读取。
+
+| 步骤 | 结果 |
+| --- | --- |
+| `git push origin main` | `a67936d..eb684bc` |
+| 中心节点 | 备份 `.deploy-backups/tiandi-content-json-20261005T102722Z`；ff-only 到 `eb684bc`；预热后自检 200 |
+| 前端节点 | 备份 `.deploy-backups/tiandi-content-json-20261005T102725Z`；仅重建 `frontend`；`nginx -t` 通过；六站 200 |
+| 线上资产 | `bundle-2cfe6cfcf4c2976a.js` 返回 200，sha256 与本地重建一致（`229b25457c28…`） |
+| mode 5 重生成（web 4/5/7/8/9/10/12/13） | 每站 `inserted=14 / skipped=1 / errors=0`，正文均为 JSON 数组，分组天肖 3–5 / 地肖 9–11（不再锁死天肖） |
+| web 6（twsaimahui）279–292 | 生成器对未来期已存在行一律 `skipped_existing`（`_find_existing_future_row` 短路，不受 `allow_overwrite` 影响）；用户授权后按**编码修复**把 14 行 content 由裸串包成 JSON 数组，其余列（分组 / `xiao` / id / created_at）不变 |
+| web 11（twjsz666） | 该站未启用 mode 5，0 行（正常） |
+| 验收 | 线上 `GET /api/kaijiang/getTdsx1?web=6&type=3&num=2` 返回 10 行 JSON 数组 + 完整 `groups`；用线上真实 payload 驱动 `043tiandi.js`：10/10 行渲染、头部 `天肖=兔马猴猪牛龙 / 地肖=蛇羊鸡狗鼠虎`、历史行含两组标签；后端 `1206 passed / 1 failed`（既有 nginx 契约）、twsaimahui 相关 8 个前端契约全绿 |
+
+**审计注意**：本机代理屏蔽 `www.twsaimahui.com`（`Page.goto: ERR_CONNECTION_CLOSED`），
+`scripts/audit-prediction-display.py twsaimahui` 本轮拿不到 rows，验收改为「线上 payload + 线上面板脚本」
+等价渲染。
+
