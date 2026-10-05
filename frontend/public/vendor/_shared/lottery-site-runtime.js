@@ -178,6 +178,24 @@
       window.clearTimeout(drawPollTimerId);
       drawPollTimerId = null;
     }
+    // 轮询时带 _ts 参数：同时绕过桥接层的内存缓存与 HTTP 短缓存，
+    // 保证每次取到的都是后端「此刻已开放几个球」的真实状态。
+    function freshDrawQuery(query) {
+      var separator = query && query.indexOf("?") >= 0 ? "&" : "?";
+      return (query || "") + separator + "_ts=" + Date.now();
+    }
+    function nextPollDelayMs(draw) {
+      // 后端在载荷里给出下一个号码的开放时刻：到点即取（±1 秒），
+      // 不再固定等 5 秒；拿不到就退回固定间隔。
+      if (draw && draw.next_reveal_at) {
+        var target = Date.parse(String(draw.next_reveal_at).replace(" ", "T") + "+08:00");
+        if (isFinite(target)) {
+          var delay = target - Date.now() + 400;
+          if (delay > 0 && delay <= DRAW_POLL_INTERVAL_MS * 6) return Math.max(300, delay);
+        }
+      }
+      return DRAW_POLL_INTERVAL_MS;
+    }
     function pollDrawUntilComplete(config, epoch, query) {
       if (epoch !== activationEpoch) return;
       if (!drawRevealPending(drawState)) return;
@@ -185,7 +203,7 @@
       drawPollTimerId = window.setTimeout(function () {
         drawPollTimerId = null;
         if (epoch !== activationEpoch) return;
-        bridge.getDraw(query).then(function (draw) {
+        bridge.getDraw(freshDrawQuery(query)).then(function (draw) {
           if (epoch !== activationEpoch) return;
           drawState = mergeDraw(drawState, draw);
           renderDraw(config, drawState, false);
@@ -194,7 +212,7 @@
           // 拿不到新号码时保持已渲染内容，继续在当前窗口内重试。
           pollDrawUntilComplete(config, epoch, query);
         });
-      }, DRAW_POLL_INTERVAL_MS);
+      }, nextPollDelayMs(drawState));
     }
     function activate(config) {
       var epoch = ++activationEpoch;
