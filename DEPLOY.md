@@ -2943,11 +2943,27 @@ bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys"
 部署后需盯一次台湾开奖窗口（例如当晚 22:32）：确认台湾仍是 `1→7` 逐球（22:32:02→22:34:32），
 港澳接口一次给全。
 
-**顺带发现（既有、未修）**：`tests/unit/test_prediction_snapshots.py::test_version_is_content_addressed_so_changed_payload_swaps_pointer`
-偶发失败——同一载荷发布两次时 envelope 带 `published_at = monotonic()` 而版本键只按载荷哈希，
-两次调用跨过 Windows `monotonic` 刻度（约 15.6 ms）时内存缓存抛 `version key is immutable`。
-复现：`.scratch/repro2.py`（发布间隔 50 ms 必现）。生产用 Redis（无条件覆盖）不受影响；
-是否修（`published_at` 参与版本键，或内存适配器与 Redis 同语义）待用户决定。
+**快照版本键不可变 vs envelope 时间戳（既有缺陷，第二十轮修复 `35ef55a`）**：
+`publish_versioned` 的版本键是内容寻址的（`sha256(载荷)[:16]`），两套缓存实现——内存
+`MemoryCacheStore` 与 Redis 的 `_PUBLISH_VERSIONED_SCRIPT`——**都**要求同一版本键的字节不可变；
+而 envelope 里带 `published_at = clock()`。于是**同一载荷**在时钟刻度改变后重复发布就写出不同字节、
+被一致拒绝。此前的判断（「生产用 Redis 无条件覆盖所以不受影响」）**是错的**：Redis 侧脚本
+`if existing and existing ~= ARGV[1] then return 0 end` → 同样抛 `CacheUnavailable`。
+
+影响：① `test_prediction_snapshots` 时钟粒度偶发（Windows `time()` 约 15.6 ms 粒度，间隔 50 ms
+必现，复现脚本 `.scratch/repro2.py`）；② 线上「指针 TTL 比版本 TTL 早 1 秒到期」的重建窗口里，
+重新发布会直接被拒 → 指针挂不回去（缓存退化为长期 miss）。
+
+修复：新增 `cache/versioned_envelope.py::stable_published_at(cache, version_key, clock)`——
+版本键已存在就复用其**首次发布时间**，重复发布逐字节一致（真正幂等）。与
+`cache/public_snapshots.py` 既有约定同源（outbox 重试由调用方传同一个 `published_at`：
+「A retried Outbox event must reproduce its immutable bytes exactly」）；
+`PublicPredictionSnapshots.publish` 与 `PublicDrawSnapshots._publish` 中**未显式传时间戳**的路径接入，
+显式传入的仍原样使用；「同键不同字节必须拒绝」的护栏保持不变（内容真变 → 新版本键）。
+
+测试：新增 5 条（预测快照：跨刻度重复发布幂等且复用首次时间戳、指针丢失后重建不抛异常、
+载荷变化另起版本且旧版本键不动；开奖快照：无显式时间戳复用首次发布时刻、outbox 显式时间戳不被覆盖）。
+**是否部署待授权**（改动在 `backend/src/cache/**`，只影响中心节点的 python-api / scheduler-worker）。
 
 ### twbst528【胆大胆小】按所显示分组判定（2026-10-05 第十九轮，已提交未部署）
 
