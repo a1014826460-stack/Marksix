@@ -2975,3 +2975,16 @@ bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys"
 `twsbst528-live-mapping-contract.py` 的 509 期 mock 期望由「开:36马错」改为「开:36马对」并移出错断言批量。
 验证：`test:display-contracts` 38 条全绿；Chromium 真实渲染的 live-mapping 契约通过。
 
+#### 上线记录（2026-10-05 22:0x 已部署）
+
+用户授权「两笔一起部署」（第十八轮揭示口径 + 第十九轮胆大胆小），发布提交 `10cff6d`：
+
+| 步骤 | 结果 |
+| --- | --- |
+| `git push origin main` | `7e44fa8..10cff6d`（含 `e18e050` 揭示口径、`2e2b45b` 胆大胆小） |
+| 中心节点 | 备份 `.deploy-backups/danxiao-reveal-fix-20261005T140723Z`；ff-only 到 `10cff6d`；预热后自检 200 |
+| 前端节点 | 备份 `.deploy-backups/danxiao-reveal-fix-20261005T140725Z`；仅重建 `frontend`；六站自检全 200 |
+| 揭示口径验收（22:22 实测） | 香港 7/7 complete、`next_reveal_at=""`；**澳门 2026278 由改动前的 6/7 + next=21:37:24 变为 7/7 complete + next=""**（同一期，改动前后可直接对照）；台湾 277 仍 7/7 complete |
+| 【胆大胆小】验收 | 线上 `www.twbst528.com/vendor/twbst528/site-data-adapter.js`（97,644 B）含 `danxiaoJudgement`×4 与 `withResultCorrect(row, judged.correct)`；用**线上这份适配器**跑生产行：273 胆大+鼠 错、274 胆小+羊 对、275 胆小+羊 对、276 胆大+虎 对、**277 胆大+猴 对（组名点亮）**、278 未开奖 |
+| 台湾逐球窗口 | 22:31–22:35 只读采样 2026278：`reveal_start=22:32:11` → 1/7，随后 **每 25 秒 +1**（22:32:36 / :33:01 / :33:26 / :33:51 / :34:16），**22:34:41（+150s）7/7 complete**，`next_reveal_at` 逐个精确推进 |
+
