@@ -2900,7 +2900,21 @@ warn=15（13 R4 + 2 R5）与本地同量级：均为审计按容器 class / 行�
 `legacy-rows` 快照（指针 TTL 300 s）。复核 9 站（web 4/5/6/7/8/9/10/12/13）均为
 「279、278 待开 + 277–268 带开奖号码」，与既有正常形态一致。
 
-遗留（**未处理，等用户决定**）：往期行 269–278 仍是修复前那批「频率锁死天肖」的正文
-（当时 4 天 5 地，显示 4 准 5 错，判定诚实但分组不是受控结果）；历史期改正文等于改写已开奖期的
-预测展示，需单独授权。
+**历史期分组回填（同日第三处，用户授权「受控回填 + 只回填最近 9 期」）**：往期行此前仍是修复前那批
+「频率锁死天肖」的正文（4 准 5 错）。按授权执行
+
+```
+bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys":["title_5"],
+  "start_issue":"2026269", "end_issue":"2026277", "future_only":False, "allow_overwrite":True,
+  "trigger":"ops_tiandi_history_regroup_recent"})
+```
+
+9 站各 `updated=9 / inserted=0 / errors=0`。历史分支走 `predict(res_code=本期真实结果)`，
+`predict/common.py:824` 会把真实结果注入预测标签（分组现在就是标签）→ 分组恒等于真实特肖所属分组：
+面板 269–277 全部「准」，分组分布 地肖 5 / 天肖 4（不再锁死）；268、278 等区间外行未动。
+
+**影响面证明（行级 `xmin`）**：事务号区间 `[1470200, 1470500]` 内，362 张 `created.mode_payload_*`
+表中**只有 `mode_payload_5` 被写过**，且正好 **81 行 = 9 站 × term 269–277**；任务日志原文
+`mode_id=5 / mechanism_key=title_5 / table=mode_payload_5 / draw_count=9 / updated=9 / errors=0`。
+写入后 `invalidate_lottery_type(create_cache_store(), 3)` 失效 `legacy-rows` 快照，线上接口即时生效。
 
