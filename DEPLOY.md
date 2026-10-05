@@ -2891,3 +2891,16 @@ warn=15（13 R4 + 2 R5）与本地同量级：均为审计按容器 class / 行�
 `scripts/audit-prediction-display.py twsaimahui` 本轮拿不到 rows，验收改为「线上 payload + 线上面板脚本」
 等价渲染。
 
+**收尾（同日第二处修复）**：重生成用了 `future_periods=15`，各站 mode 5 因此多了 13 期未来期
+（280–292）。面板 `limit=10` 取「最新行」→ 被未来期占满，往期开奖号码整块消失
+（用户报障：283–286 显示 `开:？00??`；这些是 2026 未来期，本就没有号码可补）。
+生产常态是夜间调度**每晚只生成 1 期未来期**（`crawler/scheduler.py` 中 `"future_periods": 1`）。
+按用户授权用受支持的 `delete_mode_payload_row_by_id(conn, "mode_payload_5", id, source="created")`
+删除 9 站共 **117 行**（保留 279），并 `invalidate_lottery_type(create_cache_store(), 3)` 立刻失效
+`legacy-rows` 快照（指针 TTL 300 s）。复核 9 站（web 4/5/6/7/8/9/10/12/13）均为
+「279、278 待开 + 277–268 带开奖号码」，与既有正常形态一致。
+
+遗留（**未处理，等用户决定**）：往期行 269–278 仍是修复前那批「频率锁死天肖」的正文
+（当时 4 天 5 地，显示 4 准 5 错，判定诚实但分组不是受控结果）；历史期改正文等于改写已开奖期的
+预测展示，需单独授权。
+
