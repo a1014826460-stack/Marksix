@@ -2918,3 +2918,34 @@ bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys"
 `mode_id=5 / mechanism_key=title_5 / table=mode_payload_5 / draw_count=9 / updated=9 / errors=0`。
 写入后 `invalidate_lottery_type(create_cache_store(), 3)` 失效 `legacy-rows` 快照，线上接口即时生效。
 
+### 开奖揭示改按彩种分口径（2026-10-05 第十八轮，已提交未部署）
+
+用户口径：港澳彩源站本来就公开全部号码，再按 25 秒节流只是让人多等；只有台湾彩的 7 码是
+**提前入库的未来真值**，必须由服务端逐球放行（也是「开奖后 2:30 内除开奖模块外不得泄露」的
+实现方式）。改动提交 `e18e050`（**尚未部署，等授权**）：
+
+- `backend/src/public/draw_reveal.py`：新增 `PACED_REVEAL_LOTTERY_TYPES = {3}` 与
+  `is_paced_lottery_type()`；`apply_reveal_slice(payload, *, lottery_type_id=...)` 对节拍彩种按
+  `reveal_start + 25s×N`，对港澳彩 `revealed_count = 已入库球数`、`next_reveal_at = ""`；
+  未传/非法彩种按**节拍**处理（fail-safe，漏传只会多一段节拍，不会提前放号）。
+- `backend/src/routes/public_routes.py`：`latest_draw` 与 `_send_site_page`（站点聚合 `draw` 段）
+  显式传彩种。
+- `frontend/public/vendor/shengshi8800/kj/local.html`：`notifyRevealGate()` 在载荷已完整
+  （`is_complete` / `revealed_count>=7`）时不再给父页发「开奖中」门控。
+- 测试/脚本/文档：`tests/unit/test_latest_draw_reveal_slice.py`（港澳一次性全开、部分号码透传、
+  fail-safe、路由出口）、`frontend/test/kj-panel-server-reveal-contract.mjs` 场景 9（首帧 7/7 →
+  立即画满、不轮询、不发门控）、`scripts/check-latest-draw-reveal.py` 按彩种校验、
+  `backend/docs/API.md` 揭示口径。
+
+本地验证：`backend python -m pytest -q` → `1214 passed / 1 failed`（既有 nginx 契约失败，与本
+改动无关）；`test:display-contracts` 38 条全绿；kj 面板 5 条契约全绿。
+
+部署后需盯一次台湾开奖窗口（例如当晚 22:32）：确认台湾仍是 `1→7` 逐球（22:32:02→22:34:32），
+港澳接口一次给全。
+
+**顺带发现（既有、未修）**：`tests/unit/test_prediction_snapshots.py::test_version_is_content_addressed_so_changed_payload_swaps_pointer`
+偶发失败——同一载荷发布两次时 envelope 带 `published_at = monotonic()` 而版本键只按载荷哈希，
+两次调用跨过 Windows `monotonic` 刻度（约 15.6 ms）时内存缓存抛 `version key is immutable`。
+复现：`.scratch/repro2.py`（发布间隔 50 ms 必现）。生产用 Redis（无条件覆盖）不受影响；
+是否修（`published_at` 参与版本键，或内存适配器与 Redis 同语义）待用户决定。
+
