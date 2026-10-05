@@ -524,6 +524,74 @@
         }
       }
 
+      // 当期已见过的号码（按后端下发顺序累积）。
+      // 同一期内只增不减：短缓存 / 快照短暂回退时，不会把已经展示过的球抹掉。
+      var _serverBallsIssue = "";
+      var _serverBallsSeen = [];
+      var _serverRevealTickTimerId = null;
+
+      function _resetServerBalls(issue) {
+        _serverBallsIssue = issue || "";
+        _serverBallsSeen = [null, null, null, null, null, null, null];
+      }
+
+      /** 合并本期新收到的号码（按后端顺序填充前 N 个槽位），返回 7 槽快照。 */
+      function _mergeServerBalls(issue, payload) {
+        if (_serverBallsIssue !== issue) _resetServerBalls(issue);
+        var incoming = _serverPayloadBalls(payload);
+        for (var i = 0; i < 7; i++) {
+          if (!_serverBallsSeen[i] && incoming[i]) _serverBallsSeen[i] = incoming[i];
+        }
+        return _serverBallsSeen.slice(0, 7);
+      }
+
+      /** 诚实展示：后端给了几个球就画几个球，顺序与后端一致，不做二次裁剪。 */
+      function _renderServerBalls(balls) {
+        for (var i = 0; i < 7; i++) {
+          setBall(i, (balls && balls[i]) || null);
+        }
+      }
+
+      function _displayedServerBallCount() {
+        var count = 0;
+        for (var i = 0; i < 7; i++) {
+          if (_serverBallsSeen[i]) count += 1;
+        }
+        return count;
+      }
+
+      /**
+       * 按后端公布的节奏排下一次拉取：后端在载荷里给出 next_reveal_at
+       * （下一个号码的开放时刻），面板到点即取，球基本准时出现（±1 秒内），
+       * 而不是像固定 5 秒轮询那样最多晚 5 秒。5 秒轮询仍作为兜底。
+       */
+      function _scheduleServerRevealTick(payload) {
+        if (_serverRevealTickTimerId) {
+          clearTimeout(_serverRevealTickTimerId);
+          _serverRevealTickTimerId = null;
+        }
+        var nextAtSec = parseBeijingDateTimeToSeconds(payload && payload.next_reveal_at ? payload.next_reveal_at : "");
+        if (!(nextAtSec > 0)) return;
+        var delayMs = Math.max(300, (nextAtSec - getServerNowSeconds()) * 1000 + 400);
+        if (delayMs > 60000) return; // 太远就交给兜底轮询
+        _serverRevealTickTimerId = setTimeout(function () {
+          _serverRevealTickTimerId = null;
+          loadRevealStepFromServer();
+        }, delayMs);
+      }
+
+      /** 到点取一次最新载荷（强制直连，避免命中 3 秒短缓存而晚一个节拍）。 */
+      function loadRevealStepFromServer() {
+        return load({ reveal: true, background: true, preserveWhenPending: true, forceFresh: true });
+      }
+
+      function _clearServerRevealTick() {
+        if (_serverRevealTickTimerId) {
+          clearTimeout(_serverRevealTickTimerId);
+          _serverRevealTickTimerId = null;
+        }
+      }
+
       /**
        * 兜底：载荷不足 7 个号码、又没有 revealed_count（老后端 / 旧快照）时，
        * 只要还在揭示窗口内就继续轮询，避免面板停在「半个结果」上不动。
@@ -602,6 +670,7 @@
           clearInterval(_revealPollTimerId);
           _revealPollTimerId = null;
         }
+        _clearServerRevealTick();
         if (clearTargetIssue !== false) {
           _revealTargetIssue = "";
         }
@@ -792,6 +861,7 @@
       /** 揭示窗口结束时仍不足 7 个号码：保留已渲染的球，只提示同步中。 */
       function _markRevealStalled() {
         _serverPacedReveal = false;
+        _clearServerRevealTick();
         var badge = $("countdownBadge");
         if (badge) {
           badge.textContent = UI_TEXT.resultSyncPending;
@@ -984,6 +1054,7 @@
         var revealOnLoad = options && options.revealOnLoad;
         var keepCurrentWhenPending = options && options.preserveWhenPending;
         var background = options && options.background;
+        var forceFresh = options && options.forceFresh;
 
         if (isManual) {
           setRefreshState("loading", "");
@@ -992,7 +1063,7 @@
         _loadingLatestDraw = true;
 
         try {
-          var payload = await loadLatestDrawPayload(!!isManual);
+          var payload = await loadLatestDrawPayload(!!isManual || !!forceFresh);
           notifyRevealGate(payload);
           var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
           var hasFullBalls = _hasFullBalls(payload);
@@ -1077,21 +1148,26 @@
           if (!hasProgressiveBalls && serverRevealedCount !== null && issue && !serverPacedStaleTarget) {
             var serverCompleted = serverRevealedCount >= 7;
             var justCompleted = serverCompleted && _serverPacedReveal;
+            var displayedBalls = _mergeServerBalls(issue, payload);
             debugLog("latest-draw:branch-server-paced", {
               issue: issue,
               revealedCount: serverRevealedCount,
+              displayedCount: _displayedServerBallCount(),
               isComplete: serverCompleted,
-              revealStart: _revealStartRaw(payload)
+              revealStart: _revealStartRaw(payload),
+              nextRevealAt: payload && payload.next_reveal_at ? payload.next_reveal_at : ""
             });
-            _pendingBalls = _serverPayloadBalls(payload);
+            _pendingBalls = displayedBalls.slice(0, 7);
             _revealedCount = _serverRevealCountForPayload(payload);
             _revealStartSec = _resolveRevealStartSec(payload);
             _revealTargetIssue = issue;
             updateIssueInfo(payload || {});
-            _renderServerPacedStep(payload);
+            // 诚实展示：后端给几个球就画几个球（按后端顺序），不等待 7 个齐全。
+            _renderServerBalls(displayedBalls);
             _lastRenderedIssue = issue;
             if (serverCompleted) {
               _serverPacedReveal = false;
+              _clearServerRevealTick();
               if (justCompleted) {
                 _stopReveal(true);
               } else {
@@ -1109,7 +1185,13 @@
               if (_revealStartSec > 0) {
                 _revealWindowEndsAtSec = _revealStartSec + REVEAL_WINDOW_SEC;
               }
+            } else {
+              // 已经在下发节奏里：按后端 next_reveal_at 精确安排下一次拉取。
+              _revealWindowEndsAtSec = _revealStartSec > 0
+                ? _revealStartSec + REVEAL_WINDOW_SEC
+                : _revealWindowEndsAtSec;
             }
+            _scheduleServerRevealTick(payload);
             updateCountdownDisplay();
             if (isManual) {
               setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));

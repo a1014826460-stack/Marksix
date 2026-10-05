@@ -54,6 +54,10 @@ globalThis.__hooks = {
   setRevealTarget: function (issue) { _revealTargetIssue = normalizeIssue(issue); },
   polling: function () { return _revealPolling; },
   manualRefresh: function () { return refreshWithDeadlineSync(); },
+  timeouts: function () {
+    return (globalThis.__recordedTimeouts || []).map(function (item) { return item.delayMs; });
+  },
+  displayedBalls: function () { return _displayedServerBallCount(); },
   notifications: function () { return notifications; },
 };
 `
@@ -86,6 +90,7 @@ function makeElement(id) {
 function loadPanel({ lotteryType = "3", payload, deadline = null }) {
   const elements = new Map()
   const recordedIntervals = []
+  const recordedTimeouts = []
   const notifications = []
   const state = { payload, deadline }
   const sandbox = {
@@ -111,7 +116,10 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
       length: 0,
       key() { return null },
     },
-    setTimeout() { return 0 },
+    setTimeout(callback, delayMs) {
+      recordedTimeouts.push({ callback, delayMs: Number(delayMs) || 0 })
+      return recordedTimeouts.length
+    },
     clearTimeout() {},
     setInterval(callback) { recordedIntervals.push(callback); return recordedIntervals.length },
     clearInterval() {},
@@ -128,6 +136,8 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
   vm.createContext(sandbox)
   vm.runInContext(instrumented, sandbox, { filename: "kj-local.html" })
   sandbox.recordedIntervals = recordedIntervals
+  sandbox.recordedTimeouts = recordedTimeouts
+  sandbox.__recordedTimeouts = recordedTimeouts
   sandbox.notifications = notifications
   sandbox.__state = state
   sandbox.__hooks.setPayload = (next) => { state.payload = next }
@@ -345,6 +355,43 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   await settle()
   state = panel.__hooks.state()
   if (state.painted !== 3) throw new Error(`new issue must replace the old balls once it arrives, got ${state.painted}`)
+}
+
+// ── 8. 诚实展示 + 后端控节奏（2026-10-05）───────────────────────────────
+// 需求：前端只老实展示后端下发的号码（收到几个画几个、按后端顺序），
+// 不等待 7 个齐全再轮播；下一次拉取按后端 next_reveal_at 排程。
+{
+  const nowSec = Math.floor(Date.now() / 1000)
+  // 后端只说 "已开放 2 个"，但实际下发了 3 个球（缓存/版本差异）→ 前端照实画 3 个。
+  const honest = slicedPayload({ issue: "2026280", revealedCount: 2, revealStartSec: nowSec })
+  honest.result_balls = [...honest.result_balls, ball("22")]
+  const panel = loadPanel({ payload: honest })
+  panel.__hooks.setNow(nowSec)
+  await settle()
+  await panel.__hooks.load({ revealOnLoad: true })
+  await settle()
+  let state = panel.__hooks.state()
+  if (state.painted !== 3) {
+    throw new Error(`panel must display every ball the backend sent, got ${state.painted} of 3`)
+  }
+  if (state.badgeText !== "开奖中...") throw new Error("reveal must start before all 7 balls arrive")
+
+  // 按后端 next_reveal_at 排下一次拉取（不该等固定 5 秒轮询）。
+  const expectedDelay = (Date.parse(`${honest.next_reveal_at.replace(" ", "T")}+08:00`) / 1000 - nowSec) * 1000 + 400
+  const delays = panel.__hooks.timeouts()
+  if (!delays.some((delay) => Math.abs(delay - expectedDelay) <= 2000)) {
+    throw new Error(`panel must schedule the next fetch from next_reveal_at (≈${expectedDelay}ms), got ${JSON.stringify(delays)}`)
+  }
+
+  // 同一期内短缓存回退（先 3 个、后只回 1 个）不得把已展示的球抹掉。
+  const stale = slicedPayload({ issue: "2026280", revealedCount: 1, revealStartSec: nowSec })
+  panel.__hooks.setPayload(stale)
+  await panel.__hooks.load({ reveal: true, background: true, preserveWhenPending: true })
+  await settle()
+  state = panel.__hooks.state()
+  if (state.painted !== 3) {
+    throw new Error(`same-issue payload regression must not remove displayed balls, got ${state.painted}`)
+  }
 }
 
 console.log("kj panel server-paced reveal contract passed")
