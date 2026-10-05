@@ -2963,7 +2963,21 @@ bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys"
 
 测试：新增 5 条（预测快照：跨刻度重复发布幂等且复用首次时间戳、指针丢失后重建不抛异常、
 载荷变化另起版本且旧版本键不动；开奖快照：无显式时间戳复用首次发布时刻、outbox 显式时间戳不被覆盖）。
-**是否部署待授权**（改动在 `backend/src/cache/**`，只影响中心节点的 python-api / scheduler-worker）。
+
+**上线记录（2026-10-05 23:2x 已部署中心节点）**：用户授权后发布 `bfb8f64`（含 `35ef55a`），
+备份 `.deploy-backups/snapshot-timestamp-fix-20261005T152611Z`，python-api/scheduler-worker 等重建完成、
+预热后 `www.tw8800.com` / `www.twcaibawang.com` 均 200。改动只在 `backend/src/cache/**`，
+前端节点无需重建（未动）。
+
+验收：
+- 部署前基线：python-api 近 72h `prediction snapshot publish failed` = **0**（说明当前流量下还没踩到，
+  但「指针 300s / 版本 301s」的 1 秒窗口客观存在，见下）。
+- 容器内 `from cache.versioned_envelope import stable_published_at` 通过 → 修复已随部署生效。
+- **生产 Redis 实测**（探针 selector，TTL 300s 自动过期，不碰业务数据）：发布 → 命中 → 删掉 pointer
+  （模拟指针先到期；实测 `version TTL=301s / pointer TTL=300s`）→ 把时钟推过刻度后重复发布
+  **成功且指针挂回**（修复前此处必抛 `CacheUnavailable`，指针挂不回去，缓存退化为长期 miss）。
+- 失败语义：`read_through` 对发布异常本就 `except (CacheUnavailable, ValueError)` 回退 builder，
+  所以该缺陷的表现是「缓存长期 miss + 告警日志」，不会影响接口可用性或数据。
 
 ### twbst528【胆大胆小】按所显示分组判定（2026-10-05 第十九轮，已提交未部署）
 
