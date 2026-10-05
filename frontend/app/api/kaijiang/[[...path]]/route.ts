@@ -2378,7 +2378,21 @@ export async function GET(request: Request, context: { params: Promise<{ path?: 
 
         const payload = await fetchLegacyRows(url, 5, 10)
 
-        return jsonResponse(mapJsonContentRows(payload.rows))
+        // 天地生肖（mode 5）：每期 `content` 只记录**本期选中的那一组**
+        // （判定口径就是「特肖是否落在该组」，因此不能把另一组也塞进 content——
+        // 那会让渲染层的 `zj` 恒为真、判定恒「准」）。面板头部需要完整的
+        // 天肖/地肖分类，这里把 `fixed_data` sign=天地生肖 的分组作为附加字段下发，
+        // 渲染层据此补齐头部；`data` 既有形状与判定口径保持不变。
+        const fixedGroups = await loadFixedDataGroups("天地生肖")
+
+        const groups = (fixedGroups.groups || [])
+          .map((group) => ({
+            label: asString(group.label).trim(),
+            codes: (group.codes || []).map((code) => asString(code).trim()).filter(Boolean),
+          }))
+          .filter((group) => group.label && group.codes.length > 0)
+
+        return jsonResponse(mapJsonContentRows(payload.rows), groups.length > 0 ? { groups } : {})
 
       }
 

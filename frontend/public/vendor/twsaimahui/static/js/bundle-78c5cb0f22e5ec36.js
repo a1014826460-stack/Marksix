@@ -1631,6 +1631,20 @@ $.ajax({
         let data = response.data
         let tx = '';
         let dx = '';
+        // 头部固定分类（天肖/地肖）优先取后端从 fixed_data（sign=天地生肖）下发的完整分组：
+        // 每期 content 只记录**本期选中的那一组**（判定口径是「特肖是否落在该组」），
+        // 用它推断另一组必然缺一项 —— 头部会只剩天肖或只剩地肖。
+        let fixedGroups = response.groups || [];
+        for (let i in fixedGroups) {
+            let g = fixedGroups[i] || {};
+            let value = (g.codes || []).join('');
+            if (!value) continue;
+            if (g.label === '天肖') {
+                tx = value;
+            } else if (g.label === '地肖') {
+                dx = value;
+            }
+        }
         if (data.length > 0) {
             for (let i in data) {
                 let d = data[i]
@@ -1650,9 +1664,9 @@ $.ajax({
                     xiao.push(c[0])
                     xiaoV[i] = c[1];
                     if (c[0] === '天肖') {
-                        tx = c[1].replaceAll(',','');
+                        tx = tx || c[1].replaceAll(',','');
                     }else{
-                        dx = c[1].replaceAll(',','');
+                        dx = dx || c[1].replaceAll(',','');
                     }
                     ma.push(...c[1].split(','));
                 }
