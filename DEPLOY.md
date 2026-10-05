@@ -2949,3 +2949,29 @@ bulk_generate_site_predictions(dsn, site_id, {"lottery_type":3, "mechanism_keys"
 复现：`.scratch/repro2.py`（发布间隔 50 ms 必现）。生产用 Redis（无条件覆盖）不受影响；
 是否修（`published_at` 参与版本键，或内存适配器与 Redis 同语义）待用户决定。
 
+### twbst528【胆大胆小】按所显示分组判定（2026-10-05 第十九轮，已提交未部署）
+
+用户报障：277 期显示「胆大」、开奖 `23 猴`（猴 ∈ 胆大肖 牛虎马猴狗猪）却显示「错」。
+
+根因：面板显示的「胆大 / 胆小」是把 mode 47（四肖中特）的 **4 个候选按多数归属**得到的分组
+（`DANXIAO_GROUP` + `groupLabelFor`），而接口 `is_correct` 用的是 mode 47 自己的口径
+「特肖 ∈ 本期 4 个候选」——两套口径不一致，「候选里没有猴、但猴 ∈ 所显示的胆大组」的期次被判「错」。
+与天地生肖 4 站「只看两肖、6 肖分组不参与判定」同类，也与本站【前后中特】的既有修法同构。
+
+改动 `2e2b45b`（**尚未部署，等授权**）：`site-data-adapter.js` 新增 `danxiaoJudgement(row)`
+（特肖 ∈ 所显示的 6 肖分组 → 对，命中点亮组名；未开奖/无候选返回 `null` 退回接口判定），
+`renderSizhongteHistory` 用 `withResultCorrect` 覆盖展示判定；**不动后端 mode 47**
+（其它站与本站静态文章页仍在用它的四肖口径）。
+
+线上实况（只读查 `created.mode_payload_47`、web=10，273–278）：
+
+| 彩种 | 翻转行 | 说明 |
+| --- | --- | --- |
+| 台湾彩 (3) | 3 行 | 274 胆小+羊、276 胆大+虎、277 胆大+猴 → 对；273 胆大+鼠 仍为错（鼠 ∈ 胆小肖） |
+| 澳门彩 (2) | 5 行 | 273/274/276 转对；275 胆小+虎、277 胆小+猴 转错 |
+
+测试：`twsbst528-display-contract.mjs` 新增第 7 节（源码断言 + 把适配器放进 vm 注入探针导出、
+直接调用真实 `danxiaoJudgement`，覆盖线上 5 组数据 + 未开奖 + 无候选）；
+`twsbst528-live-mapping-contract.py` 的 509 期 mock 期望由「开:36马错」改为「开:36马对」并移出错断言批量。
+验证：`test:display-contracts` 38 条全绿；Chromium 真实渲染的 live-mapping 契约通过。
+
