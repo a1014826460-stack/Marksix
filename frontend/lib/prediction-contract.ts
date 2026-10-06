@@ -588,12 +588,31 @@ export function candidateCodeAtoms(items: unknown[]) {
   return [...new Set(atoms)]
 }
 
-/** 候选项里的生肖原子（`鸡|10,22` → `鸡`；`马37` → `马`）。 */
+/**
+ * 生肖原子字符集与写法归一（**简体 + 繁体 + 厂商错别字**）。
+ *
+ * 只列简体时，历史数据里的 `龍`/`馬`/`雞`/`豬` 会被静默丢掉，交叉校验就再也找不到
+ * 命中的特肖 → `contradicted` → `reconcileVerdict` 把上游的「对」强制改写成「错」
+ * （后端 `predict.common.ZODIAC_CHAR_CLASS` / `normalize_zodiac_label` 已经两种都收，
+ * 这里必须同口径）。`免` 是厂商把「兔」写错（`["文肖|鼠,免,龙,羊,鸡,猪"]`，实测 174 行），
+ * 后端 `normalize_zodiac_member` 同样按「兔」处理。
+ */
+const ZODIAC_ATOM_CHARS = "鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬免"
+const ZODIAC_ATOM_ALIASES: Record<string, string> = {
+  龍: "龙",
+  馬: "马",
+  雞: "鸡",
+  豬: "猪",
+  免: "兔",
+}
+
+/** 候选项里的生肖原子（`鸡|10,22` → `鸡`；`马37` → `马`；繁体/错别字归一到简体）。 */
 export function candidateZodiacAtoms(items: unknown[]) {
   const atoms: string[] = []
   for (const item of items) {
     for (const char of cleanText(item)) {
-      if ("鼠牛虎兔龙蛇马羊猴鸡狗猪".includes(char)) atoms.push(char)
+      if (!ZODIAC_ATOM_CHARS.includes(char)) continue
+      atoms.push(ZODIAC_ATOM_ALIASES[char] || char)
     }
   }
   return [...new Set(atoms)]

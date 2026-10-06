@@ -1120,6 +1120,12 @@ function renderYijuzhenyan(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
         row.isOpened && hitSx ? jiexiZodiacs.includes(hitSx) : null
       )
       const highlightSx = isCorrect === true ? hitSx : ""
+      // 判定文字（2026-10-03 需求）：供应商格式只有 `開:龙03`，用户无法看出本期是
+      // 命中还是未命中；这里按 S1 补「对 / 错」——未开奖不显示任何判定文字。
+      const verdict = isCorrect === true ? "对" : isCorrect === false ? "错" : ""
+      const verdictHtml = verdict
+        ? `<font color="${isCorrect === true ? "#FF0000" : "#000000"}">${verdict}</font>`
+        : ""
       const titleStyle = "background-color: #CCFFCC; text-align: left"
       return `<tr>
                     <td style="${titleStyle}">
@@ -1129,7 +1135,7 @@ function renderYijuzhenyan(module: PublicModule | null, lotteryTypeId: 1 | 2 | 3
                 <tr>
                     <td style="text-align: left; background-color: #FFFFFF">
                         <font color="#008000">真言解释：${escapeHtml(explanation)}</font><br>
-                        <span class="zl"><font color="#000000">真言解肖主前：</font>${highlightZodiacChars(jiexi, highlightSx)} 開:${renderSxCodeResult(row.result, row.isOpened)}</span>
+                        <span class="zl"><font color="#000000">真言解肖主前：</font>${highlightZodiacChars(jiexi, highlightSx)} 開:${renderSxCodeResult(row.result, row.isOpened)}${verdictHtml}</span>
                     </td>
                 </tr>`
     })

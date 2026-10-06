@@ -9,6 +9,7 @@ from db import connect
 from domains.prediction.repository import get_enabled_mode_ids_for_web_id
 from helpers import load_fixed_data_maps, split_csv
 from legacy.api import load_legacy_mode_rows
+from predict.common import ZODIAC_CHAR_CLASS, normalize_zodiac_label
 from public.api import resolve_public_site
 
 
@@ -113,12 +114,12 @@ def _split_labels(value: Any) -> list[str]:
             return [item.strip() for item in quoted if item.strip()]
 
     items = [item.strip() for item in split_csv(value) if str(item).strip()]
-    if items and not (len(items) == 1 and re.fullmatch(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]+", items[0])):
+    if items and not (len(items) == 1 and re.fullmatch(ZODIAC_CHAR_CLASS + "+", items[0])):
         return items
 
     if "|" in text:
         text = text.split("|", 1)[0].strip()
-    zodiacs = re.findall(r"[鼠牛虎兔龙蛇马羊猴鸡狗猪]", text)
+    zodiacs = [normalize_zodiac_label(char) for char in re.findall(ZODIAC_CHAR_CLASS, text)]
     return zodiacs if zodiacs else ([text] if text else [])
 
 
@@ -163,10 +164,10 @@ def _parse_label_code_pairs(value: Any) -> list[tuple[str, list[str]]]:
     if not text:
         return []
 
-    pair_matches = re.findall(r"([鼠牛虎兔龙蛇马羊猴鸡狗猪])\|([0-9,\s]+)", text)
+    pair_matches = re.findall(rf"({ZODIAC_CHAR_CLASS})\|([0-9,\s]+)", text)
     if pair_matches:
         return [
-            (label, _split_codes_from_text(codes_raw))
+            (normalize_zodiac_label(label), _split_codes_from_text(codes_raw))
             for label, codes_raw in pair_matches
         ]
 

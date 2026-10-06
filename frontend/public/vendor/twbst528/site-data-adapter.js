@@ -1196,11 +1196,47 @@
     });
   }
 
+  /**
+   * 【一句中平特】(mode 50 一句真言) 的**面板级判定**：特肖 ∈ 面板展示的候选生肖。
+   *
+   * 为什么不用接口 `is_correct`：接口口径是「特肖 ∈ 该行 `jiexi` 候选池」，而本面板
+   * **只显示正文**（`prediction.text` = `content`，谜面里点名的生肖），不显示 `jiexi`。
+   * 两者不一致时（本地实测 37/1067 行，如 `美解女肖蛇羊鸡兔。` 的 `jiexi` 多出「鼠马猪」）
+   * 就会出现「判定对、面板上却没有任何可点亮的项」——用户看到的是一个说不出所以然的
+   * 「对」。规范（《预测模块展示规范》S2 / 六·速查）要求「判定与高亮同一数据源」，
+   * 因此这里按**展示正文里的生肖**复算，判定与高亮同时改用它。
+   *
+   * 拿不到开奖、或正文里根本没有生肖字时返回 `null`（沿用接口判定，不凭空造「错」）。
+   */
+  function yijuZhongpingJudgement(row) {
+    if (!row || !row.result || row.result.isOpened !== true) return null;
+    var text = String(row.prediction && row.prediction.text || "");
+    var candidates = [];
+    text.split("").forEach(function (char) {
+      if (ZODIAC_CHAR_SET[char] && candidates.indexOf(char) === -1) candidates.push(char);
+    });
+    var zodiac = resultToken(row.result.zodiac, false);
+    if (!candidates.length || !zodiac) return null;
+    var hit = candidates.indexOf(zodiac) !== -1;
+    return { correct: hit, token: hit ? zodiac : "" };
+  }
+
+  /** 命中项 = 展示正文里真正开出的那个特肖（判定为「错」/未开奖时为空，S3/S1）。 */
+  function yijuZhongpingHitTokens(row) {
+    var judged = yijuZhongpingJudgement(row);
+    return judged && judged.token ? [judged.token] : [];
+  }
+
   function renderYijuZhongpingHistory(module) {
     var section = sectionByTitle("一句中平特");
     if (section) section.setAttribute("data-prediction-section", "yijuzhenyan");
+    // moduleKey 必须显式传给 highlightRuleFor（命中型）；hitResolver 决定点亮哪一项，
+    // resultResolver 决定判定文字 —— 两者共用 `yijuZhongpingJudgement`，口径只有一处。
     renderThreeColumnRows(section, module, function (row) {
       return String(row.prediction.text || tokens(row).join(" ")).replace(/\|/g, " ");
+    }, "yijuzhenyan", yijuZhongpingHitTokens, function (row) {
+      var judged = yijuZhongpingJudgement(row);
+      return judged ? withResultCorrect(row, judged.correct) : row;
     });
   }
 

@@ -760,12 +760,33 @@ assert(
   "【胆大胆小】命中时必须点亮组名（错期零黄底）",
 )
 
+// ── 21. 【一句中平特】：判定与高亮都按**本面板展示的候选**复算（2026-10-02/10-03）──
+// 报障：`丈夫解男肖，龙虎鼠猴牛马狗。 开:03龙错`。判定错的后端根因是
+// `parse_zodiac_chars` 的字符类漏了简体「龙」（后端已修，见
+// backend/src/tests/unit/test_zodiac_char_parser_long.py）。
+// 面板侧（2026-10-03 需求）进一步把口径统一到**展示正文里的生肖**：接口算的是
+// 「特肖 ∈ jiexi」，而面板只显示正文 —— 两者不一致时会出现「判定对、面板上却没有任何
+// 可点亮的项」（线上 37/1067 行）。判定与高亮现在共用 `yijuZhongpingJudgement`。
+assert(
+  /renderThreeColumnRows\(section, module, function \(row\) \{[\s\S]{0,400}\}, "yijuzhenyan", yijuZhongpingHitTokens, function \(row\) \{/.test(adapter),
+  "【一句中平特】必须同时给出命中项解析器与判定覆盖器（口径共用一处）",
+)
+assert(
+  /function yijuZhongpingJudgement[\s\S]{0,700}correct: hit, token: hit \? zodiac : ""/.test(adapter),
+  "【一句中平特】判定 = 特肖 ∈ 展示正文的生肖（拿不到候选时返回 null 沿用接口判定）",
+)
+assert(
+  /function renderYijuZhongpingHistory[\s\S]{0,800}withResultCorrect\(row, judged\.correct\)/.test(adapter),
+  "【一句中平特】结果格必须写本地判定（覆盖接口 is_correct）",
+)
+
 // 行为级：把适配器放进 vm（注入一行探针导出），直接调用真实的 danxiaoJudgement()。
 // 数据取线上实况（web=10 / type=3 / 2026 期 273–278）。
 {
   const probeSource = adapter.replace(
     "  window.Twbst528SiteData = { selectLottery: selectLottery };",
-    "  window.__probe = { danxiaoJudgement: danxiaoJudgement, groupLabelFor: groupLabelFor };\n" +
+    "  window.__probe = { danxiaoJudgement: danxiaoJudgement, groupLabelFor: groupLabelFor," +
+      " yijuZhongpingHitTokens: yijuZhongpingHitTokens, yijuZhongpingJudgement: yijuZhongpingJudgement };\n" +
       "  window.Twbst528SiteData = { selectLottery: selectLottery };",
   )
   assert(probeSource !== adapter, "探针注入失败：适配器出口写法变了")
@@ -869,6 +890,53 @@ assert(
     "未开奖期不得本地判定")
   assert(probe.danxiaoJudgement({ prediction: { tokens: [] }, result: { isOpened: true, zodiac: "猴" } }) === null,
     "没有候选时不得本地判定")
+
+  // ── 【一句中平特】判定 + 命中项（`yijuZhongpingJudgement` / `yijuZhongpingHitTokens`）──
+  // 线上 2026278 期：`丈夫解男肖，龙虎鼠猴牛马狗。 开:03龙` ——
+  //   判定 = 特肖 ∈ 展示正文的生肖；命中时点亮正文里那个特肖；
+  //   错/未开奖 → 零黄底（S2/S3/S1）；正文里没有生肖字（拿不到候选）→ 返回 null 沿用接口判定。
+  function yijuRow({ text, zodiac, correct, opened = true }) {
+    return {
+      term: "2026278",
+      prediction: { tokens: [text], text },
+      result: { isOpened: opened, isCorrect: correct, code: "03", zodiac },
+    }
+  }
+  const yijuText = "丈夫解男肖，龙虎鼠猴牛马狗。"
+  // 报障行：开 03 龙、正文含「龙」→ 本地判「对」且只点亮「龙」。
+  assert(
+    JSON.stringify(probe.yijuZhongpingJudgement(yijuRow({ text: yijuText, zodiac: "龙", correct: false }))) ===
+      '{"correct":true,"token":"龙"}',
+    "【一句中平特】特肖写在正文里 → 本地判「对」（不看接口的 is_correct）",
+  )
+  assert(
+    JSON.stringify(probe.yijuZhongpingHitTokens(yijuRow({ text: yijuText, zodiac: "龙", correct: true }), yijuText)) === '["龙"]',
+    "【一句中平特】命中时只点亮正文里那个特肖",
+  )
+  // 特肖不在正文里（接口若给「对」也不算命中）→ 判「错」、零黄底。
+  assert(
+    JSON.stringify(probe.yijuZhongpingJudgement(yijuRow({ text: yijuText, zodiac: "羊", correct: true }))) ===
+      '{"correct":false,"token":""}',
+    "【一句中平特】特肖不在展示正文里 → 本地判「错」（判定与高亮同一数据源）",
+  )
+  assert(
+    probe.yijuZhongpingHitTokens(yijuRow({ text: yijuText, zodiac: "羊", correct: true }), yijuText).length === 0,
+    "【一句中平特】判「错」→ 整行零黄底（S3）",
+  )
+  assert(
+    probe.yijuZhongpingJudgement(yijuRow({ text: yijuText, zodiac: "龙", correct: true, opened: false })) === null &&
+      probe.yijuZhongpingHitTokens(yijuRow({ text: yijuText, zodiac: "龙", correct: true, opened: false }), yijuText).length === 0,
+    "【一句中平特】未开奖 → 不给判定也不高亮（S1）",
+  )
+  assert(
+    probe.yijuZhongpingJudgement(yijuRow({ text: "晴川历历汉阳树", zodiac: "龙", correct: true })) === null &&
+      probe.yijuZhongpingHitTokens(yijuRow({ text: "晴川历历汉阳树", zodiac: "龙", correct: true }), "晴川历历汉阳树").length === 0,
+    "【一句中平特】正文里没有生肖字 → 不本地判定（沿用接口值）也不标黄",
+  )
+  assert(
+    probe.yijuZhongpingHitTokens({ prediction: { tokens: [] } }, yijuText).length === 0,
+    "【一句中平特】拿不到开奖行 → 零黄底",
+  )
 }
 
 console.log("twbst528-display-contract: OK")

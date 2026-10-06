@@ -1053,6 +1053,209 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 
 ---
 
+## 五之十六、文本类玩法「简体龙」解析缺陷 + 一肖一码派生行判定（2026-10-02）
+
+**报障（三条，用户原话）**
+
+| 站点 | 模块 | 现象 |
+| --- | --- | --- |
+| twwanli.com | 一肖一码发布区 | 2026278 期八行生肖全部 `开:03龙对` 并上黄底，其中「牛虎马鼠羊鸡猪猴」（九肖行）并不含「龙」 |
+| twbst528.com | 一句中平特 | `丈夫解男肖，龙虎鼠猴牛马狗。 开:03龙错` —— 命中「龙」却判「错」 |
+| twcaibawang.com | 一句真言 | `真言解肖主前：羊虎龙兔牛猴蛇 開:龙03` —— 命中「龙」却整块无高亮 |
+
+### 根因一（后端，`一句真言` / `一句中平特` / `四字玄机` 共用）
+
+`predict/categories/content_columns.py::parse_zodiac_chars` 的字符类写作
+`[鼠牛虎兔龍蛇马馬羊猴鸡雞狗猪豬]` —— 收了繁体「龍」却**漏了简体「龙」**
+（`predict/common.py` 的同类字符类是 `[…龍龙…]`，两种都收）。
+mode 50「一句真言」/ mode 52「四字玄机」的候选都由它从 `jiexi` 抽取，
+`contains_hit` 的 `any(label in outcome)` 于是永远匹配不到「龙」
+→「开奖特肖 = 龙」的期一律判「错」（twbst528 显示错、twcaibawang 判错后不标黄）。
+
+**修法**：字符类收敛为**唯一来源** `predict.common.ZODIAC_CHAR_CLASS`（简体 + 繁体齐全），
+`content_columns.parse_zodiac_chars` / `common.parse_zodiac_content` /
+`vendor/homepage_modules.py`（两处）共用，避免再出现「只收一种写法」的漂移。
+
+### 根因二（twwanli `#yxym` 一肖一码：派生行共用一个判定 + 行宽算错）
+
+`#yxym` 的 13 行是「9 肖中特 前 N 肖 / 精选22码 前 N 码 / 双波」的**派生行**，旧实现有三个问题：
+
+1. 判定统一取数据源模块的 `result.isCorrect`（9 肖中特的整份 9 肖判定）→ 一肖…九肖全部显示「对」，
+   连 `一肖 牛`（开 03 龙）也显示「对」；
+2. 行宽按 `rowIndex - 3` 推，把 `九肖` 行算成 **8 个生肖** → 9 肖里的第 9 个（278 期是「龙」）
+   被裁掉，那一行却仍按 9 肖判定上黄底（用户看到「显示里没有龙却高亮」）；
+3. 命中行整格上黄底（非命中项也黄）。
+
+**修法**（`frontend/public/vendor/twwanli/site-data-adapter.js`）：
+
+| 项 | 改法 |
+| --- | --- |
+| 行宽 | **由行名决定**：`一肖`→1 … `七肖`→7、`九肖`→9（`ONE_CODE_ONE_XIAO_LABELS` + `oneCodeOneXiaoRowSpec`），不再按行号推 |
+| 判定 | **逐行按本行展示的候选项复算**：号码行比特码 ∈ 前 N 码、生肖行比特肖 ∈ 前 N 肖、波色行比开奖波色 ∈ 展示的两波；拿不到开奖值才不给判定 |
+| 高亮 | 只点亮**命中的那一个**候选项（`highlightOnly` / `codeLineHtml(codes, hitCode)`），槽本身不再整格上标记（S2） |
+| 未开奖 | 只显示 `开:待开奖`，不给判定也不高亮（S1）；判定「错」零黄底（S3） |
+
+### 根因三（twbst528【一句中平特】命中项没有点亮）
+
+`renderYijuZhongpingHistory` 原先只传 3 个参数（moduleKey / 命中项解析器都缺），
+命中型模块拿不到可标黄的项 → 判定「对」的行零黄底（五之十五「遗留 1」里登记的 R4 缺口）。
+
+**修法**：新增 `yijuZhongpingHitTokens(row, text)`——判定为「对」时点亮**展示正文里真正开出的那个特肖**；
+`错`/未开奖/正文里没有该特肖时零黄底；`renderThreeColumnRows(..., "yijuzhenyan", yijuZhongpingHitTokens)`。
+
+### 验收（本地 dev 库 + `127.0.0.1:3000`，未部署）
+
+- 后端：`cd backend/src; python -m pytest tests/unit -q` → **1212 passed / 1 failed**，
+  唯一失败是既有的 `test_ha_runtime_config_contract.py::test_nginx_exposes_exact_liveness_and_readiness_proxies`（与本轮无关）。
+- 新增 `backend/src/tests/unit/test_zodiac_char_parser_long.py`（7 条）：简体/繁体/混写「龙」、
+  12 生肖全量、mode 50 报障行 `开 03 龙` → `is_correct=True`、候选取自不含「龙」的 `jiexi` 时仍判「错」。
+- 数据侧复算（同一份 payload 用新旧字符类各算一次）：`created.mode_payload_50` 1109 行中 **58 行**、
+  `mode_payload_52` 550 行中 **26 行**由「错」改判「对」，**全部是「开奖特肖 = 龙」的期，无反向翻转**。
+- 接口端到端：`/api/public/site-page?site_id=8&history_limit=80&lottery_type=3` →
+  175 期 `开:龙27` / `jiexi=龙虎鼠猴牛马狗` 由 `is_correct=False` 变 **`True`**；
+  173 期 `开:龙15` / `jiexi` 不含龙 → 仍为 `False`。
+- 渲染端到端（真页面 + Playwright 探针）：
+  - twwanli `#yxym`：`191期 一肖 猴 → 开:47猴对` 只黄「猴」、`一码 31 → 错` 零黄底、
+    `九肖 猴蛇猪鼠马狗龙虎羊`（**9 个生肖**）、`190期 一码 45 → 对` 只黄「45」、`一肖 猴 → 错`；
+  - twbst528【一句中平特】：191/190/188/186 期「对」各点亮 1 个特肖，189/187 期「错」零黄底；
+  - twcaibawang【一句真言】：270 期 `開:马37` → 点亮「马」；未命中期零黄底。
+- 契约：
+  - `frontend/test/twwanli-yxym-layout-contract.py`：版式（不溢出/不折错位）+ 逐行判定/黄底 +
+    九肖=9；桩里的接口 `isCorrect` **故意写反**（命中行 False、未命中行 True），
+    证明判定确实来自本地复算；同时断言内容槽不再整格带命中标记。
+  - `frontend/test/twbst528-display-contract.mjs`：新增第 21 节 + 真实 `yijuZhongpingHitTokens` 行为断言
+    （对→点亮、错/未开奖/正文无该特肖→零标记）。
+  - `frontend/test/twcaibawang-verdict-contract.mjs`：新增第 7 节，真跑 `renderYijuzhenyan`
+    （`羊虎龙兔牛猴蛇 + 开龙03` → 只黄「龙」；未命中/未开奖零黄底；描述性汉字不算候选）。
+- 展示审计（本地 `--wait-ms 20000`）：twwanli / twbst528 / twcaibawang 全部
+  `error=0`、`js_errors=0`；twbst528 `rows=371 warn=17`、twcaibawang `rows=292 warn=5`
+  （全是既有的 R4/R5/R8，未随本轮增加；`一句中平特` 不再出现在 R4 里）。
+- twwanli 同一份代码前后对照（本地 + 当前后端）：
+  | 口径 | rows | error | warn | js_errors |
+  | --- | ---: | ---: | ---: | ---: |
+  | HEAD 适配器 | 195 | 0 | 1（`#hsdx｜合数大` R8） | 0 |
+  | 本轮适配器 | 195 | 0 | 2（+`#yxym｜一肖` R8） | 0 |
+  新增的那条 R8 是本轮修法的**必然结果**：`一肖` 行现在按自己那 1 个生肖判定，
+  连续 5 期「错」的概率是 `(11/12)^5 ≈ 65%`，属五之三 R8 的第 1 类「正常（候选集本来就小）」，
+  不是「判定写死」——判「对」的那些期（`一肖 猴` + 开 47 猴等）都是真的命中。
+
+### 遗留
+
+1. 【一句中平特】面板只显示正文（`content`），不显示 `jiexi`：命中项若**只**出现在 `jiexi` 里
+   （本地实测 37/1067 行，如 `美解女肖蛇羊鸡兔。` 的 `jiexi` 多出「鼠马猪」），
+   面板上没有可点亮的项 → 仍会报 R4。要彻底消除需二选一：面板补显 `jiexi`，或把判定改成
+   「特肖 ∈ 展示正文的生肖」（会改判约 3.5% 的行）。
+2. 【一句真言】（twcaibawang）不印「对/错」文字（供应商格式 `開:龙03`），命中与否只由黄底表达；
+   若要与 twbst528 的孪生面板一致，可另开一轮补判定文字。
+3. mode 52「四字玄机 / 四字平特」的 7 肖 `jiexi` 池命中率问题（五之十四 遗留 1）不变。
+4. 本地 `:8000` 上曾同时存在多个历史会话遗留的旧后端进程（Windows 的 `SO_REUSEADDR` 允许重复绑定，
+   请求被随机分发到旧进程，本地复验会看到修复前的判定）。本轮已停掉这些旧进程、只保留一个当前代码的
+   进程；**本地复验前先确认 `:8000` 只有一份后端**。
+
+---
+
+## 五之十七、十站「生肖识别」同族缺陷普查 + twssz AAA / twbst528 / twcaibawang 收口（2026-10-03）
+
+**报障**
+
+| 站点 | 模块 | 现象 |
+| --- | --- | --- |
+| twjsz666.com | 一句话中特码 | `278期 一句话「枫桥夜泊先收牛兔龙，尾声补上狗羊鼠猴。」 开:03龙错` —— 候选有「龙」、开奖也是龙，仍判「错」 |
+| twssz.com | AAA级大公开;准确率绝对100%;大胆下注! | ⑨⑧⑦⑥肖中特四行**既不标黄也没有对/错**，看不出本期是否命中 |
+
+用户同时要求：把十个站点里同族的「生肖识别不了」问题一并查清，并落地上一轮留下的两个选项
+（twbst528【一句中平特】改为按展示正文判定、twcaibawang【一句真言】补判定文字）。
+
+### 1) twjsz666【一句话中特码】—— 与五之十六同一个后端根因，已随之修复
+
+该卡片绑的也是 mode 50（`yijuzhenyan`），候选来自 `jiexi`，因此
+`parse_zodiac_chars` 漏简体「龙」的缺陷（五之十六）就是它的根因；后端修好后
+`is_correct=true`，`hitTokenGroups()` 拿到特肖「龙」→ 点亮正文里的「龙」。
+
+实测（本地 web=11）：`175期 开:龙27 jiexi=鼠虎兔龙蛇猴`、`173期 开:龙15 jiexi=猴猪羊虎鼠龙马`
+都已是 `is_correct=True`；页面上「对」行都点亮了对应特肖。
+
+### 2) twssz【AAA级大公开】—— 派生行共用判定 + 缺判定文字
+
+4 行 `⑨⑧⑦⑥肖中特` 是同一份「九肖中特」的前 9/8/7/6 肖，旧实现三处问题：
+数据源是 mode 44（只有 7 肖，缺的位用固定顺序补齐）、判定与黄底取整份模块的 `is_correct`
+（整份命中四行一起黄，⑥肖行没含特肖也黄）、面板没有任何对/错。
+
+**修法**（`frontend/public/vendor/twssz/site-data-adapter.js`）：数据源改 mode 49（`9xzt`，
+缺行才退回 `7xiao7ma`）；`aaaZodiacs` 取 9 肖；每行按**本行展示的前 N 肖**复算判定，
+只点亮本行里真正开出的那个生肖；新增 `[data-site-slot='aaa-verdict']` 判定字
+（已开奖 `对/错`、未开奖为空，S1）；标题行补开奖段 `开:03龙`；去掉会按整份判定清黄底的
+`applyRowHighlight` 调用。
+
+实测（本地 web=9）：`267期 ⑨肖中特:鸡猴猪蛇牛鼠兔狗羊 开:24羊 → 对+羊黄底`，
+同行 `⑧⑦⑥肖` → **错 + 零黄底**（旧实现四行全是「对」）。
+
+### 3) twbst528【一句中平特】：判定改为按展示正文的生肖
+
+上一轮遗留的选项，本轮采纳：新增 `yijuZhongpingJudgement()` —— **判定与高亮共用同一处口径**
+（特肖 ∈ 展示正文里的生肖），`错/未开奖` 零黄底；正文里没有生肖字时返回 `null` 沿用接口判定。
+影响面与上一轮测算一致：约 3.5%（37/1067）「只在 `jiexi` 里命中」的行由「对」改判「错」，
+面板从此不再出现「判定对却没有任何可点亮的项」。
+
+### 4) twcaibawang【一句真言】：补判定文字
+
+供应商格式只有 `開:龙03`，用户看不出对错。现在开奖段后补 `<font color="#FF0000">对</font>`
+或 `<font color="#000000">错</font>`；未开奖不写判定文字（S1）。
+
+### 5) 十站「生肖识别」同族缺陷普查
+
+普查口径：**凡是「从文本/候选里认出生肖」的解析器，写法没列全就会静默丢生肖** ——
+少一个生肖就可能把命中判成「错」（后端）、把命中项丢掉高亮、或把上游正确的「对」
+在契约层强制改写成「错」。后端已收敛到唯一来源 `predict.common.ZODIAC_CHAR_CLASS`。
+
+本轮**新增修复**：
+
+| 位置 | 缺陷 | 修法 |
+| --- | --- | --- |
+| `predict/common.py` | 分组里的**错别字「免」**：`public.fixed_data`(文武肖 id 262) 与 `mode_payload_144/179` 正文写成 `["文肖|鼠,免,龙,羊,鸡,猪"]`（实测 174 行）→ 特肖=兔 时拿不到分类标签，文肖/武肖恒判「错」 | 新增 `normalize_zodiac_member()`：**只对分组里的单字成员**做 `免→兔`（自由文本里的「不免」不动），`zodiac_category_labels` 使用它 |
+| `frontend/public/vendor/twsaimahui/static/js/046wenwu.js` | 同一错别字的渲染侧：`xiaoV[i].indexOf(sx)` 拿 `免` 找 `兔` 恒不命中 → 显示「错」+零黄标，且说明行照抄错别字 | 新增 `normalizeZodiacText()`（免→兔），匹配与展示都归一 |
+| `frontend/lib/prediction-contract.ts::candidateZodiacAtoms` | 生肖原子只认简体：候选/正文写 `龍馬雞豬`（或错别字「免」）时交叉校验落空 → `contradicted` → `reconcileVerdict` 把上游正确的「对」**强制改写成「错」并清掉黄底**（10 站共用） | 原子字符集扩到简体+繁体+错别字并归一，与后端同口径；同时锁定「候选里真的没有该生肖时仍判 contradicted」 |
+
+**本轮登记、暂不改（潜伏项，触发前提是候选/开奖生肖以繁体形态进入该链路；
+本地/线上 payload 抽样未发现繁体生肖，故当前不产生可见错误）**：
+
+| 位置 | 说明 |
+| --- | --- |
+| `shengshi8800/static/js/legacy-prediction-verdict.js:18` | 判定引擎的 `ZODIAC` 常量只认简体（`zodiacsOf` / `isZodiacToken` / mode 50、52 分支）；候选写繁体时会判「错」 |
+| `twssz/site-data-adapter.js:553`（`ZODIAC_CHARS`）、`:1527`（`tiandiPair`） | 从 `result.text` / `raw.xiao` 兜底取特肖、天地两肖时只认简体 |
+| `twbst528/site-data-adapter.js:1110`（`ZODIAC_CHARS/ZODIAC_CHAR_SET`） | `flatZodiacHit` / `displayedZodiacList` / `groupMembers` 的候选识别集只认简体 |
+| `twwanli/site-data-adapter.js:311-312` / `:389-390` | 【买啥开啥】家禽野兽、【天地生肖】的固定分组表是简体字面量 |
+| `twjinniu/index.html:392-397`（`QINQI_ART_BY_ZODIAC`） | 【琴棋书画】按简体键查艺名（同站 `lib/twjinniu-articles.ts` 已归一，两处口径不一致） |
+| `twcf888.com/index.html:1346-1367` | mode 50 抽生肖、mode 26 琴棋书画分组为简体硬编码 |
+| `twssz`/`twsyw` 适配器的天地肖、清屏正则 | 同上（清屏漏繁体只会短暂残留模板样例，不影响判定） |
+| `twbst528/site-data-adapter.js` 一肖一码（`renderYixiaoYimaHistory`） | **B 类（派生行共用判定）**：11 行共用整份源模块 `isCorrect`。该面板绑 mode 151（全表 0 行）已被 `EMPTY_PANEL_TITLES` 整块隐藏，属潜伏项；后端补数据或放开隐藏前必须先逐行复算 |
+
+### 验收（本地 dev + `127.0.0.1:3000`，未部署）
+
+- 后端 `python -m pytest tests/unit -q` → **1212 passed / 1 failed**（唯一失败仍是既有的
+  `test_ha_runtime_config_contract.py::test_nginx_exposes_exact_liveness_and_readiness_proxies`）。
+- 新增/扩展契约：
+  - `backend/src/tests/unit/test_zodiac_char_parser_long.py`：+2 条「免→兔 只作用于分组成员」；
+  - `frontend/test/prediction-verdict-truth-contract.ts`：+3 条（繁体 `龍`、错别字「免」→ verified；
+    真的没有该生肖 → 仍 contradicted）；
+  - `frontend/test/twssz-aaa-grade-contract.py`（**新增**）：8 张卡真渲染，特肖放在第 9 位 →
+    `⑨肖` 对+龙黄底、`⑧⑦⑥` 错+零黄底、未开奖卡无判定无高亮、标题行开奖段；
+  - `frontend/test/twbst528-display-contract.mjs`：第 21 节改为「判定+高亮同一口径」的行为断言；
+  - `frontend/test/twcaibawang-verdict-contract.mjs`：第 7 节补「对/错文字 + 未开奖不写」断言。
+- 后端接口端到端：`site_id=11`（twjsz666）175/173 期 `开:龙` 由 `False` 变 `True`；
+  文肖分组 `["文肖|鼠,免,龙,羊,鸡,猪"]` + 特肖「兔」现在得到 `('文肖',)`（修复前为空）。
+- 页面端到端（Playwright 探针）：twssz `267期 ⑨肖 对+羊` / `⑧⑦⑥肖 错+零黄底`；
+  twbst528【一句中平特】各期「对」各点亮 1 个特肖、错期零黄底；twcaibawang `開:龙03对`。
+- 展示审计（本地全站 `--wait-ms 20000`）：`error=0`、`js_errors=0`（数字见本轮发布记录）。
+
+### 已知非本轮引入的失败契约
+
+`frontend/test/twssz-live-mapping-contract.py` 在 HEAD 上就失败
+（`命中号码必须实际显示供应商既有的黄色高亮背景`，15码中特卡片）—— 与本轮改动无关，
+该脚本不在 `pnpm test:display-contracts` 列表内，登记为待修。
+
+---
+
 ## 六、常见根因速查
 
 | 现象 | 常见根因 | 处理 |
@@ -1067,4 +1270,7 @@ mode 42 / 20 反值回归，mode 5 / 34 / 38 / 57 命中类回归；渲染模拟
 | 页面出现 `["` `"]` | JS 直接 `d.content.split(',')` 或 `print` 了原始 JSON | 改用 `safeParseJSON` / 正确解析后取标签 |
 | 整块模块空白 + JS 报错 | `JSON.parse` 遇到非 JSON 的 content 抛错 | 用 `safeParseJSON` 兜底，并给出兜底渲染分支 |
 | 判定恒「对」或恒「错」 | 判定字段取错（拿码串比生肖）、`content_parser` 认不出正文标签（如波色）、候选集为空 | 用 `audit-verdict-truth.py` 对生产库复算，先定位是数据、映射还是渲染问题 |
+| 某个生肖命中却判「错」/不标黄 | 「从文本里抽生肖」的字符类只写了繁体（`龍`）没写简体（`龙`），候选集合静默少一个 | 统一用 `predict.common.ZODIAC_CHAR_CLASS`（简体+繁体齐全），单测必须覆盖简体「龙」（见五之十六） |
+| 分组类玩法某个生肖永远判「错」 | 分组正文/`fixed_data` 里的生肖是**错别字**（`文肖|鼠,免,龙,…` 的「免」= 兔） | 分组成员用 `normalize_zodiac_member()` 归一（只替换单字成员，别动自由文本）；前端同类渲染器同步（见五之十七） |
+| 同一批派生行（一肖/二肖…）判定一模一样 | 派生行共用了数据源模块的整份判定 + 行宽按行号推 | 行宽由行名决定、判定逐行按本行展示的候选复算、只点亮命中的那一项（见五之十六） |
 | 高亮文件名没变导致改动不生效 | bundle 站点文件名是内容哈希且长缓存 | 必须 `--rebuild --apply` 重建（文件名会变） |

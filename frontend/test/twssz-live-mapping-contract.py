@@ -30,6 +30,10 @@ MODULE_ROWS = {
         ],
     ],
     "sxztu": [["四不像"]],
+    # 九肖中特（mode 49）是「AAA级大公开」⑨⑧⑦⑥肖中特四行的数据源。
+    # 「龙」故意放在第 9 位：⑨肖行命中、⑧⑦⑥肖行不命中，用来锁住「逐行判定」。
+    # 追加在末尾：既有模块的装配顺序必须保持不变（有渲染器按位置取模块）。
+    "9xzt": [["猴", "羊", "马", "猪", "狗", "鼠", "牛", "虎", "龙"]],
 }
 MODULE_KEYS = [
     *MODULE_ROWS,
@@ -311,11 +315,18 @@ def main() -> None:
             aaa_cards = frame.locator("[data-site-slot='aaa-grade-card']")
             assert aaa_cards.count() == 8
             assert frame.locator("[data-prediction-section='grade-a'] [data-site-slot='aaa-grade-card']").count() == 0
+            # ⑨⑧⑦⑥肖中特 = 九肖中特（mode 49）的前 9/8/7/6 肖；特肖「龙」在第 9 位，
+            # 所以只有 ⑨肖这一行命中（对 + 龙黄底），⑧⑦⑥ 行判「错」且零黄底。
+            aaa_all = "猴羊马猪狗鼠牛虎龙"
             for index in range(8):
                 card = aaa_cards.nth(index)
                 assert card.locator("tr").count() == 5
                 assert card.locator("tr").nth(0).locator("td").count() == 1
-                assert f"{207 - index}期 AAA级大公开" in card.inner_text()
+                title_text = card.locator("tr").nth(0).inner_text()
+                assert f"{207 - index}期 AAA级大公开" in title_text, title_text
+                # 标题行必须带开奖段（第 1 张卡尚未开奖）。
+                expected_draw = "开:待开奖" if index == 0 else "开:02龙"
+                assert expected_draw in title_text, title_text
                 for row_index, (label, count) in enumerate((("⑨", 9), ("⑧", 8), ("⑦", 7), ("⑥", 6)), start=1):
                     detail = card.locator("tr").nth(row_index)
                     outer = detail.locator("td > span > strong > font[color='#fa035a']")
@@ -325,7 +336,25 @@ def main() -> None:
                     # highlight nodes instead of being collapsed into a line.
                     values = outer.locator(":scope > font, :scope > span")
                     assert values.count() == count
-                    assert "".join(values.all_inner_texts()) == "猴龙羊马猪狗鼠牛虎"[:count]
+                    assert "".join(values.all_inner_texts()) == aaa_all[:count]
+                    # 判定字（2026-10-03 需求）：已开奖写「对/错」，未开奖不写。
+                    verdict = detail.locator("[data-site-slot='aaa-verdict']")
+                    assert verdict.count() == 1, f"{label}肖行缺少判定字槽"
+                    if index == 0:
+                        assert verdict.inner_text().strip() == "", "未开奖不得显示判定"
+                    else:
+                        assert verdict.inner_text().strip() == ("对" if count == 9 else "错"), (
+                            label, verdict.inner_text()
+                        )
+                    # 命中项只点亮本行候选里真正开出的那个生肖。
+                    yellow = detail.evaluate(
+                        """(row) => Array.from(row.querySelectorAll('font'))
+                            .filter((leaf) => !leaf.children.length &&
+                                getComputedStyle(leaf).backgroundColor === 'rgb(255, 255, 0)')
+                            .map((leaf) => leaf.textContent.trim())"""
+                    )
+                    expected_yellow = ["龙"] if (index != 0 and count == 9) else []
+                    assert yellow == expected_yellow, (label, yellow)
 
             jia_ye = frame.get_by_text("家野二肖", exact=True).locator("xpath=ancestor::table[1]/following-sibling::div[1]")
             jia_ye_text = jia_ye.inner_text()

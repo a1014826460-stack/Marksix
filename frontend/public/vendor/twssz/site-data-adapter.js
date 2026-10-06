@@ -1865,11 +1865,42 @@
   }
 
   function aaaZodiacs(row) {
-    var selected = zodiacValues(row).slice(0, 7);
+    // ⑨⑧⑦⑥肖中特都是「**九肖中特**」的前 N 肖。数据源优先取 mode 49（`9xzt`，真 9 肖）；
+    // 只有该模块没有行时才退回 mode 44（`7xiao7ma`，7 肖）并用固定顺序补齐到 9，
+    // 保证卡片不会因为缺 9 肖数据整块空掉。
+    var selected = zodiacValues(row).slice(0, 9);
     ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"].forEach(function (value) {
       if (selected.indexOf(value) === -1) selected.push(value);
     });
     return selected.slice(0, 9);
+  }
+
+  /** 标题行的开奖段：`开:03龙`；未开奖 `开:待开奖`。 */
+  function aaaResultText(row) {
+    var result = row && row.result || {};
+    if (!result.isOpened) return "开:待开奖";
+    var draw = drawnAtoms(row);
+    var code = resultCode(row);
+    return "开:" + (code && draw.zodiac ? code + draw.zodiac : drawValue(row));
+  }
+
+  /**
+   * 每行末尾的判定字：已开奖写「对 / 错」，未开奖留空（S1）。
+   *
+   * 判定字挂在 `<strong>` 上（不是那个装生肖槽的 `font[color='#fa035a']`），
+   * 免得把判定字混进「候选槽」里被下游当成第 10 个生肖读走。
+   */
+  function aaaVerdictSlot(detailRow, opened, hit) {
+    var strong = detailRow && detailRow.querySelector("strong");
+    if (!strong) return;
+    var node = strong.querySelector("[data-site-slot='aaa-verdict']");
+    if (!node) {
+      node = window.document.createElement("font");
+      node.setAttribute("data-site-slot", "aaa-verdict");
+      strong.appendChild(node);
+    }
+    node.setAttribute("color", hit ? "#FF0000" : "#000000");
+    node.textContent = opened ? (hit ? " 对" : " 错") : "";
   }
 
   function clearDynamicPredictionText(root) {
@@ -1881,7 +1912,10 @@
   }
 
   function renderAaaGradeHistory(moduleByKey) {
-    var module = moduleByKey["7xiao7ma"];
+    // 需求（2026-10-03 报障）：这一块要能看出命中与判定 —— 「命中的生肖标黄 + 每行有对/错」。
+    // 数据源换成 mode 49（`9xzt` 九肖中特）；判定**逐行按本行展示的前 N 肖复算**，
+    // 不能用整份 9 肖的接口判定（旧实现连「⑥肖」行没含特肖也会跟着整份判定上黄底）。
+    var module = moduleHasRows(moduleByKey["9xzt"]) ? moduleByKey["9xzt"] : moduleByKey["7xiao7ma"];
     aaaTables().forEach(function (table, index) {
       var row = moduleRow(module, index);
       var rows = table.querySelectorAll("tr");
@@ -1891,23 +1925,28 @@
       // 过去只在「判定为错」的期才被清掉，于是命中的期会把样例的**别的生肖**留在屏上。
       // 现在无条件先清，再按本期特肖重新点亮：命中的肖才有黄底，其余一律没有。
       clearRowHighlight(table);
-      if (rows[0]) setExistingText(rows[0].querySelector("strong") || rows[0], row ? termValue(row) + " AAA级大公开;准确率绝对100%;大胆下注!" : "");
+      if (rows[0]) setExistingText(rows[0].querySelector("strong") || rows[0], row ? termValue(row) + " AAA级大公开;准确率绝对100%;大胆下注! " + aaaResultText(row) : "");
       var draw = drawnAtoms(row);
-      var rowHit = isHitRow(row);
+      var zodiacs = row ? aaaZodiacs(row) : [];
       [9, 8, 7, 6].forEach(function (count, rowIndex) {
         if (!rows[rowIndex + 1]) return;
         var outer = rows[rowIndex + 1].querySelector("font[color='#fa035a']");
         if (!outer) return;
         setDirectText(outer, row ? termValue(row) + "⑨⑧⑦⑥".charAt(rowIndex) + "肖中特:" : "");
+        // 本行候选 = 九肖的前 count 个；命中 = 本期特肖出现在**本行**候选里。
+        var candidates = zodiacs.slice(0, count);
+        var hit = Boolean(row && draw.opened && draw.zodiac && candidates.indexOf(draw.zodiac) >= 0);
         Array.prototype.filter.call(outer.children, function (child) {
           return child.tagName === "FONT" || child.tagName === "SPAN";
         }).forEach(function (valueSlot, valueIndex) {
-          var value = row ? aaaZodiacs(row)[valueIndex] || "" : "";
+          var value = candidates[valueIndex] || "";
           setExistingText(valueSlot, value);
-          markHitLeaf(valueSlot, Boolean(rowHit && draw.opened && value && value === draw.zodiac));
+          markHitLeaf(valueSlot, Boolean(hit && value && value === draw.zodiac));
         });
+        aaaVerdictSlot(rows[rowIndex + 1], Boolean(row && draw.opened), hit);
       });
-      applyRowHighlight(table, row, module);
+      // 这里**不能**再调 `applyRowHighlight`：它按整份模块的判定清黄底，
+      // 会把「⑥肖这一行自身命中」的黄底一起抹掉。
     });
   }
 

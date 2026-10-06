@@ -409,5 +409,122 @@ assert.ok(
 assert.ok(sihangBody.includes("elementHitJudgement"), "四行中特必须用号码五行判定命中")
 assert.ok(sihangBody.includes("elementOfCode"), "四行中特必须用号码五行决定标黄落点")
 
+// ── 7. 一句真言（mode 50）：候选取自 `jiexi`，命中的特肖必须标黄 ───────────────
+//
+// 报障（2026-10-02，线上 2026278 期）：
+//   `真言解释：山寒林静点明羊虎龙，另一边仍有兔牛猴蛇。`
+//   `真言解肖主前：羊虎龙兔牛猴蛇 開:龙03` —— 整块**没有高亮**。
+// 后端根因：`predict.categories.content_columns.parse_zodiac_chars` 的字符类写了繁体
+// 「龍」却漏了简体「龙」，候选集合里少了「龙」→ `contains_hit` 判「错」→ 渲染侧
+// `resolveJudgement` 拿到 false 就不标黄（已修，见
+// `backend/src/tests/unit/test_zodiac_char_parser_long.py`）。
+// 本契约锁住**渲染侧**：候选取自 `jiexi`、命中时只标黄那个特肖、错/未开奖零高亮。
+{
+  const yijuSandbox = {}
+  vm.createContext(yijuSandbox)
+  const zodiacOrder = /const ZODIAC_ORDER = (\[[^\]]*\])/.exec(source)
+  assert.ok(zodiacOrder, "找不到 ZODIAC_ORDER 常量")
+  vm.runInContext(
+    [
+      `const ZODIAC_ORDER = ${zodiacOrder[1]};`,
+      stripTs(section(source, "escapeHtml")),
+      stripTs(section(source, "normalizePredictionText")),
+      stripTs(section(source, "ensureSentence")),
+      stripTs(section(source, "highlightZodiacChars")),
+      stripTs(section(source, "stripLeadingKai")),
+      stripTs(section(source, "parseResultParts")),
+      stripTs(section(source, "renderSxCodeResult")),
+      stripTs(section(source, "specialPartsOf")),
+      stripTs(section(source, "resolveJudgement")),
+      stripTs(section(source, "toSourceRows")),
+      stripTs(section(source, "getLotteryDisplayName")),
+      stripTs(section(source, "renderModuleTitle")),
+      stripTs(section(source, "renderTitleTable")),
+      stripTs(section(source, "renderLotteryTitleTable")),
+      stripTs(section(source, "zodiacCandidatesInText")),
+      stripTs(section(source, "renderYijuzhenyan")),
+      "globalThis.__yiju = { renderYijuzhenyan, zodiacCandidatesInText }",
+    ].join("\n"),
+    yijuSandbox,
+  )
+  const yiju = yijuSandbox.__yiju
+
+  function yijuHtml({ term, title, content, jiexi, result, isOpened = true, isCorrect = null }) {
+    return yiju.renderYijuzhenyan(
+      {
+        history: [
+          {
+            term,
+            issue: `2026${term}`,
+            prediction_text: content,
+            result_text: result,
+            is_opened: isOpened,
+            is_correct: isCorrect,
+            raw: { title, content, jiexi },
+          },
+        ],
+      },
+      3,
+    )
+  }
+
+  function yellowChars(html) {
+    return [...html.matchAll(/background-color: #FFFF00">([^<]*)</g)].map((match) => match[1])
+  }
+
+  // 7.1 报障样例：开 03 龙、候选含「龙」→ 显示「对」且只标黄「龙」
+  const hitHtml = yijuHtml({
+    term: "278",
+    title: "霜林尽染映寒山",
+    content: "山寒林静点明羊虎龙，另一边仍有兔牛猴蛇。",
+    jiexi: "羊虎龙兔牛猴蛇",
+    result: "龙03",
+    isCorrect: true,
+  })
+  assert.ok(hitHtml.includes("真言解肖主前："), "必须照常显示候选说明（真言解肖主前）")
+  assert.deepEqual(yellowChars(hitHtml), ["龙"], "命中「龙」时只标黄「龙」这一个候选")
+  assert.ok(!hitHtml.includes('background-color: #FFFF00">羊'), "未命中的候选不得标黄")
+  // 判定文字（2026-10-03 需求）：供应商格式只有 `開:龙03`，现在必须补「对」。
+  assert.ok(hitHtml.includes('開:龙03<font color="#FF0000">对</font>'), "命中行必须在开奖段后显示「对」")
+
+  // 7.2 特肖不在候选里 → 判「错」、零黄底；判定文字同样要补出来
+  const missHtml = yijuHtml({
+    term: "269",
+    title: "晓色微茫开画卷",
+    content: "晓色微茫先看龙虎羊，转身又应狗鼠兔猪。",
+    jiexi: "龙虎羊狗鼠兔猪",
+    result: "鸡46",
+    isCorrect: false,
+  })
+  assert.ok(missHtml.includes("開:鸡46"), "错期仍要显示开奖号码（该面板格式为 `開:生肖号码`）")
+  assert.ok(missHtml.includes('開:鸡46<font color="#000000">错</font>'), "未命中行必须在开奖段后显示「错」")
+  assert.deepEqual(yellowChars(missHtml), [], "未命中零黄底（S3）")
+
+  // 7.3 未开奖 → 占位开奖段、不显示判定、零高亮（S1）
+  const pendingHtml = yijuHtml({
+    term: "279",
+    title: "美解女肖",
+    content: "美解女肖蛇羊鸡兔。",
+    jiexi: "蛇羊鸡兔鼠马猪",
+    result: "待开奖",
+    isOpened: false,
+  })
+  assert.ok(pendingHtml.includes("？00"), "未开奖显示占位开奖段")
+  assert.ok(!pendingHtml.includes(">对</font>") && !pendingHtml.includes(">错</font>"), "未开奖不得显示判定文字")
+  assert.deepEqual(yellowChars(pendingHtml), [], "未开奖零高亮")
+
+  // 7.4 候选解析口径：只认真正的生肖字，且简体「龙」必须在候选里
+  // （后端 `parse_zodiac_chars` 已补上简体「龙」；渲染侧同样按生肖字提取）
+  assert.deepEqual(
+    [...yiju.zodiacCandidatesInText("羊虎龙兔牛猴蛇")],
+    ["羊", "虎", "龙", "兔", "牛", "猴", "蛇"],
+  )
+  assert.deepEqual(
+    [...yiju.zodiacCandidatesInText("山寒林静点明羊虎龙")],
+    ["羊", "虎", "龙"],
+    "描述性汉字（山/寒/林/静/点/明）不得算候选",
+  )
+}
+
 console.log(`twcaibawang verdict contract passed (${JUDGE_MODULES.length} 个判定模块)`)
 

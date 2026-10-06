@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-from predict.common import normalize_zodiac_label, parse_json_or_plain_content, row_get
+from predict.common import (
+    ZODIAC_CHAR_CLASS,
+    normalize_zodiac_label,
+    parse_json_or_plain_content,
+    row_get,
+)
 
 
 def jiexi_content_from_row(row: Any) -> str:
@@ -77,7 +82,13 @@ def parse_tail_digit_content(content: str) -> tuple[str, ...]:
 
 
 def parse_zodiac_chars(content: str) -> tuple[str, ...]:
-    values = [normalize_zodiac_label(value) for value in re.findall(r"[鼠牛虎兔龍蛇马馬羊猴鸡雞狗猪豬]", content or "")]
+    """从自由文本里按字符抽取生肖候选（顺序去重）。
+
+    字符类取 `predict.common.ZODIAC_CHAR_CLASS`（唯一来源）——它同时覆盖简体与繁体写法。
+    早期这里写死了只含繁体「龍」的字符类，导致正文里的简体「龙」被静默丢掉，
+    「开奖特肖=龙」的期一律判成未命中（mode 50 一句真言 / mode 52 四字玄机）。
+    """
+    values = [normalize_zodiac_label(value) for value in re.findall(ZODIAC_CHAR_CLASS, content or "")]
     return tuple(dict.fromkeys(values))
 
 

@@ -32,7 +32,9 @@
     });
   }
 
-  function resultText(row) {
+  // 开奖槽文案。`overrideCorrect` 用于**派生行**（同一份预测的前 N 项）：这些行必须按
+  // 自己展示的候选集合判定，不能用数据源模块整份候选的 `isCorrect`；不传则沿用行自带判定。
+  function resultTextFor(row, overrideCorrect) {
     var result = row && row.result || {};
     if (!result.isOpened) return "开:待开奖";
     var last = function (value) {
@@ -42,7 +44,13 @@
     var code = last(result.code);
     var zodiac = last(result.zodiac);
     if (/^\d$/.test(code)) code = "0" + code;
-    return "开:" + (code && zodiac ? code + zodiac : String(result.text || "暂无后端资料")) + (result.isCorrect === true ? "对" : result.isCorrect === false ? "错" : "");
+    var isCorrect = overrideCorrect === undefined ? result.isCorrect : overrideCorrect;
+    return "开:" + (code && zodiac ? code + zodiac : String(result.text || "暂无后端资料"))
+      + (isCorrect === true ? "对" : isCorrect === false ? "错" : "");
+  }
+
+  function resultText(row) {
+    return resultTextFor(row);
   }
 
   function tokenValues(row) {
@@ -157,14 +165,44 @@
   // 号码展示区一行最多 4 码（`01.02.03.04` 在 26px 粗体下约 150px，放得进
   // 360px 视口下 #yxym 中列的 50% ≈ 176px）；超出就均衡折行（7 码 → 4+3，5 码 → 3+2）。
   var CODES_PER_LINE = 4;
-  function codeLineHtml(codes) {
+  // `hitCode` 非空时只把**命中的那一个号码**包进命中标记（不再整格上黄底，见 S2）。
+  function codeLineHtml(codes, hitCode) {
     var lineCount = Math.ceil(codes.length / CODES_PER_LINE);
     var perLine = Math.ceil(codes.length / lineCount);
+    var mark = hitCode ? String(hitCode) : "";
     var lines = [];
     for (var index = 0; index < codes.length; index += perLine) {
-      lines.push(codes.slice(index, index + perLine).map(escapeHtml).join("."));
+      lines.push(codes.slice(index, index + perLine).map(function (code) {
+        var text = String(code);
+        return text === mark
+          ? '<span data-prediction-hit="true">' + escapeHtml(text) + "</span>"
+          : escapeHtml(text);
+      }).join("."));
     }
     return lines.join("<br>");
+  }
+
+  // 「一肖一码发布区」每张表的行名（与供应商模板的 13 行一一对应，DOM 顺序固定）：
+  // 4 个号码行 + 8 个生肖行 + 1 个波色行。
+  //
+  // **行宽由行名决定**：`九肖` 就是 9 个生肖。旧实现按 `rowIndex - 3` 推宽度，把最后
+  // 一行（九肖）算成 8 个生肖 —— 9 肖中特的第 9 个生肖被裁掉（线上 2026-278 期是「龙」），
+  // 那一行却仍沿用 9 肖模块的判定上黄底，于是出现用户报障的「显示里没有龙却高亮」。
+  var ONE_CODE_ONE_XIAO_LABELS = [
+    "一码", "三码", "五码", "七码",
+    "一肖", "二肖", "三肖", "四肖", "五肖", "六肖", "七肖", "九肖",
+    "波色",
+  ];
+  var CHINESE_NUMERALS = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
+
+  /** 行名 → 行规格：`三码` → 3 个号码、`九肖` → 9 个生肖、`波色` → 波色行。 */
+  function oneCodeOneXiaoRowSpec(label) {
+    var text = String(label || "");
+    var count = CHINESE_NUMERALS[text.charAt(0)] || 0;
+    if (!count) return null;
+    if (text.slice(-1) === "码") return { label: text, codes: count };
+    if (text.slice(-1) === "肖") return { label: text, xiao: count };
+    return null;
   }
 
   function renderOneCodeOneXiaoTable(modules) {
@@ -176,13 +214,19 @@
       var xiaoRow = xiaoRows[index] || codeRow;
       var waveRow = waveRows[index] || codeRow;
       Array.prototype.forEach.call(rows(table), function (row, rowIndex) {
-        var source = rowIndex < 4 ? codeRow : rowIndex < 12 ? xiaoRow : waveRow;
+        var label = ONE_CODE_ONE_XIAO_LABELS[rowIndex];
+        var spec = oneCodeOneXiaoRowSpec(label);
+        if (!spec && label !== "波色") return writeRow(row, "", "暂无后端资料", "");
+        var source = spec ? (spec.codes ? codeRow : xiaoRow) : waveRow;
         if (!source) return writeRow(row, "", "暂无后端资料", "");
-        var codeCount = [1, 3, 5, 7][rowIndex];
-        var xiaoCount = rowIndex >= 4 && rowIndex <= 11 ? rowIndex - 3 : 0;
-        var label = ["一码", "三码", "五码", "七码", "一肖", "二肖", "三肖", "四肖", "五肖", "六肖", "七肖", "九肖", "波色"][rowIndex] || "";
         var issue = issueOf(source) + "期:" + label;
-        if (!codeCount && !xiaoCount) {
+        // 判定**逐行复算**：这些行都是同一份预测的「前 N 项」派生行（同一期、同一个
+        // 数据源模块）。沿用数据源模块整份候选的 `isCorrect`（例如 9 肖中特的 9 肖判定）
+        // 会让「一肖 牛 + 开 03 龙」这类行也显示「对」并上黄底 —— 线上 2026-278 期
+        // 【一肖一码发布区】八行生肖全部显示「对」，其中「牛虎马鼠羊鸡猪猴」并不含龙。
+        var parts = resultParts(source);
+        var opened = parts.isOpened;
+        if (!spec) {
           // 波色行：候选是 mode 38（双波中特）的两个波色，落在 token 正文里
           // （`蓝波,绿波`），并不在 raw.wave 列。只读 raw.wave 会取到空值 →
           // 页面渲染兜底串「暂无后端资料」、还给它上了黄底并显示「对」，
@@ -190,8 +234,8 @@
           var waves = listValue(rawValue(source, "wave")).slice(0, 2);
           if (!waves.length) {
             waves = [];
-            labels(source).forEach(function (label) {
-              String(label).split(/[,，、\s]+/).forEach(function (part) {
+            labels(source).forEach(function (item) {
+              String(item).split(/[,，、\s]+/).forEach(function (part) {
                 var value = part.trim();
                 if (value && waves.indexOf(value) < 0) waves.push(value);
               });
@@ -202,30 +246,36 @@
             // 真正的数据缺失：不给判定、不高亮。
             return writeRow(row, issue, "暂无后端资料", "");
           }
-          var isHit = source.result && source.result.isCorrect === true;
-          var hitWave = isHit ? specialWave(source) : "";
+          var hitWave = opened ? specialWave(source) : "";
+          var waveHit = hitWave ? waves.indexOf(hitWave) >= 0 : null;
           return writeRow(
             row,
             issue,
             waves.join("+"),
-            resultText(source),
+            resultTextFor(source, waveHit),
             "",
             false,
-            "content",
+            null,
             // 只有命中的那个波色加黄底；没命中的波色保持无高亮（S2）。
-            hitWave && waves.indexOf(hitWave) >= 0 ? highlightOnly(waves, hitWave) : waves.map(escapeHtml).join("+")
+            waveHit === true ? highlightOnly(waves, hitWave) : waves.map(escapeHtml).join("+")
           );
         }
-        var hit = Boolean(source.result && source.result.isCorrect === true);
-        if (codeCount) {
-          var codes = codeValues(source).slice(0, codeCount);
-          if (!codes.length) return writeRow(row, issue, "暂无后端资料", resultText(source), "", hit);
+        if (spec.codes) {
+          var codes = codeValues(source).slice(0, spec.codes);
+          if (!codes.length) return writeRow(row, issue, "暂无后端资料", "");
           // 7 码在 26px 粗体下宽 269px、5 码 190px，360px 视口的中列只有 ~176px，
           // 必须显式折行；用 writeRow 既有的 contentHtml 通道插入 <br>（不新增 DOM 手法）。
-          return writeRow(row, issue, "", resultText(source), "", hit, "content", codeLineHtml(codes));
+          var hitCode = opened && parts.code ? String(parts.code).replace(/^(\d)$/, "0$1") : "";
+          var codeHit = hitCode ? codes.indexOf(hitCode) >= 0 : null;
+          return writeRow(row, issue, "", resultTextFor(source, codeHit), "", false, null,
+            codeLineHtml(codes, codeHit === true ? hitCode : ""));
         }
-        var value = labels(source).slice(0, xiaoCount).join("");
-        writeRow(row, issue, value || "暂无后端资料", resultText(source), "", hit);
+        var value = labels(source).slice(0, spec.xiao).join("");
+        if (!value) return writeRow(row, issue, "暂无后端资料", "");
+        // 命中项 = 本期特肖，且必须**真的出现在这一行的候选里**才标黄（S2/S3）。
+        var xiaoHit = opened && parts.zodiac ? value.indexOf(parts.zodiac) >= 0 : null;
+        writeRow(row, issue, "", resultTextFor(source, xiaoHit), "", false, null,
+          highlightOnly(value.split(""), xiaoHit === true ? parts.zodiac : "", ""));
       });
     });
   }

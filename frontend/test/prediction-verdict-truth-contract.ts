@@ -50,6 +50,40 @@ assert(
   "候选号码串不含真实特码 → contradicted（这就是虚报命中）"
 )
 
+// 生肖写法归一（2026-10-03）：候选里的**繁体**（龍/馬/雞/豬）与厂商**错别字**（免=兔）
+// 必须与后端同口径归一（`ZODIAC_CHAR_CLASS` / `normalize_zodiac_member`）。
+// 只认简体时，交叉校验找不到命中的特肖 → 把上游正确的「对」强制改写成「错」并清掉黄底。
+assert(
+  verifyVerdictAgainstCandidates({
+    isCorrect: true,
+    isOpened: true,
+    code: "03",
+    zodiac: "龙",
+    tokens: ["羊", "虎", "龍", "兔", "牛", "猴", "蛇"],
+  }) === "verified",
+  "繁体「龍」必须归一成「龙」，不得把命中判成 contradicted"
+)
+assert(
+  verifyVerdictAgainstCandidates({
+    isCorrect: true,
+    isOpened: true,
+    code: "04",
+    zodiac: "兔",
+    tokens: ['["文肖|鼠,免,龙,羊,鸡,猪"]'],
+  }) === "verified",
+  "厂商错别字「免」必须按「兔」处理（与后端 normalize_zodiac_member 同口径）"
+)
+assert(
+  verifyVerdictAgainstCandidates({
+    isCorrect: true,
+    isOpened: true,
+    code: "04",
+    zodiac: "兔",
+    tokens: ["鼠", "龙", "羊", "鸡", "猪"],
+  }) === "contradicted",
+  "候选里真的没有「兔」时仍必须判 contradicted（归一不得放宽命中口径）"
+)
+
 assert(
   verifyVerdictAgainstCandidates({
     isCorrect: true,
@@ -57,8 +91,7 @@ assert(
     code: "17",
     zodiac: "虎",
     tokens: ["龙", "猴"],
-  }) === "contradicted",
-  "候选生肖不含真实特肖 → contradicted"
+  }) === "contradicted",  "候选生肖不含真实特肖 → contradicted"
 )
 
 assert(

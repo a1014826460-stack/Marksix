@@ -40,9 +40,33 @@ ZODIAC_ALIASES = {
     "豬": "猪",
 }
 
+#: 「从自由文本里抽生肖字」共用的正则字符类。
+#:
+#: **简体与繁体两种写法都必须列全**。历史数据里简体「龙」是主流写法，早期版本
+#: 只写了繁体「龍」，于是 `parse_zodiac_chars("羊虎龙兔牛猴蛇")` 会**静默漏掉「龙」**：
+#:   · 一句真言（mode 50，`yijuzhenyan`）候选取自 `jiexi`，漏掉「龙」后
+#:     2026-278 期「丈夫解男肖，龙虎鼠猴牛马狗。开 03 龙」被判成「错」
+#:     （twbst528 首页【一句中平特】显示「错」、twcaibawang【一句真言】整块不标黄）；
+#:   · 四字玄机（mode 52，`sizixuanji`）与「文本列抽生肖」动态机制同源，同样漏判；
+#:   · 动态 registry 的 `label_count` 推断也用它，样本只含「龙」时会少数一位。
+#: 因此这里做成唯一来源，供 `predict.common` 与 `predict.categories.content_columns` 共用。
+ZODIAC_CHAR_CLASS = "[鼠牛虎兔龍龙蛇马馬羊猴鸡雞狗猪豬]"
+
 def normalize_zodiac_label(label: str) -> str:
     """把历史数据中偶发的繁体生肖归一到 fixed_data 使用的简体标签。"""
     return ZODIAC_ALIASES.get(str(label or "").strip(), str(label or "").strip())
+
+#: 厂商历史数据里的**生肖错别字**：`public.fixed_data`（文武肖 id 262）与
+#: `mode_payload_144/179` 的正文把「兔」写成「免」（`["文肖|鼠,免,龙,羊,鸡,猪"]`，实测 174 行）。
+#: 与繁体归一不同，这个替换**只对「分组里的单字成员」生效** —— 自由文本里的「免」是正常
+#: 用词（mode 59 幽默正文「不免得意的问」），绝不能整段替换。
+ZODIAC_MEMBER_TYPOS = {"免": "兔"}
+
+
+def normalize_zodiac_member(value: str) -> str:
+    """分组成员归一：繁体归简体；单字错别字（免→兔）一并修正。"""
+    text = normalize_zodiac_label(value)
+    return ZODIAC_MEMBER_TYPOS.get(text, text)
 
 @dataclass(frozen=True)
 class HistoryRecord:
@@ -351,7 +375,7 @@ def parse_zodiac_content(content: str) -> tuple[str, ...]:
                 else:
                     labels.extend(
                         normalize_zodiac_label(char)
-                        for char in re.findall(r"[鼠牛虎兔龍龙蛇马馬羊猴鸡雞狗猪豬]", value)
+                        for char in re.findall(ZODIAC_CHAR_CLASS, value)
                     )
     return tuple(label for label in labels if label)
 
@@ -406,7 +430,7 @@ def zodiac_category_labels(content: Any, zodiac: str) -> tuple[str, ...]:
         # 含号码的分组（土|05,06 / 小单|01,03 / 家禽|01,05,牛|07）不是特肖分类。
         if any(any(char.isdigit() for char in member) for member in raw_members):
             continue
-        members = [normalize_zodiac_label(member) for member in raw_members]
+        members = [normalize_zodiac_member(member) for member in raw_members]
         zodiac_members = {member for member in members if member in ZODIAC_LABEL_SET}
         if len(zodiac_members) < 2:
             continue

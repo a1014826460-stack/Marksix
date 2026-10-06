@@ -31,8 +31,11 @@ def test_content_columns_preserve_legacy_column_and_label_shapes():
     assert content_columns.black_white_content_from_row(row) == "鼠,牛,虎,兔,龙,蛇"
     assert content_columns.join_columns_content_loader(("first", "second"))(row) == "甲,乙"
     assert content_columns.parse_tail_digit_content('["1尾|01,11","三尾|03,13"]') == ("1尾", "3尾")
-    # Preserve the legacy character parser: it recognizes the traditional 龙 form.
+    # Character parser: traditional 龍 and simplified 龙 must both be recognized.
+    # 历史缺陷：字符类只列了繁体「龍」，简体「龙」被静默丢掉（见
+    # test_zodiac_char_parser_long.py 的完整回归）。
     assert content_columns.parse_zodiac_chars("鼠虎兔龍") == ("鼠", "虎", "兔", "龙")
+    assert content_columns.parse_zodiac_chars("鼠虎兔龙") == ("鼠", "虎", "兔", "龙")
     assert content_columns.parse_wave_chars("红蓝绿") == ("红波", "蓝波", "绿波")
 
 
