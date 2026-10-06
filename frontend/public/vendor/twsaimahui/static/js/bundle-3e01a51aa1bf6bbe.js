@@ -5144,8 +5144,14 @@ $.ajax({
         let htmlBox = '', htmlBoxList = '', term = ''
 
         let data = response.data
-        // fixed_data「文武肖」：文肖/武肖 两组固定（武肖按库内写法保留「免」字）。
-        let wenx = '鼠免龙羊鸡猪';
+        // fixed_data「文武肖」：文肖/武肖 两组固定。厂商把「兔」写成错别字「免」
+        // （库内 `文肖|鼠,免,龙,羊,鸡,猪`，实测 174 行），而开奖特肖是 `res_sx` 里的「兔」：
+        // 直接 `indexOf('兔')` 恒不命中 → 开「兔」且预测文肖时永远显示「错」、零黄标。
+        // 这里统一归一成「兔」再比对与展示（只在生肖分组文本上替换，不动别的文案）。
+        function normalizeZodiacText(value) {
+            return String(value == null ? '' : value).replaceAll('免', '兔');
+        }
+        let wenx = '鼠兔龙羊鸡猪';
         let wux = '牛马虎蛇猴狗';
         if (data.length > 0) {
             for (let i in data) {
@@ -5166,9 +5172,9 @@ $.ajax({
                     xiao.push(c[0])
                     xiaoV[i] = c[1];
                     if (c[0] === '文肖') {
-                        wenx = c[1].replaceAll(',','');
+                        wenx = normalizeZodiacText(c[1].replaceAll(',',''));
                     }else{
-                        wux = c[1].replaceAll(',','');
+                        wux = normalizeZodiacText(c[1].replaceAll(',',''));
                     }
                     ma.push(...c[1].split(','));
                 }
@@ -5176,7 +5182,7 @@ $.ajax({
                 let c1 = [];
                 let zj = false;
                 for (let i = 0; i < xiao.length; i++) {
-                    if (sx && xiaoV[i].indexOf(sx) !== -1) {
+                    if (sx && normalizeZodiacText(xiaoV[i]).indexOf(sx) !== -1) {
                         zj = true;
                         c1.push(`<span style="background-color: #FFFF00">${xiao[i]}</span>`);
                     }else {
