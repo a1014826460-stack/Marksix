@@ -18,6 +18,48 @@
 
 ## 概览
 
+### 十站预测「生肖识别 / 派生行判定」修复上线（2026-10-06）
+
+- 报障四条：① twjsz666【一句话中特码】`278期 …尾收牛兔龙… 开:03龙错`（候选含龙、开奖是龙仍判错）；
+  ② twssz【AAA级大公开】⑨⑧⑦⑥肖中特四行既不标黄也没有对/错；③ twbst528【一句中平特】按展示正文判定的选项；
+  ④ twcaibawang【一句真言】补对/错判定文字。用户同时要求普查十站同族缺陷。
+- 后端根因：`predict.categories.content_columns.parse_zodiac_chars` 的生肖字符类只写繁体「龍」漏了
+  简体「龙」→ mode 50/52 候选静默少一个，「开奖特肖=龙」的期一律判「错」。字符类收敛到
+  `predict.common.ZODIAC_CHAR_CLASS` 唯一来源。另修分组里的错别字「免」（fixed_data 文武肖 +
+  `mode_payload_144/179`，实测 174 行）：`normalize_zodiac_member` 只对分组单字成员做 免→兔。
+- 前端：twwanli 一肖一码（行宽按行名 + 逐行复算 + 只点亮命中项）、twssz AAA（改绑 mode 49 九肖中特 +
+  四行逐行判定 + 判定字 + 标题开奖段）、twbst528 一句中平特（判定与高亮统一按展示正文）、
+  twcaibawang 一句真言（补对/错文字）、twsaimahui 文武生肖（免→兔 归一 + 重建 bundle）、
+  `prediction-contract.candidateZodiacAtoms`（繁体/错别字归一，避免交叉校验把「对」改写成「错」）。
+- 审计工具：判定锚点收紧 + 占位窗口收敛，消除 shengshi8800【独家幽默】段子正文被读成判定的假 R2
+  （详见 `docs/prediction-display-standard.md` 五之十七）。
+- 提交：`0b0cf45`（代码+契约+文档）、`c0adc92`（twsaimahui bundle 重建）、`09b0c2f`（审计工具）。
+  推 `origin/main`；经跳板机按既定脚本发布，两节点均 `git merge --ff-only` 至 `09b0c2f`
+  （中心备份 `.deploy-backups/pred-verdict-round3-20261006T104616Z`、
+  `.deploy-backups/bundle-and-audit-20261006T112212Z`；前端备份 `.deploy-backups/pred-verdict-round3-20261006T110450Z`、
+  `.deploy-backups/bundle-and-audit-20261006T113110Z`）。中心重建 db-migrate/python-api/scheduler-worker/frontend，
+  前端仅重建 frontend；两边 `nginx -t` 通过，十站首页与 `/health` 200。
+- 线上验收（2026-10-06）：
+  - twbst528 278 期 `丈夫解男肖，龙虎鼠猴牛马狗。 开:03龙对`，**「龙」已标黄**（报障原样修复）；
+    277/274 期「对」各点亮 1 个特肖、276/275 期「错」零黄底、279 期待开奖不判定不高亮。
+  - twssz 278 期 `开:03龙`，⑨⑧⑦⑥四行都是「对」+ 龙标黄；279 期待开奖：无判定、零高亮（标题行 `开:待开奖`）。
+  - twcaibawang 278 期 `真言解肖主前：羊虎龙兔牛猴蛇 開:龙03对`，龙标黄；错期显示「错」且零黄底。
+  - twwanli 279 期 13 行派生行宽度正确：`九肖:鼠猪鸡狗羊蛇虎马龙`（**9 个生肖**，旧实现只有 8 个），未开奖不判定不高亮。
+  - twjsz666 278 期「一句话中特码」`单肖【猴龙狗鼠】`，「龙」标黄。
+  - twsaimahui 文武生肖说明行已是 `文肖:兔猪羊鸡鼠龙`（不再是错别字「免」）。
+  - 新 bundle `bundle-3e01a51aa1bf6bbe.js` 公网 200 且与本地**逐字节一致**
+    （sha256 `9c6ca5340e889013…`，CR 字节 0），旧 `bundle-2cfe6cfcf4c2976a.js` 404。
+  - 十站展示审计（`--wait-ms 60000`）：**10/10 `error=0`、`js_errors=0`**，共 50 条 warn（全部 R4/R5/R8 提示级）。
+    逐站 rows/error/warn：shengshi8800 439/0/0、twcaibawang 292/0/6、twsaimahui 655/0/5、twjinniu 469/0/2、
+    twcf888 451/0/6、twssz 282/0/4、twbst528 371/0/13、twjsz666 276/0/1、twwanli 202/0/4、twsyw 545/0/9。
+    其中 twwanli 的 `#yxym|一码` R8 是本次修法的必然结果（一码行只有 1/12 命中率，5 连「错」在概率内）；
+    shengshi8800 由上一轮的 `error=1`（段子正文假 R2）变为 `error=0 warn=0`。
+    twbst528 的 13 条里**没有**「一句中平特」（样本为其它面板的肖+码列表），说明该面板的命中项已正常点亮。
+- 遗留（已登记在 `docs/prediction-display-standard.md` 五之十七）：6 处「只认简体」的前端解析器
+  （shengshi8800 判定引擎、twssz 两处、twbst528 一处、twwanli 两处固定分组表、twjinniu/twcf888 的硬编码组）
+  在候选/开奖生肖写成繁体时会漏项；本地与线上 payload 抽样未见繁体生肖，属潜伏项。
+  twbst528 一肖一码（mode 151 无数据、面板隐藏）的派生行共用判定亦为潜伏项。
+
 ### 开奖模块改为「后端控节奏、前端诚实展示」（2026-10-05）
 
 - 需求：台湾彩每 25 秒展示下一个号码；前端不得等 7 个号码齐全才开始轮播；按后端返回顺序全部展示；
