@@ -98,9 +98,26 @@ SITES: list[dict[str, Any]] = [
 ]
 
 VERDICT_TOKENS = ("准", "对", "错", "赢", "输", "中", "不中")
+#: 「开奖段」锚点：`开/開` 后面必须紧跟**结果引导词或结果本身**，才算这一行的开奖段起点。
+#:
+#: 为什么要收紧：`verdict_of` 过去取「最后一个 开/開 之后的 16 字」当判定窗口。笑话/谜面这类
+#: 正文里也常有「开」字——线上 2026-10-06 实测 shengshi8800【独家幽默】279 期的段子
+#: 「…对方女的要他**开**视频，这货竟然把摄像头调整**对**着我…」把最后一个「开」落在正文里，
+#: 窗口抓到「对着我」的「对」→ 假 R2（error 级）。锚点收紧后，正文里的「开视频 / 开心 /
+#: 开门」都不再被当成开奖段。
+VERDICT_ANCHOR_LOOKAHEAD = (
+    r"[:：]|奖|出|码|碼|[\d?？待]|"
+    r"[鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬免]|"
+    r"[蓝藍红紅绿綠波单單双雙大小家野天地前后後左右日夜阴阳陰陽金木水火土琴棋书画書畫合半平特头頭尾段]"
+)
+VERDICT_ANCHOR_RE = re.compile(r"(?:开|開)\s*(?=" + VERDICT_ANCHOR_LOOKAHEAD + r")")
 PENDING_PATTERNS = (
     "？00", "?00", "？？？", "??????", "?????", "????", "？？", "待开",
     "猫00", "？?", "?？",
+)
+#: 占位结果的正则（长的在前，避免 `？？` 抢先匹配 `？？？`）。
+PENDING_RE = re.compile(
+    "|".join(re.escape(item) for item in sorted(PENDING_PATTERNS, key=len, reverse=True))
 )
 LEGEND_EMPTY_RE = re.compile(
     r"(左肖|右肖|阴肖|阳肖|文肖|武肖|有肖|无肖|吉美肖|凶丑肖|肥肖|瘦肖|"
@@ -345,21 +362,32 @@ def verdict_of(text: str) -> str:
     2. 取**最靠右**的那个判定字——模块名里也含判定字（twcaibawang 的「输尽光」含「输」，
        行内没有「开」字时整行就是 tail），按固定 token 顺序取第一个会把它当成判定，
        而真正的判定总在行尾。结束位置相同时优先更长的 token（「不中」优于「中」）；
-    3. 行内**没有**「开/開」时，只有当判定字出现在**行尾**（允许后面跟右括号/空白/句号）
+    3. 行内**没有**「开/開」（或没有像开奖段起点的「开/開」，例如段子正文里的「开视频」）时，
+       只有当判定字出现在**行尾**（允许后面跟右括号/空白/句号）
        才认账——否则「270期七肖中特：www.xxx.com长期跟踪」这类标题/文章行里的「中」
        会被误判成判定（R2/R3/R4/R8 的主要误报来源）；
     4. 先把「中奖 / 不中奖」这类状态文案去掉——twjinniu 的 `开奖【www.xxx.com】中奖`
        会被第 1、2 步读成命中。
     """
     cleaned = VERDICT_NOISE_RE.sub("", text)
-    openings = list(re.finditer(r"开|開", cleaned))
+    # 只把「看起来像开奖段起点」的 开/開 当锚点（见 VERDICT_ANCHOR_RE 注释）。
+    openings = list(VERDICT_ANCHOR_RE.finditer(cleaned))
     if not openings:
         tail_match = VERDICT_TAIL_RE.search(cleaned)
         return tail_match.group(1) if tail_match else ""
     # 判定字紧跟在开奖结果后面。只在「最后一个开/開」之后的短窗口里找，
     # 否则像 shengshi8800 的独家幽默那样，笑话正文里的「对我又是…」会被当成判定「对」。
     tail = cleaned[openings[-1].end():]
-    window_hit = _rightmost_verdict(tail[:16])
+    window = tail[:16]
+    # 占位结果（`？00` / `待开奖`）后面**紧跟**的就是判定位置：窗口只到占位符之后 2 字。
+    # 否则同行的段子/谜面正文会被读成判定（线上 2026-10-06 shengshi8800【独家幽默】
+    # 279 期：`開:？00 独家幽默：在网吧上网中…` 的「上网中」被读成判定「中」→ 假 R2）。
+    lead = re.match(r"[\s:：]*", tail)
+    body_start = lead.end() if lead else 0
+    pending = PENDING_RE.match(tail[body_start:])
+    if pending:
+        window = tail[: body_start + pending.end() + 2]
+    window_hit = _rightmost_verdict(window)
     if window_hit:
         return window_hit
     # 窗口里没有（例如「开奖【域名】」这类结构），退回「行尾判定字」口径。
