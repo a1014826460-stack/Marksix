@@ -18,6 +18,17 @@
 
 ## 概览
 
+### 台湾彩固定门禁、历史协议及 API 缓存修复发布（2026-10-08）
+
+- 最终两节点发布版本 `c3bf43c`，包含门禁主修复 `81d8821`；中心重建 API、scheduler、后台、前端并检查迁移，前端节点重建前端。今晚 2026281 任务为香港时间 22:32，19:05 复核仍未开奖，唯一 worker healthy、stalled=0。
+- 固定规则：合法计划时间为下限，起点一球、每 25 秒增加一球、+150 秒七球；十站按服务器权威时间共享进度。历史、JSONP、聚合、预测、后台真实结果独立受完整门禁保护；刷新保留本期合法前缀，窗口结束直接展示完整结果。规范见 `docs/taiwan-draw-release-gates.md`。
+- 实际 Nginx 配置 `deploy/nginx.conf.local` / `deploy/nginx.frontend-node.conf.local` 各 25 个相关 API 块取消 proxy_cache，停止忽略 Cache-Control，原 inode 写入后 nginx -t、reload；未重启 Nginx 容器。最终 nginx -T 两项违规块均 0；十站普通重复 HTTP 请求服务器时钟持续更新，无缓存命中，相关 JSON no-store。
+- 首次真实验收发现短期号加响应年份的合法历史被误过滤；c3bf43c 按显式响应年份验证身份，新增真实协议回归，历史恢复且未开奖期保持隐藏。旧 frontend 镜像 ID 检查不可用，回退未执行，采取限定修复向前发布；修复前已保留不可变 frontend 回退标签。中心启动等待脚本曾因 curl 连接重置退出 56，后续独立运行验证通过，此脚本退出不记为成功。
+- 验证：固定后端 353 项、面板恢复 67 场景、跨语言时间 107 场景、真实历史 42 场景、开奖代理 27 场景及完整展示契约通过。部署 API/调度源码哈希匹配发布版；运行函数边界验证 +149 六球、+150 七球通过。十站共享 HTML 与发布源一致，合法历史均正常且未来期次未泄露；线上展示 3981 行、error=0、js_errors=0、warn=35。
+- 两节点 NTP 同步 yes，最终偏差中心 -1.271ms、前端 +2.327ms。全量后端 1477 passed / 17 skipped / 18 基线失败，新增失败 0；前端 TypeScript 两处既有错误，无新错误。今晚真实开奖尚未发生，不能把边界验证等同现场观察。
+- 两节点备份目录 `.deploy-backups/taiwan-fixed-gate-20261008T101850Z`、`taiwan-fixed-gate-nginx-20261008T103912Z`、`taiwan-history-protocol-20261008T105131Z`。frontend 回退标签为 `marksix-frontend-rollback:center-20261008T105131Z` / `marksix-frontend-rollback:frontend-20261008T105131Z`；数据库迁移已 current，既有图片和运行文件保留，自身传输脚本已清理。
+- 详细证据及发布边界见 `output/draw-fixed-gate-20261008/review-report.zh-CN.md`、`release-acceptance-summary.json`。后续发布必须核验实际 Nginx 配置、无缓存命中及连续服务器时钟，单看 no-store 响应头不足以证明代理不缓存。
+
 ### 台湾共享开奖面板双重时间门控、到点恢复与校时（2026-10-08）
 
 - 需求：22:32 到点切换本期并清理旧期；开奖期间十站按共同有效起点每 25 秒开放一球，第七球在起点后 150 秒开放；刷新保留本期已合法显示的连续前缀，窗口结束后直接展示已完整开放的七球。
