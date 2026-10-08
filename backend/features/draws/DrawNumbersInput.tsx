@@ -138,6 +138,7 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
   return (
     <div>
       <input type="hidden" name={name} value={valueStr} />
+      <p className="mb-2 text-sm font-medium" aria-live="polite">已选 {selected.length}/7 个号码{selected.length < 7 ? "，请选满七个后保存" : "，可保存"}</p>
       <div className="flex flex-wrap items-center gap-2 min-h-[56px] p-3 mb-2 rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 transition-colors">
         {selected.map((n, idx) => (
           <div
@@ -164,8 +165,9 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
             <button
               type="button"
               onClick={() => removeNumber(n)}
-              className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/20 text-[10px] hover:bg-destructive hover:text-destructive-foreground transition-colors"
+              className="ml-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-primary-foreground/20 text-[10px] hover:bg-destructive hover:text-destructive-foreground transition-colors"
               title="移除"
+              aria-label={`移除号码${String(n).padStart(2, "0")}`}
             >
               ×
             </button>
@@ -189,8 +191,8 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
         </div>
       )}
       {!dataLoading && !dataError && (
-        <div className="overflow-x-auto overflow-y-hidden max-h-[260px] md:max-h-[220px] -mx-1 px-1">
-          <div className="flex gap-0.5 min-w-max">
+        <div className="min-w-0">
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-12">
             {zodiacData.map((item) => {
               const nums = item.code
                 .split(",")
@@ -198,7 +200,7 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
                 .filter((n) => n >= 1 && n <= 49)
                 .sort((a, b) => a - b)
               return (
-                <div key={item.id} className="flex flex-col gap-0.5 w-9 md:w-auto md:flex-1 md:min-w-0">
+                <div key={item.id} className="flex min-w-0 flex-col gap-1">
                   <div className="text-center text-[10px] font-medium text-muted-foreground py-0.5 select-none">
                     {item.name}
                   </div>
@@ -212,7 +214,7 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
                           isSelected ? removeNumber(n) : addNumber(n)
                         }
                         disabled={!isSelected && selected.length >= 7}
-                        className={`h-8 w-8 md:h-6 md:w-full rounded text-xs font-medium transition-colors ${
+                        className={`h-11 w-full rounded text-xs font-medium transition-colors ${
                           isSelected
                             ? "bg-primary text-primary-foreground hover:bg-primary/80"
                             : `${getColorClass(n)} disabled:opacity-30`

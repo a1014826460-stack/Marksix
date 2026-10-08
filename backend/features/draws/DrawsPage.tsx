@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -295,6 +296,14 @@ export function DrawsPage() {
       return
     }
 
+    if (!preserveNumbers) {
+      const balls = numbers.split(",").map(Number)
+      if (balls.length !== 7 || new Set(balls).size !== 7 || balls.some((n) => !Number.isInteger(n) || n < 1 || n > 49)) {
+        alert(`请选择恰好7个不同的01–49号码，当前已选${balls.length}个。`)
+        return
+      }
+    }
+
     const duplicateTerm = filteredRows.some((row) => {
       if (editing && row.id === editing.id) return false
       return String(row.term) === draftTerm
@@ -462,11 +471,11 @@ export function DrawsPage() {
       description="仅管理台湾彩开奖记录，供倒计时、自动开奖与预测资料同步使用。"
     >
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">
             彩种：{taiwanLottery?.name || "台湾彩"}
           </span>
-          <div className="flex-1" />
+          <div className="hidden sm:block sm:flex-1" />
           <Input
             type="number"
             min={1}
@@ -549,19 +558,18 @@ export function DrawsPage() {
           )}
         </Card>
 
-        <div
-          className={`relative z-20 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-in-out ${formOpen ? "max-h-[720px] opacity-100" : "max-h-0 opacity-0"}`}
-        >
-          <Card className="relative p-4">
-            <h2 className="mb-3 text-base font-semibold">
-              {editing ? "修改开奖记录" : "新增开奖记录"}
-            </h2>
-            <form
-              className="grid grid-cols-1 sm:grid-cols-2 gap-3"
-              onSubmit={submit}
-              ref={formRef}
-            >
-              <Field label="彩种" className="col-span-2">
+        <Dialog open={formOpen} onOpenChange={(open) => {
+          setFormOpen(open)
+          if (!open) setEditing(null)
+        }}>
+          <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+            <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-6">
+              <DialogTitle>{editing ? "修改开奖记录" : "新增开奖记录"}</DialogTitle>
+              <DialogDescription>后台显示完整已存号码；已开奖记录禁止修改。按顺序选择七个号码，最后一个为特码。</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={submit} ref={formRef} className="flex min-h-0 flex-col">
+              <div className="grid min-h-0 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-4 py-4 sm:grid-cols-2 sm:px-6 [&_input:not([type=hidden])]:h-11 [&_input]:text-base sm:[&_input]:text-sm">
+              <Field label="彩种" className="sm:col-span-2 min-w-0">
                 <input
                   type="hidden"
                   name="lottery_type_id"
@@ -592,18 +600,15 @@ export function DrawsPage() {
                   onChange={(event) => applyTermDraft(event.target.value)}
                 />
               </Field>
-              <Field label="开奖号码（点击添加 / 删除）" className="col-span-2">
+              <Field label="开奖号码（点击添加 / 删除）" className="sm:col-span-2 min-w-0">
                 <DrawNumbersInput
                   key={numbersInputKey}
                   name="numbers"
                   defaultValue={draftNumbers}
                   onChange={() => setNumbersEdited(true)}
                 />
-                {editing?.numbers_restricted && (
-                  <p className="text-xs text-muted-foreground">开奖期间号码按公开门禁隐藏；开奖前管理员可查看并修改，未修改隐藏号码时保留原值。</p>
-                )}
               </Field>
-              <Field label="开奖日期" className="col-span-2">
+              <Field label="开奖日期" className="sm:col-span-2 min-w-0">
                 <Input
                   name="draw_time"
                   type="date"
@@ -616,7 +621,7 @@ export function DrawsPage() {
                   name="status"
                   value={draftStatus}
                   onChange={(event) => setDraftStatus(event.target.value)}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  className="h-11 w-full rounded-md border bg-background px-3 text-base sm:text-sm"
                 >
                   <option value="1">启用</option>
                   <option value="0">停用</option>
@@ -627,13 +632,13 @@ export function DrawsPage() {
                   name="is_opened"
                   value={draftIsOpened}
                   onChange={(event) => setDraftIsOpened(event.target.value)}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  className="h-11 w-full rounded-md border bg-background px-3 text-base sm:text-sm"
                 >
                   <option value="1">已开奖</option>
                   <option value="0">未开奖</option>
                 </select>
               </Field>
-              <Field label="下一期期数" className="col-span-2">
+              <Field label="下一期期数" className="sm:col-span-2 min-w-0">
                 <Input
                   name="next_term"
                   type="number"
@@ -642,26 +647,17 @@ export function DrawsPage() {
                   readOnly
                 />
               </Field>
-              <div className="col-span-2 sticky bottom-0 z-30 flex gap-2 border-t border-border bg-card py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.08)]">
-                <Button type="submit" size="sm">
-                  <Save className="mr-1 h-4 w-4" />
-                  保存
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setFormOpen(false)
-                    setEditing(null)
-                  }}
-                >
-                  取消
-                </Button>
+              </div>
+              <div className="flex shrink-0 gap-3 border-t bg-background px-4 py-3 sm:justify-end sm:px-6">
+                <Button type="button" variant="outline" className="h-11 flex-1 sm:flex-none" onClick={() => {
+                  setFormOpen(false)
+                  setEditing(null)
+                }}>取消</Button>
+                <Button type="submit" className="h-11 flex-1 sm:flex-none"><Save className="mr-1 h-4 w-4" />保存</Button>
               </div>
             </form>
-          </Card>
-        </div>
+          </DialogContent>
+        </Dialog>
 
         <DrawBallDisplayProvider>
           <Card className="overflow-auto p-4">
@@ -705,7 +701,7 @@ export function DrawsPage() {
                       <TableCell className="border-r border-border">{row.year}</TableCell>
                       <TableCell className="border-r border-border">{row.term}</TableCell>
                       <TableCell className="border-r border-border">
-                        {row.numbers_restricted ? <span className="text-xs text-muted-foreground">等待完整公开</span> : <DrawBallDisplay numbers={row.numbers} />}
+                        <DrawBallDisplay numbers={row.numbers} />
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs border-r border-border">{row.draw_time}</TableCell>
                       <TableCell className="border-r border-border">

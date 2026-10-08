@@ -22,7 +22,7 @@ def _setup_db(tmp_path):
 
 @pytest.mark.parametrize("operation", ["list", "create", "update", "autofill"])
 @pytest.mark.parametrize("seconds", [-1, 0, 149])
-def test_admin_can_read_future_draw_numbers_only_before_plan(tmp_path, monkeypatch, operation, seconds):
+def test_admin_management_displays_numbers_before_and_during_release(tmp_path, monkeypatch, operation, seconds):
     import helpers
 
     db_path = _setup_db(tmp_path)
@@ -43,8 +43,8 @@ def test_admin_can_read_future_draw_numbers_only_before_plan(tmp_path, monkeypat
             "update": "draw_detail", "autofill": "autofill_future_draws"}[operation])(ctx)
     response = response_json(ctx)
     output = response["draws"][0] if operation == "list" else response["data"]["created"][0] if operation == "autofill" else response["draw"]
-    assert output["numbers"] == (row["numbers"] if seconds < 0 else "")
-    assert output["numbers_restricted"] is (seconds >= 0)
+    assert output["numbers"] == row["numbers"]
+    assert output["numbers_restricted"] is False
     assert ("Cache-Control", "no-store") in ctx.handler.response_headers
     assert row["numbers"] == "08,09,10,11,12,13,14"
 
@@ -72,7 +72,7 @@ def test_future_draw_exception_requires_admin_and_never_changes_public_gate(tmp_
     {"draw_time": ""}, {"draw_time": "2026-02-30 22:32:00"},
     {"year": 2025}, {"term": 0}, {"is_opened": 1},
 ])
-def test_admin_edit_exception_closes_for_invalid_or_opened_draw(tmp_path, monkeypatch, changes):
+def test_admin_management_displays_stored_numbers_and_preserves_opened_lock(tmp_path, monkeypatch, changes):
     import helpers
     from routes.admin_result_response import gate_admin_draw_management_response
 
@@ -85,7 +85,9 @@ def test_admin_edit_exception_closes_for_invalid_or_opened_draw(tmp_path, monkey
     ctx = make_ctx("/api/admin/draws")
     ctx.handler.server.db_path = db_path
     ctx.state["current_user"] = {"role": "admin"}
-    assert gate_admin_draw_management_response(ctx, row)["numbers"] == ""
+    output = gate_admin_draw_management_response(ctx, row)
+    assert output["numbers"] == row["numbers"]
+    assert output["is_opened"] == row["is_opened"]
 
 
 def test_admin_can_save_changed_future_numbers_without_public_release(tmp_path):

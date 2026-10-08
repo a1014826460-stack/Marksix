@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
@@ -205,8 +205,8 @@ export function AdminShell({ title, description, children, actions }: AdminShell
 
       {/* 主区域 */}
       <main
-        className="min-w-0 flex-1 p-3 md:p-6 transition-[margin] duration-200"
-        style={{ marginLeft: sidebarW }}
+        className="min-w-0 flex-1 p-3 md:ml-[var(--admin-sidebar-width)] md:p-6 transition-[margin] duration-200"
+        style={{ "--admin-sidebar-width": `${sidebarW}px` } as CSSProperties}
       >
         {/* 移动端顶栏：汉堡菜单 + 用户信息 */}
         <div className="mb-3 flex items-center gap-2 md:hidden">

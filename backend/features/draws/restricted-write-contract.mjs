@@ -22,6 +22,9 @@ for (const [restricted, edited, numbers, expected] of [
   [true, false, "", {}],
   [true, true, "08,09,10,11,12,13,14", { numbers: "08,09,10,11,12,13,14" }],
   [false, false, "01,02,03,04,05,06,07", { numbers: "01,02,03,04,05,06,07" }],
+  [false, true, "01,02,03,04,05,06", null],
+  [false, true, "01,02,03,04,05,06,06", null],
+  [false, true, "01,02,03,04,05,06,50", null],
 ]) {
   const calls = [], alerts = []
   const scope = {
@@ -37,6 +40,11 @@ for (const [restricted, edited, numbers, expected] of [
   vm.createContext(scope)
   vm.runInContext(submitSource + ";globalThis.save = submit", scope)
   await scope.save({ preventDefault() {}, currentTarget: {} })
+  if (expected === null) {
+    assert.equal(calls.length, 0, "invalid seven-ball selection must not be submitted")
+    assert(alerts.some(message => /7|七/.test(message)), "explain the seven-ball requirement")
+    continue
+  }
   assert.equal(calls.length, 1, `restricted=${restricted}, edited=${edited}: ${alerts}`)
   assert.deepEqual("numbers" in calls[0].body ? { numbers: calls[0].body.numbers } : {}, expected)
 }
@@ -116,4 +124,4 @@ for (const intentionalActualEdit of [false, true]) {
   assert.deepEqual(calls, [{ content: "updated", code: "01,02", ...(intentionalActualEdit ? intentional : {}) }],
     `all backend-redacted aliases must ${intentionalActualEdit ? "remain writable when dirty" : "be omitted when untouched"}`)
 }
-console.log(`restricted result write contract passed (8 real form save scenarios, ${Object.keys(hiddenAliases).length} backend result aliases)`)
+console.log(`restricted result write contract passed (11 real form save scenarios, ${Object.keys(hiddenAliases).length} backend result aliases)`)
