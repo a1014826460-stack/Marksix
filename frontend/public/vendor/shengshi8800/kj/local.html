@@ -177,9 +177,22 @@
       var _scheduledCurrentIssue = "";
       var _scheduledNextIssue = "";
       var _revealTargetIssue = "";
+      var _revealStalled = false;
+      var _resumeInFlight = null;
+      var _deadlineInFlight = null;
+      var _deadlineHasSettled = false;
+      var _deadlineRetryTimerId = null;
+      var _drawRetryTimerId = null;
+      // 台湾前端独立防早开：收到的原始号码只留内存，合法可见前缀才进入绘制与缓存。
+      var _taiwanLatestPayload = null;
+      var _startupSafeDrawCache = null;
+      var _issueScheduleBounds = {};
+      var _lastTaiwanCompletedIssue = "";
 
       var countdownDeadline = 0;
       var serverOffsetSec = 0;
+      var _trustedServerNowMs = 0;
+      var _trustedClockElapsedMs = 0;
       var countdownTimerId = null;
       var countdownExpired = false;
 
@@ -187,6 +200,71 @@
       var REVEAL_INTERVAL_SEC = REVEAL_INTERVAL_MS / 1000;
       var REVEAL_POLL_INTERVAL_MS = 5000;
       var REVEAL_WINDOW_SEC = 210;
+
+      // 仅保留请求与绘制的元数据；按彩种隔离，iframe 重建后仍可导出排障。
+      var DIAGNOSTICS_KEY = "liuhecai:kj-local:diagnostics:v1:" + String(lotteryType);
+      var _drawDiagnostics = [];
+      try {
+        var savedDiagnostics = window.sessionStorage && window.sessionStorage.getItem(DIAGNOSTICS_KEY);
+        var parsedDiagnostics = savedDiagnostics ? JSON.parse(savedDiagnostics) : [];
+        if (Array.isArray(parsedDiagnostics)) _drawDiagnostics = parsedDiagnostics.slice(-100);
+      } catch (_) {}
+
+      function paintedBallCount() {
+        return ballPrefixIds.filter(function (id) {
+          var element = document.getElementById(id);
+          return element && element.textContent && element.textContent !== "--";
+        }).length;
+      }
+
+      function drawMetadata(payload) {
+        return {
+          incoming_issue: normalizeIssue(payload && payload.current_issue),
+          incoming_count: _progressiveBallCount(payload),
+          revealed_count: _serverRevealedCount(payload),
+          reveal_start: _revealStartRaw(payload),
+          next_reveal_at: payload && payload.next_reveal_at || "",
+          response_server_now: payload && typeof payload.server_now === "number" ? payload.server_now : null
+        };
+      }
+
+      function recordDrawDiagnostic(event, metadata) {
+        _drawDiagnostics.push(Object.assign({
+          event: event,
+          client_time_ms: Date.now(),
+          server_now: getServerNowSeconds(),
+          rendered_issue: _lastRenderedIssue,
+          rendered_count: paintedBallCount(),
+          target_issue: _revealTargetIssue
+        }, metadata || {}));
+        _drawDiagnostics = _drawDiagnostics.slice(-100);
+        try {
+          if (window.sessionStorage) window.sessionStorage.setItem(DIAGNOSTICS_KEY, JSON.stringify(_drawDiagnostics));
+        } catch (_) {}
+      }
+
+      window.LotteryDrawDiagnostics = {
+        snapshot: function () {
+          return { lottery_type: Number(lotteryType), records: JSON.parse(JSON.stringify(_drawDiagnostics)) };
+        }
+      };
+
+      function syncServerClock(serverNow) {
+        if (typeof serverNow === "number" && isFinite(serverNow) && serverNow > 0) {
+          var sampleAtMs = monotonicNowMilliseconds();
+          var candidateMs = Math.floor(serverNow) * 1000;
+          // 首次允许纠正设备快慢；可信锚点仅按单调耗时推进，不跟随设备墙钟跳变。
+          // 秒精度容许 1 秒差，并保留小数耗时，避免同秒响应不断重置计时。
+          if (_trustedServerNowMs > 0) {
+            var trustedNowMs = _trustedServerNowMs + Math.max(0, sampleAtMs - _trustedClockElapsedMs);
+            if (candidateMs < Math.floor(trustedNowMs / 1000) * 1000 - 1000) return;
+            candidateMs = Math.max(candidateMs, trustedNowMs);
+          }
+          serverOffsetSec = Math.floor(candidateMs / 1000) - Math.floor(Date.now() / 1000);
+          _trustedServerNowMs = candidateMs;
+          _trustedClockElapsedMs = sampleAtMs;
+        }
+      }
 
       // 香港彩（lottery_type=1）的源站按号码逐个补全，采用“轮序发布”：
       // 不等 7 个号码齐全，直接把当前已公布的号码前缀按顺序展示出来，
@@ -238,10 +316,11 @@
         if (!payload) return;
         // 号码已经全部下发（港澳彩一次性给全、或台湾彩揭示已完成）→ 没有需要门控的等待窗口。
         // 否则港澳彩会继续给父页发「开奖中」并锁到 reveal_start+150s，看起来还在逐球揭晓。
-        if (payload.is_complete === true) return;
-        if (Number(payload.revealed_count) >= 7) return;
+        if (Number(lotteryType) !== 3 && payload.is_complete === true) return;
+        if (Number(lotteryType) !== 3 && Number(payload.revealed_count) >= 7) return;
         var issue = normalizeIssue(payload.current_issue);
         var revealStartSec = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        if (Number(lotteryType) === 3) revealStartSec = _taiwanRevealAnchor(payload);
         if (!issue || !(revealStartSec > 0)) return;
         var unlockAt = revealStartSec + (REVEAL_INTERVAL_SEC * 6);
         if (!(unlockAt > getServerNowSeconds())) return;
@@ -269,7 +348,14 @@
       }
 
       function getServerNowSeconds() {
+        if (_trustedServerNowMs > 0) {
+          return Math.floor((_trustedServerNowMs + Math.max(0, monotonicNowMilliseconds() - _trustedClockElapsedMs)) / 1000);
+        }
         return Math.floor(Date.now() / 1000) + serverOffsetSec;
+      }
+
+      function monotonicNowMilliseconds() {
+        return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
       }
 
       function parseBeijingDateTimeToSeconds(value) {
@@ -282,6 +368,11 @@
         var hour = Number(match[4]);
         var minute = Number(match[5]);
         var second = Number(match[6]);
+        if (year < 100 || month < 1 || month > 12 || day < 1 || day > 31
+            || hour > 23 || minute > 59 || second > 59) return 0;
+        var calendar = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+        if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1
+            || calendar.getUTCDate() !== day) return 0;
         return Math.floor(Date.UTC(year, month - 1, day, hour - 8, minute, second) / 1000);
       }
 
@@ -308,6 +399,14 @@
         }
         if (left === right) return 0;
         return left < right ? -1 : 1;
+      }
+
+      function isOlderRenderedPayload(payload) {
+        var issue = normalizeIssue(payload && payload.current_issue);
+        var minimumIssue = _lastRenderedIssue;
+        if (_revealTargetIssue && compareIssues(_revealTargetIssue, minimumIssue) > 0) minimumIssue = _revealTargetIssue;
+        if (_scheduledCurrentIssue && compareIssues(_scheduledCurrentIssue, minimumIssue) > 0) minimumIssue = _scheduledCurrentIssue;
+        return !!issue && !!minimumIssue && compareIssues(issue, minimumIssue) < 0;
       }
 
       function pad2(value) {
@@ -360,7 +459,7 @@
 
         var color = ball && typeof ball.color === "string" ? ball.color : "";
         wrapNode.className = "kj-ball box " + (color ? "ball-" + color : "ball-empty");
-        valueNode.textContent = ball && ball.value ? pad2(ball.value) : "--";
+        valueNode.textContent = _ballHasValue(ball) ? pad2(ball.value) : "--";
         zodiacNode.textContent = ballSubLabelText(ball) || "--";
       }
 
@@ -425,13 +524,19 @@
         }
       }
 
+      function _ballHasValue(ball) {
+        if (!ball || !ball.value) return false;
+        // 台湾与后端 paced 前缀一致：空白号码是空槽，港澳保留既有公布语义。
+        return Number(lotteryType) !== 3 || String(ball.value).trim().length > 0;
+      }
+
       function _hasFullBalls(payload) {
         if (!payload) return false;
         var balls = payload.result_balls;
         if (!Array.isArray(balls) || balls.length < 6) return false;
-        if (!payload.special_ball || !payload.special_ball.value) return false;
+        if (!_ballHasValue(payload.special_ball)) return false;
         for (var i = 0; i < 6; i++) {
-          if (!balls[i] || !balls[i].value) return false;
+          if (!_ballHasValue(balls[i])) return false;
         }
         return true;
       }
@@ -440,7 +545,7 @@
       // 所有浏览器都按它推进同一条时间线：刷新接着走、跨浏览器进度一致；
       // 旧数据/旧部署没有该字段时退回 draw_time，行为与改造前一致。
       function _revealStartRaw(payload) {
-        if (payload && payload.reveal_start) return payload.reveal_start;
+        if (payload && String(payload.reveal_start || "").trim()) return payload.reveal_start;
         return payload && payload.draw_time ? payload.draw_time : "";
       }
 
@@ -448,10 +553,10 @@
       function _progressiveBallCount(payload) {
         if (!payload || !Array.isArray(payload.result_balls)) return 0;
         var balls = payload.result_balls.slice(0, 6);
-        if (payload.special_ball && payload.special_ball.value) balls.push(payload.special_ball);
+        if (_ballHasValue(payload.special_ball)) balls.push(payload.special_ball);
         var count = 0;
         for (var i = 0; i < balls.length && i < 7; i++) {
-          if (balls[i] && balls[i].value) count = i + 1;
+          if (_ballHasValue(balls[i])) count = i + 1;
         }
         return count;
       }
@@ -534,6 +639,171 @@
       var _serverBallsSeen = [];
       var _serverRevealTickTimerId = null;
 
+      function _rememberIssueSchedule(issue, seconds) {
+        var normalized = normalizeIssue(issue);
+        if (!normalized || !(seconds > 0) || !isFinite(seconds)) return;
+        _issueScheduleBounds[normalized] = Math.max(_issueScheduleBounds[normalized] || 0, seconds);
+        Object.keys(_issueScheduleBounds).sort().slice(0, -3).forEach(function (oldIssue) {
+          delete _issueScheduleBounds[oldIssue];
+        });
+      }
+
+      function _taiwanRevealAnchor(payload) {
+        var parsed = parseBeijingDateTimeToSeconds(_revealStartRaw(payload));
+        // 有字段但日历无效不能借排期或 draw_time 猜测一次揭示起点。
+        if (!(parsed > 0)) return 0;
+        var issue = normalizeIssue(payload && payload.current_issue);
+        var scheduledRaw = payload && payload.draw_time || "";
+        var scheduled = parseBeijingDateTimeToSeconds(scheduledRaw);
+        return Math.max(parsed, scheduled, _issueScheduleBounds[issue] || 0);
+      }
+
+      function _taiwanAllowedCount(payload) {
+        if (!(_trustedServerNowMs > 0)) return 0;
+        return _computeRevealCountForTime(_taiwanRevealAnchor(payload), getServerNowSeconds());
+      }
+
+      function _taiwanSafePayload(payload) {
+        var issue = normalizeIssue(payload && payload.current_issue);
+        var balls = _serverBallsIssue === issue ? _serverBallsSeen.slice(0, 7) : [null, null, null, null, null, null, null];
+        var count = 0;
+        while (count < 7 && _ballHasValue(balls[count])) count += 1;
+        var evidence = payload || {};
+        if (!(_taiwanRevealAnchor(evidence) > 0)) {
+          var previous = readDrawCache();
+          if (previous && previous.data._client_safe_prefix === true
+              && normalizeIssue(previous.data.current_issue) === issue) evidence = previous.data;
+        }
+        return Object.assign({}, evidence, {
+          result_balls: balls.slice(0, Math.min(6, count)),
+          special_ball: count === 7 ? balls[6] : null,
+          revealed_count: count, total_balls: 7, is_complete: count === 7,
+          reveal_interval_seconds: REVEAL_INTERVAL_SEC,
+          server_now: _trustedServerNowMs > 0 ? getServerNowSeconds() : null,
+          _client_safe_prefix: true,
+          _client_schedule_lower_bound: _issueScheduleBounds[issue] || 0
+        });
+      }
+
+      function _scheduleTaiwanRevealTick(payload) {
+        _clearServerRevealTick();
+        var anchor = _taiwanRevealAnchor(payload);
+        var allowed = _taiwanAllowedCount(payload);
+        if (!(anchor > 0) || !(_trustedServerNowMs > 0) || allowed >= 7) return;
+        var nextAtMs = (anchor + allowed * REVEAL_INTERVAL_SEC) * 1000;
+        var trustedNowMs = _trustedServerNowMs + Math.max(0, monotonicNowMilliseconds() - _trustedClockElapsedMs);
+        _serverRevealTickTimerId = setTimeout(function () {
+          _serverRevealTickTimerId = null;
+          if (_taiwanLatestPayload && !isOlderRenderedPayload(_taiwanLatestPayload)) {
+            _applyTaiwanPayload(_taiwanLatestPayload);
+          }
+          if (_serverPacedReveal) loadRevealStepFromServer();
+        }, Math.max(1, nextAtMs - trustedNowMs));
+      }
+
+      function _applyTaiwanPayload(payload, restored) {
+        var issue = normalizeIssue(payload && payload.current_issue);
+        if (!issue || isOlderRenderedPayload(payload)) return;
+        var periodConfirmed = issue === _scheduledCurrentIssue
+          || (issue === _scheduledNextIssue && countdownDeadline > 0
+              && _trustedServerNowMs > 0 && getServerNowSeconds() >= countdownDeadline)
+          || (issue === _serverBallsIssue && paintedBallCount() > 0);
+        if (!periodConfirmed) {
+          if (!_taiwanLatestPayload || !_lastRenderedIssue
+              || normalizeIssue(_taiwanLatestPayload.current_issue) !== _lastRenderedIssue) _taiwanLatestPayload = payload;
+          scheduleDrawRetry();
+          return;
+        }
+        var anchor = _taiwanRevealAnchor(payload);
+        // 未来一期不能在手动刷新时抹掉尚未到期的上一期已合法结果。
+        var currentIssue = _lastRenderedIssue || _scheduledCurrentIssue;
+        if (currentIssue && compareIssues(issue, currentIssue) > 0
+            && (anchor > getServerNowSeconds() || (_scheduledNextIssue
+              && compareIssues(issue, _scheduledNextIssue) >= 0 && countdownDeadline > getServerNowSeconds()))) return;
+        var sameRawIssue = _taiwanLatestPayload && normalizeIssue(_taiwanLatestPayload.current_issue) === issue;
+        if (!restored || !sameRawIssue) {
+          // 同一期短载荷不能丢弃已经收到、正在等合法边界的号码；新元数据仍接受核验。
+          if (sameRawIssue) {
+            var previousRaw = _taiwanLatestPayload;
+            var rawRegular = [];
+            for (var rawIndex = 0; rawIndex < 6; rawIndex++) {
+              var priorBall = previousRaw.result_balls && previousRaw.result_balls[rawIndex];
+              var currentBall = payload.result_balls && payload.result_balls[rawIndex];
+              rawRegular.push(_ballHasValue(priorBall) ? priorBall : currentBall || null);
+            }
+            _taiwanLatestPayload = Object.assign({}, payload, {
+              result_balls: rawRegular,
+              special_ball: _ballHasValue(previousRaw.special_ball) ? previousRaw.special_ball : payload.special_ball
+            });
+          } else {
+            _taiwanLatestPayload = payload;
+          }
+        }
+        var allowed = _taiwanAllowedCount(payload);
+        var incoming = payload && Array.isArray(payload.result_balls) ? payload.result_balls.slice(0, 6) : [];
+        while (incoming.length < 6) incoming.push(null);
+        incoming.push(payload && payload.special_ball || null);
+        // 台湾只并入连续、有效的普通球前缀，特码固定占第七槽。
+        for (var prefix = 0; prefix < allowed; prefix++) {
+          if (!_ballHasValue(incoming[prefix])) {
+            allowed = prefix;
+            break;
+          }
+        }
+        var limited = Object.assign({}, payload, {
+          result_balls: incoming.slice(0, Math.min(6, allowed)),
+          special_ball: allowed === 7 ? incoming[6] : null
+        });
+        var wasRevealing = _serverPacedReveal && _serverBallsIssue === issue;
+        var balls = _mergeServerBalls(issue, limited);
+        _pendingBalls = balls.slice(0, 7);
+        _revealedCount = _displayedServerBallCount();
+        _revealStartSec = anchor;
+        _lastRenderedIssue = issue;
+        updateIssueInfo(payload);
+        _renderServerBalls(balls);
+        var safe = _taiwanSafePayload(payload);
+        writeDrawCache(safe);
+        notifyRevealGate(safe);
+        recordDrawDiagnostic(restored ? "restore" : "render", Object.assign(drawMetadata(payload), {
+          allowed_count: allowed, effective_reveal_start_sec: anchor, restored: !!restored
+        }));
+        if (_revealedCount >= 7) {
+          _serverPacedReveal = false;
+          stopRevealPolling(true);
+          if (wasRevealing && _lastTaiwanCompletedIssue !== issue) {
+            _lastTaiwanCompletedIssue = issue;
+            notifyRevealCompleted(issue);
+            fetchCountdownDeadline().then(function () {
+              countdownExpired = false;
+              updateCountdownDisplay();
+            });
+          }
+          updateCountdownDisplay();
+          return;
+        }
+        _serverPacedReveal = true;
+        _revealTargetIssue = issue;
+        if (!_revealPolling) beginRevealPolling(true);
+        _revealWindowEndsAtSec = anchor > 0 ? anchor + REVEAL_WINDOW_SEC : _revealWindowEndsAtSec;
+        _revealStalled = anchor > 0 && getServerNowSeconds() > anchor + REVEAL_WINDOW_SEC;
+        _scheduleTaiwanRevealTick(payload);
+        updateCountdownDisplay();
+      }
+
+      function restoreSafeDrawCache() {
+        if (Number(lotteryType) !== 3) return;
+        var cached = _startupSafeDrawCache || readDrawCache();
+        if (!cached || !cached.data || cached.data._client_safe_prefix !== true || isOlderRenderedPayload(cached.data)) return;
+        var issue = normalizeIssue(cached.data.current_issue);
+        // 旧缓存只有收到当前期的权威确认后才恢复；跨期或跨年旧号码一律丢弃。
+        var current = countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline ? _scheduledNextIssue : _scheduledCurrentIssue;
+        if (!current || issue !== current) return;
+        _rememberIssueSchedule(issue, Number(cached.data._client_schedule_lower_bound));
+        _applyTaiwanPayload(cached.data, true);
+        _startupSafeDrawCache = null;
+      }
+
       function _resetServerBalls(issue) {
         _serverBallsIssue = issue || "";
         _serverBallsSeen = [null, null, null, null, null, null, null];
@@ -575,7 +845,8 @@
           _serverRevealTickTimerId = null;
         }
         var nextAtSec = parseBeijingDateTimeToSeconds(payload && payload.next_reveal_at ? payload.next_reveal_at : "");
-        if (!(nextAtSec > 0)) return;
+        // 陈旧进度的下一球时间已经过去时，由 5 秒兜底拉取，避免每 300ms 重试。
+        if (_revealStalled || !(nextAtSec > getServerNowSeconds())) return;
         var delayMs = Math.max(300, (nextAtSec - getServerNowSeconds()) * 1000 + 400);
         if (delayMs > 60000) return; // 太远就交给兜底轮询
         _serverRevealTickTimerId = setTimeout(function () {
@@ -668,7 +939,9 @@
       }
 
       function stopRevealPolling(clearTargetIssue) {
+        clearDrawRetry();
         _revealPolling = false;
+        _revealStalled = false;
         _revealWindowEndsAtSec = 0;
         if (_revealPollTimerId) {
           clearInterval(_revealPollTimerId);
@@ -742,6 +1015,11 @@
       function updateCountdownDisplay() {
         var badge = $("countdownBadge");
         if (!badge) return;
+        if (_revealStalled && _revealPolling) {
+          badge.textContent = UI_TEXT.resultSyncPending;
+          badge.style.borderColor = "#ff7a00";
+          return;
+        }
         if (_revealActive) {
           badge.textContent = UI_TEXT.countdownRevealing;
           badge.style.borderColor = "#e53e3e";
@@ -779,55 +1057,97 @@
       }
 
       async function fetchCountdownDeadline() {
-        try {
-          var countdownUrl = legacyKjRuntime().buildAppUrl(
-            "/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType))
-          );
-          var resp = await fetch(countdownUrl, { cache: "no-store" });
-          var data = await resp.json();
-          debugLog("next-draw-deadline:response", data);
-          if (data && data.next_time) {
-            countdownDeadline = normalizeToSeconds(Number(data.next_time));
-            _scheduledCurrentIssue = normalizeIssue(data.current_issue);
-            _scheduledNextIssue = normalizeIssue(data.next_issue);
-            if (data.server_time) {
-              serverOffsetSec = Number(data.server_time) - Math.floor(Date.now() / 1000);
-            } else {
-              serverOffsetSec = 0;
+        if (_deadlineInFlight) return _deadlineInFlight;
+        _deadlineInFlight = (async function () {
+          var controller = typeof AbortController === "function" ? new AbortController() : null;
+          var timeout = controller ? setTimeout(function () { controller.abort(); }, 10000) : null;
+          try {
+            var countdownUrl = legacyKjRuntime().buildAppUrl(
+              "/api/next-draw-deadline?lottery_type=" + encodeURIComponent(String(lotteryType))
+            );
+            recordDrawDiagnostic("request", { resource: "deadline" });
+            var resp = await fetch(countdownUrl, { cache: "no-store", signal: controller ? controller.signal : undefined });
+            if (!resp.ok) throw new Error("HTTP " + resp.status);
+            var data = await resp.json();
+            if (_deadlineRetryTimerId) {
+              clearTimeout(_deadlineRetryTimerId);
+              _deadlineRetryTimerId = null;
             }
-            countdownExpired = false;
-          } else {
-            countdownDeadline = 0;
-            serverOffsetSec = 0;
-            _scheduledCurrentIssue = "";
-            _scheduledNextIssue = "";
+            debugLog("next-draw-deadline:response", data);
+            if (data && data.next_time) {
+              countdownDeadline = normalizeToSeconds(Number(data.next_time));
+              _scheduledCurrentIssue = normalizeIssue(data.current_issue);
+              _scheduledNextIssue = normalizeIssue(data.next_issue);
+              _rememberIssueSchedule(_scheduledNextIssue, countdownDeadline);
+              // 老响应缺少时钟时保持最近一次 latest-draw 的 server_now 校时。
+              if (data.server_time) syncServerClock(Number(data.server_time));
+              countdownExpired = false;
+              reconcileScheduledCurrentIssue();
+              restoreSafeDrawCache();
+            } else {
+              countdownDeadline = 0;
+              _scheduledCurrentIssue = "";
+              _scheduledNextIssue = "";
+            }
+          } catch (error) {
+            // 同步失败保留已经确认的倒计时，避免到点事件丢失；5 秒后再校验。
+            recordDrawDiagnostic("error", { resource: "deadline", error_kind: error && error.name || "Error" });
+            if (!_deadlineRetryTimerId) _deadlineRetryTimerId = setTimeout(function () {
+              _deadlineRetryTimerId = null;
+              fetchCountdownDeadline();
+            }, REVEAL_POLL_INTERVAL_MS);
+          } finally {
+            if (timeout) clearTimeout(timeout);
+            _deadlineInFlight = null;
+            _deadlineHasSettled = true;
           }
-        } catch (_) {
-          countdownDeadline = 0;
-          serverOffsetSec = 0;
-          _scheduledCurrentIssue = "";
-          _scheduledNextIssue = "";
-        }
-        debugLog("next-draw-deadline:normalized", {
-          countdownDeadline: countdownDeadline,
-          scheduledCurrentIssue: _scheduledCurrentIssue,
-          scheduledNextIssue: _scheduledNextIssue,
-          serverOffsetSec: serverOffsetSec
-        });
-        updateCountdownDisplay();
+          debugLog("next-draw-deadline:normalized", {
+            countdownDeadline: countdownDeadline,
+            scheduledCurrentIssue: _scheduledCurrentIssue,
+            scheduledNextIssue: _scheduledNextIssue,
+            serverOffsetSec: serverOffsetSec
+          });
+          recordDrawDiagnostic("deadline", {
+            scheduled_current_issue: _scheduledCurrentIssue,
+            scheduled_next_issue: _scheduledNextIssue,
+            deadline_time: countdownDeadline
+          });
+          updateCountdownDisplay();
+        })();
+        return _deadlineInFlight;
+      }
+
+      function reconcileScheduledCurrentIssue(allowEmpty) {
+        // deadline 确认已进入当期时，旧 latest 不能让新 iframe 停在上一期完整结果。
+        // 当前期与下次期分开处理：这里等待 current_issue，不能提前显示明天的 next_issue。
+        if (!_scheduledCurrentIssue || (!_lastRenderedIssue && !allowEmpty)
+            || compareIssues(_scheduledCurrentIssue, _lastRenderedIssue) <= 0) return;
+        _stopReveal(false);
+        _clearServerRevealTick();
+        _revealTargetIssue = _scheduledCurrentIssue;
+        _resetServerBalls(_revealTargetIssue);
+        _serverPacedReveal = false;
+        _revealStalled = false;
+        _lastRenderedIssue = _revealTargetIssue;
+        showPendingIssue(_revealTargetIssue);
+        recordDrawDiagnostic("clear", { reason: "authoritative-current" });
+        if (!_revealPolling) beginRevealPolling(true);
       }
 
       function beginRevealPolling(keepRendered) {
         if (_revealActive) return;
-        if (_scheduledNextIssue) {
-          // 无论是否保留已渲染号码，都要标记「待揭示期」：
-          // 这样轮询期间收到的上一期完整载荷不会走收尾分支（见服务端分片分支的 stale 判定）。
+        clearDrawRetry();
+        // 只有权威倒计时到点且确实换期才清旧球。已公布的当期球在刷新/重试时保留。
+        if (_scheduledNextIssue && countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline
+            && (!_lastRenderedIssue || compareIssues(_scheduledNextIssue, _lastRenderedIssue) > 0)) {
           _revealTargetIssue = _scheduledNextIssue;
-          // 只有屏幕上还什么都没有时才铺空态占位；已经显示着上一期结果时原地保留，
-          // 等新期号码到达后替换（避免开奖瞬间/点刷新时号码"全没了"）。
-          if (!keepRendered && !_lastRenderedIssue) {
-            showPendingIssue(_revealTargetIssue);
-          }
+          _resetServerBalls(_revealTargetIssue);
+          _pendingBalls = null;
+          _revealedCount = 0;
+          _serverPacedReveal = false;
+          _lastRenderedIssue = _revealTargetIssue;
+          showPendingIssue(_revealTargetIssue);
+          recordDrawDiagnostic("clear", { reason: "deadline" });
         }
         debugLog("reveal-polling:start", {
           revealTargetIssue: _revealTargetIssue,
@@ -842,29 +1162,21 @@
         if (_revealPolling) return;
         _revealPolling = true;
         updateCountdownDisplay();
-        load({ reveal: true, background: true, preserveWhenPending: true });
+        load({ reveal: true, background: true, preserveWhenPending: true, forceFresh: true });
         _revealPollTimerId = setInterval(function () {
           if (_revealActive) return;
           if (!isProgressiveReveal && _revealWindowEndsAtSec > 0 && getServerNowSeconds() > _revealWindowEndsAtSec) {
-            // 揭示窗口结束：号码齐全时正常收尾；只拿到部分号码（服务端未开放完、
-            // 上游数据缺失或网络中断）时保留已开放的球，仅把状态文案改成
-            // 「开奖结果同步中...」，既不整排清空也不抛错。
-            var stalled = _serverPacedReveal && _revealedCount < 7;
-            stopRevealPolling();
-            fetchCountdownDeadline().then(function () {
-              countdownExpired = false;
-              updateCountdownDisplay();
-              if (stalled) _markRevealStalled();
-            });
-            return;
+            // 休眠、断网或延迟可越过正常窗口：仍追当前期，直到收到最终结果。
+            // 不提前切到下一次倒计时，也不在旧 next_reveal_at 上密集重试。
+            _markRevealStalled();
           }
-          load({ reveal: true, background: true, preserveWhenPending: true });
+          load({ reveal: true, background: true, preserveWhenPending: true, forceFresh: true });
         }, REVEAL_POLL_INTERVAL_MS);
       }
 
       /** 揭示窗口结束时仍不足 7 个号码：保留已渲染的球，只提示同步中。 */
       function _markRevealStalled() {
-        _serverPacedReveal = false;
+        _revealStalled = true;
         _clearServerRevealTick();
         var badge = $("countdownBadge");
         if (badge) {
@@ -989,6 +1301,7 @@
       var DRAW_CACHE_PREFIX = "liuhecai:kj-local:draw:v1:";
       var DRAW_CACHE_FRESH_MS = 3000;
       var _latestDrawInFlight = null;
+      var _lastDrawRequestTs = null;
 
       function drawCacheKey() {
         return DRAW_CACHE_PREFIX + String(lotteryType);
@@ -1019,34 +1332,72 @@
         }
       }
 
+      function clearDrawRetry() {
+        if (_drawRetryTimerId) {
+          clearTimeout(_drawRetryTimerId);
+          _drawRetryTimerId = null;
+        }
+      }
+
+      function scheduleDrawRetry() {
+        // 已有逐球轮询时复用它；首次加载失败且尚未到点时也要能自行恢复。
+        if (_revealPolling || _drawRetryTimerId) return;
+        _drawRetryTimerId = setTimeout(function () {
+          _drawRetryTimerId = null;
+          load({ background: true, preserveWhenPending: true, forceFresh: true });
+        }, REVEAL_POLL_INTERVAL_MS);
+      }
+
       function loadLatestDrawPayload(forceFresh) {
         if (!forceFresh) {
           var cached = readDrawCache();
-          if (cached && Date.now() - cached.cachedAt <= DRAW_CACHE_FRESH_MS) {
+          var cacheAgeMs = cached ? Date.now() - cached.cachedAt : Infinity;
+          // 客户端校正时钟后，来自「未来」的旧缓存不能被无限当成新鲜载荷。
+          if (cached && cacheAgeMs >= 0 && cacheAgeMs <= DRAW_CACHE_FRESH_MS && !isOlderRenderedPayload(cached.data)) {
             debugLog("latest-draw:cache-hit", {
-              ageMs: Date.now() - cached.cachedAt
+              ageMs: cacheAgeMs
             });
+            _lastDrawRequestTs = null;
+            // 新 iframe 不能把设备墙钟计算的缓存年龄当成权威耗时。
+            syncServerClock(typeof cached.data.server_now === "number" ? cached.data.server_now : null);
+            _rememberIssueSchedule(cached.data.current_issue, Number(cached.data._client_schedule_lower_bound));
+            recordDrawDiagnostic("cache", Object.assign(drawMetadata(cached.data), { cache_age_ms: cacheAgeMs }));
             return Promise.resolve(cached.data);
           }
         }
         if (_latestDrawInFlight) return _latestDrawInFlight;
 
+        var requestTs = String(Date.now());
+        _lastDrawRequestTs = requestTs;
         var query = new URLSearchParams({
           lottery_type: String(lotteryType),
-          _ts: String(Date.now())
+          _ts: requestTs
         });
         var latestDrawUrl = legacyKjRuntime().buildAppUrl("/api/latest-draw?" + query.toString());
+        recordDrawDiagnostic("request", { resource: "draw", request_ts: requestTs, force_fresh: Boolean(forceFresh) });
+        var controller = typeof AbortController === "function" ? new AbortController() : null;
+        var timeout = controller ? setTimeout(function () { controller.abort(); }, 10000) : null;
+        var cacheStatus = "";
         _latestDrawInFlight = fetch(latestDrawUrl, {
-          cache: "no-store"
+          cache: "no-store",
+          signal: controller ? controller.signal : undefined
         }).then(function (response) {
           if (!response.ok) {
             throw new Error("HTTP " + response.status);
           }
+          cacheStatus = response.headers && response.headers.get ? response.headers.get("X-Cache-Status") || "" : "";
           return response.json();
         }).then(function (payload) {
-          writeDrawCache(payload);
+          var ignored = isOlderRenderedPayload(payload);
+          // 完成后 target 会清除，仍必须以已绘制期号防回退；旧期不能污染校时或缓存。
+          if (!ignored) {
+            syncServerClock(payload && payload.server_now);
+            if (Number(lotteryType) !== 3) writeDrawCache(payload);
+          }
+          recordDrawDiagnostic("result", Object.assign(drawMetadata(payload), { resource: "draw", request_ts: requestTs, cache_status: cacheStatus, ignored: ignored }));
           return payload;
         }).finally(function () {
+          if (timeout) clearTimeout(timeout);
           _latestDrawInFlight = null;
         });
         return _latestDrawInFlight;
@@ -1059,6 +1410,7 @@
         var keepCurrentWhenPending = options && options.preserveWhenPending;
         var background = options && options.background;
         var forceFresh = options && options.forceFresh;
+        var evaluatedPayload = null;
 
         if (isManual) {
           setRefreshState("loading", "");
@@ -1068,6 +1420,22 @@
 
         try {
           var payload = await loadLatestDrawPayload(!!isManual || !!forceFresh);
+          // 请求仍并发；首次台湾绘制等待排期响应，以免未知本期下限被错误旧锚点绕过。
+          if (Number(lotteryType) === 3 && !_deadlineHasSettled) await fetchCountdownDeadline();
+          clearDrawRetry();
+          if (isOlderRenderedPayload(payload)) {
+            reconcileScheduledCurrentIssue(true);
+            recordDrawDiagnostic("ignored", Object.assign(drawMetadata(payload), { reason: "older-issue", request_ts: _lastDrawRequestTs }));
+            if (_revealTargetIssue && !_revealPolling && !_revealActive) beginRevealPolling(true);
+            if (isManual) setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+            return;
+          }
+          evaluatedPayload = payload;
+          if (Number(lotteryType) === 3) {
+            _applyTaiwanPayload(payload);
+            if (isManual) setRefreshState("done", UI_TEXT.refreshedAtPrefix + formatBeijingTime(new Date()));
+            return;
+          }
           notifyRevealGate(payload);
           var issue = normalizeIssue(payload && payload.current_issue ? payload.current_issue : "");
           var hasFullBalls = _hasFullBalls(payload);
@@ -1164,6 +1532,7 @@
             _pendingBalls = displayedBalls.slice(0, 7);
             _revealedCount = _serverRevealCountForPayload(payload);
             _revealStartSec = _resolveRevealStartSec(payload);
+            _revealStalled = _revealStartSec > 0 && getServerNowSeconds() > _revealStartSec + REVEAL_WINDOW_SEC;
             _revealTargetIssue = issue;
             updateIssueInfo(payload || {});
             // 诚实展示：后端给几个球就画几个球（按后端顺序），不等待 7 个齐全。
@@ -1266,16 +1635,35 @@
             }
           }
         } catch (error) {
-          if (!background) {
+          recordDrawDiagnostic("error", { resource: "draw", request_ts: _lastDrawRequestTs, error_kind: error && error.name || "Error" });
+          scheduleDrawRetry();
+          if (!background && !paintedBallCount()) {
             showError(error && error.message ? error.message : String(error));
           }
           if (isManual) {
             setRefreshState("error", UI_TEXT.refreshFailed);
           }
         } finally {
+          if (evaluatedPayload) recordDrawDiagnostic("render", Object.assign(drawMetadata(evaluatedPayload), { request_ts: _lastDrawRequestTs }));
           _loadingLatestDraw = false;
         }
       }
+
+      function resumeDrawPolling() {
+        if (document.visibilityState === "hidden" || _resumeInFlight) return;
+        recordDrawDiagnostic("resume");
+        // 等现有请求释放锁后强制取当前进度；重复的 pageshow/visibilitychange 合并。
+        var pending = _latestDrawInFlight || Promise.resolve();
+        _resumeInFlight = Promise.all([
+          fetchCountdownDeadline(),
+          pending.catch(function () {}).then(function () {
+            return load({ reveal: true, background: true, preserveWhenPending: true, forceFresh: true });
+          })
+        ]).finally(function () { _resumeInFlight = null; });
+      }
+
+      if (typeof document.addEventListener === "function") document.addEventListener("visibilitychange", resumeDrawPolling);
+      if (typeof window.addEventListener === "function") window.addEventListener("pageshow", resumeDrawPolling);
 
       $("refreshButton").addEventListener("click", function () {
         if ($("refreshButton").classList.contains("is-loading")) return;
@@ -1285,6 +1673,11 @@
       });
 
       fillEmpty();
+      var startupCache = readDrawCache();
+      if (Number(lotteryType) === 3 && startupCache && startupCache.data._client_safe_prefix === true) {
+        _startupSafeDrawCache = startupCache;
+        _rememberIssueSchedule(startupCache.data.current_issue, Number(startupCache.data._client_schedule_lower_bound));
+      }
       updateHistoryLink();
       updateBeijingDate();
       setInterval(updateBeijingDate, 1000);

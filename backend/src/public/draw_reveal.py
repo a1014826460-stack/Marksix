@@ -6,8 +6,10 @@
 下发；站点面板上「每 25 秒多一个球」只是**前端定时器动画**，任何直接请求接口、
 查看 DevTools Network 或抓包的人都能立刻拿到全部号码。
 
-这里把节奏搬到服务端：号码从 ``reveal_start``（开盘瞬间写定的 ``opened_at``，
-缺失时退回 ``draw_time``）起，按每 25 秒一个的节拍逐个对外可用。
+这里把节奏搬到服务端：台湾号码从 ``max(reveal_start, draw_time)`` 起，
+按每 25 秒一个的节拍逐个对外可用。``reveal_start`` 来自开盘写定的
+``opened_at``；只有缺失或空值才退回 ``draw_time``，非空坏锚点关闭揭示。
+响应中的 ``reveal_start`` 是实际使用的锚点，完整缓存保留原载荷。
 
 节奏约定
 --------
@@ -21,11 +23,12 @@
 - **只有台湾彩（lottery_type=3）走节拍**：它的 7 个号码是提前写入库的未来真值，不按节拍放行
   就等于开盘瞬间把全部号码交给任何请求接口的人。港彩源站逐个补全、澳门彩源站一次给全，
   两者本来就是公开数据，拿到几个就返回几个，不再人为拖 150 秒。
-- 节拍彩种：可见数量 = `min(源站已入库球数, floor(已过秒/25)+1)`。
+- 节拍彩种：可见数量 = `min(连续有效源站球数, floor(已过秒/25)+1)`；
+  只接受前六个普通球的连续前缀，特码固定第七槽，缺普通球不能前移特码。
 - 非节拍彩种：可见数量 = `源站已入库球数`（`is_complete` 仍按 7 个判断，未齐时 `next_reveal_at`
   为空串，前端按 5 秒轮询补齐）。
-- 没有 ``reveal_start`` / ``draw_time`` 的旧载荷原样返回（兼容旧部署、旧快照与
-  无开奖数据的空载荷），不新增任何字段。
+- 台湾彩有期号或号码但缺少有效锚点时不开放任何号码；无开奖数据的空载荷与
+  港澳彩缺锚点的旧载荷保持原样。
 - 本模块只做纯计算，不碰数据库、不写缓存；缓存里始终保留**完整**载荷，分片只发生在
   对外响应的边界上，因此读取方任何时刻看到的号码数都只由「服务器时间 - 锚点」决定。
 """
@@ -33,6 +36,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 from typing import Any, Mapping
 
 from core.time_utils import BEIJING_TZ, beijing_now
@@ -63,17 +67,50 @@ def is_paced_lottery_type(lottery_type_id: Any) -> bool:
         return True
 
 
-def reveal_anchor(payload: Mapping[str, Any]) -> datetime | None:
-    """揭示锚点：优先 ``reveal_start``（号码首次对外可用时刻），退回 ``draw_time``。"""
-    for key in ("reveal_start", "draw_time"):
-        anchor = parse_draw_datetime(str(payload.get(key) or "").strip())
-        if anchor is not None:
-            return anchor
-    return None
+def _parse_reveal_datetime(value: Any) -> datetime | None:
+    """台湾揭示只接受完整、规范且日历有效的北京时间；与公开面板同门。"""
+    text = str(value or "").strip()
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}", text):
+        return None
+    anchor = parse_draw_datetime(text.replace("T", " "))
+    return anchor if anchor is not None and anchor.timestamp() > 0 else None
 
 
-def public_balls(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """载荷里的已公开号码（6 平码 + 特码），按顺序最多 7 个。"""
+def reveal_anchor(payload: Mapping[str, Any], *, paced: bool = True) -> datetime | None:
+    """台湾锚点不得早于当期排期；非空坏 preferred 关闭揭示，空值才回退。"""
+    if not paced:
+        for key in ("reveal_start", "draw_time"):
+            anchor = parse_draw_datetime(str(payload.get(key) or "").strip())
+            if anchor is not None:
+                return anchor
+        return None
+
+    preferred_text = str(payload.get("reveal_start") or "").strip()
+    planned = _parse_reveal_datetime(payload.get("draw_time"))
+    if not preferred_text:
+        return planned
+    preferred = _parse_reveal_datetime(preferred_text)
+    if preferred is None:
+        return None
+    return max(preferred, planned) if planned is not None else preferred
+
+
+def public_balls(payload: Mapping[str, Any], *, paced: bool = True) -> list[dict[str, Any]]:
+    """台湾只取连续平码前缀，特码固定第七槽；港澳保留既有源站口径。"""
+    if paced:
+        regular = payload.get("result_balls")
+        if not isinstance(regular, list):
+            return []
+        prefix: list[dict[str, Any]] = []
+        for ball in regular[: DRAW_BALL_COUNT - 1]:
+            if not isinstance(ball, dict) or not str(ball.get("value") or "").strip():
+                return prefix
+            prefix.append(ball)
+        special = payload.get("special_ball")
+        if len(prefix) == DRAW_BALL_COUNT - 1 and isinstance(special, dict) and str(special.get("value") or "").strip():
+            prefix.append(special)
+        return prefix
+
     balls = [
         ball
         for ball in (payload.get("result_balls") or [])
@@ -128,22 +165,30 @@ def apply_reveal_slice(
     - 节拍彩种（台湾彩）：从锚点起每 ``interval_seconds`` 放行一个号码。
     - 非节拍彩种（港澳彩）：已入库多少就下发多少，`next_reveal_at` 为空串。
 
-    返回新字典；入参不会被修改。没有锚点的旧载荷原样返回（浅拷贝）。
+    返回新字典；入参不会被修改。台湾彩缺锚点时关闭揭示；空载荷保持原样。
     """
     result: dict[str, Any] = dict(payload or {})
     if not result:
         return result
 
-    anchor = reveal_anchor(result)
-    if anchor is None:
+    paced = is_paced_lottery_type(lottery_type_id)
+    anchor = reveal_anchor(result, paced=paced)
+    available = public_balls(result, paced=paced)
+    if anchor is None and (
+        not paced or (not result.get("current_issue") and not result.get("result_balls") and not result.get("special_ball"))
+    ):
         return result
 
-    available = public_balls(result)
-    if is_paced_lottery_type(lottery_type_id):
+    current = now or beijing_now()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=BEIJING_TZ)
+    if anchor is None:
+        count = 0
+    elif paced:
         count = reveal_count(
             anchor=anchor,
             available=len(available),
-            now=now,
+            now=current,
             interval_seconds=interval_seconds,
         )
     else:
@@ -158,9 +203,13 @@ def apply_reveal_slice(
     result["total_balls"] = DRAW_BALL_COUNT
     result["reveal_interval_seconds"] = int(interval_seconds)
     result["is_complete"] = is_complete
+    result["server_now"] = int(current.timestamp())
+    if paced and anchor is not None:
+        # 所有读取方使用响应的实际锚点；完整缓存里的 raw opened_at 不受影响。
+        result["reveal_start"] = _beijing_text(anchor)
     result["next_reveal_at"] = (
         ""
-        if is_complete or not is_paced_lottery_type(lottery_type_id)
+        if anchor is None or is_complete or not paced
         else _beijing_text(anchor + timedelta(seconds=int(interval_seconds) * count))
     )
     return result

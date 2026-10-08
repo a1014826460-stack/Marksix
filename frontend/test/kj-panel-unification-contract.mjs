@@ -146,12 +146,12 @@ for (const token of ["parseBeijingDateTimeToSeconds(_revealStartRaw(payload))"])
     throw new Error("锚点解析器必须被窗口判定/揭示起点/父页门控三处共用")
   }
 }
-// 揭示进度不得依赖页面加载时刻，也不得被持久化（否则刷新会重新开始）。
-// sessionStorage 只允许做 latest-draw 的短新鲜窗口载荷缓存（key = drawCacheKey()）。
+// 安全载荷缓存只持久化已经合法展示的前缀；进度仍按全局锚点推导。
+// 载荷缓存与只读诊断使用独立键；诊断不得恢复/驱动揭示进度。
 for (const line of panel.split("\n")) {
   if (!line.includes("sessionStorage.setItem(")) continue
-  if (!line.includes("drawCacheKey()")) {
-    throw new Error(`共享面板的 sessionStorage 写入必须只用载荷缓存键: ${line.trim()}`)
+  if (!line.includes("drawCacheKey()") && !line.includes("DIAGNOSTICS_KEY")) {
+    throw new Error(`共享面板的 sessionStorage 写入必须使用独立载荷/诊断键: ${line.trim()}`)
   }
   if (/_revealedCount|_revealStartSec|revealStart|revealedCount/.test(line)) {
     throw new Error(`共享面板不得把揭示进度写入 sessionStorage: ${line.trim()}`)
@@ -165,8 +165,9 @@ const REVEAL_STATE_ASSIGN = {
     // 服务端分片揭示：revealed_count 由后端按同一锚点 + 25 秒节拍算出，面板直接采用
     // （见下方对 backend/src/public/draw_reveal.py 的同时间线断言）。
     "_serverRevealCountForPayload(payload)",
+    "_displayedServerBallCount()",
   ],
-  _revealStartSec: ["0", "_resolveRevealStartSec(payload)"],
+  _revealStartSec: ["0", "_resolveRevealStartSec(payload)", "anchor"],
 }
 for (const [variable, allowed] of Object.entries(REVEAL_STATE_ASSIGN)) {
   const assignments = [...panel.matchAll(new RegExp(`${variable}\\s*=\\s*([^;\\n]+);`, "g"))].map((m) =>
@@ -192,15 +193,14 @@ const revealTimeline = [
 for (const [token, why] of revealTimeline) {
   if (!revealModule.includes(token)) throw new Error(`后端分片揭示不变量丢失（${why}）: ${token}`)
 }
-// 面板必须只采用服务端进度，不得再自己按页面加载时刻算一遍。
-if (!panel.includes("_revealedCount = _serverRevealCountForPayload(payload);")) {
-  throw new Error("服务端分片揭示必须以 revealed_count 为权威进度")
+// 台湾必须在原始号码进入绘制、缓存和完成判定前经过独立限球分支。
+if (!panel.includes("_applyTaiwanPayload(payload);") || !panel.includes("_taiwanAllowedCount(payload)")) {
+  throw new Error("台湾开奖必须独立按可信时间与固定25秒限球")
 }
 // 拿不到全部 7 个号码时必须降级为「同步中」，而不是清空面板或报错。
 for (const token of [
   "function _markRevealStalled() {",
   "resultSyncPending:",
-  "var stalled = _serverPacedReveal && _revealedCount < 7;",
   "function _keepPollingUntilComplete(payload, issue) {",
 ]) {
   if (!panel.includes(token)) {

@@ -9,13 +9,29 @@ from routes import public_routes
 from tests.helpers.api_contract import make_ctx, response_json
 
 
+def _assert_blocked_latest_draw(ctx, payload):
+    body = response_json(ctx)
+    assert isinstance(body.pop("server_now"), int)
+    assert body == {
+        **payload,
+        "result_balls": [],
+        "special_ball": None,
+        "revealed_count": 0,
+        "total_balls": 7,
+        "reveal_interval_seconds": 25,
+        "is_complete": False,
+        "next_reveal_at": "",
+    }
+
+
 def test_public_latest_draw_contract():
     ctx = make_ctx("/api/public/latest-draw?lottery_type=3")
     payload = {
-        "year": 2026,
-        "term": 188,
-        "numbers": "01,02,03,04,05,06,07",
-        "is_opened": True,
+        "current_issue": "2026188",
+        "draw_time": "2026-08-07",
+        "reveal_start": "",
+        "result_balls": [{"value": f"{i:02d}"} for i in range(1, 7)],
+        "special_ball": {"value": "07"},
     }
 
     with patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
@@ -23,16 +39,39 @@ def test_public_latest_draw_contract():
 
     latest_draw.assert_called_once_with(ctx.db_path, 3)
     assert ctx.handler.response_status == 200
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
+
+
+@pytest.mark.parametrize("lottery_type_id", [1, 2])
+def test_site_page_without_explicit_type_uses_resolved_hk_macau_site_type(lottery_type_id):
+    ctx = make_ctx("/api/public/site-page?site_id=10")
+    draw = {
+        "current_issue": "2026277",
+        "draw_time": "2026-10-04",
+        "reveal_start": "",
+        "result_balls": [{"value": f"{i:02d}"} for i in range(1, 7)],
+        "special_ball": {"value": "07"},
+    }
+    payload = {"site": {"id": 10, "lottery_type_id": lottery_type_id}, "draw": draw, "modules": []}
+
+    with patch("routes.public_routes.get_public_site_page_data", return_value=payload):
+        public_routes.site_page(ctx)
+
+    assert ctx.handler.response_status == 200
+    body = response_json(ctx)
+    assert body["draw"] == draw
+    assert body["site"]["lottery_type_id"] == lottery_type_id
+    assert body["modules"] == []
 
 
 def test_public_latest_draw_does_not_apply_history_visibility_gate(monkeypatch):
     ctx = make_ctx("/api/public/latest-draw?lottery_type=3")
     payload = {
-        "year": 2026,
-        "term": 188,
-        "numbers": "01,02,03,04,05,06,07",
-        "is_opened": True,
+        "current_issue": "2026188",
+        "draw_time": "2026-08-07",
+        "reveal_start": "",
+        "result_balls": [{"value": f"{i:02d}"} for i in range(1, 7)],
+        "special_ball": {"value": "07"},
     }
 
     monkeypatch.setattr(
@@ -44,7 +83,7 @@ def test_public_latest_draw_does_not_apply_history_visibility_gate(monkeypatch):
 
     latest_draw.assert_called_once_with(ctx.db_path, 3)
     assert ctx.handler.response_status == 200
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_next_draw_deadline_contract_adds_server_time():
@@ -195,7 +234,7 @@ def test_public_latest_draw_snapshot_hit_skips_database():
         public_routes.latest_draw(ctx)
 
     latest_draw.assert_not_called()
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_latest_draw_miss_uses_write_database_and_backfills_snapshot():
@@ -208,7 +247,7 @@ def test_public_latest_draw_miss_uses_write_database_and_backfills_snapshot():
 
     latest_draw.assert_called_once_with(ctx.write_db_path, 3)
     assert snapshots.published == [("latest", 3, payload, {"version": "2026012", "is_opened": True})]
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_latest_draw_cache_failure_falls_back_to_write_database():
@@ -221,7 +260,7 @@ def test_public_latest_draw_cache_failure_falls_back_to_write_database():
         public_routes.latest_draw(ctx)
 
     latest_draw.assert_called_once_with(ctx.write_db_path, 3)
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_current_period_snapshot_hit_skips_database():
@@ -279,7 +318,7 @@ def test_public_latest_draw_site_cache_hit_skips_site_context_resolution():
 
     resolve_site.assert_not_called()
     latest_draw.assert_not_called()
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_latest_draw_site_cache_miss_resolves_from_write_target_and_backfills():
@@ -294,7 +333,7 @@ def test_public_latest_draw_site_cache_miss_resolves_from_write_target_and_backf
     resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
     latest_draw.assert_not_called()
     assert cache.writes == [("public:site-lottery:v1:id:12", b"3", 60)]
-    assert response_json(ctx) == payload
+    _assert_blocked_latest_draw(ctx, payload)
 
 
 def test_public_latest_draw_invalid_or_unavailable_site_cache_falls_back_to_write_target():
@@ -306,4 +345,4 @@ def test_public_latest_draw_invalid_or_unavailable_site_cache_falls_back_to_writ
         with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site:
             public_routes.latest_draw(ctx)
         resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
-        assert response_json(ctx) == payload
+        _assert_blocked_latest_draw(ctx, payload)

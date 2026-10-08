@@ -174,8 +174,9 @@ assert.deepEqual(
 
 const payloadOf = (balls, special) => ({
   current_issue: "2026271",
-  // 刻意不带 reveal_start / draw_time：桩里的「下次开奖」在未来，面板会直接整排渲染
-  // （定时揭示的逐球重放由 kj-panel-reveal-timeline-contract.mjs 负责）。
+  // 历史有效锚点配合接口权威 server_now，保证全排字号样本已合法完成揭示。
+  draw_time: "2026-01-01 00:00:00",
+  reveal_start: "2026-01-01 00:00:00",
   result_balls: balls,
   ...(special ? { special_ball: special } : {}),
 })
@@ -358,7 +359,7 @@ function deadlineStub() {
 }
 
 function payloadWithRevealAnchor() {
-  const payload = { ...(state.payload || {}) }
+  const payload = { ...(state.payload || {}), server_now: Math.floor(Date.now() / 1000) }
   if (state.revealStartOffsetSec !== null && state.revealStartOffsetSec !== undefined) {
     const target = new Date((Math.floor(Date.now() / 1000) + state.revealStartOffsetSec) * 1000)
     // 面板解析的是「北京墙上时刻」，用 +8h 的 UTC 串表达同一个瞬间。

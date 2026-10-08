@@ -5,7 +5,7 @@
  * 本契约固定两条改造后的行为：
  *   1. 倒计时截止时间（/api/next-draw-deadline）与开奖号码（/api/latest-draw）
  *      并发发起，号码不得等截止时间返回后才开始加载；
- *   2. 开奖号码读取层带 5 秒新鲜窗口的 sessionStorage 缓存与进行中请求去重，
+ *   2. 开奖号码读取层带 3 秒新鲜窗口的 sessionStorage 缓存与进行中请求去重，
  *      手动刷新始终直连网络。
  */
 import fs from "node:fs"
@@ -33,7 +33,6 @@ for (const token of [
   "sessionStorage",
   "_latestDrawInFlight",
   "function loadLatestDrawPayload(",
-  "loadLatestDrawPayload(!!isManual)",
 ]) {
   if (!panel.includes(token)) throw new Error(`panel cache layer missing ${token}`)
 }
@@ -43,7 +42,7 @@ if (!panel.includes('debugLog("latest-draw:cache-hit"')) {
 }
 
 // 3. 手动刷新必须绕过缓存直连网络。
-if (!/loadLatestDrawPayload\(!!isManual\)/.test(panel)) {
+if (!/loadLatestDrawPayload\(!!isManual(?:\s*\|\|\s*!!forceFresh)?\)/.test(panel)) {
   throw new Error("manual refresh no longer bypasses the draw cache")
 }
 

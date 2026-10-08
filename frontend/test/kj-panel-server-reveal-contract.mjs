@@ -3,10 +3,10 @@
  * ---------------------------------------------------------------
  * 2026-10-04 起的开奖节奏：**后端** /api/latest-draw 按 reveal_start + 25s×N
  * 逐球下发号码（backend/src/public/draw_reveal.py），载荷带 revealed_count /
- * total_balls / is_complete。面板只负责把「此刻可用」的球画出来并继续轮询。
+ * total_balls / is_complete。台湾面板再次按可信服务器时间和固定25秒限球。
  *
  * 固定行为：
- *   1. 面板进度以服务端 revealed_count 为权威：本地时钟不会「补看」未开放的球。
+ *   1. 面板进度同时受合法时间与已收到号码前缀限制，不补未知球，不信错误complete。
  *   2. 号码没齐时保持 5 秒轮询，且窗口按揭示锚点 + 210 秒计算（晚开盘也够）。
  *   3. 第 7 个号码到位的那一刻只通知一次父页（legacy-draw-reveal-complete）。
  *   4. 拿不到全部 7 个号码时：保留已开放的球 + 提示「开奖结果同步中...」，
@@ -45,7 +45,7 @@ globalThis.__hooks = {
     };
   },
   setNow: function (targetSec) {
-    serverOffsetSec = targetSec - Math.floor(Date.now() / 1000);
+    syncServerClock(targetSec);
   },
   expireWindow: function () { _revealWindowEndsAtSec = getServerNowSeconds() - 1; },
   fireIntervals: function () {
@@ -106,8 +106,10 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
     parent: { postMessage(message) { notifications.push(message) } },
     fetch(url) {
       const target = String(url)
-      const body = target.includes("next-draw-deadline") ? (state.deadline || {}) : state.payload
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
+      const body = target.includes("next-draw-deadline")
+        ? (state.deadline || { current_issue: state.payload.current_issue, next_issue: "2026999", next_time: T + 86400 })
+        : state.payload
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ...body, server_now: T }) })
     },
     sessionStorage: {
       getItem() { return null },
@@ -220,7 +222,7 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
 
 // ── 3. 第 7 个号码到位：画满、停轮询、只通知一次 ──────────────────────────
 {
-  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 6 }) })
+  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 6, revealStartSec: T - 125 }) })
   panel.__hooks.setNow(T)
   await settle()
   await panel.__hooks.load({ revealOnLoad: true })
@@ -228,7 +230,8 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   if (panel.__hooks.state().painted !== 6) throw new Error("expect 6 painted balls before the last one")
   if (!panel.__hooks.state().polling) throw new Error("must keep polling while the 7th ball is missing")
 
-  panel.__hooks.setPayload(slicedPayload({ revealedCount: 7 }))
+  panel.__hooks.setNow(T + 25)
+  panel.__hooks.setPayload(slicedPayload({ revealedCount: 7, revealStartSec: T - 125 }))
   await panel.__hooks.load({ reveal: true, background: true, preserveWhenPending: true })
   await settle()
   const state = panel.__hooks.state()
@@ -243,8 +246,8 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
 {
   const legacy = {
     current_issue: "2026282",
-    draw_time: beijing(T - 10),
-    reveal_start: beijing(T - 10),
+    draw_time: beijing(T - 25),
+    reveal_start: beijing(T - 25),
     result_balls: [ball("01"), ball("02")],
     special_ball: null,
   }
@@ -258,25 +261,26 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   if (!state.polling) throw new Error("legacy partial payload must keep polling instead of freezing")
 }
 
-// ── 5. 窗口结束仍不足 7 个号码：保留已开放的球 + 提示同步中 ────────────────
+// ── 5. 窗口结束仍不足 7 个号码：保留已开放的球 + 继续追当前期 ────────────────
 {
-  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 3 }) })
+  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 3, revealStartSec: T - 50 }) })
   panel.__hooks.setNow(T)
   await settle()
   await panel.__hooks.load({ revealOnLoad: true })
   await settle()
   if (panel.__hooks.state().painted !== 3) throw new Error("expect 3 painted balls before the stall")
 
+  panel.__hooks.setNow(T + 211)
   panel.__hooks.expireWindow()
   panel.__hooks.fireIntervals()
   await settle()
   const state = panel.__hooks.state()
   if (state.painted !== 3) throw new Error(`stalled reveal must keep the 3 revealed balls, got ${state.painted}`)
-  if (state.polling) throw new Error("polling must stop after the reveal window")
+  if (!state.polling) throw new Error("unfinished issue must keep polling after the reveal window")
   if (state.badgeText !== "开奖结果同步中...") {
     throw new Error(`stalled reveal must show the sync-pending text, got ${state.badgeText}`)
   }
-  if (state.serverPaced) throw new Error("stalled reveal must leave the server-paced state")
+  if (!state.serverPaced) throw new Error("unfinished issue must keep its server-paced progress")
 }
 
 // ── 6. 等新期时收到「上一期的完整结果」（快照/短缓存陈旧）不能停掉轮询 ────────
@@ -303,7 +307,8 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   }
 
   // 新期数据到达：画服务端已开放的号码，并继续轮询到 7 个。
-  panel.__hooks.setPayload(slicedPayload({ issue: "2026272", revealedCount: 2 }))
+  panel.__hooks.setNow(nowSec + 24)
+  panel.__hooks.setPayload(slicedPayload({ issue: "2026272", revealedCount: 2, revealStartSec: nowSec - 25 }))
   await panel.__hooks.load({ reveal: true, background: true, preserveWhenPending: true })
   await settle()
   state = panel.__hooks.state()
@@ -320,7 +325,7 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   const nowSec = Math.floor(Date.now() / 1000)
   const panel = loadPanel({
     payload: slicedPayload({ issue: "2026275", revealedCount: 7, revealStartSec: nowSec - 600 }),
-    deadline: { next_issue: "2026276", next_time: nowSec + 60 },
+    deadline: { current_issue: "2026275", next_issue: "2026276", next_time: nowSec + 60 },
   })
   panel.__hooks.setNow(nowSec)
   await settle()
@@ -339,18 +344,20 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
     throw new Error("manual refresh must keep the balls after it settles")
   }
 
-  // 倒计时已过、新期待揭示：刷新同样不清屏，并继续轮询等新期。
+  // 权威倒计时已过且换期：清上一期，显示目标期占位并继续轮询。
   panel.__hooks.setDeadline({ next_issue: "2026276", next_time: nowSec - 1 })
   await panel.__hooks.manualRefresh()
   await settle()
   let state = panel.__hooks.state()
-  if (state.painted !== 7) {
-    throw new Error(`refresh while waiting for a new issue must keep the balls, got ${state.painted}`)
+  if (state.painted !== 0) {
+    throw new Error(`expired deadline must clear the previous issue, got ${state.painted}`)
   }
+  if (state.lastRenderedIssue !== "2026276") throw new Error("expired deadline must display the target issue")
   if (!state.polling) throw new Error("refresh while waiting for a new issue must keep polling")
 
   // 新期号码到达 → 原地替换成新期已开放的号码。
-  panel.__hooks.setPayload(slicedPayload({ issue: "2026276", revealedCount: 3 }))
+  panel.__hooks.setNow(nowSec + 110)
+  panel.__hooks.setPayload(slicedPayload({ issue: "2026276", revealedCount: 3, revealStartSec: nowSec - 50 }))
   await panel.__hooks.load({ reveal: true, background: true, preserveWhenPending: true })
   await settle()
   state = panel.__hooks.state()
@@ -358,12 +365,11 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
 }
 
 // ── 8. 诚实展示 + 后端控节奏（2026-10-05）───────────────────────────────
-// 需求：前端只老实展示后端下发的号码（收到几个画几个、按后端顺序），
-// 不等待 7 个齐全再轮播；下一次拉取按后端 next_reveal_at 排程。
+// 台湾前端按独立时间上限展示可用前缀；已合法绘制的球不因短缓存回退消失。
 {
   const nowSec = Math.floor(Date.now() / 1000)
   // 后端只说 "已开放 2 个"，但实际下发了 3 个球（缓存/版本差异）→ 前端照实画 3 个。
-  const honest = slicedPayload({ issue: "2026280", revealedCount: 2, revealStartSec: nowSec })
+  const honest = slicedPayload({ issue: "2026280", revealedCount: 2, revealStartSec: nowSec - 50 })
   honest.result_balls = [...honest.result_balls, ball("22")]
   const panel = loadPanel({ payload: honest })
   panel.__hooks.setNow(nowSec)
@@ -377,7 +383,7 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   if (state.badgeText !== "开奖中...") throw new Error("reveal must start before all 7 balls arrive")
 
   // 按后端 next_reveal_at 排下一次拉取（不该等固定 5 秒轮询）。
-  const expectedDelay = (Date.parse(`${honest.next_reveal_at.replace(" ", "T")}+08:00`) / 1000 - nowSec) * 1000 + 400
+  const expectedDelay = 25000
   const delays = panel.__hooks.timeouts()
   if (!delays.some((delay) => Math.abs(delay - expectedDelay) <= 2000)) {
     throw new Error(`panel must schedule the next fetch from next_reveal_at (≈${expectedDelay}ms), got ${JSON.stringify(delays)}`)
@@ -398,8 +404,8 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
 // 港澳彩源站本来就公开号码，后端不再按 25 秒节流：载荷首帧就是 revealed_count=7、
 // is_complete=true、next_reveal_at=""。面板必须立刻画满、不进轮播、不再轮询，
 // 也不能给父页发「开奖中」门控（那会让港澳看起来还在逐球揭晓）。
-{
-  const panel = loadPanel({ payload: slicedPayload({ revealedCount: 7 }) })
+for (const lotteryType of ["1", "2"]) {
+  const panel = loadPanel({ lotteryType, payload: slicedPayload({ revealedCount: 7 }) })
   panel.__hooks.setNow(T)
   await settle()
   await panel.__hooks.load({ revealOnLoad: true })

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
+from collections import OrderedDict
+from threading import Lock
 from typing import Any
 
 from cache.contracts import CacheUnavailable
@@ -13,7 +16,7 @@ from public.api import (
     get_public_next_draw_deadline,
     get_public_site_page_data,
 )
-from public.draw_reveal import apply_reveal_slice
+from public.draw_reveal import apply_reveal_slice, is_paced_lottery_type, reveal_anchor
 
 from app_http.site_context import resolve_site_context
 from app_http.request_context import RequestContext
@@ -24,6 +27,61 @@ from domains.sites.service import get_public_notice, get_public_site_links
 from domains.numbers.fixed_groups import load_fixed_data_groups
 from domains.announcements.service import get_effective_forced_announcement
 from domains.traffic.service import record_traffic_event
+
+
+_DRAW_REVEAL_LOG_MAX_ISSUES = 128
+_DRAW_REVEAL_LOG_STATES: OrderedDict[tuple[str, str], tuple[int, str]] = OrderedDict()
+_DRAW_REVEAL_LOG_LOCK = Lock()
+_draw_reveal_logger = logging.getLogger("public.draw_reveal")
+
+
+def _slice_public_draw(
+    ctx: RequestContext,
+    payload: dict[str, Any],
+    lottery_type_id: Any,
+    *,
+    source: str,
+) -> dict[str, Any]:
+    """Slice live public draw responses and log progress without copying balls."""
+    sliced = apply_reveal_slice(payload, lottery_type_id=lottery_type_id)
+    if not is_paced_lottery_type(lottery_type_id) or "server_now" not in sliced:
+        return sliced
+
+    anchor = reveal_anchor(sliced)
+    reason = "missing_anchor" if anchor is None else ""
+    issue = str(sliced.get("current_issue") or "")
+    count = int(sliced["revealed_count"])
+    key = (str(lottery_type_id), issue)
+    progress = (count, reason)
+    with _DRAW_REVEAL_LOG_LOCK:
+        previous = _DRAW_REVEAL_LOG_STATES.get(key)
+        _DRAW_REVEAL_LOG_STATES[key] = progress
+        _DRAW_REVEAL_LOG_STATES.move_to_end(key)
+        while len(_DRAW_REVEAL_LOG_STATES) > _DRAW_REVEAL_LOG_MAX_ISSUES:
+            _DRAW_REVEAL_LOG_STATES.popitem(last=False)
+        if previous == progress:
+            return sliced
+
+    metadata = {
+        "lottery_type_id": lottery_type_id,
+        "current_issue": issue,
+        "anchor": anchor.isoformat(timespec="seconds") if anchor is not None else "",
+        "server_now": sliced["server_now"],
+        "revealed_count": count,
+        "is_complete": sliced["is_complete"],
+        "next_reveal_at": sliced["next_reveal_at"],
+        "source": source,
+        "reason": reason,
+    }
+    _draw_reveal_logger.log(
+        logging.WARNING if reason else logging.INFO,
+        "Public draw reveal progress",
+        extra={
+            "request_path": ctx.path,
+            "result": metadata,
+        },
+    )
+    return sliced
 
 
 def register(router: Router) -> None:
@@ -125,9 +183,18 @@ def _send_site_page(ctx: RequestContext, payload: Any, lottery_type_id: Any = No
     - 港澳彩拿到几个就下发几个（源站本来就公开）。
     """
     if isinstance(payload, dict):
+        if lottery_type_id in (None, ""):
+            site = payload.get("site")
+            inferred = site.get("lottery_type_id") if isinstance(site, dict) else None
+            try:
+                inferred = int(str(inferred).strip()) if not isinstance(inferred, bool) else None
+            except (TypeError, ValueError):
+                inferred = None
+            # 构建器已经解析站点彩种；未知值保持 None，继续按节拍关闭揭示。
+            lottery_type_id = inferred if inferred in (1, 2, 3) else None
         draw = payload.get("draw")
         if isinstance(draw, dict):
-            payload = {**payload, "draw": apply_reveal_slice(draw, lottery_type_id=lottery_type_id)}
+            payload = {**payload, "draw": _slice_public_draw(ctx, draw, lottery_type_id, source="site-page")}
     ctx.send_json(payload)
 
 
@@ -177,13 +244,13 @@ def latest_draw(ctx: RequestContext) -> None:
             cached = None
         if cached is not None:
             # 缓存里始终是完整载荷；号码按彩种口径在响应边界上揭示。
-            ctx.send_json(apply_reveal_slice(cached, lottery_type_id=lottery_type))
+            ctx.send_json(_slice_public_draw(ctx, cached, lottery_type, source="cache"))
             return
 
     # A just-published result must not wait for a replica to catch up.
     payload = get_public_latest_draw(ctx.write_db_path, lottery_type)
     _backfill_latest_draw(snapshots, lottery_type, payload)
-    ctx.send_json(apply_reveal_slice(payload, lottery_type_id=lottery_type))
+    ctx.send_json(_slice_public_draw(ctx, payload, lottery_type, source="db"))
 
 
 def next_draw_deadline(ctx: RequestContext) -> None:
