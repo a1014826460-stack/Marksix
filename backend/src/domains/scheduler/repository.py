@@ -112,6 +112,21 @@ def insert_task(
     )
 
 
+def find_next_pending_task(conn: Any, *, task_type: str) -> dict[str, Any] | None:
+    """Read the nearest durable deadline without acquiring or exposing a payload."""
+    row = conn.execute(
+        f"""
+        SELECT task_key, run_at
+        FROM {TASK_TABLE_NAME}
+        WHERE task_type = ? AND status = 'pending'
+        ORDER BY run_at ASC, id ASC
+        LIMIT 1
+        """,
+        (task_type,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def find_due_tasks(
     conn: Any,
     *,

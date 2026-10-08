@@ -176,6 +176,17 @@ def test_scheduler_start_enqueues_taiwan_durable_open_task(monkeypatch):
     from crawler import scheduler
 
     enqueued: list[str] = []
+    # This test only observes enqueueing. All pre-existing startup timers and
+    # config reads must be isolated from its intentionally fake Postgres DSN.
+    monkeypatch.setattr(scheduler, "_cfg", lambda _path, _key, default=None: default)
+    database_reads: list[tuple[object, ...]] = []
+
+    def unexpected_database_read(*_args, **_kwargs):
+        database_reads.append(_args)
+        raise AssertionError("the isolated startup test must not connect to a database")
+
+    monkeypatch.setattr(scheduler, "db_connect", unexpected_database_read)
+    monkeypatch.setattr(scheduler.scheduler_service, "db_connect", unexpected_database_read)
     monkeypatch.setattr(scheduler, "sync_all_lottery_type_next_times", lambda *_args, **_kwargs: {"checked": 0, "updated": 0})
     monkeypatch.setattr(scheduler, "_ensure_daily_prediction_task", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(scheduler, "_ensure_postgres_backup_tasks", lambda *_args, **_kwargs: None)
@@ -183,6 +194,8 @@ def test_scheduler_start_enqueues_taiwan_durable_open_task(monkeypatch):
     monkeypatch.setattr(scheduler, "_ensure_taiwan_precise_open_task", lambda db_path: enqueued.append(db_path))
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_auto_open", lambda _self: None)
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_auto_crawl", lambda _self: None)
+    monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_staged_timeout_alerts", lambda _self: None)
+    monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_publication_loop", lambda _self: None)
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_schedule_task_loop", lambda _self: None)
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_run_daily_prediction_if_missed", lambda _self: None)
     monkeypatch.setattr(scheduler.CrawlerScheduler, "_reschedule_precise_checks", lambda _self: None)
@@ -191,6 +204,7 @@ def test_scheduler_start_enqueues_taiwan_durable_open_task(monkeypatch):
     runner.start()
 
     assert enqueued == ["postgresql://scheduler-test"]
+    assert database_reads == []
 
 
 def test_worker_leader_lease_allows_one_holder_and_takeover_after_expiry(tmp_path):

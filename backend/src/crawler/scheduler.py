@@ -66,6 +66,7 @@ from alerts.alert_service import (
     reset_crawler_fail_count,
 )
 from domains.lottery import service as lottery_service
+from domains.scheduler import service as scheduler_service
 
 _crawler_logger = logging.getLogger("crawler.scheduler")
 _draw_mismatch_logger = logging.getLogger("draw.mismatch")
@@ -1938,14 +1939,14 @@ class CrawlerScheduler:
         self._schedule_auto_open()
         self._schedule_auto_crawl()
         self._schedule_staged_timeout_alerts()
+        # Arm the first task-loop timer only after its durable Taiwan deadline exists.
+        _ensure_taiwan_precise_open_task(self.db_path)
         self._schedule_task_loop()
         self._schedule_publication_loop()
         # 每日固定时间自动预测任务
         _ensure_daily_prediction_task(self.db_path)
         _ensure_postgres_backup_tasks(self.db_path)
         _ensure_taiwan_future_autofill_task(self.db_path)
-        # Taiwan precise opening is durable so restarts cannot lose the next draw.
-        _ensure_taiwan_precise_open_task(self.db_path)
         # 如果今天配置的时间已过且今天尚未执行过预测，立即补跑一次
         self._run_daily_prediction_if_missed()
         # 精确开奖检查（HK/Macau/Taiwan 均基于 system_config 中 lottery.{type}_next_time 调度）
@@ -2354,9 +2355,33 @@ class CrawlerScheduler:
             self._run_due_tasks()
         except Exception as exc:
             _crawler_logger.error("Task loop iteration failed: %s", exc)
-        self._task_timer = threading.Timer(_task_poll_interval_seconds(self.db_path), self._schedule_task_loop)
+        self._task_timer = threading.Timer(self._task_loop_delay_seconds(), self._schedule_task_loop)
         self._task_timer.daemon = True
         self._task_timer.start()
+
+    def _task_loop_delay_seconds(self) -> float:
+        """Wake at Taiwan's durable deadline instead of inheriting the 30s poll phase.
+
+        Re-read UTC on every iteration, so an early callback after a backward clock
+        correction only re-arms the timer. The existing due-task acquisition and
+        task lock remain the sole execution path. No per-second broad scans are
+        needed: a positive remaining duration schedules exactly at the deadline.
+        """
+        default_delay = _task_poll_interval_seconds(self.db_path)
+        try:
+            run_at = scheduler_service.get_next_taiwan_precise_open_run_at(self.db_path)
+            if not run_at:
+                return default_delay
+            deadline = datetime.fromisoformat(run_at)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+            # Due work left pending (for example after an acquisition error) gets
+            # a bounded retry, never a zero-delay busy loop.
+            return min(default_delay, remaining if remaining > 0 else 1.0)
+        except Exception as exc:
+            _crawler_logger.warning("Taiwan task deadline lookup failed: %s", exc)
+            return default_delay
 
     def _schedule_publication_loop(self) -> None:
         """Outbox 发布使用独立的高频循环，不受 30 秒任务轮询周期拖累。

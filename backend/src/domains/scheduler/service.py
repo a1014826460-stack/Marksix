@@ -33,6 +33,13 @@ def _task_poll_interval_seconds(db_path: str | Path) -> int:
     return max(5, int(_cfg(db_path, "crawler.task_poll_interval_seconds", 30)))
 
 
+def get_next_taiwan_precise_open_run_at(db_path: str | Path) -> str | None:
+    """Read the next pending opener; execution still uses the durable due-task lock."""
+    with db_connect(db_path) as conn:
+        task = repository.find_next_pending_task(conn, task_type=TASK_TYPE_TAIWAN_PRECISE_OPEN)
+    return str(task["run_at"]) if task else None
+
+
 def _publication_poll_interval_seconds(db_path: str | Path) -> int:
     """Outbox 发布周期（秒）。
 
