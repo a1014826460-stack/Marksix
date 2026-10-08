@@ -149,7 +149,7 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
             onDragLeave={onDragLeave}
             onDrop={(e) => onDrop(e, idx)}
             onDragEnd={onDragEnd}
-            className={`flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-sm font-bold text-primary-foreground shadow-sm cursor-grab active:cursor-grabbing select-none transition-all ${
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-bold ${getColorClass(n)} shadow-sm cursor-grab active:cursor-grabbing select-none transition-all ${
               dragIndex === idx ? "opacity-40 scale-90" : ""
             } ${
               dragOverIndex === idx && dragIndex !== idx
@@ -214,10 +214,8 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
                           isSelected ? removeNumber(n) : addNumber(n)
                         }
                         disabled={!isSelected && selected.length >= 7}
-                        className={`h-11 w-full rounded text-xs font-medium transition-colors ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground hover:bg-primary/80"
-                            : `${getColorClass(n)} disabled:opacity-30`
+                        className={`h-11 w-full rounded text-xs font-medium transition-colors ${getColorClass(n)} disabled:opacity-55 ${
+                          isSelected ? "ring-2 ring-foreground ring-offset-1" : ""
                         }`}
                       >
                         {String(n).padStart(2, "0")}
