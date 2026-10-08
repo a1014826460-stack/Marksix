@@ -9,6 +9,7 @@ import {
   normalizeHistorySort,
   normalizeLotteryType,
 } from "@/lib/draw-history"
+import { guardTaiwanHistoryResponse } from "@/lib/draw-history-gate"
 
 const LOTTERY_OPTIONS = [
   { type: 3 as const, label: "台湾彩" },
@@ -154,7 +155,7 @@ function HistoryPageContent() {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        setPayload((await response.json()) as DrawHistoryResponse)
+        setPayload(guardTaiwanHistoryResponse((await response.json()) as DrawHistoryResponse, { lotteryType }))
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }

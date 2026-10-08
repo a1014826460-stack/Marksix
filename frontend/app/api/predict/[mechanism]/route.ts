@@ -23,6 +23,7 @@ export async function GET(request: Request, context: RouteContext) {
         mechanism,
         ...parsePredictionSearchParams(searchParams),
       }, authorization),
+      { headers: { "Cache-Control": "no-store" } },
     )
   } catch (error) {
     return NextResponse.json(
@@ -30,7 +31,7 @@ export async function GET(request: Request, context: RouteContext) {
         error: "预测结果生成失败",
         detail: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     )
   }
 }
@@ -54,6 +55,7 @@ export async function POST(request: Request, context: RouteContext) {
         term: body?.term ?? null,
         web: body?.web ?? null,
       }, authorization),
+      { headers: { "Cache-Control": "no-store" } },
     )
   } catch (error) {
     return NextResponse.json(
@@ -61,7 +63,7 @@ export async function POST(request: Request, context: RouteContext) {
         error: "预测结果生成失败",
         detail: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     )
   }
 }

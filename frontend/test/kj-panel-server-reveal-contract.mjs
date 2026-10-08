@@ -92,7 +92,11 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
   const recordedIntervals = []
   const recordedTimeouts = []
   const notifications = []
-  const state = { payload, deadline }
+  const state = { payload, deadline: deadline || {
+    current_issue: payload.current_issue,
+    current_draw_time: Date.parse(payload.draw_time.replace(" ", "T") + "+08:00") / 1000,
+    next_issue: "2026999", next_time: T + 86400,
+  } }
   const sandbox = {
     window: null,
     document: {
@@ -107,7 +111,7 @@ function loadPanel({ lotteryType = "3", payload, deadline = null }) {
     fetch(url) {
       const target = String(url)
       const body = target.includes("next-draw-deadline")
-        ? (state.deadline || { current_issue: state.payload.current_issue, next_issue: "2026999", next_time: T + 86400 })
+        ? state.deadline
         : state.payload
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ...body, server_now: T }) })
     },
@@ -325,7 +329,7 @@ function slicedPayload({ issue = "2026281", revealedCount, revealStartSec = T, t
   const nowSec = Math.floor(Date.now() / 1000)
   const panel = loadPanel({
     payload: slicedPayload({ issue: "2026275", revealedCount: 7, revealStartSec: nowSec - 600 }),
-    deadline: { current_issue: "2026275", next_issue: "2026276", next_time: nowSec + 60 },
+    deadline: { current_issue: "2026275", current_draw_time: nowSec - 600, next_issue: "2026276", next_time: nowSec + 60 },
   })
   panel.__hooks.setNow(nowSec)
   await settle()

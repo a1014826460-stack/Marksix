@@ -7,6 +7,8 @@ from app_http.router import Router
 from app_http.security import MAX_PUBLIC_HISTORY_LIMIT, parse_bounded_int
 from cache.prediction_snapshots import KIND_HOMEPAGE, read_through
 from vendor.homepage_modules import build_vendor_homepage_modules, SUPPORTED_MODULE_KEYS
+from db import connect
+from helpers import apply_public_result_gate
 
 
 def register(router: Router) -> None:
@@ -14,6 +16,7 @@ def register(router: Router) -> None:
 
 
 def homepage_modules(ctx: RequestContext) -> None:
+    ctx.response.set_header("Cache-Control", "no-store")
     raw_site_id = ctx.query_value("site_id")
     if raw_site_id in (None, ""):
         raise ValueError("site_id is required")
@@ -46,11 +49,11 @@ def homepage_modules(ctx: RequestContext) -> None:
 
     if lottery_type is None:
         # 彩种未显式给出时需要先解析站点彩种，键无法稳定，直接按原路径构建。
-        ctx.send_json(build())
+        _send_modules(ctx, build(), lottery_type)
         return
 
     selector = f"{lottery_type}-{history_limit}-{_modules_fingerprint(requested_modules)}"
-    ctx.send_json(
+    _send_modules(ctx,
         read_through(
             ctx.state.get("prediction_snapshots"),
             kind=KIND_HOMEPAGE,
@@ -59,8 +62,23 @@ def homepage_modules(ctx: RequestContext) -> None:
             selector=selector,
             builder=build,
             db_path=ctx.db_path,
-        )
+        ),
+        lottery_type,
     )
+
+
+def _send_modules(ctx: RequestContext, payload: dict, lottery_type: int | None) -> None:
+    # Cached presentation data cannot authorize a result. Recheck every response.
+    if lottery_type is None:
+        site = payload.get("site") or {}
+        resolved = site.get("lottery_type") if isinstance(site, dict) else None
+        try:
+            lottery_type = int(resolved) if int(resolved) in (1, 2, 3) else None
+        except (TypeError, ValueError):
+            lottery_type = None
+    with connect(getattr(ctx, "write_db_path", ctx.db_path)) as conn:
+        safe = apply_public_result_gate(conn, payload, default_lottery_type_id=lottery_type)
+    ctx.send_json(safe)
 
 
 def _modules_fingerprint(modules: list[str]) -> str:

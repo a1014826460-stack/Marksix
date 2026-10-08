@@ -6,6 +6,8 @@ import time
 from collections import OrderedDict
 from threading import Lock
 from typing import Any
+from db import connect
+from helpers import apply_public_result_gate
 
 from cache.contracts import CacheUnavailable
 from cache.prediction_snapshots import KIND_SITE, read_through
@@ -43,6 +45,16 @@ def _slice_public_draw(
     source: str,
 ) -> dict[str, Any]:
     """Slice live public draw responses and log progress without copying balls."""
+    if source != "db" and is_paced_lottery_type(lottery_type_id):
+        # A cached issue/header/anchor cannot authorize cached future numbers.
+        # Rebuild from the primary so a stale issue never labels a newer result.
+        if str(lottery_type_id) == "3":
+            payload = get_public_latest_draw(ctx.write_db_path, 3)
+        else:
+            payload = {
+                "current_issue": str(payload.get("current_issue") or ""),
+                "draw_time": "", "reveal_start": "", "result_balls": [], "special_ball": None,
+            }
     sliced = apply_reveal_slice(payload, lottery_type_id=lottery_type_id)
     if not is_paced_lottery_type(lottery_type_id) or "server_now" not in sliced:
         return sliced
@@ -100,6 +112,7 @@ def register(router: Router) -> None:
 
 
 def site_page(ctx: RequestContext) -> None:
+    ctx.response.set_header("Cache-Control", "no-store")
     site_id = ctx.query_value("site_id")
     history_limit = parse_bounded_int(
         ctx.query_value("history_limit", "8"),
@@ -182,6 +195,7 @@ def _send_site_page(ctx: RequestContext, payload: Any, lottery_type_id: Any = No
     - 台湾彩按服务器时间逐球开放，不会把半个结果冻进缓存，也不会让人一次拿到 7 个号码；
     - 港澳彩拿到几个就下发几个（源站本来就公开）。
     """
+    ctx.response.set_header("Cache-Control", "no-store")
     if isinstance(payload, dict):
         if lottery_type_id in (None, ""):
             site = payload.get("site")
@@ -195,6 +209,9 @@ def _send_site_page(ctx: RequestContext, payload: Any, lottery_type_id: Any = No
         draw = payload.get("draw")
         if isinstance(draw, dict):
             payload = {**payload, "draw": _slice_public_draw(ctx, draw, lottery_type_id, source="site-page")}
+        if payload.get("modules") and is_paced_lottery_type(lottery_type_id):
+            with connect(ctx.write_db_path) as conn:
+                payload = apply_public_result_gate(conn, payload, default_lottery_type_id=lottery_type_id)
     ctx.send_json(payload)
 
 
@@ -231,6 +248,7 @@ def _parse_optional_history_web_id(value: object, field_name: str) -> int | None
 
 
 def latest_draw(ctx: RequestContext) -> None:
+    ctx.response.set_header("Cache-Control", "no-store")
     site_id = ctx.query_value("site_id")
     if site_id not in (None, ""):
         lottery_type = _resolve_site_lottery_type(ctx, int(site_id))
@@ -263,14 +281,19 @@ def next_draw_deadline(ctx: RequestContext) -> None:
         - draw_deadline: 下一期开奖截止时间，单位为毫秒级时间戳
         - server_time: 服务器当前时间，单位为秒级时间戳
     """
+    ctx.response.set_header("Cache-Control", "no-store")
     site_id = ctx.query_value("site_id")
     if site_id not in (None, ""):
         site_ctx = resolve_site_context(ctx.db_path, path_site_id=int(site_id), query=ctx.query)
         lottery_type = int(site_ctx.lottery_type_id or 3)
     else:
         lottery_type = int(ctx.query_value("lottery_type", "3") or 3)
-    payload = get_public_next_draw_deadline(ctx.db_path, lottery_type)
-    payload["server_time"] = str(int(time.time()))
+    payload = get_public_next_draw_deadline(ctx.write_db_path, lottery_type)
+    sampled_time = time.time()
+    server_now = int(sampled_time)
+    payload["server_time"] = str(server_now)
+    payload["server_now"] = server_now
+    payload["server_now_ms"] = int(sampled_time * 1000)
     ctx.send_json(payload)
 
 
@@ -284,7 +307,7 @@ def draw_history(ctx: RequestContext) -> None:
         lottery_type = int(ctx.query_value("lottery_type", "3") or 3)
     year = int(ctx.query_value("year", "0") or 0) or None
     sort = ctx.query_value("sort", "l") or "l"
-    ctx.send_json(get_draw_history(ctx.db_path, lottery_type, year, sort))
+    ctx.send_json(get_draw_history(ctx.write_db_path, lottery_type, year, sort))
 
 
 def current_period(ctx: RequestContext) -> None:

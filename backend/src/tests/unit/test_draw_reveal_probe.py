@@ -137,10 +137,21 @@ def test_probe_invalid_preferred_anchor_cannot_borrow_valid_planned_time(preferr
 
 def test_probe_accepts_canonical_t_separator_from_a_paced_payload():
     payload = sample(7, anchor="2026-10-07T22:32:01", elapsed=150)
-    payload["draw_time"] = ""
+    payload["draw_time"] = "2026-10-07T22:32:00"
     checked = probe.validate_sample(payload, lottery_type=3, clienttime=ANCHOR_SECONDS)
     assert checked["record"]["anchor"] == ANCHOR
     assert checked["complete"]
+
+
+@pytest.mark.parametrize("planned", [None, "", "invalid", "2026-02-30 22:32:00"])
+def test_probe_valid_preferred_anchor_cannot_borrow_invalid_planned_time(planned):
+    payload = sample(7, elapsed=150)
+    payload["draw_time"] = planned
+    checked = probe.validate_sample(payload, lottery_type=3, clienttime=ANCHOR_SECONDS + 600)
+    assert checked["record"]["anchor"] is None
+    assert checked["record"]["allowed_count"] is None
+    assert checked["errors"]
+    assert not checked["complete"]
 
 
 def test_parse_seconds_treats_naive_timestamp_as_beijing_on_utc_host(monkeypatch):

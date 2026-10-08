@@ -142,22 +142,23 @@ def test_prediction_api_response_contract_keeps_hidden_draw_context_shape():
     assert payload["data"]["prediction"]["display_text"] == json.dumps(raw_result["prediction"]["content"], ensure_ascii=False)
 
 
-def test_predict_route_contract_sends_prediction_api_response():
+def test_predict_route_contract_sends_prediction_api_response(tmp_path):
     ctx = make_ctx("/api/predict/title_251?target_hit_rate=0.65", method="GET")
+    ctx.handler.server.db_path = str(tmp_path / "prediction_route.sqlite3")
     ctx.state["current_user"] = {"role": "admin", "username": "admin"}
-    expected_response = {"ok": True, "protocol_version": 1, "data": {"prediction": {"labels": ["鼠"]}}}
 
     with patch("routes.admin_prediction_routes.require_generation_access"), \
          patch("routes.admin_prediction_routes.get_prediction_config", return_value="CONFIG"), \
          patch("routes.admin_prediction_routes.get_config", return_value=0.65), \
-         patch("routes.admin_prediction_routes.run_prediction", return_value=_raw_prediction_result()) as run_prediction, \
-         patch("routes.admin_prediction_routes.build_prediction_api_response", return_value=expected_response) as build_response:
+         patch("routes.admin_prediction_routes.run_prediction", return_value=_raw_prediction_result()) as run_prediction:
         admin_prediction_routes.run_mechanism_prediction(ctx)
 
     run_prediction.assert_called_once()
-    build_response.assert_called_once()
     assert ctx.handler.response_status == 200
-    assert response_json(ctx) == expected_response
+    response = response_json(ctx)
+    assert response["protocol_version"] == 1
+    assert response["data"]["prediction"]["labels"] == ["鼠", "牛"]
+    assert response["data"]["context"]["latest_outcome"] == ""
 
 
 def test_site_prediction_modules_route_contract_keeps_service_payload():

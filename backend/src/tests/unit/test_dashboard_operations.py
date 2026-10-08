@@ -8,6 +8,7 @@ from domains.scheduler import service as scheduler_service
 from domains.traffic.service import record_traffic_event
 from routes import admin_dashboard_routes
 from tables import ensure_admin_tables
+from tests.helpers.api_contract import make_ctx, response_json
 
 
 def test_dashboard_reports_worker_draw_health_and_overdue_alert(tmp_path):
@@ -155,20 +156,14 @@ def test_retry_failed_scheduler_task_makes_task_pending(tmp_path):
 def test_dashboard_retry_route_accepts_only_retry_suffix(monkeypatch):
     calls: list[int] = []
 
-    class Ctx:
-        path = "/api/admin/dashboard/scheduler-tasks/42/retry"
-        db_path = "test-db"
-
-        def send_json(self, payload):
-            self.payload = payload
-
     monkeypatch.setattr(
         admin_dashboard_routes,
         "retry_failed_scheduler_task",
         lambda _db_path, *, task_id: calls.append(task_id) or {"id": task_id, "status": "pending"},
     )
-    ctx = Ctx()
+    ctx = make_ctx("/api/admin/dashboard/scheduler-tasks/42/retry", method="POST", payload={})
     admin_dashboard_routes.retry_scheduler_task(ctx)
 
     assert calls == [42]
-    assert ctx.payload["task"]["status"] == "pending"
+    assert response_json(ctx)["task"]["status"] == "pending"
+    assert ("Cache-Control", "no-store") in ctx.handler.response_headers

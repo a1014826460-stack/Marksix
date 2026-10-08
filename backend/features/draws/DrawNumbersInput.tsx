@@ -6,6 +6,7 @@ import { adminApi } from "@/lib/admin-api"
 type DrawNumbersInputProps = {
   name: string
   defaultValue: string
+  onChange?: () => void
 }
 
 type NumberMapping = {
@@ -14,7 +15,7 @@ type NumberMapping = {
   code: string
 }
 
-export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) {
+export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersInputProps) {
   const [selected, setSelected] = useState<number[]>(() =>
     defaultValue
       ? defaultValue
@@ -87,6 +88,8 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
   }
 
   function addNumber(n: number) {
+    if (selected.includes(n) || selected.length >= 7) return
+    onChange?.()
     setSelected((prev) => {
       if (prev.includes(n)) return prev
       if (prev.length >= 7) return prev
@@ -95,6 +98,7 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
   }
 
   function removeNumber(n: number) {
+    onChange?.()
     setSelected((prev) => prev.filter((x) => x !== n))
   }
 
@@ -115,6 +119,7 @@ export function DrawNumbersInput({ name, defaultValue }: DrawNumbersInputProps) 
     e.preventDefault()
     setDragOverIndex(null)
     if (dragIndex === null || dragIndex === dropIndex) return
+    onChange?.()
     setSelected((prev) => {
       const next = [...prev]
       const [item] = next.splice(dragIndex, 1)

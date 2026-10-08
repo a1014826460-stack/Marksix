@@ -134,6 +134,7 @@ export function DrawsPage() {
   const [draftNextTerm, setDraftNextTerm] = useState("")
   const [draftDrawDate, setDraftDrawDate] = useState("")
   const [draftNumbers, setDraftNumbers] = useState("")
+  const [numbersEdited, setNumbersEdited] = useState(false)
   const [draftStatus, setDraftStatus] = useState("1")
   const [draftIsOpened, setDraftIsOpened] = useState("0")
   const [numbersInputKey, setNumbersInputKey] = useState(0)
@@ -223,6 +224,7 @@ export function DrawsPage() {
   }
 
   function applyEditingDraft(row: Draw) {
+    setNumbersEdited(false)
     setDraftYear(String(row.year || new Date().getFullYear()))
     setDraftTerm(String(row.term || ""))
     setDraftNextTerm(resolveNextTerm(row))
@@ -234,6 +236,7 @@ export function DrawsPage() {
   }
 
   function populateCreateDrafts(draws: Draw[]) {
+    setNumbersEdited(false)
     const latestDraw = getLatestTaiwanDraw(draws)
     if (!latestDraw) {
       const today = new Date()
@@ -278,12 +281,13 @@ export function DrawsPage() {
     event.preventDefault()
     const form = event.currentTarget
     const numbers = String(new FormData(form).get("numbers") || "").trim()
+    const preserveNumbers = editing?.numbers_restricted === true && !numbersEdited
     const missingFields: string[] = []
 
     if (!draftYear) missingFields.push("年份")
     if (!draftTerm) missingFields.push("本期期数")
     if (!draftNextTerm) missingFields.push("下一期期数")
-    if (!numbers) missingFields.push("开奖号码")
+    if (!numbers && !preserveNumbers) missingFields.push("开奖号码")
     if (!draftDrawDate) missingFields.push("开奖日期")
 
     if (missingFields.length > 0) {
@@ -323,7 +327,7 @@ export function DrawsPage() {
       }
     }
 
-    if (editing && normalizeDrawNumbers(numbers) !== normalizeDrawNumbers(editing.numbers || "")) {
+    if (editing && normalizeDrawNumbers(numbers) !== normalizeDrawNumbers(editing.numbers || "") && !preserveNumbers) {
       // 未开奖期的号码会在当日预测生成时被用于受控命中校验；
       // 生成之后再改号，会让该期已生成的预测命中判定失效（站点会重新显示为“错”）。
       const confirmed = confirm(
@@ -348,7 +352,7 @@ export function DrawsPage() {
           lottery_type_id: TAIWAN_LOTTERY_ID,
           year: Number(draftYear),
           term: Number(draftTerm),
-          numbers,
+          ...(preserveNumbers ? {} : { numbers }),
           draw_time: drawTime,
           next_time: nextTime,
           status: draftStatus === "1",
@@ -593,7 +597,11 @@ export function DrawsPage() {
                   key={numbersInputKey}
                   name="numbers"
                   defaultValue={draftNumbers}
+                  onChange={() => setNumbersEdited(true)}
                 />
+                {editing?.numbers_restricted && (
+                  <p className="text-xs text-muted-foreground">开奖号码完整公开前隐藏；未修改号码时保留原值。</p>
+                )}
               </Field>
               <Field label="开奖日期" className="col-span-2">
                 <Input
@@ -697,7 +705,7 @@ export function DrawsPage() {
                       <TableCell className="border-r border-border">{row.year}</TableCell>
                       <TableCell className="border-r border-border">{row.term}</TableCell>
                       <TableCell className="border-r border-border">
-                        <DrawBallDisplay numbers={row.numbers} />
+                        {row.numbers_restricted ? <span className="text-xs text-muted-foreground">等待完整公开</span> : <DrawBallDisplay numbers={row.numbers} />}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs border-r border-border">{row.draw_time}</TableCell>
                       <TableCell className="border-r border-border">

@@ -352,6 +352,7 @@ function deadlineStub() {
   const nowSec = Math.floor(Date.now() / 1000)
   return {
     current_issue: "2026271",
+    current_draw_time: Date.parse("2026-01-01T00:00:00+08:00") / 1000,
     next_issue: "2026272",
     next_time: nowSec + 3600, // 未来 → 不会进入揭示轮询
     server_time: nowSec,

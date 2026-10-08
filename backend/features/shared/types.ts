@@ -47,6 +47,7 @@ export type Draw = {
   year: number
   term: number
   numbers: string
+  numbers_restricted?: boolean
   draw_time: string
   next_time?: string
   status: boolean

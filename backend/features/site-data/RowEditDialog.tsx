@@ -27,14 +27,38 @@ export function RowEditDialog({
   onError,
 }: RowEditDialogProps) {
   const [editValues, setEditValues] = useState<AnyRecord>({ ...editing })
+  const [editedFields, setEditedFields] = useState<Set<string>>(new Set())
+
+  function updateField(key: string, value: string) {
+    setEditedFields((previous) => new Set(previous).add(key))
+    setEditValues({ ...editValues, [key]: value })
+  }
 
   async function saveEdit() {
     try {
+      const changes = { ...editValues }
+      delete changes.result_restricted
+      delete changes.numbers_restricted
+      delete changes.id
+      delete changes.data_source
+      if (editing.result_restricted === true) {
+        for (const key of Object.keys(changes)) {
+          const actualField = key.startsWith("res_") || key.startsWith("special_") || key.startsWith("specialN")
+            || key.startsWith("specialC") || key.startsWith("specialZ")
+            // Keep aliases aligned with helpers._hide_public_result_fields;
+            // its null/false/empty placeholders must never become table writes.
+            || ["numbers", "draw_numbers", "result_numbers", "result", "raw", "domestic_wild_category",
+              "outcome", "actual_result", "last_result", "is_correct", "isCorrect", "hit", "is_hit", "verdict",
+              "is_opened", "draw_is_opened", "isOpened", "result_text", "resultText", "hit_text",
+              "special_ball", "specialBall", "result_balls"].includes(key)
+          if (actualField && !editedFields.has(key)) delete changes[key]
+        }
+      }
       await adminApi(
         `/admin/sites/${siteId}/mode-payload/${tableName}/${editing.id}?source=${source}`,
         {
           method: "PATCH",
-          body: JSON.stringify(editValues),
+          body: JSON.stringify(changes),
         },
       )
       onSaved()
@@ -55,9 +79,12 @@ export function RowEditDialog({
         <h3 className="mb-4 text-base font-semibold">
           编辑记录 #{editing.id}
         </h3>
+        {editing.result_restricted === true && (
+          <p className="mb-3 text-xs text-muted-foreground">开奖结果完整公开前隐藏；未编辑的结果字段会保留原值。</p>
+        )}
         <div className="space-y-3">
           {Object.keys(editing)
-            .filter((k) => k !== "id" && k !== "data_source")
+            .filter((k) => !["id", "data_source", "result_restricted", "numbers_restricted"].includes(k))
             .map((key) => (
               <div key={key}>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -67,7 +94,7 @@ export function RowEditDialog({
                   <Textarea
                     value={String(editValues[key] ?? "")}
                     onChange={(e) =>
-                      setEditValues({ ...editValues, [key]: e.target.value })
+                      updateField(key, e.target.value)
                     }
                     className="h-20 text-xs"
                   />
@@ -75,7 +102,7 @@ export function RowEditDialog({
                   <Input
                     value={String(editValues[key] ?? "")}
                     onChange={(e) =>
-                      setEditValues({ ...editValues, [key]: e.target.value })
+                      updateField(key, e.target.value)
                     }
                     className="h-8 text-xs"
                   />

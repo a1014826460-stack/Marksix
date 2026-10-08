@@ -730,6 +730,12 @@ def load_lottery_draw_map(
     """按 `year + term` 批量读取开奖状态，统一覆盖各类模块历史结果。"""
     if not issues:
         return {}
+    if not conn.table_exists("lottery_draws"):
+        return {}
+
+    # Old SQLite fixtures/schemas predate opened_at; an absent column uses the
+    # planned draw time, while a present invalid value remains fail-closed.
+    opened_at_column = "opened_at" if "opened_at" in conn.table_columns("lottery_draws") else "NULL AS opened_at"
 
     years = sorted({year for year, _term in issues})
     terms = sorted({term for _year, term in issues})
@@ -740,7 +746,7 @@ def load_lottery_draw_map(
     term_placeholders = ", ".join("?" for _ in terms)
     rows = conn.execute(
         f"""
-        SELECT id, lottery_type_id, year, term, numbers, is_opened, next_term, draw_time
+        SELECT id, lottery_type_id, year, term, numbers, is_opened, next_term, draw_time, {opened_at_column}
         FROM lottery_draws
         WHERE lottery_type_id = ?
           AND year IN ({year_placeholders})
@@ -768,25 +774,140 @@ def _resolve_history_delay_minutes(conn: Any, default: float = 8.0) -> float:
     return max(0.0, minutes)
 
 
-def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any]) -> bool:
+def _history_result_visible_after_delay(conn: Any, draw_row: dict[str, Any], *, now: datetime | None = None) -> bool:
     """Only expose historical draw results at draw_time plus the configured delay.
 
     旧站预测出口与 /public/draw-history 共用同一个闸门，闸门分钟数由
     ``system_config.history_backfill_delay_after_draw`` 控制（默认 20 分钟）。
     """
-    if not bool(draw_row.get("is_opened")):
+    from public.draw_reveal import is_full_draw_released
+
+    now_dt = now or beijing_now()
+    if not is_full_draw_released(draw_row, lottery_type_id=draw_row.get("lottery_type_id"), now=now_dt):
         return False
 
     draw_dt = parse_draw_datetime(str(draw_row.get("draw_time") or "").strip())
     if draw_dt is None:
         return False
 
-    now_dt = beijing_now()
     if now_dt <= draw_dt:
         return False
 
     elapsed_minutes = (now_dt - draw_dt).total_seconds() / 60.0
     return elapsed_minutes >= _resolve_history_delay_minutes(conn)
+
+
+_PUBLIC_ACTUAL_RESULT_FIELDS = frozenset({
+    "res_code", "res_sx", "res_color", "numbers", "draw_numbers", "result_numbers",
+    "special_number", "special_code", "special_zodiac", "special_sx", "special_color",
+    "special_wave", "special_element", "special_tail", "special_head",
+    "specialNumber", "specialCode", "specialZodiac", "specialColor",
+    "domestic_wild_category", "outcome", "actual_result", "last_result",
+})
+_PUBLIC_PREDICTION_FIELDS = frozenset({
+    "content", "prediction_text", "prediction", "prediction_payload", "candidate", "candidates",
+    "best_pick", "code_groups", "xiao_groups", "labels", "codes", "candidate_numbers",
+})
+
+
+def _hide_public_result_fields(value: Any, *, result_context: bool = False) -> Any:
+    """Blank actual outcomes and their verdicts; keep supplier candidates intact."""
+    if isinstance(value, list):
+        return [_hide_public_result_fields(item, result_context=result_context) for item in value]
+    if not isinstance(value, dict):
+        return value
+    hidden = {}
+    for key, item in value.items():
+        if key in _PUBLIC_PREDICTION_FIELDS:
+            hidden[key] = item
+        elif key in _PUBLIC_ACTUAL_RESULT_FIELDS or (result_context and key in {"value", "code", "number", "zodiac", "color", "wave", "element", "head", "tail"}):
+            hidden[key] = ""
+        elif key in {"is_correct", "isCorrect", "hit", "is_hit"}:
+            hidden[key] = None
+        elif key in {"is_opened", "draw_is_opened", "isOpened"}:
+            hidden[key] = False
+        elif key in {"result_text", "resultText", "hit_text"}:
+            hidden[key] = "待开奖"
+        elif key in {"special_ball", "specialBall"}:
+            hidden[key] = None
+        elif key == "result_balls":
+            hidden[key] = []
+        elif key == "result" and not isinstance(item, (dict, list)):
+            hidden[key] = "待开奖"
+        else:
+            hidden[key] = _hide_public_result_fields(item, result_context=result_context or key == "result")
+    return hidden
+
+
+def _public_row_identity(row: dict[str, Any], default_lottery_type_id: Any = None) -> tuple[int | None, int | None, int | None]:
+    raw = row.get("raw") if isinstance(row.get("raw"), dict) else {}
+    type_value = default_lottery_type_id
+    if type_value in (None, ""):
+        type_value = row.get("lottery_type_id", row.get("type", raw.get("lottery_type_id", raw.get("type"))))
+    lottery_type = parse_issue_int(type_value)
+    lottery_type = lottery_type if lottery_type in {1, 2, 3} else None
+    year = parse_issue_int(row.get("year", raw.get("year")))
+    term = parse_issue_int(row.get("term", raw.get("term")))
+    return lottery_type, year, term
+
+
+def apply_public_result_gate(conn: Any, payload: Any, *, default_lottery_type_id: int | None = None, respect_history_delay: bool = True) -> Any:
+    """Recheck cached historical outcome rows against authoritative draw state.
+
+    Only Taiwan/unknown types are paced. The top-level live ``draw`` is left to
+    the per-ball slicer; candidate columns never participate in this decision.
+    """
+    from public.draw_reveal import is_full_draw_released
+
+    grouped: dict[int, set[tuple[int, int]]] = {}
+
+    def collect(value: Any, *, top: bool = False) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, dict):
+            lottery_type, year, term = _public_row_identity(value, default_lottery_type_id)
+            if lottery_type == 3 and year is not None and term is not None:
+                grouped.setdefault(lottery_type, set()).add((year, term))
+            for key, item in value.items():
+                if not (top and key == "draw") and key not in _PUBLIC_PREDICTION_FIELDS:
+                    collect(item)
+
+    collect(payload, top=True)
+    maps = {lottery_type: load_lottery_draw_map(conn, lottery_type, issues) for lottery_type, issues in grouped.items()}
+    now = beijing_now()
+
+    def gate(value: Any, *, top: bool = False, inherited_identity: tuple[int | None, int | None, int | None] | None = None) -> Any:
+        if isinstance(value, list):
+            return [gate(item, inherited_identity=inherited_identity) for item in value]
+        if not isinstance(value, dict):
+            return value
+        raw = value.get("raw") if isinstance(value.get("raw"), dict) else {}
+        is_period_row = any(key in value or key in raw for key in ("year", "term", "issue", "current_issue", "result_text", "resultText", "hit_text", "is_correct", "isCorrect", "is_hit", "special_ball", "specialBall", "result_balls"))
+        nested_result = value.get("result")
+        is_period_row = is_period_row or (isinstance(nested_result, dict) and any(key in nested_result for key in {"value", "number", "zodiac", "special_ball", "specialBall", "result_balls"}))
+        is_period_row = is_period_row or any(
+            key in value or key in raw for key in _PUBLIC_ACTUAL_RESULT_FIELDS - {"numbers"}
+        ) or any(isinstance(row.get("numbers"), str) for row in (value, raw))
+        lottery_type, year, term = _public_row_identity(value, default_lottery_type_id)
+        has_own_issue = any(key in value or key in raw for key in ("year", "term", "issue", "current_issue"))
+        if not has_own_issue and inherited_identity is not None:
+            lottery_type, year, term = inherited_identity
+        identity = (lottery_type, year, term)
+        released = False
+        if is_period_row and lottery_type not in {1, 2}:
+            draw = maps.get(3, {}).get((year, term)) if lottery_type == 3 else None
+            if not draw or not is_full_draw_released(draw, lottery_type_id=3, now=now) or (respect_history_delay and not _history_result_visible_after_delay(conn, draw, now=now)):
+                result = _hide_public_result_fields(value)
+                result["result_restricted"] = True
+                return result
+            released = True
+        result = {key: item if (top and key == "draw") or key in _PUBLIC_PREDICTION_FIELDS else gate(item, inherited_identity=identity) for key, item in value.items()}
+        if released:
+            result["result_restricted"] = False
+        return result
+
+    return gate(payload, top=True)
 
 
 def apply_lottery_draw_overlay(
@@ -801,15 +922,13 @@ def apply_lottery_draw_overlay(
 
     grouped_issues: dict[int, set[tuple[int, int]]] = {}
     for row in rows:
-        lottery_type_id = default_lottery_type_id or parse_issue_int(row.get("type"))
-        year = parse_issue_int(row.get("year"))
-        term = parse_issue_int(row.get("term"))
+        lottery_type_id, year, term = _public_row_identity(row, default_lottery_type_id)
         if lottery_type_id is None or year is None or term is None:
             continue
         grouped_issues.setdefault(lottery_type_id, set()).add((year, term))
 
     if not grouped_issues:
-        return rows
+        return [dict(row) if _public_row_identity(row, default_lottery_type_id)[0] in {1, 2} else _hide_public_result_fields(row) for row in rows]
 
     zodiac_map, color_map = load_fixed_data_maps(conn)
     draw_maps = {
@@ -820,27 +939,24 @@ def apply_lottery_draw_overlay(
     normalized_rows: list[dict[str, Any]] = []
     for row in rows:
         normalized = dict(row)
-        lottery_type_id = default_lottery_type_id or parse_issue_int(row.get("type"))
-        year = parse_issue_int(row.get("year"))
-        term = parse_issue_int(row.get("term"))
+        lottery_type_id, year, term = _public_row_identity(row, default_lottery_type_id)
         if lottery_type_id is None or year is None or term is None:
-            normalized_rows.append(normalized)
+            normalized_rows.append(_hide_public_result_fields(normalized) if lottery_type_id not in {1, 2} else normalized)
             continue
 
         draw_row = draw_maps.get(lottery_type_id, {}).get((year, term))
         if not draw_row:
-            normalized_rows.append(normalized)
+            normalized_rows.append(_hide_public_result_fields(normalized) if lottery_type_id == 3 else normalized)
             continue
 
         is_opened = bool(draw_row.get("is_opened"))
         normalized["draw_is_opened"] = is_opened
         normalized["draw_issue"] = f"{draw_row.get('year') or ''}{draw_row.get('term') or ''}"
         normalized["draw_time"] = str(draw_row.get("draw_time") or "")
+        normalized["reveal_start"] = str(draw_row.get("opened_at") or draw_row.get("draw_time") or "")
 
         if not _history_result_visible_after_delay(conn, draw_row):
-            normalized["res_code"] = ""
-            normalized["res_sx"] = ""
-            normalized["res_color"] = ""
+            normalized = _hide_public_result_fields(normalized)
             normalized_rows.append(normalized)
             continue
 

@@ -116,6 +116,8 @@ def test_legacy_history_overlay_unlocks_at_exactly_configured_delay(monkeypatch)
     assert helpers._history_result_visible_after_delay(
         object(),
         {
+            "lottery_type_id": 3,
+            "numbers": "01,02,03,04,05,06,07",
             "is_opened": 1,
             "draw_time": "2026-08-19 22:32:00",
         },
@@ -133,6 +135,8 @@ def test_legacy_history_overlay_follows_system_config_delay(monkeypatch):
     assert not helpers._history_result_visible_after_delay(
         object(),
         {
+            "lottery_type_id": 3,
+            "numbers": "01,02,03,04,05,06,07",
             "is_opened": 1,
             "draw_time": "2026-08-19 22:32:00",
         },
@@ -140,6 +144,8 @@ def test_legacy_history_overlay_follows_system_config_delay(monkeypatch):
     assert helpers._history_result_visible_after_delay(
         object(),
         {
+            "lottery_type_id": 3,
+            "numbers": "01,02,03,04,05,06,07",
             "is_opened": 1,
             "draw_time": "2026-08-19 21:00:00",
         },

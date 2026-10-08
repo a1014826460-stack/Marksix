@@ -764,6 +764,10 @@ def _handle_standard_kaijiang(endpoint: str, query: dict, conn: Any) -> dict:
     )
 
     # 消毒
+    # Gate before endpoint projection discards the authoritative year/type.
+    from helpers import apply_lottery_draw_overlay
+
+    rows = apply_lottery_draw_overlay(conn, rows, default_lottery_type_id=type_val)
     rows = [_sanitize_row(row) for row in rows]
 
     # 格式化

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { backendFetchJson } from "@/lib/backend-api"
 import type { DrawHistoryResponse } from "@/lib/draw-history"
+import { guardTaiwanHistoryResponse } from "@/lib/draw-history-gate"
 import { matchSiteRequest } from "@/lib/sites"
 
 const DEFAULT_LOTTERY_TYPE = 1
@@ -42,11 +43,12 @@ export async function GET(request: Request) {
       },
     })
 
+    const safeHistory = guardTaiwanHistoryResponse(history, { nowMs: Date.now(), lotteryType })
     const payload = {
       year: history.year || requestedYear,
-      data: (history.items || []).map((item) => ({
+      data: (safeHistory.items || []).map((item) => ({
         issue: String(item.issue || ""),
-        openTime: toLegacyOpenTime(item.date || ""),
+        openTime: item.draw_time || toLegacyOpenTime(item.date || ""),
         openCode: toLegacyOpenCode(item),
       })),
     }

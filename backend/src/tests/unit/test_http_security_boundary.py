@@ -76,7 +76,10 @@ def test_public_site_page_passes_a_bounded_shared_history_range_to_the_service()
     ctx = RequestContext(handler, "GET")
     expected_payload = {"site": {}, "draw": {}, "modules": []}
 
-    with patch("routes.public_routes.get_public_site_page_data", return_value=expected_payload) as get_site_page:
+    # Keep the real response reveal gate, but isolate its fresh primary lookup
+    # from this contract's shared-history argument mapping.
+    with patch("routes.public_routes.get_public_site_page_data", return_value=expected_payload) as get_site_page, \
+         patch("routes.public_routes.get_public_latest_draw", return_value={}):
         public_routes.site_page(ctx)
 
     assert get_site_page.call_args.kwargs["history_web_start"] == 1

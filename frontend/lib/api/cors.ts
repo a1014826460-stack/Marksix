@@ -8,7 +8,9 @@ export function withCors(response: NextResponse): NextResponse {
 }
 
 export function jsonWithCors(data: unknown, init?: ResponseInit) {
-  return withCors(NextResponse.json(data, init))
+  const response = withCors(NextResponse.json(data, init))
+  response.headers.set("Cache-Control", "no-store")
+  return response
 }
 
 export function buildOptionsResponse() {

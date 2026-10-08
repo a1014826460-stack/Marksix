@@ -694,6 +694,13 @@ def save_draw(
         "is_opened": 1 if parse_bool(payload.get("is_opened"), False) else 0,
         "next_term": int(payload.get("next_term") or (int(payload.get("term") or 1) + 1)),
     }
+    if draw_id is not None and "numbers" not in payload:
+        # API hides unreleased numbers; saving other fields must preserve their stored value.
+        with connect(db_path) as conn:
+            previous_numbers = conn.execute("SELECT numbers FROM lottery_draws WHERE id = ?", (draw_id,)).fetchone()
+            if previous_numbers is None:
+                raise KeyError(f"draw_id={draw_id} 不存在")
+            fields["numbers"] = str(previous_numbers["numbers"] or "").strip()
     if fields["lottery_type_id"] != 3:
         raise ValueError("当前仅允许管理台台湾彩在线记录")
 

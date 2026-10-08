@@ -3,6 +3,7 @@ import { backendFetchJson } from "@/lib/backend-api"
 import { normalizeSiteDraw, type SiteDrawDeadlineSource, type SiteDrawSource } from "@/lib/site-platform/site-draw"
 import { siteDataCacheHeaders } from "@/lib/site-platform/site-data-cache"
 import { resolveSiteApiContext } from "@/lib/site-registry"
+import { guardTaiwanLiveDraw } from "@/lib/taiwan-draw-gate"
 
 export const runtime = "nodejs"
 type RouteContext = { params: Promise<{ siteKey: string }> }
@@ -15,8 +16,9 @@ export async function GET(request: Request, context: RouteContext) {
       backendFetchJson<SiteDrawSource>("/public/latest-draw", { query: { lottery_type: apiContext.lotteryType } }),
       backendFetchJson<SiteDrawDeadlineSource>("/public/next-draw-deadline", { query: { lottery_type: apiContext.lotteryType } }),
     ])
+    const safeDraw = guardTaiwanLiveDraw(latest, deadline, { lotteryType: apiContext.lotteryType, nowMs: Date.now() })
     return jsonWithCors(
-      { ok: true, site: { site_key: apiContext.siteKey, lottery_type: apiContext.lotteryType }, data: normalizeSiteDraw(latest, deadline) },
+      { ok: true, site: { site_key: apiContext.siteKey, lottery_type: apiContext.lotteryType }, data: normalizeSiteDraw(safeDraw, deadline) },
       { headers: siteDataCacheHeaders("draw") }
     )
   } catch (error) {

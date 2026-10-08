@@ -77,7 +77,7 @@ def _parse_reveal_datetime(value: Any) -> datetime | None:
 
 
 def reveal_anchor(payload: Mapping[str, Any], *, paced: bool = True) -> datetime | None:
-    """台湾锚点不得早于当期排期；非空坏 preferred 关闭揭示，空值才回退。"""
+    """台湾必须有有效排期；非空坏 preferred 关闭揭示，空值才回退排期。"""
     if not paced:
         for key in ("reveal_start", "draw_time"):
             anchor = parse_draw_datetime(str(payload.get(key) or "").strip())
@@ -87,12 +87,14 @@ def reveal_anchor(payload: Mapping[str, Any], *, paced: bool = True) -> datetime
 
     preferred_text = str(payload.get("reveal_start") or "").strip()
     planned = _parse_reveal_datetime(payload.get("draw_time"))
+    if planned is None:
+        return None
     if not preferred_text:
         return planned
     preferred = _parse_reveal_datetime(preferred_text)
     if preferred is None:
         return None
-    return max(preferred, planned) if planned is not None else preferred
+    return max(preferred, planned)
 
 
 def public_balls(payload: Mapping[str, Any], *, paced: bool = True) -> list[dict[str, Any]]:
@@ -143,8 +145,49 @@ def reveal_count(
     elapsed_seconds = (current - anchor).total_seconds()
     if elapsed_seconds < 0:
         return 0
-    time_count = int(elapsed_seconds // max(1, int(interval_seconds))) + 1
+    # The public Taiwan clock is fixed; compatibility arguments cannot accelerate it.
+    time_count = int(elapsed_seconds // REVEAL_INTERVAL_SECONDS) + 1
     return max(0, min(capped_available, time_count))
+
+
+def is_full_draw_released(
+    draw_row: Mapping[str, Any],
+    *,
+    lottery_type_id: Any = None,
+    now: datetime | None = None,
+) -> bool:
+    """Whether an authoritative row may expose its complete result publicly.
+
+    Taiwan history and derived results must wait for the same seventh slot as
+    the live response, even when the configurable history delay is zero.
+    """
+    if str(draw_row.get("is_opened") or "").strip() not in {"1", "True"}:
+        return False
+    effective_type = lottery_type_id if lottery_type_id not in (None, "") else draw_row.get("lottery_type_id")
+    if not is_paced_lottery_type(effective_type):
+        return True
+
+    planned = _parse_reveal_datetime(draw_row.get("draw_time"))
+    if planned is None:
+        return False
+    anchor_payload = {
+        "draw_time": draw_row.get("draw_time"),
+        "reveal_start": draw_row.get("opened_at") if "opened_at" in draw_row else draw_row.get("reveal_start"),
+    }
+    anchor = reveal_anchor(anchor_payload)
+    if anchor is None:
+        return False
+
+    if "numbers" in draw_row:
+        codes = str(draw_row.get("numbers") or "").split(",")
+        if len(codes) != DRAW_BALL_COUNT or any(
+            not code.strip().isdigit() or not 1 <= int(code.strip()) <= 49 for code in codes
+        ):
+            return False
+        available = DRAW_BALL_COUNT
+    else:
+        available = len(public_balls(draw_row))
+    return reveal_count(anchor=anchor, available=available, now=now) == DRAW_BALL_COUNT
 
 
 def _beijing_text(value: datetime) -> str:
@@ -172,6 +215,8 @@ def apply_reveal_slice(
         return result
 
     paced = is_paced_lottery_type(lottery_type_id)
+    if paced:
+        interval_seconds = REVEAL_INTERVAL_SECONDS
     anchor = reveal_anchor(result, paced=paced)
     available = public_balls(result, paced=paced)
     if anchor is None and (
@@ -182,7 +227,9 @@ def apply_reveal_slice(
     current = now or beijing_now()
     if current.tzinfo is None:
         current = current.replace(tzinfo=BEIJING_TZ)
-    if anchor is None:
+    issue = str(result.get("current_issue") or "").strip()
+    valid_issue = bool(re.fullmatch(r"[0-9]{5,7}", issue)) and int(issue[4:] or 0) > 0
+    if anchor is None or (paced and not valid_issue):
         count = 0
     elif paced:
         count = reveal_count(
@@ -204,12 +251,13 @@ def apply_reveal_slice(
     result["reveal_interval_seconds"] = int(interval_seconds)
     result["is_complete"] = is_complete
     result["server_now"] = int(current.timestamp())
+    result["server_now_ms"] = int(current.timestamp() * 1000)
     if paced and anchor is not None:
         # 所有读取方使用响应的实际锚点；完整缓存里的 raw opened_at 不受影响。
         result["reveal_start"] = _beijing_text(anchor)
     result["next_reveal_at"] = (
         ""
-        if anchor is None or is_complete or not paced
+        if anchor is None or (paced and not valid_issue) or is_complete or not paced
         else _beijing_text(anchor + timedelta(seconds=int(interval_seconds) * count))
     )
     return result

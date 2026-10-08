@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { NextResponse } from "next/server"
 import { getBackendApiBaseUrl } from "@/lib/backend-api"
+import { guardTaiwanHistoryResponse } from "@/lib/draw-history-gate"
 import {
   LOTTERY_TYPE_NAMES,
   type DrawHistoryBall,
@@ -77,7 +78,8 @@ function normalizePageSize(value: string | null) {
 
 function historyUnlockAt(dateText: string, lotteryType: 1 | 2 | 3) {
   const drawTime = lotteryType === 3 ? "22:32:00" : "21:30:00"
-  const parsed = new Date(`${dateText}T${drawTime}+08:00`)
+  const normalized = dateText.replace(/^(\d{4})年(\d{2})月(\d{2})日$/, "$1-$2-$3")
+  const parsed = new Date(`${normalized}T${drawTime}+08:00`)
   return Number.isNaN(parsed.getTime())
     ? Number.POSITIVE_INFINITY
     : parsed.getTime() + HISTORY_UNLOCK_DELAY_MINUTES * 60 * 1000
@@ -152,10 +154,15 @@ function parseSnapshot(html: string, lotteryType: 1 | 2 | 3, year: number, sort:
       title: `${LOTTERY_TYPE_NAMES[lotteryType]}开奖记录 ${dateMatch?.[1] || ""} 第${issue}期`,
       balls,
       specialBall,
+      draw_time: `${(dateMatch?.[1] || "").replace(/^(\d{4})年(\d{2})月(\d{2})日$/, "$1-$2-$3")} ${lotteryType === 3 ? "22:32:00" : "21:30:00"}`,
     })
   }
 
-  const visibleItems = items.filter((item) => Date.now() >= historyUnlockAt(item.date, lotteryType))
+  const nowMs = Date.now()
+  const today = new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  // Snapshots cannot prove today's actual opening time. Only past dates may fall back.
+  const visibleItems = items.filter((item) => nowMs >= historyUnlockAt(item.date, lotteryType) &&
+    (lotteryType !== 3 || String(item.draw_time).slice(0, 10) < today))
 
   return {
     lottery_type: lotteryType,
@@ -168,6 +175,8 @@ function parseSnapshot(html: string, lotteryType: 1 | 2 | 3, year: number, sort:
     total: visibleItems.length,
     total_pages: 1,
     items: visibleItems,
+    server_now: Math.floor(nowMs / 1000),
+    server_now_ms: nowMs,
   }
 }
 
@@ -222,7 +231,8 @@ export async function GET(request: Request) {
 
     const response = await fetch(backendUrl, { cache: "no-store" })
     if (response.ok) {
-      return NextResponse.json(withPaginationMetadata((await response.json()) as DrawHistoryResponse, page, pageSize), {
+      const payload = withPaginationMetadata((await response.json()) as DrawHistoryResponse, page, pageSize)
+      return NextResponse.json(guardTaiwanHistoryResponse(payload, { nowMs: Date.now(), lotteryType, delayMinutes: HISTORY_UNLOCK_DELAY_MINUTES }), {
         headers: { "Cache-Control": "no-store" },
       })
     }
@@ -230,7 +240,8 @@ export async function GET(request: Request) {
     // 后端接口尚未接入时使用原站快照兜底，方便前端先完整还原页面。
   }
 
-  return NextResponse.json(await getFallbackHistory(lotteryType, year, sort, page, pageSize), {
+  const fallback = await getFallbackHistory(lotteryType, year, sort, page, pageSize)
+  return NextResponse.json(guardTaiwanHistoryResponse(fallback, { nowMs: Date.now(), lotteryType, delayMinutes: HISTORY_UNLOCK_DELAY_MINUTES }), {
     headers: { "Cache-Control": "no-store" },
   })
 }

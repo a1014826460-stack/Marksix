@@ -69,8 +69,10 @@ for (const preferred of ["invalid", "2026-02-30 22:32:00", "2026-13-01 22:32:00"
 }
 for (const preferred of [null, "", "  "]) add(`empty preferred uses draw_time: ${JSON.stringify(preferred)}`, T + 25, 2, { start: preferred })
 add("missing both anchors is closed", T + 400, 0, { start: "", planned: "" })
-add("valid canonical T separator", T + 25, 2, { start: beijing(T).replace(" ", "T"), planned: "" })
-add("valid start can survive invalid planned time", T + 50, 3, { planned: "invalid" })
+add("valid canonical T separator", T + 25, 2, { start: beijing(T).replace(" ", "T"), planned: beijing(T).replace(" ", "T") })
+for (const planned of ["invalid", "", null, "2026-02-30 22:32:00"]) {
+  add(`valid start cannot authorize a bad planned time: ${planned}`, T + 400, 0, { planned })
+}
 add("server interval metadata cannot speed Taiwan", T + 24, 1)
 cases.at(-1).payload.reveal_interval_seconds = 1
 for (const lotteryType of [1, 2]) {
@@ -82,12 +84,12 @@ const lastYearAnchor = Date.parse("2026-12-31T23:59:00+08:00") / 1000
 for (const [elapsed, expected] of [[125, 6], [150, 7]]) {
   add(`last-year issue crosses midnight at ${elapsed}s`, lastYearAnchor + elapsed, expected,
     { issue: "2026365", start: beijing(lastYearAnchor), planned: beijing(lastYearAnchor) })
-  cases.at(-1).deadline = { current_issue: "2026365", next_issue: "2027001", next_time: lastYearAnchor + 86400 }
+  cases.at(-1).deadline = { current_issue: "2026365", current_draw_time: lastYearAnchor, next_issue: "2027001", next_time: lastYearAnchor + 86400 }
 }
 const newYearAnchor = Date.parse("2027-01-01T22:32:00+08:00") / 1000
 add("new-year issue retains the same absolute 25-second rule", newYearAnchor + 25, 2,
   { issue: "2027001", start: beijing(newYearAnchor), planned: beijing(newYearAnchor) })
-cases.at(-1).deadline = { current_issue: "2027001", next_issue: "2027002", next_time: newYearAnchor + 86400 }
+cases.at(-1).deadline = { current_issue: "2027001", current_draw_time: newYearAnchor, next_issue: "2027002", next_time: newYearAnchor + 86400 }
 
 const childEnv = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", PYTHONDONTWRITEBYTECODE: "1" }
 for (const key of ["DATABASE_URL", "TEST_DATABASE_URL", "DATABASE_WRITE_URL", "DATABASE_READ_URL"]) delete childEnv[key]
@@ -113,7 +115,7 @@ function shown(p) { return Array.from(p.values()).filter((value) => value !== "-
 for (const [index, sample] of cases.entries()) {
   const output = backendResults[index]
   assert.equal(output.revealed_count, sample.expected, `backend: ${sample.name}`)
-  const deadline = sample.deadline || { current_issue: sample.payload.current_issue, next_issue: "2026281", next_time: T + 86400 }
+  const deadline = sample.deadline || { current_issue: sample.payload.current_issue, current_draw_time: T, next_issue: "2026281", next_time: T + 86400 }
   const apiPanel = panel({ initial: output, now: sample.now, lotteryType: String(sample.lottery_type), deadline })
   await settle()
   assert.deepEqual(shown(apiPanel), values.slice(0, sample.expected), `actual backend response → HTML: ${sample.name}; ${JSON.stringify(apiPanel.sandbox.LotteryDrawDiagnostics.snapshot().records)}`)

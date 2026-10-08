@@ -8,7 +8,7 @@ type RouteContext = {
 }
 
 function jsonError(status: number, error: string) {
-  return NextResponse.json({ ok: false, error }, { status })
+  return NextResponse.json({ ok: false, error }, { status, headers: { "Cache-Control": "no-store" } })
 }
 
 async function proxy(request: NextRequest, context: RouteContext) {
@@ -43,6 +43,7 @@ async function proxy(request: NextRequest, context: RouteContext) {
     const responseBody = await response.text()
     const responseHeaders = new Headers({
       "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
     })
     const setCookie = response.headers.get("set-cookie")
     if (setCookie) responseHeaders.set("set-cookie", setCookie)

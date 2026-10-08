@@ -7,6 +7,7 @@
  */
 import { NextResponse } from "next/server"
 import { getBackendApiBaseUrl } from "@/lib/backend-api"
+import { guardTaiwanLiveDraw } from "@/lib/taiwan-draw-gate"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -14,21 +15,25 @@ export async function GET(request: Request) {
 
   try {
     const backendUrl = `${getBackendApiBaseUrl()}/public/latest-draw?lottery_type=${lotteryType}`
-    const response = await fetch(backendUrl, { cache: "no-store" })
+    const [response, deadlineResponse] = await Promise.all([
+      fetch(backendUrl, { cache: "no-store" }),
+      Number(lotteryType) === 3 ? fetch(`${getBackendApiBaseUrl()}/public/next-draw-deadline?lottery_type=3`, { cache: "no-store" }) : Promise.resolve(null),
+    ])
 
     if (!response.ok) {
       return NextResponse.json(
         { error: "后端请求失败", detail: await response.text() },
-        { status: response.status },
+        { status: response.status, headers: { "Cache-Control": "no-store" } },
       )
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    const deadline = deadlineResponse?.ok ? await deadlineResponse.json() : {}
+    return NextResponse.json(guardTaiwanLiveDraw(data, deadline, { lotteryType: Number(lotteryType), nowMs: Date.now() }), { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     return NextResponse.json(
       { error: "获取开奖数据失败", detail: String(error) },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     )
   }
 }

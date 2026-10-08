@@ -129,7 +129,7 @@ def test_standard_kaijiang_returns_string_fields_and_empty_result_fields(tmp_pat
         {
             "nan": "鼠,牛,虎,兔",
             "nv": "鼠,牛,虎,兔",
-            "res_code": "01,02,03,04,05,06,07",
+            "res_code": "",
             "res_sx": "",
             "term": "99",
         }
@@ -150,7 +150,7 @@ def test_standard_kaijiang_supports_get_xysxma_contract(tmp_path: Path):
         {
             "code": "46,34,47,23,27,03,02,38",
             "res_code": "",
-            "res_sx": "鼠,牛,虎,兔",
+            "res_sx": "",
             "term": "88",
             "xiao": "羊",
         }

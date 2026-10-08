@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server"
 import { backendFetchJson } from "@/lib/backend-api"
 import { matchSiteRequest } from "@/lib/sites"
+import { guardTaiwanLiveDraw } from "@/lib/taiwan-draw-gate"
 
 type LatestDrawResponse = {
   current_issue: string
   draw_time?: string
+  reveal_start?: string
+  server_now?: number
+  server_now_ms?: number
   result_balls: Array<{
     value: string
     color: "red" | "blue" | "green" | string
@@ -24,6 +28,9 @@ type NextDrawDeadlineResponse = {
   next_issue: string
   next_time: string | number | null
   server_time?: string | number | null
+  server_now?: number
+  server_now_ms?: number
+  current_draw_time?: number
 }
 
 const DEFAULT_LOTTERY_TYPE = 1
@@ -132,10 +139,11 @@ export async function GET(request: Request) {
       loadNextDeadline(lotteryType),
     ])
 
-    const issue = normalizeIssue(latestDraw.current_issue)
+    const safeDraw = guardTaiwanLiveDraw(latestDraw, nextDeadline, { lotteryType, nowMs: Date.now() })
+    const issue = normalizeIssue(safeDraw.current_issue)
     const resultBalls = [
-      ...latestDraw.result_balls,
-      ...(latestDraw.special_ball ? [latestDraw.special_ball] : []),
+      ...safeDraw.result_balls,
+      ...(safeDraw.special_ball ? [safeDraw.special_ball] : []),
     ]
 
     const zodiac = resultBalls.map((ball) => normalizeZodiac(ball.zodiac)).join(",")
@@ -172,7 +180,7 @@ export async function GET(request: Request) {
         error: "Failed to build wy.json",
         detail: error instanceof Error ? error.message : String(error),
       },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     )
   }
 }

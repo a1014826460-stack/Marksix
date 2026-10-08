@@ -46,7 +46,7 @@ type DashboardData = {
       timeseries: Array<{ date: string; site_key: string; pv: number; uv: number; api_compat_hits: number }>
     }
   }
-  today_draws: Array<{ lottery_type_id: number; lottery_name: string; year: number; term: number; draw_time: string; is_opened: boolean; numbers: string }>
+  today_draws: Array<{ lottery_type_id: number; lottery_name: string; year: number; term: number; draw_time: string; is_opened: boolean; numbers: string; numbers_restricted?: boolean }>
   sites: Array<{
     site_id: number
     web_id: number
@@ -495,7 +495,7 @@ export function DashboardPage() {
                     </div>
                     <div className="mt-2 text-sm">{row.year} 年第 {row.term} 期</div>
                     <div className="mt-1 text-xs text-muted-foreground">{row.draw_time}</div>
-                    {row.is_opened ? <div className="mt-2 text-sm tabular-nums">{row.numbers}</div> : null}
+                    {row.numbers_restricted ? <div className="mt-2 text-xs text-muted-foreground">等待开奖结果完整公开</div> : row.is_opened ? <div className="mt-2 text-sm tabular-nums">{row.numbers}</div> : null}
                   </div>
                 )) : <div className="text-sm text-muted-foreground">今日暂无开奖记录。</div>}
               </CardContent>

@@ -96,12 +96,31 @@ def test_source_availability_caps_but_never_accelerates_the_reveal():
 
 
 def test_reveal_anchor_prefers_reveal_start_then_draw_time():
-    assert reveal_anchor({"reveal_start": "2026-10-04 22:32:02"}) == ANCHOR
+    assert reveal_anchor({"draw_time": "2026-10-04 22:32:00", "reveal_start": "2026-10-04 22:32:02"}) == ANCHOR
     assert reveal_anchor({"draw_time": "2026-10-04 22:32:00", "reveal_start": ""}) == datetime(
         2026, 10, 4, 22, 32, 0, tzinfo=BEIJING_TZ
     )
     assert reveal_anchor({"draw_time": "2026-08-07"}) is None
     assert reveal_anchor({}) is None
+
+
+@pytest.mark.parametrize("planned", [None, "", "  ", "invalid", "2026-02-30 22:32:00", "2026-13-04 22:32:00", "2026-10-04 24:00:00", "2026-2-3 2:3:4"])
+def test_taiwan_valid_preferred_cannot_open_without_a_valid_planned_draw(planned):
+    payload = {**_payload(), "draw_time": planned}
+    sliced = apply_reveal_slice(payload, lottery_type_id=TAIWAN, now=_at(600))
+    assert sliced["revealed_count"] == 0
+    assert sliced["result_balls"] == []
+    assert sliced["special_ball"] is None
+    assert sliced["is_complete"] is False
+    assert sliced["next_reveal_at"] == ""
+    assert reveal_anchor(payload) is None
+
+
+def test_taiwan_missing_planned_draw_does_not_open_from_preferred_alone():
+    payload = _payload()
+    payload.pop("draw_time")
+    assert reveal_anchor(payload) is None
+    assert apply_reveal_slice(payload, lottery_type_id=TAIWAN, now=_at(600))["revealed_count"] == 0
 
 
 @pytest.mark.parametrize("elapsed,expected", [(-1, 0), (0, 1), (24, 1), (25, 2), (149, 6), (150, 7)])
@@ -389,11 +408,11 @@ def test_route_slices_snapshot_payload_at_response_boundary():
     complete = _payload()
     ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), _Snapshots(latest=complete))
 
-    with patch("routes.public_routes.get_public_latest_draw") as latest_draw, \
+    with patch("routes.public_routes.get_public_latest_draw", return_value=complete) as latest_draw, \
          patch("public.draw_reveal.beijing_now", return_value=_at(25)):
         public_routes.latest_draw(ctx)
 
-    latest_draw.assert_not_called()
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
     body = response_json(ctx)
     assert body["revealed_count"] == 2
     assert [ball["value"] for ball in body["result_balls"]] == ["01", "02"]
@@ -408,7 +427,8 @@ def test_site_page_route_slices_the_draw_section_at_the_boundary():
     ctx = make_ctx("/api/public/site-page?site_id=10&lottery_type=3")
     payload = {"site": {"id": 10}, "draw": _payload(), "modules": []}
 
-    with patch("public.draw_reveal.beijing_now", return_value=_at(25)):
+    with patch("public.draw_reveal.beijing_now", return_value=_at(25)), \
+         patch("routes.public_routes.get_public_latest_draw", return_value=payload["draw"]):
         public_routes._send_site_page(ctx, payload, TAIWAN)
 
     body = response_json(ctx)
@@ -444,7 +464,8 @@ def test_site_page_inferred_taiwan_or_unknown_type_without_anchor_blocks_numbers
     draw = {**_payload(reveal_start=""), "draw_time": "invalid"}
     payload = {"site": {"id": 10, "lottery_type_id": lottery_type_id}, "draw": draw, "modules": []}
 
-    public_routes._send_site_page(ctx, payload)
+    with patch("routes.public_routes.get_public_latest_draw", return_value=draw):
+        public_routes._send_site_page(ctx, payload)
 
     body = response_json(ctx)
     assert body["draw"]["result_balls"] == []
@@ -457,7 +478,8 @@ def test_site_page_explicit_taiwan_type_takes_precedence_over_site_metadata():
     ctx = make_ctx("/api/public/site-page?site_id=10&lottery_type=3")
     payload = {"site": {"id": 10, "lottery_type_id": HONGKONG}, "draw": _payload(), "modules": []}
 
-    with patch("public.draw_reveal.beijing_now", return_value=_at(0)):
+    with patch("public.draw_reveal.beijing_now", return_value=_at(0)), \
+         patch("routes.public_routes.get_public_latest_draw", return_value=payload["draw"]):
         public_routes._send_site_page(ctx, payload, TAIWAN)
 
     assert response_json(ctx)["draw"]["revealed_count"] == 1
@@ -503,7 +525,8 @@ def reveal_logs(monkeypatch, caplog):
 def _serve_draw(payload, *, source="cache"):
     if source == "site-page":
         ctx = make_ctx("/api/public/site-page?site_id=10&lottery_type=3")
-        public_routes._send_site_page(ctx, {"site": {"id": 10}, "draw": payload, "modules": []}, TAIWAN)
+        with patch("routes.public_routes.get_public_latest_draw", return_value=payload):
+            public_routes._send_site_page(ctx, {"site": {"id": 10}, "draw": payload, "modules": []}, TAIWAN)
         return response_json(ctx)["draw"]
     snapshots = _Snapshots(latest=payload if source == "cache" else None)
     ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), snapshots)
@@ -511,7 +534,8 @@ def _serve_draw(payload, *, source="cache"):
         with patch("routes.public_routes.get_public_latest_draw", return_value=payload):
             public_routes.latest_draw(ctx)
     else:
-        public_routes.latest_draw(ctx)
+        with patch("routes.public_routes.get_public_latest_draw", return_value=payload):
+            public_routes.latest_draw(ctx)
     return response_json(ctx)
 
 

@@ -17,6 +17,8 @@ export type DrawHistoryItem = {
   title: string
   balls: DrawHistoryBall[]
   specialBall?: DrawHistoryBall
+  draw_time?: string
+  reveal_start?: string
 }
 
 export type DrawHistoryResponse = {
@@ -30,6 +32,8 @@ export type DrawHistoryResponse = {
   total: number
   total_pages: number
   items: DrawHistoryItem[]
+  server_now?: number
+  server_now_ms?: number
 }
 
 export const LOTTERY_TYPE_NAMES: Record<1 | 2 | 3, string> = {

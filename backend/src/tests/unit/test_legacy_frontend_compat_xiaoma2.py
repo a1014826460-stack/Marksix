@@ -108,8 +108,9 @@ def test_get_xiaoma2_num6_keeps_expected_field_contract(tmp_path):
     for field in ("content", "res_code", "res_sx", "term"):
         assert field in row, f"渲染器需要的字段缺失：{field}"
     assert row["term"] == "190"
-    assert row["res_sx"] == "猪,鼠,蛇,猴,猴,牛,狗"
-    assert row["res_code"] == "20,19,38,35,23,42,45"
+    # This fixture has no authoritative draw: candidates stay public, results close.
+    assert row["res_sx"] == ""
+    assert row["res_code"] == ""
     assert isinstance(row["content"], str)
 
 

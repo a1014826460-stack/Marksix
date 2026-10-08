@@ -11,6 +11,8 @@ export type SiteDrawSource = {
   reveal_interval_seconds?: number | null
   is_complete?: boolean | null
   next_reveal_at?: string | null
+  server_now?: number | null
+  server_now_ms?: number | null
 }
 
 export type SiteDrawBallSource = {
@@ -21,6 +23,10 @@ export type SiteDrawBallSource = {
 }
 
 export type SiteDrawDeadlineSource = {
+  current_issue?: string | number | null
+  current_draw_time?: number | null
+  server_now?: number | null
+  server_now_ms?: number | null
   next_issue?: string | number | null
   next_time?: string | number | null
 }

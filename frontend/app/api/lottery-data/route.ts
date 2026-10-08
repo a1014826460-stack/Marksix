@@ -32,14 +32,14 @@ export async function GET(request: Request) {
       historyLimit: Number.isInteger(historyLimit) && historyLimit > 0 ? historyLimit : 8,
       domain,
     })
-    return NextResponse.json(payload)
+    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     return NextResponse.json(
       {
         error: "Failed to load site data from backend",
         detail: error instanceof Error ? error.message : String(error),
       },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     )
   }
 }

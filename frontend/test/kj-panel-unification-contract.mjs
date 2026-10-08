@@ -187,7 +187,7 @@ const revealModule = fs.readFileSync("backend/src/public/draw_reveal.py", "utf8"
 const revealTimeline = [
   ["REVEAL_INTERVAL_SECONDS = 25", "后端分片间隔必须是 25 秒"],
   ['for key in ("reveal_start", "draw_time"):', "后端锚点必须 reveal_start 优先、退回 draw_time"],
-  ["int(elapsed_seconds // max(1, int(interval_seconds))) + 1", "后端揭示数必须是 floor(已过秒/25)+1"],
+  ["int(elapsed_seconds // REVEAL_INTERVAL_SECONDS) + 1", "后端揭示数必须是 floor(已过秒/25)+1，不能被参数缩短"],
   ["result[\"special_ball\"] = revealed[DRAW_BALL_COUNT - 1] if is_complete else None", "后端只在第 7 个号码开放时才下发特码"],
 ]
 for (const [token, why] of revealTimeline) {

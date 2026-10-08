@@ -45,32 +45,12 @@ def _register_frontend_compat_routes(
     )
 
     def _kaijiang_handler(ctx: RequestContext) -> None:
-        from cache.prediction_snapshots import KIND_LEGACY, read_through
-
-        target = _legacy_kaijiang_snapshot_target(ctx)
-        if target is None:
-            with connect(ctx.db_path) as conn:
-                result = handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
-            ctx.send_json(result)
-            return
-
-        site_ref, lottery_type_id, selector = target
-
-        def build() -> dict:
-            with connect(ctx.db_path) as conn:
-                return handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
-
-        ctx.send_json(
-            read_through(
-                ctx.state.get("prediction_snapshots"),
-                kind=KIND_LEGACY,
-                site_ref=site_ref,
-                lottery_type_id=lottery_type_id,
-                selector=selector,
-                builder=build,
-                db_path=ctx.db_path,
-            )
-        )
+        # Endpoint projections can drop year/type, making old snapshots unsafe
+        # to revalidate. Read the primary rows and gate before projection.
+        _set_no_store(ctx)
+        with connect(getattr(ctx, "write_db_path", ctx.db_path)) as conn:
+            result = handle_frontend_kaijiang_api(ctx.path, ctx.query, conn)
+        ctx.send_json(result)
 
     def _post_handler(ctx: RequestContext) -> None:
         with connect(ctx.db_path) as conn:
@@ -182,14 +162,14 @@ def module_rows(ctx: RequestContext) -> None:
     # 这是旧站页面实际调用的热路径：前端 /api/kaijiang/<endpoint> 会转成
     # /api/legacy/module-rows?modes_id=&limit=&web=&type=，一页几十次跨节点请求。
     if web_id is None or type_value is None or web_id <= 0 or type_value <= 0:
-        ctx.send_json(
+        _send_public_rows(ctx,
             load_legacy_mode_rows(
                 ctx.db_path,
                 modes_id=modes_id,
                 limit=limit,
                 web=web_id,
                 type_value=type_value,
-            )
+            ), type_value
         )
         return
 
@@ -203,7 +183,7 @@ def module_rows(ctx: RequestContext) -> None:
         )
 
     selector = f"rows-{modes_id}-{limit}-{_stable_digest({'web': web_id, 'type': type_value})}"
-    ctx.send_json(
+    _send_public_rows(ctx,
         read_through(
             ctx.state.get("prediction_snapshots"),
             kind=KIND_LEGACY_ROWS,
@@ -212,8 +192,23 @@ def module_rows(ctx: RequestContext) -> None:
             selector=selector,
             builder=build,
             db_path=ctx.db_path,
-        )
+        ), type_value
     )
+
+
+def _set_no_store(ctx: RequestContext) -> None:
+    response = getattr(ctx, "response", None)
+    if response is not None:
+        response.set_header("Cache-Control", "no-store, max-age=0")
+
+
+def _send_public_rows(ctx: RequestContext, payload: dict, lottery_type_id: int | None = None) -> None:
+    from helpers import apply_public_result_gate
+
+    _set_no_store(ctx)
+    with connect(getattr(ctx, "write_db_path", ctx.db_path)) as conn:
+        payload = apply_public_result_gate(conn, payload, default_lottery_type_id=lottery_type_id)
+    ctx.send_json(payload)
 
 
 def _stable_digest(values: dict) -> str:

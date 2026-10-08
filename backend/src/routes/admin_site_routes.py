@@ -145,7 +145,20 @@ def site_detail(ctx: RequestContext) -> None:
             require_site_generation_access(ctx, site_id)
             body = ctx.read_json()
             validate_web_matches_site(current_site, extract_site_web_value(ctx.query, body))
-            ctx.send_json(run_site_prediction_module(ctx.db_path, site_id, body))
+            from db import connect
+            from domains.prediction.api_response import build_prediction_api_response, gate_prediction_api_response
+
+            result = run_site_prediction_module(ctx.db_path, site_id, body)
+            request_payload = {**body, "lottery_type": current_site.lottery_type_id}
+            wrapped = build_prediction_api_response(
+                mechanism_key=str(body.get("mechanism_key") or ""),
+                request_payload=request_payload,
+                raw_result=result,
+            )
+            with connect(ctx.write_db_path) as conn:
+                result = gate_prediction_api_response(conn, wrapped, request_payload=request_payload)["legacy"]
+            ctx.response.set_header("Cache-Control", "no-store, max-age=0")
+            ctx.send_json(result)
             return
         if ctx.method in {"PUT", "PATCH"}:
             require_site_generation_access(ctx, site_id)

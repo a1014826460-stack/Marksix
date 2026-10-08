@@ -11,7 +11,11 @@ from tests.helpers.api_contract import make_ctx, response_json
 
 def _assert_blocked_latest_draw(ctx, payload):
     body = response_json(ctx)
-    assert isinstance(body.pop("server_now"), int)
+    server_now = body.pop("server_now")
+    server_now_ms = body.pop("server_now_ms")
+    assert isinstance(server_now, int)
+    assert isinstance(server_now_ms, int)
+    assert server_now_ms // 1000 == server_now
     assert body == {
         **payload,
         "result_balls": [],
@@ -103,6 +107,8 @@ def test_public_next_draw_deadline_contract_adds_server_time():
         "draw_deadline": "1782570600000",
         "next_time": "2026-06-27 21:30:00",
         "server_time": "1782560000",
+        "server_now": 1782560000,
+        "server_now_ms": 1782560000000,
     }
 
 
@@ -226,14 +232,14 @@ def _with_snapshots(ctx, snapshots):
     return ctx
 
 
-def test_public_latest_draw_snapshot_hit_skips_database():
+def test_public_latest_draw_taiwan_snapshot_hit_rechecks_primary():
     payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
     ctx = _with_snapshots(make_ctx("/api/public/latest-draw?lottery_type=3"), _Snapshots(latest=payload))
 
-    with patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+    with patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
         public_routes.latest_draw(ctx)
 
-    latest_draw.assert_not_called()
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
     _assert_blocked_latest_draw(ctx, payload)
 
 
@@ -313,11 +319,11 @@ def test_public_latest_draw_site_cache_hit_skips_site_context_resolution():
     ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), _RawCache(b"3"))
 
     with patch("routes.public_routes.resolve_site_context") as resolve_site, \
-         patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+         patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
         public_routes.latest_draw(ctx)
 
     resolve_site.assert_not_called()
-    latest_draw.assert_not_called()
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
     _assert_blocked_latest_draw(ctx, payload)
 
 
@@ -327,11 +333,11 @@ def test_public_latest_draw_site_cache_miss_resolves_from_write_target_and_backf
     ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), cache)
 
     with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site, \
-         patch("routes.public_routes.get_public_latest_draw") as latest_draw:
+         patch("routes.public_routes.get_public_latest_draw", return_value=payload) as latest_draw:
         public_routes.latest_draw(ctx)
 
     resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
-    latest_draw.assert_not_called()
+    latest_draw.assert_called_once_with(ctx.write_db_path, 3)
     assert cache.writes == [("public:site-lottery:v1:id:12", b"3", 60)]
     _assert_blocked_latest_draw(ctx, payload)
 
@@ -342,7 +348,8 @@ def test_public_latest_draw_invalid_or_unavailable_site_cache_falls_back_to_writ
     for cache in (_RawCache(b"not-a-number"), _RawCache(error=CacheUnavailable("offline"))):
         payload = {"current_issue": "2026012", "draw_time": "2026-08-07", "result_balls": [], "special_ball": None}
         ctx = _with_site_cache(_with_snapshots(make_ctx("/api/public/latest-draw?site_id=12"), _Snapshots(latest=payload)), cache)
-        with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site:
+        with patch("routes.public_routes.resolve_site_context", return_value=type("Site", (), {"lottery_type_id": 3})()) as resolve_site, \
+             patch("routes.public_routes.get_public_latest_draw", return_value=payload):
             public_routes.latest_draw(ctx)
         resolve_site.assert_called_once_with(ctx.write_db_path, path_site_id=12, query=ctx.query)
         _assert_blocked_latest_draw(ctx, payload)

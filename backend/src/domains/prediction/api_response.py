@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 from db import utc_now
@@ -79,3 +80,50 @@ def build_prediction_api_response(
         },
         "legacy": raw_result,
     }
+
+
+def gate_prediction_api_response(conn: Any, response: dict[str, Any], *, request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Restrict actual echoes and history verdicts without changing generation.
+
+    The requested issue does not identify the engine's latest history row. An
+    engine must supply its own year/type before that row's outcome can reopen.
+    """
+    from helpers import apply_public_result_gate
+
+    gated = deepcopy(response)
+    legacy = gated.get("legacy") or {}
+    raw_input = legacy.get("input") or {}
+    request_identity = {
+        "type": request_payload.get("lottery_type"),
+        "year": request_payload.get("year"),
+        "term": request_payload.get("term"),
+        "res_code": request_payload.get("res_code"),
+    }
+    latest_identity = {
+        "type": raw_input.get("latest_lottery_type_id"),
+        "year": raw_input.get("latest_year"),
+        "term": raw_input.get("latest_term"),
+        "outcome": raw_input.get("latest_outcome"),
+    }
+    checked = apply_public_result_gate(conn, [request_identity, latest_identity], respect_history_delay=False)
+    request_hidden = bool(checked[0].get("result_restricted"))
+    latest_hidden = bool(checked[1].get("result_restricted"))
+    data = gated["data"]
+    if request_hidden:
+        if data["request"].get("res_code") is not None:
+            data["request"]["res_code"] = ""
+        if raw_input.get("res_code") is not None:
+            raw_input["res_code"] = ""
+        context = data["context"].get("draw") or {}
+        context["result_visibility"] = "hidden"
+        context["reason"] = "reveal_incomplete_or_unverified"
+    if latest_hidden:
+        data["context"]["latest_outcome"] = ""
+        raw_input["latest_outcome"] = ""
+        # A changed hit-rate can reveal the newest row's verdict even when the
+        # outcome itself is blank. Candidate tuning/sample counts remain useful.
+        for backtest in (data.get("backtest") or {}, legacy.get("backtest") or {}):
+            for key in ("hit_rate", "historical_content_hit_rate", "hits", "is_correct"):
+                if key in backtest:
+                    backtest[key] = None
+    return gated

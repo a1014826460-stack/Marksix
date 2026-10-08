@@ -8,7 +8,7 @@ const script = /<script>([\s\S]*?)<\/script>/.exec(html)[1]
 const T = Date.parse("2026-10-07T22:32:00+08:00") / 1000
 const ids = ["m1", "m2", "m3", "m4", "m5", "m6", "s1"]
 const beijing = (sec) => new Date((sec + 28800) * 1000).toISOString().replace("T", " ").slice(0, 19)
-const CURRENT_DEADLINE = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+const CURRENT_DEADLINE = { current_issue: "2026280", current_draw_time: T, next_issue: "2026281", next_time: T + 86400 }
 function payload(issue, count, anchor = T + 1) {
   const values = issue === "2026279" ? ["41", "42", "43", "44", "45", "46", "47"] : ["01", "02", "03", "04", "05", "06", "49"]
   const ball = (value) => ({ value, color: "red", zodiac: "鼠", element: "金" })
@@ -22,7 +22,7 @@ function payload(issue, count, anchor = T + 1) {
 }
 async function settle() { for (let i = 0; i < 40; i++) await Promise.resolve() }
 
-function panel({ initial = payload("2026279", 7, T - 86400 + 5), now = T - 2, skew = 0, failLatest = false, holdLatest = false, holdDeadline = false, storage = new Map(), lotteryType = "3", noServerTime = false, deadline = { current_issue: "2026279", next_issue: "2026280", next_time: T } } = {}) {
+function panel({ initial = payload("2026279", 7, T - 86400 + 5), now = T - 2, skew = 0, failLatest = false, holdLatest = false, holdDeadline = false, storage = new Map(), lotteryType = "3", noServerTime = false, deadline = { current_issue: "2026279", current_draw_time: T - 86400, next_issue: "2026280", next_time: T } } = {}) {
   let clock = (now + skew) * 1000
   let elapsed = 0
   let timerId = 0
@@ -117,9 +117,23 @@ async function check(name, run) {
   catch (error) { cases.push({ name, ok: false }); console.error("FAIL", name, error.message) }
 }
 
+await check("a first visit cannot reveal from two old payload anchors without a fresh current schedule", async () => {
+  const p = panel({ initial: payload("2026280", 7, T - 86400), now: T + 1,
+    deadline: { ...CURRENT_DEADLINE, current_draw_time: undefined } }); await settle()
+  assert.deepEqual(p.values(), ["--", "--", "--", "--", "--", "--", "--"])
+  p.state.deadline = CURRENT_DEADLINE; await p.refresh()
+  assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"], "fresh authority recovers only the legal prefix")
+})
+
+for (const bound of [0, -1, "invalid", Infinity]) await check(`an invalid current schedule cannot authorize Taiwan reveal: ${bound}`, async () => {
+  const p = panel({ initial: payload("2026280", 7, T), now: T + 400,
+    deadline: { ...CURRENT_DEADLINE, current_draw_time: bound } }); await settle()
+  assert.deepEqual(p.values(), ["--", "--", "--", "--", "--", "--", "--"])
+})
+
 for (const elapsed of [-1, 0, 24, 25, 49, 50, 124, 125, 149, 150, 400]) await check(`Taiwan rejects an erroneous complete seven-ball response at anchor${elapsed < 0 ? "" : "+"}${elapsed}s`, async () => {
   const p = panel({ initial: payload("2026280", 7, T), now: T + elapsed,
-    deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+    deadline: CURRENT_DEADLINE }); await settle()
   const allowed = elapsed < 0 ? 0 : Math.min(7, Math.floor(elapsed / 25) + 1)
   assert.equal(p.values().filter((v) => v !== "--").length, allowed)
   assert.equal(p.messages.filter((m) => m.kind === "legacy-draw-reveal-complete").length, 0)
@@ -135,7 +149,7 @@ for (const elapsed of [-1, 0, 24, 25, 49, 50, 124, 125, 149, 150, 400]) await ch
 
 await check("Taiwan advances a retained full response at fixed absolute 25-second boundaries", async () => {
   const wrong = { ...payload("2026280", 7, T), reveal_interval_seconds: 1 }
-  const p = panel({ initial: wrong, now: T, deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+  const p = panel({ initial: wrong, now: T, deadline: CURRENT_DEADLINE }); await settle()
   p.state.fail = true
   await p.tick(24999); assert.equal(p.values().filter((v) => v !== "--").length, 1)
   await p.tick(1); assert.equal(p.values().filter((v) => v !== "--").length, 2)
@@ -146,7 +160,7 @@ await check("Taiwan advances a retained full response at fixed absolute 25-secon
 
 await check("known issue deadline remains a reveal lower bound after it advances to tomorrow", async () => {
   const p = panel(); await settle(); await p.tick(2000)
-  p.state.deadline = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+  p.state.deadline = { ...CURRENT_DEADLINE, current_draw_time: undefined }
   p.state.payload = payload("2026280", 7, T - 86400)
   await p.refresh()
   assert.equal(p.values().filter((v) => v !== "--").length, 1)
@@ -176,7 +190,7 @@ await check("the initial live response waits for its issue schedule before openi
 await check("a newly completed Taiwan issue refreshes tomorrow's deadline exactly once", async () => {
   const p = panel({ initial: payload("2026280", 7, T), now: T,
     deadline: { current_issue: "2026279", next_issue: "2026280", next_time: T } }); await settle()
-  p.state.deadline = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+  p.state.deadline = CURRENT_DEADLINE
   await p.tick(150000)
   const calls = p.requests.filter((r) => r.url.includes("next-draw-deadline")).length
   assert.equal(calls, 2)
@@ -210,7 +224,7 @@ await check("missing anchor evidence preserves an already legal same-issue prefi
 
 await check("iframe rebuild restores only the legal prefix and cannot use cache age to advance it", async () => {
   const storage = new Map()
-  const deadline = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+  const deadline = CURRENT_DEADLINE
   const p = panel({ initial: payload("2026280", 7, T), now: T + 24, storage, deadline }); await settle()
   assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
   const rebuilt = panel({ initial: payload("2026280", 7, T), now: T + 24, skew: 2, storage, deadline: CURRENT_DEADLINE, holdLatest: true }); await settle()
@@ -219,9 +233,69 @@ await check("iframe rebuild restores only the legal prefix and cannot use cache 
   assert.deepEqual(rebuiltLater.values(), ["01", "--", "--", "--", "--", "--", "--"])
 })
 
+for (const safePrefix of [false, true]) await check(`a future cached server_now cannot bypass a fresh authority clock (safe=${safePrefix})`, async () => {
+  const storage = new Map([["liuhecai:kj-local:draw:v1:3", JSON.stringify({
+    cachedAt: (T + 1) * 1000,
+    data: { ...payload("2026280", 7, T), server_now: T + 7200, _client_safe_prefix: safePrefix },
+  })]])
+  const p = panel({ initial: payload("2026280", 7, T), now: T + 1, storage, deadline: CURRENT_DEADLINE }); await settle()
+  assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
+  assert.equal(p.latestCalls(), 1, "each new Taiwan iframe must verify its current draw over the network")
+  assert.equal(p.sandbox.LotteryDrawDiagnostics.snapshot().records.at(-1).server_now, T + 1)
+})
+
+await check("cached Taiwan metadata without a fresh clock cannot reveal balls", async () => {
+  const storage = new Map([["liuhecai:kj-local:draw:v1:3", JSON.stringify({
+    cachedAt: (T + 1) * 1000,
+    data: { ...payload("2026280", 7, T), server_now: T + 7200, _client_safe_prefix: true },
+  })]])
+  const p = panel({ initial: payload("2026280", 7, T), now: T + 1, storage, noServerTime: true, deadline: CURRENT_DEADLINE }); await settle()
+  assert.deepEqual(p.values(), ["--", "--", "--", "--", "--", "--", "--"])
+  assert.equal(p.latestCalls(), 1)
+})
+
+await check("a first visit uses the authoritative current draw time over two wrong old anchors", async () => {
+  const p = panel({ initial: payload("2026280", 7, T - 86400), now: T + 1,
+    deadline: { ...CURRENT_DEADLINE, current_draw_time: T } }); await settle()
+  assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
+  assert(p.messages.some((message) => message.kind === "legacy-draw-reveal-gate" && message.unlockAt === T + 150))
+})
+
+await check("a corrupt cached schedule cannot postpone a fresh authoritative current issue", async () => {
+  const storage = new Map([["liuhecai:kj-local:draw:v1:3", JSON.stringify({
+    cachedAt: (T + 1) * 1000,
+    data: { ...payload("2026280", 7, T), server_now: T + 1,
+      _client_safe_prefix: true, _client_schedule_lower_bound: T + 7200 },
+  })]])
+  const p = panel({ initial: payload("2026280", 7, T), now: T + 1, storage,
+    deadline: { ...CURRENT_DEADLINE, current_draw_time: T } }); await settle()
+  assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
+  assert(p.messages.some((message) => message.kind === "legacy-draw-reveal-gate" && message.unlockAt === T + 150))
+})
+
+for (const [elapsedMs, beforeCount, afterCount] of [[24999, 1, 2], [149999, 6, 7]]) {
+  await check(`a fresh millisecond clock keeps the exact ${elapsedMs + 1}ms reveal boundary`, async () => {
+    const full = { ...payload("2026280", 7, T), server_now_ms: T * 1000 + elapsedMs }
+    const p = panel({ initial: full, now: T + elapsedMs / 1000, deadline: CURRENT_DEADLINE }); await settle()
+    assert.equal(p.values().filter((value) => value !== "--").length, beforeCount)
+    p.state.fail = true
+    await p.tick(1)
+    assert.equal(p.values().filter((value) => value !== "--").length, afterCount,
+      "integer server_now must not lose the fractional millisecond sample")
+  })
+}
+
+for (const wrongMs of [T * 1000 + 7200000, T * 1000 + 999, "invalid", Number.POSITIVE_INFINITY]) {
+  await check(`mismatched or invalid millisecond metadata falls back to its legal second: ${wrongMs}`, async () => {
+    const p = panel({ initial: { ...payload("2026280", 7, T), server_now_ms: wrongMs },
+      now: T + 24, deadline: CURRENT_DEADLINE }); await settle()
+    assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
+  })
+}
+
 for (const count of [0, 1]) await check(`a delayed deadline restores safe cached two balls after a shorter live prefix of ${count}`, async () => {
   const storage = new Map()
-  const deadline = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+  const deadline = CURRENT_DEADLINE
   const original = panel({ initial: payload("2026280", 2, T), now: T + 26, storage, deadline }); await settle()
   const rebuilt = panel({ initial: payload("2026280", count, T), now: T + 90, storage, deadline, holdDeadline: true }); await settle()
   rebuilt.state.deadlineReleases.shift()(); await settle()
@@ -230,7 +304,7 @@ for (const count of [0, 1]) await check(`a delayed deadline restores safe cached
 
 await check("late safe-cache restoration cannot discard a newly received full raw payload", async () => {
   const storage = new Map()
-  const deadline = { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 }
+  const deadline = CURRENT_DEADLINE
   panel({ initial: payload("2026280", 2, T), now: T + 26, storage, deadline }); await settle()
   const rebuilt = panel({ initial: payload("2026280", 7, T), now: T + 30, storage, deadline, holdDeadline: true }); await settle()
   rebuilt.state.deadlineReleases.shift()(); await settle()
@@ -312,7 +386,7 @@ await check("deadline clears old seven balls and rejects a cached old issue", as
 
 for (const first of ["latest", "deadline"]) await check(`authoritative current issue replaces an old complete response when ${first} arrives first`, async () => {
   const p = panel({ now: T + 200, holdLatest: first === "deadline", holdDeadline: first === "latest",
-    deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+    deadline: CURRENT_DEADLINE }); await settle()
   if (first === "latest") {
     assert.equal(p.issue(), "", "the first response waits for the concurrent authoritative issue schedule")
     p.state.holdDeadline = false
@@ -332,7 +406,7 @@ for (const first of ["latest", "deadline"]) await check(`authoritative current i
 })
 
 await check("an unfinished issue survives window expiry and failures until the final response", async () => {
-  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: CURRENT_DEADLINE }); await settle()
   p.state.fail = true
   await p.tick(250000)
   assert.deepEqual(p.values(), ["01", "--", "--", "--", "--", "--", "--"])
@@ -349,7 +423,7 @@ await check("an unfinished issue survives window expiry and failures until the f
 })
 
 for (const event of ["visibilitychange", "pageshow"]) await check(`${event} fetches current progress immediately after sleep without replay`, async () => {
-  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: CURRENT_DEADLINE }); await settle()
   p.jump(170000); p.state.payload = payload("2026280", 7)
   await p.event(event)
   assert.deepEqual(p.values(), ["01", "02", "03", "04", "05", "06", "49"])
@@ -392,7 +466,7 @@ await check("a cache timestamp from a previously incorrect client clock cannot h
 })
 
 await check("a completed issue never regresses through an older full or partial response", async () => {
-  const p = panel({ initial: payload("2026280", 7), now: T + 200, deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+  const p = panel({ initial: payload("2026280", 7), now: T + 200, deadline: CURRENT_DEADLINE }); await settle()
   p.state.payload = payload("2026279", 7, T - 86400 + 5)
   p.state.serverNow = T - 400
   await p.refresh()
@@ -485,7 +559,7 @@ await check("repeated same-second metadata cannot discard fractional monotonic e
 })
 
 await check("authoritative time catches up after sleep even if the monotonic clock paused", async () => {
-  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: { current_issue: "2026280", next_issue: "2026281", next_time: T + 86400 } }); await settle()
+  const p = panel({ initial: payload("2026280", 1), now: T + 1, deadline: CURRENT_DEADLINE }); await settle()
   // Some browsers pause performance.now during device sleep. A fresh API response advances its anchor.
   p.jumpWall(170000)
   p.state.payload = payload("2026280", 7)

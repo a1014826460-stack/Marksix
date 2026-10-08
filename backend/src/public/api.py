@@ -24,6 +24,7 @@ from utils.created_prediction_store import (
 )
 from core.time_utils import beijing_now
 from domains.lottery.draw_time import parse_draw_datetime
+from public.draw_reveal import _beijing_text, _parse_reveal_datetime, is_full_draw_released, is_paced_lottery_type, reveal_anchor
 
 
 def extract_special_result(row: dict[str, Any]) -> dict[str, Any]:
@@ -704,6 +705,23 @@ def get_public_next_draw_deadline(
     """
     with connect(db_path) as conn:
         payload = get_effective_next_draw_payload(conn, int(lottery_type_id))
+        current_row = conn.execute(
+            """
+            SELECT year, term, draw_time FROM lottery_draws
+            WHERE lottery_type_id = ? AND is_opened = 1
+              AND draw_time IS NOT NULL AND draw_time != ''
+            ORDER BY year DESC, term DESC, id DESC LIMIT 1
+            """,
+            (int(lottery_type_id),),
+        ).fetchone()
+        current_draw_time = 0
+        current_issue = str(payload.get("current_issue") or "")
+        if (current_row and re.fullmatch(r"[0-9]{5,7}", current_issue)
+                and (int(current_issue[:4]), int(current_issue[4:]))
+                == (int(current_row["year"]), int(current_row["term"]))):
+            planned = _parse_reveal_datetime(current_row["draw_time"])
+            if planned is not None:
+                current_draw_time = int(planned.timestamp())
         next_time = resolve_next_time_ms(
             conn,
             int(lottery_type_id),
@@ -713,6 +731,7 @@ def get_public_next_draw_deadline(
             "current_issue": payload.get("current_issue") or "",
             "next_issue": payload.get("next_issue") or "",
             "next_time": next_time or None,
+            "current_draw_time": current_draw_time,
         }
 
 
@@ -819,28 +838,31 @@ def get_draw_history(
 
     sort: "l" = 落球顺序（数据库原样），"d" = 号码大小排序
     """
-    current_year = year or beijing_now().year
+    current = beijing_now()
+    current_year = year or current.year
     history_delay = timedelta(minutes=_history_result_delay_minutes(db_path))
 
     with connect(db_path) as conn:
         # 可用年份
         year_rows = conn.execute(
             """
-            SELECT DISTINCT year, draw_time FROM lottery_draws
+            SELECT year, term, numbers, draw_time, opened_at, is_opened, lottery_type_id FROM lottery_draws
             WHERE lottery_type_id = ? AND is_opened = 1
             ORDER BY year DESC
             """,
             (int(lottery_type),),
         ).fetchall()
         years = sorted(
-            {int(r["year"]) for r in year_rows if _history_result_visible(r["draw_time"], delay=history_delay)},
+            {int(r["year"]) for r in year_rows
+             if _history_result_visible(r["draw_time"], now=current, delay=history_delay)
+             and is_full_draw_released(dict(r), lottery_type_id=lottery_type, now=current)},
             reverse=True,
         )
 
         # 开奖记录
         rows = conn.execute(
             """
-            SELECT year, term, numbers, draw_time
+            SELECT year, term, numbers, draw_time, opened_at, is_opened, lottery_type_id
             FROM lottery_draws
             WHERE lottery_type_id = ? AND is_opened = 1 AND year = ?
             ORDER BY year DESC, term DESC, id DESC
@@ -856,7 +878,8 @@ def get_draw_history(
 
     items: list[dict[str, Any]] = []
     for row in rows:
-        if not _history_result_visible(row["draw_time"], delay=history_delay):
+        if (not _history_result_visible(row["draw_time"], now=current, delay=history_delay)
+                or not is_full_draw_released(dict(row), lottery_type_id=lottery_type, now=current)):
             continue
         numbers = split_csv(row["numbers"])
         if len(numbers) < 7:
@@ -887,10 +910,14 @@ def get_draw_history(
 
         issue = f"{row['year']}{row['term']}"
         draw_time = str(row["draw_time"] or "")
+        planned = _parse_reveal_datetime(draw_time)
+        anchor = reveal_anchor({"draw_time": draw_time, "reveal_start": row["opened_at"]}, paced=is_paced_lottery_type(lottery_type))
         date_str = draw_time[:10] if draw_time else ""
         items.append({
             "issue": str(row["term"]),
             "date": date_str,
+            "draw_time": _beijing_text(planned) if planned is not None else "",
+            "reveal_start": _beijing_text(anchor) if anchor is not None else "",
             "title": f"{LOTTERY_NAMES.get(lottery_type, '彩种')}开奖记录 {date_str} 第{row['term']}期" if date_str else f"{LOTTERY_NAMES.get(lottery_type, '彩种')}开奖记录 第{row['term']}期",
             "balls": balls_data if sort == "l" or not special_is_min else balls_data,
             "specialBall": special_data,
@@ -903,6 +930,8 @@ def get_draw_history(
         "sort": sort,
         "years": years,
         "items": items,
+        "server_now": int(current.timestamp()),
+        "server_now_ms": int(current.timestamp() * 1000),
     }
 
 

@@ -16,6 +16,7 @@ from app_http.site_context import (
     validate_web_matches_site,
 )
 from domains.prediction.mode_payload_service import ensure_mode_payload_row_belongs_to_site
+from routes.admin_result_response import gate_admin_result_response
 
 
 def register(router: Router) -> None:
@@ -24,6 +25,7 @@ def register(router: Router) -> None:
 
 
 def site_payload_detail(ctx: RequestContext) -> None:
+    ctx.response.set_header("Cache-Control", "no-store")
     site_ctx = parse_site_route_context(ctx)
     parts = site_ctx.parts
     if len(parts) < 7 or parts[5] != "mode-payload":
@@ -37,7 +39,7 @@ def site_payload_detail(ctx: RequestContext) -> None:
     web_filter = str(current_site.web_id)
 
     if len(parts) == 7 and ctx.method == "GET":
-        ctx.send_json(
+        result = (
             list_mode_payload_rows(
                 ctx.db_path,
                 table_name,
@@ -59,6 +61,8 @@ def site_payload_detail(ctx: RequestContext) -> None:
                 source=query_source,
             )
         )
+        ctx.send_json(gate_admin_result_response(ctx, result,
+            default_lottery_type_id=getattr(current_site, "lottery_type_id", None)))
         return
 
     if len(parts) == 8 and ctx.method in {"PUT", "PATCH"}:
@@ -71,7 +75,7 @@ def site_payload_detail(ctx: RequestContext) -> None:
         )
         body.setdefault("web", current_site.web_id)
         body.setdefault("web_id", current_site.web_id)
-        ctx.send_json(
+        result = (
             update_mode_payload_row(
                 ctx.db_path,
                 table_name,
@@ -80,6 +84,8 @@ def site_payload_detail(ctx: RequestContext) -> None:
                 source=query_source,
             )
         )
+        ctx.send_json(gate_admin_result_response(ctx, result,
+            default_lottery_type_id=getattr(current_site, "lottery_type_id", None)))
         _invalidate_prediction_snapshots(ctx)
         return
 

@@ -18,16 +18,16 @@ export async function GET(request: Request) {
     if (!response.ok) {
       return NextResponse.json(
         { error: "后端请求失败", detail: await response.text() },
-        { status: response.status },
+        { status: response.status, headers: { "Cache-Control": "no-store" } },
       )
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     return NextResponse.json(
       { error: "获取开奖截止时间失败", detail: String(error) },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     )
   }
 }

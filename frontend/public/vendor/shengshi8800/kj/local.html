@@ -249,10 +249,13 @@
         }
       };
 
-      function syncServerClock(serverNow) {
+      function syncServerClock(serverNow, serverNowMs) {
         if (typeof serverNow === "number" && isFinite(serverNow) && serverNow > 0) {
           var sampleAtMs = monotonicNowMilliseconds();
           var candidateMs = Math.floor(serverNow) * 1000;
+          // 毫秒字段必须落在同一合法秒内；不一致的字段不能抬高可信时间。
+          if (typeof serverNowMs === "number" && isFinite(serverNowMs)
+              && serverNowMs >= candidateMs && serverNowMs < candidateMs + 1000) candidateMs = serverNowMs;
           // 首次允许纠正设备快慢；可信锚点仅按单调耗时推进，不跟随设备墙钟跳变。
           // 秒精度容许 1 秒差，并保留小数耗时，避免同秒响应不断重置计时。
           if (_trustedServerNowMs > 0) {
@@ -655,7 +658,11 @@
         var issue = normalizeIssue(payload && payload.current_issue);
         var scheduledRaw = payload && payload.draw_time || "";
         var scheduled = parseBeijingDateTimeToSeconds(scheduledRaw);
-        return Math.max(parsed, scheduled, _issueScheduleBounds[issue] || 0);
+        if (!(scheduled > 0)) return 0;
+        // 载荷自己的两个日期不能授权开奖；必须有本 iframe 从新鲜排期响应绑定的下限。
+        var authorityBound = _issueScheduleBounds[issue];
+        if (!(authorityBound > 0) || !isFinite(authorityBound)) return 0;
+        return Math.max(parsed, scheduled, authorityBound);
       }
 
       function _taiwanAllowedCount(payload) {
@@ -799,7 +806,7 @@
         // 旧缓存只有收到当前期的权威确认后才恢复；跨期或跨年旧号码一律丢弃。
         var current = countdownDeadline > 0 && getServerNowSeconds() >= countdownDeadline ? _scheduledNextIssue : _scheduledCurrentIssue;
         if (!current || issue !== current) return;
-        _rememberIssueSchedule(issue, Number(cached.data._client_schedule_lower_bound));
+        // 持久缓存只保存号码证据；排期下限由本 iframe 的新鲜网络响应重建。
         _applyTaiwanPayload(cached.data, true);
         _startupSafeDrawCache = null;
       }
@@ -1078,9 +1085,11 @@
               countdownDeadline = normalizeToSeconds(Number(data.next_time));
               _scheduledCurrentIssue = normalizeIssue(data.current_issue);
               _scheduledNextIssue = normalizeIssue(data.next_issue);
+              // 首次入场也使用服务端当期排期下限，不能借旧 payload 的两个旧锚点提前画满。
+              _rememberIssueSchedule(_scheduledCurrentIssue, normalizeToSeconds(Number(data.current_draw_time)));
               _rememberIssueSchedule(_scheduledNextIssue, countdownDeadline);
               // 老响应缺少时钟时保持最近一次 latest-draw 的 server_now 校时。
-              if (data.server_time) syncServerClock(Number(data.server_time));
+              if (data.server_time) syncServerClock(Number(data.server_time), data.server_now_ms);
               countdownExpired = false;
               reconcileScheduledCurrentIssue();
               restoreSafeDrawCache();
@@ -1295,8 +1304,8 @@
 
       // ── /api/latest-draw 读取层（短缓存 + 进行中请求去重）────────────────
       // 面板被跨两层以上的 iframe 引用，切换彩种或重建面板文档都会重新发起同样的
-      // 开奖请求。这里用一个 5 秒新鲜窗口的 sessionStorage 缓存（sessionStorage
-      // 在 iframe 重建后依然有效）加上进行中请求去重，避免重复拉取同一期结果；
+      // 开奖请求。港澳使用 3 秒 sessionStorage 缓存并合并进行中请求；台湾每次
+      // 都核验网络，持久化的合法前缀只用于新鲜权威排期确认后的恢复。
       // 手动点“刷新”时始终直连网络。
       var DRAW_CACHE_PREFIX = "liuhecai:kj-local:draw:v1:";
       var DRAW_CACHE_FRESH_MS = 3000;
@@ -1349,7 +1358,9 @@
       }
 
       function loadLatestDrawPayload(forceFresh) {
-        if (!forceFresh) {
+        // 台湾每个新 iframe 必须核验网络号码；持久缓存仅作可信排期确认后的前缀恢复。
+        // 缓存中的 server_now 是旧采样，不能校时，更不能压过新网络返回的权威时钟。
+        if (!forceFresh && Number(lotteryType) !== 3) {
           var cached = readDrawCache();
           var cacheAgeMs = cached ? Date.now() - cached.cachedAt : Infinity;
           // 客户端校正时钟后，来自「未来」的旧缓存不能被无限当成新鲜载荷。
@@ -1391,7 +1402,7 @@
           var ignored = isOlderRenderedPayload(payload);
           // 完成后 target 会清除，仍必须以已绘制期号防回退；旧期不能污染校时或缓存。
           if (!ignored) {
-            syncServerClock(payload && payload.server_now);
+            syncServerClock(payload && payload.server_now, payload && payload.server_now_ms);
             if (Number(lotteryType) !== 3) writeDrawCache(payload);
           }
           recordDrawDiagnostic("result", Object.assign(drawMetadata(payload), { resource: "draw", request_ts: requestTs, cache_status: cacheStatus, ignored: ignored }));
@@ -1676,7 +1687,6 @@
       var startupCache = readDrawCache();
       if (Number(lotteryType) === 3 && startupCache && startupCache.data._client_safe_prefix === true) {
         _startupSafeDrawCache = startupCache;
-        _rememberIssueSchedule(startupCache.data.current_issue, Number(startupCache.data._client_schedule_lower_bound));
       }
       updateHistoryLink();
       updateBeijingDate();

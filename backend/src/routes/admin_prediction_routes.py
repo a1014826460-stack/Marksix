@@ -12,6 +12,7 @@ from admin.prediction import (
     resolve_prediction_request_safety,
 )
 from db import connect
+from domains.prediction.api_response import gate_prediction_api_response
 from http import HTTPStatus
 from app_http.auth import require_admin, require_generation_access
 from app_http.request_context import RequestContext
@@ -97,14 +98,16 @@ def run_mechanism_prediction(ctx: RequestContext) -> None:
         db_path=ctx.db_path,
         target_hit_rate=float(request_payload["target_hit_rate"]),
     )
-    ctx.send_json(
-        build_prediction_api_response(
+    response = build_prediction_api_response(
             mechanism_key=mechanism,
             request_payload=request_payload,
             raw_result=result,
             safety=safety,
         )
-    )
+    with connect(ctx.write_db_path) as conn:
+        response = gate_prediction_api_response(conn, response, request_payload=request_payload)
+    ctx.response.set_header("Cache-Control", "no-store, max-age=0")
+    ctx.send_json(response)
 
 
 def list_admin_mechanisms(ctx: RequestContext) -> None:
