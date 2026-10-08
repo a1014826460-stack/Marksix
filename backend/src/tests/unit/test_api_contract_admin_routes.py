@@ -63,7 +63,7 @@ def test_admin_draws_list_contract_and_query_mapping():
     # This contract isolates query mapping; SQLite integration tests cover the
     # response gate's primary-database lookup and release policy separately.
     with patch("routes.admin_draw_routes.list_draws", return_value=payload) as list_draws, \
-         patch("routes.admin_draw_routes.gate_admin_result_response", return_value=payload):
+         patch("routes.admin_draw_routes.gate_admin_draw_management_response", return_value=payload):
         admin_draw_routes.list_draw_routes(ctx)
 
     list_draws.assert_called_once_with(

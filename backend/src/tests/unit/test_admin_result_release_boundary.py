@@ -21,6 +21,91 @@ def _setup_db(tmp_path):
 
 
 @pytest.mark.parametrize("operation", ["list", "create", "update", "autofill"])
+@pytest.mark.parametrize("seconds", [-1, 0, 149])
+def test_admin_can_read_future_draw_numbers_only_before_plan(tmp_path, monkeypatch, operation, seconds):
+    import helpers
+
+    db_path = _setup_db(tmp_path)
+    monkeypatch.setattr(helpers, "beijing_now", lambda: START + timedelta(seconds=seconds))
+    with connect(db_path) as conn:
+        conn.execute("UPDATE lottery_draws SET is_opened=0, opened_at=NULL WHERE term=100")
+        row = dict(conn.execute("SELECT * FROM lottery_draws WHERE term=100").fetchone())
+    method = "GET" if operation == "list" else "PATCH" if operation == "update" else "POST"
+    ctx = make_ctx("/api/admin/draws/2" if operation == "update" else "/api/admin/draws", method=method)
+    ctx.handler.server.db_path = db_path
+    ctx.state["current_user"] = {"role": "admin", "username": "operator"}
+    with patch.object(admin_draw_routes, "list_draws", return_value={"draws": [row], "total": 1}), \
+         patch.object(admin_draw_routes, "save_draw", return_value=row), \
+         patch.object(admin_draw_routes, "autofill_taiwan_future_draws", return_value={"created": [
+             {key: row[key] for key in ("year", "term", "draw_time", "numbers")}
+         ]}):
+        getattr(admin_draw_routes, {"list": "list_draw_routes", "create": "create_draw",
+            "update": "draw_detail", "autofill": "autofill_future_draws"}[operation])(ctx)
+    response = response_json(ctx)
+    output = response["draws"][0] if operation == "list" else response["data"]["created"][0] if operation == "autofill" else response["draw"]
+    assert output["numbers"] == (row["numbers"] if seconds < 0 else "")
+    assert output["numbers_restricted"] is (seconds >= 0)
+    assert ("Cache-Control", "no-store") in ctx.handler.response_headers
+    assert row["numbers"] == "08,09,10,11,12,13,14"
+
+
+@pytest.mark.parametrize("role", [None, "viewer", "admin", "super_admin"])
+def test_future_draw_exception_requires_admin_and_never_changes_public_gate(tmp_path, monkeypatch, role):
+    import helpers
+
+    db_path = _setup_db(tmp_path)
+    monkeypatch.setattr(helpers, "beijing_now", lambda: START - timedelta(seconds=1))
+    with connect(db_path) as conn:
+        conn.execute("UPDATE lottery_draws SET is_opened=0, opened_at=NULL WHERE term=100")
+        row = dict(conn.execute("SELECT * FROM lottery_draws WHERE term=100").fetchone())
+        assert helpers.apply_public_result_gate(conn, row)["numbers"] == ""
+    ctx = make_ctx("/api/admin/draws")
+    ctx.handler.server.db_path = db_path
+    if role:
+        ctx.state["current_user"] = {"role": role}
+    with patch.object(admin_draw_routes, "list_draws", return_value={"draws": [row]}):
+        admin_draw_routes.list_draw_routes(ctx)
+    assert response_json(ctx)["draws"][0]["numbers"] == (row["numbers"] if role in ("admin", "super_admin") else "")
+
+
+@pytest.mark.parametrize("changes", [
+    {"draw_time": ""}, {"draw_time": "2026-02-30 22:32:00"},
+    {"year": 2025}, {"term": 0}, {"is_opened": 1},
+])
+def test_admin_edit_exception_closes_for_invalid_or_opened_draw(tmp_path, monkeypatch, changes):
+    import helpers
+    from routes.admin_result_response import gate_admin_draw_management_response
+
+    db_path = _setup_db(tmp_path)
+    monkeypatch.setattr(helpers, "beijing_now", lambda: START - timedelta(seconds=1))
+    with connect(db_path) as conn:
+        row = dict(conn.execute("SELECT * FROM lottery_draws WHERE term=100").fetchone())
+    row.update(is_opened=0, opened_at=None)
+    row.update(changes)
+    ctx = make_ctx("/api/admin/draws")
+    ctx.handler.server.db_path = db_path
+    ctx.state["current_user"] = {"role": "admin"}
+    assert gate_admin_draw_management_response(ctx, row)["numbers"] == ""
+
+
+def test_admin_can_save_changed_future_numbers_without_public_release(tmp_path):
+    from domains.lottery.service import save_draw
+    from tables import ensure_admin_tables
+    from helpers import apply_public_result_gate
+
+    db_path = str(tmp_path / "future-admin-edit.sqlite3")
+    ensure_admin_tables(db_path)
+    original = {"lottery_type_id": 3, "year": 2099, "term": 1, "numbers": "01,02,03,04,05,06,07",
+        "draw_time": "2099-01-01 22:32:00", "status": True, "is_opened": False, "next_term": 2}
+    created = save_draw(db_path, original)
+    result = save_draw(db_path, {**original, "numbers": "08,09,10,11,12,13,14"}, created["id"])
+    assert result["numbers"] == "08,09,10,11,12,13,14"
+    assert not result["is_opened"]
+    with connect(db_path) as conn:
+        assert apply_public_result_gate(conn, result)["numbers"] == ""
+
+
+@pytest.mark.parametrize("operation", ["list", "create", "update", "autofill"])
 def test_admin_draw_responses_hide_full_numbers_until_public_release(tmp_path, monkeypatch, operation):
     import helpers
 

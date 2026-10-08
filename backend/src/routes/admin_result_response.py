@@ -38,3 +38,47 @@ def mark_restricted_draw_numbers(payload: Any) -> Any:
     if "numbers" in result:
         result["numbers_restricted"] = result.get("result_restricted") is True
     return result
+
+
+def gate_admin_draw_management_response(ctx: RequestContext, payload: Any, *, default_lottery_type_id: int | None = None) -> Any:
+    """Authenticated draw editing may read pending Taiwan numbers before its plan.
+
+    This exception restores only numbers on management draw rows, never other
+    actual-result aliases or any public/dashboard/prediction response.
+    """
+    import re
+    from helpers import beijing_now
+    from core.time_utils import BEIJING_TZ
+    from public.draw_reveal import _parse_reveal_datetime
+
+    result = mark_restricted_draw_numbers(gate_admin_result_response(
+        ctx, payload, default_lottery_type_id=default_lottery_type_id,
+    ))
+    user = ctx.state.get("current_user") or {}
+    if str(user.get("role") or "").strip().lower() not in {"admin", "super_admin"}:
+        return result
+    if not re.fullmatch(r"/api/admin/draws(?:/\d+|/auto-fill-future)?", ctx.path):
+        return result
+    now = beijing_now()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=BEIJING_TZ)
+
+    def restore(original: Any, gated: Any) -> Any:
+        if isinstance(original, list) and isinstance(gated, list):
+            return [restore(before, after) for before, after in zip(original, gated)]
+        if not isinstance(original, dict) or not isinstance(gated, dict):
+            return gated
+        output = {key: restore(original.get(key), value) for key, value in gated.items()}
+        try:
+            taiwan = int(original.get("lottery_type_id", default_lottery_type_id) or 0) == 3
+            year, term = int(original.get("year") or 0), int(original.get("term") or 0)
+        except (ValueError, TypeError):
+            return output
+        planned = _parse_reveal_datetime(original.get("draw_time"))
+        if (taiwan and planned is not None and planned.year == year and 1 <= term <= 999
+                and now < planned and not original.get("is_opened") and "numbers" in original):
+            output["numbers"] = original["numbers"]
+            output["numbers_restricted"] = False
+        return output
+
+    return restore(payload, result)

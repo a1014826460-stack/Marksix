@@ -600,7 +600,7 @@ export function DrawsPage() {
                   onChange={() => setNumbersEdited(true)}
                 />
                 {editing?.numbers_restricted && (
-                  <p className="text-xs text-muted-foreground">开奖号码完整公开前隐藏；未修改号码时保留原值。</p>
+                  <p className="text-xs text-muted-foreground">开奖期间号码按公开门禁隐藏；开奖前管理员可查看并修改，未修改隐藏号码时保留原值。</p>
                 )}
               </Field>
               <Field label="开奖日期" className="col-span-2">
