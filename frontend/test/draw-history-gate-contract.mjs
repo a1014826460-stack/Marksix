@@ -71,5 +71,32 @@ for (const path of routes) {
   const futureRows = path.includes("ttklsjl") ? JSON.parse(futureResult.body.slice("var historyAO = ".length, -1)).data : futureResult.body.items
   assert.equal(futureRows.length, 0, `${path}: future backend clock must not override frontend server time`)
   cases += 2
+  // Real public API uses a short period in each item and the year at response level.
+  for (const seconds of [-1, 0, 149, 480]) {
+    const data = fullHistory(seconds, { issue: "281" })
+    delete data.page; delete data.page_size; delete data.total; delete data.total_pages
+    const route = loadRoute(path, data, anchor + seconds * 1000)
+    const result = await route.GET({ url: "http://127.0.0.1/api/draw-history?lottery_type=3&year=2026" })
+    const rows = path.includes("ttklsjl") ? JSON.parse(result.body.slice("var historyAO = ".length, -1)).data : result.body.items
+    assert.equal(rows.length, seconds < 480 ? 0 : 1, `${path}: actual year + short-period protocol at +${seconds}s`)
+    cases += 1
+  }
+  for (const changes of [{ year: undefined }, { year: 2025 }, { year: "bad" }, { issue: "000" }, { issue: "0281" }, { issue: "bad" }]) {
+    const data = fullHistory(480, { issue: "281", ...(changes.issue ? { issue: changes.issue } : {}) })
+    if (Object.hasOwn(changes, "year")) data.year = changes.year
+    const route = loadRoute(path, data, anchor + 480 * 1000)
+    const result = await route.GET({ url: "http://127.0.0.1/api/draw-history?lottery_type=3&year=2026" })
+    const rows = path.includes("ttklsjl") ? JSON.parse(result.body.slice("var historyAO = ".length, -1)).data : result.body.items
+    assert.equal(rows.length, 0, `${path}: short period needs a valid, consistent response year: ${JSON.stringify(changes)}`)
+    cases += 1
+  }
+}
+const helper = loadRoute("frontend/lib/draw-history-gate.ts", {}, anchor)
+for (const seconds of [149, 150]) {
+  const data = fullHistory(seconds, { issue: "281" })
+  const guarded = helper.guardTaiwanHistoryResponse(data, { nowMs: anchor + seconds * 1000, delayMinutes: 0 })
+  assert.equal(guarded.items.length, seconds === 150 ? 1 : 0, `short-period history still enforces 150 seconds with delay=0`)
+  if (guarded.items.length) assert.equal(guarded.items[0].issue, "281", "preserve the established short-period display protocol")
+  cases += 1
 }
 console.log(`Draw history independent gate contract passed (${cases} route cases)`)

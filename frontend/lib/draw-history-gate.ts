@@ -19,13 +19,20 @@ function validBall(ball: unknown): boolean {
   return /^(?:0?[1-9]|[1-4]\d)$/.test(value)
 }
 
-export function isTaiwanHistoryItemReleased(item: DrawHistoryItem, nowMs: number, delayMinutes = 0): boolean {
+export function isTaiwanHistoryItemReleased(item: DrawHistoryItem, nowMs: number, delayMinutes = 0, responseYear?: number): boolean {
   const planned = parseTaiwanDrawTime(item.draw_time)
   if (planned === null || !Number.isFinite(nowMs)) return false
   const preferredText = String(item.reveal_start || "").trim()
   const preferred = preferredText ? parseTaiwanDrawTime(preferredText) : planned
   if (preferred === null) return false
-  const issue = String(item.issue || "").trim()
+  const rawIssue = String(item.issue || "").trim()
+  const year = String(responseYear ?? "").trim()
+  if (responseYear !== undefined && !/^\d{4}$/.test(year)) return false
+  // The public history API keeps the year on the response and uses short periods.
+  // A short period may borrow only that explicit year, never the device/date clock.
+  const issue = /^\d{1,3}$/.test(rawIssue) && /^\d{4}$/.test(year)
+    ? `${year}${rawIssue.padStart(3, "0")}` : rawIssue
+  if (year && issue.slice(0, 4) !== year) return false
   if (!/^\d{7}$/.test(issue) || Number(issue.slice(4)) < 1 || Number(issue.slice(0, 4)) !== new Date(planned + 8 * 60 * 60 * 1000).getUTCFullYear()) return false
   const anchor = Math.max(planned, preferred)
   const delay = Number.isFinite(delayMinutes) ? Math.max(0, delayMinutes) * 60 * 1000 : 0
@@ -47,7 +54,7 @@ export function guardTaiwanHistoryResponse(
     : Number.NaN
   const nowMs = options.nowMs === undefined ? backendNow : Math.min(backendNow, options.nowMs)
   const original = Array.isArray(response.items) ? response.items : []
-  const items = original.filter((item) => isTaiwanHistoryItemReleased(item, nowMs, options.delayMinutes))
+  const items = original.filter((item) => isTaiwanHistoryItemReleased(item, nowMs, options.delayMinutes, response.year))
   const removed = original.length - items.length
   const total = Math.max(0, Number(response.total || 0) - removed)
   return {
