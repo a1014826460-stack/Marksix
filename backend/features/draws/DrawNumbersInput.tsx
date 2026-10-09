@@ -192,7 +192,7 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
       )}
       {!dataLoading && !dataError && (
         <div className="min-w-0">
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-12">
+          <div className="grid grid-cols-12 gap-x-1 sm:gap-x-2">
             {zodiacData.map((item) => {
               const nums = item.code
                 .split(",")
@@ -200,25 +200,36 @@ export function DrawNumbersInput({ name, defaultValue, onChange }: DrawNumbersIn
                 .filter((n) => n >= 1 && n <= 49)
                 .sort((a, b) => a - b)
               return (
-                <div key={item.id} className="flex min-w-0 flex-col gap-1">
+                <div key={item.id} className="flex min-w-0 flex-col gap-2.5">
                   <div className="text-center text-[10px] font-medium text-muted-foreground py-0.5 select-none">
                     {item.name}
                   </div>
                   {nums.map((n) => {
-                    const isSelected = selected.includes(n)
+                    const selectionIndex = selected.indexOf(n)
+                    const isSelected = selectionIndex >= 0
                     return (
                       <button
                         key={n}
                         type="button"
+                        aria-pressed={isSelected}
+                        title={isSelected ? `已选第${selectionIndex + 1}个，点击取消` : "点击选择号码"}
                         onClick={() =>
                           isSelected ? removeNumber(n) : addNumber(n)
                         }
                         disabled={!isSelected && selected.length >= 7}
-                        className={`h-11 w-full rounded text-xs font-medium transition-colors ${getColorClass(n)} disabled:opacity-55 ${
-                          isSelected ? "ring-2 ring-foreground ring-offset-1" : ""
+                        className={`relative h-8 w-full min-w-0 rounded border-2 p-0 text-[10px] font-medium transition-shadow sm:h-10 sm:text-xs ${getColorClass(n)} focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+                          isSelected ? "border-white ring-2 ring-slate-900 shadow-md font-extrabold" : "border-transparent"
                         }`}
                       >
-                        {String(n).padStart(2, "0")}
+                        {isSelected && (
+                          <span data-selection-mask aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-sm bg-black/[0.64]" />
+                        )}
+                        <span className="relative z-10">{String(n).padStart(2, "0")}</span>
+                        {isSelected && (
+                          <span aria-hidden="true" className="pointer-events-none absolute -right-1 -top-2 z-20 whitespace-nowrap rounded border border-white bg-slate-900 px-px text-[8px] leading-3 text-white sm:px-0.5 sm:text-[9px]">
+                            ✓{selectionIndex + 1}
+                          </span>
+                        )}
                       </button>
                     )
                   })}
