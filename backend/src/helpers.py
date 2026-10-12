@@ -92,6 +92,21 @@ def _send_taiwan_issue_gap_alert(
     observed_future_year: int,
     observed_future_term: int,
 ) -> None:
+    # The latest-opened and future-row queries can straddle a draw commit under
+    # READ COMMITTED. A newly opened issue disappears from the future-row list,
+    # but is not missing. Recheck all states immediately before alerting; do not
+    # send mail or consume the deduplication marker for an existing issue.
+    existing_issue = conn.execute(
+        """
+        SELECT 1 FROM lottery_draws
+        WHERE lottery_type_id = 3 AND year = ? AND term = ?
+        LIMIT 1
+        """,
+        (missing_year, missing_term),
+    ).fetchone()
+    if existing_issue is not None:
+        return
+
     try:
         from alerts.email_service import send_alert_async
     except Exception:

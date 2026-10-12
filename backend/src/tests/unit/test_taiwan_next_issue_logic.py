@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from db import connect
 from public.api import get_public_latest_draw
 from helpers import get_effective_next_draw_payload
@@ -126,6 +128,60 @@ def test_taiwan_missing_issue_sends_gap_alert_once(tmp_path, monkeypatch):
     assert len(sent) == 1
     assert "2026132" in sent[0][1]
     assert nested_writes == []
+
+
+@pytest.mark.parametrize(
+    "current_year,current_term,next_year,next_term,later_term,current_date,next_date,later_date",
+    [
+        (2026, 284, 2026, 285, 286, "2026-10-11", "2026-10-12", "2026-10-13"),
+        (2026, 365, 2027, 1, 2, "2026-12-31", "2027-01-01", "2027-01-02"),
+    ],
+)
+def test_opening_between_next_issue_reads_does_not_send_missing_alert(
+    tmp_path, monkeypatch, current_year, current_term, next_year, next_term,
+    later_term, current_date, next_date, later_date,
+):
+    db_path = _setup_db(tmp_path)
+    sent = []
+    monkeypatch.setattr("alerts.email_service.send_alert_async", lambda *a, **kw: sent.append(kw))
+    with connect(db_path) as conn:
+        for year, term, date, opened in [
+            (current_year, current_term, current_date, 1),
+            (next_year, next_term, next_date, 0),
+            (next_year, later_term, later_date, 0),
+        ]:
+            conn.execute(
+                """INSERT INTO lottery_draws
+                (lottery_type_id, year, term, numbers, draw_time, next_time,
+                 status, is_opened, next_term, created_at, updated_at)
+                VALUES (3, ?, ?, '01,02,03,04,05,06,07', ?, '', 1, ?, ?, ?, ?)""",
+                (year, term, date + " 22:32:00", opened, term + 1, date, date),
+            )
+
+        class OpeningBetweenReads:
+            def __getattr__(self, name):
+                return getattr(conn, name)
+
+            def execute(self, sql, params=()):
+                if "AND is_opened = 0" in sql:
+                    conn.execute(
+                        "UPDATE lottery_draws SET is_opened=1 WHERE lottery_type_id=3 AND year=? AND term=?",
+                        (next_year, next_term),
+                    )
+                return conn.execute(sql, params)
+
+        payload = get_effective_next_draw_payload(OpeningBetweenReads(), 3)
+        assert payload["current_issue"] == f"{current_year}{current_term:03d}"
+        assert payload["next_issue"] == f"{next_year}{next_term:03d}"
+        assert sent == []
+        marker = conn.execute(
+            "SELECT value_text FROM system_config WHERE key=?",
+            (f"alert._taiwan_missing_issue_{next_year}_{next_term:03d}",),
+        ).fetchone()
+        assert marker is None
+        refreshed = get_effective_next_draw_payload(conn, 3)
+        assert refreshed["current_issue"] == f"{next_year}{next_term:03d}"
+        assert refreshed["next_issue"] == f"{next_year}{later_term:03d}"
 
 
 def test_public_latest_draw_includes_draw_time(tmp_path):
