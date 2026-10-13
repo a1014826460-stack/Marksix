@@ -18,6 +18,35 @@
 
 ## 概览
 
+### 天地生肖（mode 5）连续同值修复 + twcf888 历史定点修正（2026-10-13）
+
+- 报障：`www.twcf888.com` 预测模块【天地生肖】279-285 连续 7 期同一组合「地肖+蛇羊」。
+- 根因（两条，均**不是**生成规则错）：① mode 5 漏登记 `THREE_PERIOD_UNIQUE_MODE_IDS`，且受控未来期计划
+  把「上一期签名」列入黑名单，而二值玩法在「本期必须未中」时唯一可用候选恰是被禁的那个 →
+  `candidate_space_exhausted` → **静默回落到无约束路径**；② 兜底路径 `enforce_three_period_uniqueness`
+  对 mode 5 拿不到备选正文——`format_tiandi_groups` 返回 `{content, xiao}` 且只取第一个分组，
+  模板既不是字符串、也不含第二个分组（线上重生成 286 期时实测暴露）。
+- 代码提交：`586c7e8`（登记 mode 5 / `window=4` 即最多连续 3 期同值 / 受控计划到顶锁另一分组并反解
+  `target_hit` / 二值域放宽相邻签名 / 连续未中命中上限接跨天台账 / 两肖槽按 `term` 轮转）、
+  `4e30cb8`（多列 formatter 的备选正文按候选逐个生成并取 `content` 字段）。审计工具同批更新：
+  R5 只比预测正文（此前整类漏报）+ 支持 `extra_urls` 扫文章页 + 阈值按模块窗口对齐。
+- 中心节点发布两次（标签 `tiandi-mode5` / `tiandi-mode5-fix2`，备份
+  `.deploy-backups/tiandi-mode5-20261013T020822Z`、`.deploy-backups/tiandi-mode5-fix2-20261013T022223Z`），
+  两次均 `DEPLOY_CENTER_DONE`、`nginx -t` 通过、两站 `/health` 200；前端节点未改（纯后端规则变更）。
+- 数据修正（只动 twcf888 / web=8 / mode 5，未触碰开奖/揭示模块）：
+  · 历史 279-285：原值备份到中心 `/tmp/tiandi-web8-276-285-before.csv`；282 期分组改「天肖」（该期判定
+    由「错」变「对」，其余 6 期判定不变），279/280/281/283/284/285 两肖按 `(term-1)%6` 轮转；
+  · 286 期：先清掉该期陈旧台账预约并删除误生成的「地肖」行，再用受控路径重生成 → `天肖+猪牛`，
+    台账 `target_hit=1 / verified_hit=1`，生成报告 0 告警。
+- 验收：后端 `python -m pytest tests/unit -q` → **1517 passed / 1 failed**（既有 nginx 健康代理契约，
+  本轮之外）；`scripts/audit-prediction-display.py twcf888` → **error=0 / js_errors=0 / warn=3**
+  （天地生肖两条 R5 消失，余下 3 条为既有 R8 提示）；线上面板 286→276 分组序列
+  `天,地,地,地,天,地,地,地,天,天,地`，**连续上限 3 期且无相邻同值行**。
+- 说明：发布脚本结尾的 `$'\r'` 报错是本机 PowerShell 传脚本的行尾残留，出现在 `DEPLOY_CENTER_DONE`
+  之后，不影响发布结果；历史行改写会改变被改写期的判定记录（本期仅 282 一期），已在此留痕。
+- 遗留：`_repair_text_prediction_diversity` 对 mode 5 会打出「unable to find alternative text payload」
+  提示（纯文案、无副作用；受控路径生效时不再出现），未在本轮改动，登记待清理。
+
 ### 台湾彩固定门禁、历史协议及 API 缓存修复发布（2026-10-08）
 
 - 最终两节点发布版本 `c3bf43c`，包含门禁主修复 `81d8821`；中心重建 API、scheduler、后台、前端并检查迁移，前端节点重建前端。今晚 2026281 任务为香港时间 22:32，19:05 复核仍未开奖，唯一 worker healthy、stalled=0。

@@ -1311,13 +1311,27 @@ sample: 279期独家幽默：開:？00 独家幽默：在网吧上网中，对�
   3. `scripts/audit-prediction-display.py`：R5 只比「预测正文」（剔除开奖段，复用 `VERDICT_ANCHOR_RE`，
      否则整行每期都不同 → R5 整类漏报）；站点支持 `extra_urls`（文章页面板此前不在扫描范围）；
      R5 告警阈值按模块窗口对齐（mode 5 = 4）。
+  4. `prediction_generation/service.py::_three_period_alternative_content_templates`（`4e30cb8`）：
+     多列 formatter 的备选正文必须**按候选逐个**生成并取其 `content` 字段。线上重生成 286 期时实测暴露：
+     `format_tiandi_groups` 一次性收到 (`地肖`,`天肖`) 只返回**第一个**分组的正文，且返回值是
+     `{content, xiao}` 字典——`display_token_for_row` 读不出标签、`_content_with_token` 也拿不到模板，
+     于是「受控计划被跳过（台账已预约）」的兜底路径**换不了分组**，283-286 依旧连续 4 期「地肖」。
+- 线上数据修正（2026-10-13，只动 twcf888 / web=8 / mode 5）：
+  · 历史 279-285：282 期分组改「天肖」（该期判定「错」→「对」，其余 6 期判定不变），其余 6 期两肖按
+    `(term-1)%6` 轮转（原值备份在中心 `/tmp/tiandi-web8-276-285-before.csv`）；
+  · 286 期：清掉陈旧台账预约 + 删除误生成行后用受控路径重生成 → `天肖+猪牛`，台账
+    `target_hit=1 / verified_hit=1`、0 告警；
+  · 修后 286→276 分组序列 `天,地,地,地,天,地,地,地,天,天,地`：**连续上限 3 期、无相邻同值行**。
 - 验收：新增 `tests/unit/test_tiandi_mode5_consecutive_display.py`（计划级 16 期序列模拟、二值域不再被
-  相邻签名卡死、两肖轮转、滚动准率不破）与 `tests/unit/test_tiandi_mode5_generation_run_cap.py`
-  （sqlite 端到端 12 期生成 + 台账一致性）；后端 `python -m pytest tests/unit -q` →
-  **1515 passed / 1 failed**（既有 nginx 健康代理契约，与本轮无关）；
-  `audit-prediction-display.py twcf888` → `error=0`，并已能报出该 7 连
-  （首页 `#pred-amgst-5` 与文章页 `/twcf888/amgst/6100` 各一条 R5）。
-- 生效范围：只影响**之后生成的未来期行**；历史行不改写（历史即历史）。
+  相邻签名卡死、两肖轮转、滚动准率不破、兜底路径换值、备选模板必须是字符串正文）与
+  `tests/unit/test_tiandi_mode5_generation_run_cap.py`（sqlite 端到端 12 期生成 + 台账一致性）；
+  后端 `python -m pytest tests/unit -q` → **1517 passed / 1 failed**（既有 nginx 健康代理契约，与本轮无关）；
+  `audit-prediction-display.py twcf888` → **error=0 / js_errors=0 / warn=3**，修前能报出的两条
+  天地生肖 R5 已消失（首页 `#pred-amgst-5` 与文章页 `/twcf888/amgst/6100`）。
+- 生效范围：代码只影响**之后生成的未来期行**；历史行本身不改写，本次因用户明确要求对 twcf888 的
+  7 行做了定点修正（会改变被改写期的判定，已在 `DEPLOY.md` 留痕）。
+- 遗留：`_repair_text_prediction_diversity` 对 mode 5 会打出「unable to find alternative text payload」
+  提示（纯文案、无副作用；受控路径生效时不再出现），登记待清理。
 
 ---
 
