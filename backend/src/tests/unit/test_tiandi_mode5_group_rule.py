@@ -168,8 +168,34 @@ def test_format_tiandi_groups_is_stable_regardless_of_history():
         assert format_tiandi_groups(("地肖",), None) == first
 
 
-def test_mode5_is_not_marked_as_three_period_display_unique():
-    """只有两个分组，不可能满足「相邻三期展示值不同」，不得被登记进该约束。"""
-    from prediction_generation.diversity import THREE_PERIOD_UNIQUE_MODE_IDS
+def test_mode5_is_registered_for_consecutive_display_uniqueness():
+    """天地生肖必须纳入「相邻连续 N 期展示值不得全部相同」。
 
-    assert 5 not in THREE_PERIOD_UNIQUE_MODE_IDS
+    旧断言（`5 not in THREE_PERIOD_UNIQUE_MODE_IDS`）的理由是「只有两个分组，不可能满足
+    相邻三期展示值不同」——这是对规则的误读：规则要求的是「最近 N 期不得**全部**相同」
+    （N = display_unique_window）。按用户 2026-10-13 口径，mode 5 取 N=4
+    ⇒ **最多允许连续 3 期相同，禁止第 4 期**。
+
+    线上事故（2026-10-13 用户报障）：twcf888 mode 5 / web 8 的 279-285 连续 7 期
+    「地肖+蛇羊」——受控计划被「上一期签名」黑名单 + 二选一候选域卡死 → 静默回落无约束路径。
+    """
+    from prediction_generation.diversity import (
+        THREE_PERIOD_UNIQUE_MODE_IDS,
+        display_run_at_cap,
+        display_token_for_row,
+        display_unique_window,
+    )
+
+    assert 5 in THREE_PERIOD_UNIQUE_MODE_IDS
+    assert display_unique_window(5) == 4
+
+    # 展示值 = 正文首项的分组标签（与前台渲染、审计 R5 口径一致）
+    assert display_token_for_row(5, {"content": '["地肖|蛇,羊,鸡,狗,鼠,虎"]'}) == "地肖"
+    assert display_token_for_row(5, {"content": '["天肖|兔,马,猴,猪,牛,龙"]'}) == "天肖"
+
+    # 最近 window-1 = 3 期已同值 → 到顶，本期必须换值（连续 2 期同值仍允许）
+    assert display_run_at_cap(5, ("地肖", "地肖", "地肖")) is True
+    assert display_run_at_cap(5, ("天肖", "天肖", "天肖")) is True
+    assert display_run_at_cap(5, ("地肖", "地肖")) is False
+    assert display_run_at_cap(5, ("地肖", "地肖", "天肖")) is False
+    assert display_run_at_cap(5, ("地肖",)) is False

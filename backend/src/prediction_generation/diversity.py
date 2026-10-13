@@ -95,8 +95,15 @@ _NUMBER_SET_ITEM_RE = re.compile(r"^\d{2}$")
 # 133「前后生肖」与 155「吉美凶丑」同族（2 选 1 全肖、正文 `分组名|成员生肖`），
 # 2026-10-01 起 twbst528【前后中特】绑 133，同样必须纳入本规则：本地实测 8 期里
 # 出现过连续 5 期「后肖」，面板整列同值（审计 R5 repeat_run）。
+#
+# 5「天地生肖」2026-10-13 补入：它同样是「2 选 1 全肖 + 两肖槽」家族，但此前被漏掉，
+# 线上 twcf888 279-285 连续 7 期「地肖+蛇羊」（用户报障）。它与 133/155 的区别只在于
+# 正文写的是「地肖|成员」而两肖槽取该分组前 2 个成员，展示值同样是单个分组标签。
+# 旧注释写的「只有两个分组，不可能满足相邻三期展示值不同」是误读：本规则要求的是
+# 「相邻连续 N 期不得**全部**相同」（N = display_unique_window，默认 3），
+# 两个取值只需交替即可满足（连值上限 = N−1 = 2 期）。
 THREE_PERIOD_UNIQUE_MODE_IDS = frozenset(
-    {28, 52, 57, 62, 63, 108, 133, 141, 144, 147, 152, 155, 157, 158}
+    {5, 28, 52, 57, 62, 63, 108, 133, 141, 144, 147, 152, 155, 157, 158}
 )
 
 #: 展示值取自 `title`（而不是 content 首项标签）的模式。
@@ -104,7 +111,9 @@ THREE_PERIOD_UNIQUE_MODE_IDS = frozenset(
 TITLE_UNIQUE_MODE_IDS = frozenset({52, 62})
 
 #: 连续不重复窗口：默认 3 期；52 四字玄机与 62 欲钱解特候选池最大，要求相邻 5 期不得相同。
-DISPLAY_UNIQUE_WINDOW_BY_MODE: dict[int, int] = {52: 5, 62: 5}
+#: 5 天地生肖按用户口径（2026-10-13）取 4：**最多允许连续 3 期相同，禁止第 4 期**
+#: （window=4 ⇒ `display_run_at_cap` 在最近 3 期同值时为真，本期锁到另一个分组）。
+DISPLAY_UNIQUE_WINDOW_BY_MODE: dict[int, int] = {5: 4, 52: 5, 62: 5}
 
 #: 默认窗口（未在 DISPLAY_UNIQUE_WINDOW_BY_MODE 中单独指定的托管模式）。
 DEFAULT_DISPLAY_UNIQUE_WINDOW = 3
@@ -119,6 +128,20 @@ def display_unique_window(mode_id: int) -> int:
     resolved_mode_id = int(mode_id or 0)
     window = DISPLAY_UNIQUE_WINDOW_BY_MODE.get(resolved_mode_id, DEFAULT_DISPLAY_UNIQUE_WINDOW)
     return max(2, int(window))
+
+
+def display_run_at_cap(mode_id: int, recent_tokens: "list[str] | tuple[str, ...]") -> bool:
+    """最近 `window-1` 期展示值是否已全部相同（再写同一个就会连续 `window` 期）。
+
+    受控未来期生成（`_plan_persisted_future_control`）用它决定「本期必须换展示值」：
+    到顶时把候选锁到剩下的那个取值，并按锁定的取值反解真实方向，保证
+    「展示值轮换」与「受控命中/未中」台账一致。
+    """
+    required = max(1, display_unique_window(mode_id) - 1)
+    tokens = [str(token).strip() for token in (recent_tokens or ()) if str(token).strip()]
+    if len(tokens) < required:
+        return False
+    return len(set(tokens[:required])) == 1
 
 
 # ---------- 号码集合玩法：按配置形状派生，不再人工维护白名单 ----------

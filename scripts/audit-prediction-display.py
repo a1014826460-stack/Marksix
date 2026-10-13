@@ -6,6 +6,12 @@
     python scripts/audit-prediction-display.py twsaimahui      # 只审计指定站点
     python scripts/audit-prediction-display.py --json out.json # 额外输出 JSON
 
+扫描范围：`SITES` 里每个站点扫 `url`（主 URL，通常首页/主壳）。**部分面板只挂在文章页上**
+（例如 twcf888 的「天地生肖」mode 5 只在 `/twcf888/amgst/6100` 上屏，首页没有这个面板），
+只扫主 URL 会整块漏看。这类站点用可选字段 `extra_urls: [...]` 补文章页，审计时逐个页面
+扫一遍；每页的 `rows` / `js_errors` 单独记录，规则判定仍**按页面内**的模块分组
+（R4/R5/R8 的「同一模块相邻期」语义不跨页面），报告里每条 finding 都带来源 URL。
+
 检查项（对应《预测模块展示规范》）：
     R1 raw_json_leak      可见文本里残留 [" / "] / \\" 等原始 JSON 片段
     R2 verdict_pending    未开奖（结果为 ？/??/???? 占位）却显示了判定
@@ -25,7 +31,6 @@
 from __future__ import annotations
 
 import argparse
-import collections
 import json
 import re
 import sys
@@ -64,6 +69,12 @@ SITES: list[dict[str, Any]] = [
         "label": "twcf888 (台湾创富网)",
         "web_id": 8,
         "url": "https://www.twcf888.com/twcf888",
+        # 「天地生肖」(mode 5) 等 amgst 栏目的预测面板只挂在文章页上，首页不出这个面板。
+        # 文章页 ID↔标题的权威映射见 frontend/lib/twcf888-articles.ts 的 ARTICLE_DEFINITIONS
+        # （6100 = 天地生肖 / mode 5）。这里只补已确认会漏看的文章页，不批量展开全部 48 篇。
+        "extra_urls": [
+            "https://www.twcf888.com/twcf888/amgst/6100?lottery_type=3",
+        ],
     },
     {
         "key": "twssz",
@@ -76,6 +87,14 @@ SITES: list[dict[str, Any]] = [
         "label": "twbst528 (台湾百事通)",
         "web_id": 10,
         "url": "https://www.twbst528.com/twbst528",
+        # twbst528 的文章页是供应商静态页（域名根目录下的 N.html），页面契约见
+        # frontend/public/vendor/twbst528/static-article-data-adapter.js 的 PAGE_CONTRACTS：
+        # 49 与 145 都是「天地生肖」(moduleKey = title_5)，首页不出这个面板。这两个是
+        # 唯一已确认的天地生肖文章页；其余 N.html 是别的玩法，不在这里批量展开。
+        "extra_urls": [
+            "https://www.twbst528.com/145.html",
+            "https://www.twbst528.com/49.html",
+        ],
     },
     {
         "key": "twjsz666",
@@ -300,6 +319,8 @@ class Finding:
     level: str
     detail: str
     sample: str = ""
+    #: 这条 finding 来自哪个页面（多 URL 站点必须标注来源，否则分不清是首页还是文章页）。
+    url: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -308,6 +329,7 @@ class Finding:
             "level": self.level,
             "detail": self.detail,
             "sample": self.sample,
+            "url": self.url,
         }
 
 
@@ -320,6 +342,46 @@ class SiteReport:
     errors: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     row_dump: list[dict[str, Any]] = field(default_factory=list)
+    #: 该站点扫过的全部页面（主 URL + extra_urls），顺序即扫描顺序。
+    urls: list[str] = field(default_factory=list)
+    #: 每个页面的 `{url, rows, js_errors}`，用于报告里按 URL 汇总。
+    pages: list[dict[str, Any]] = field(default_factory=list)
+
+
+#: R5 的「连续同值」告警阈值按模块覆盖，与生成侧
+#: `backend/src/prediction_generation/diversity.py::DISPLAY_UNIQUE_WINDOW_BY_MODE` 对齐：
+#: 默认 3 期（连续 3 期同值即告警）；mode 5「天地生肖」为 4 期（允许连续 3 期、禁止第 4 期），
+#: 否则会把合规数据报成 R5 噪音。
+DISPLAY_WINDOW_BY_MODULE_LABEL: tuple[tuple[str, int], ...] = (
+    ("天地生肖", 4),
+    ("四字玄机", 5),
+    ("欲钱解特", 5),
+)
+#: 按 mode id 覆盖（与后端 `DISPLAY_UNIQUE_WINDOW_BY_MODE` 一一对应）。
+DISPLAY_WINDOW_BY_MODE_ID: dict[int, int] = {5: 4, 52: 5, 62: 5}
+DEFAULT_DISPLAY_WINDOW = 3
+#: 容器 id 形如 `pred-<group>-<modeId>`（twcf888 等文章站），从中取出 mode id。
+_MODULE_ID_MODE_RE = re.compile(r"(?:^|[-_])pred[-_][A-Za-z0-9]+[-_](\d+)$")
+
+
+def display_window_for_module(module: str) -> int:
+    """该模块「连续多少期同值即告警」的阈值。
+
+    取值顺序：容器 id 里的 mode 号（`#pred-amgst-5` → mode 5 → 4 期）→ 模块名标签
+    （`#nannv|天地生肖资料` → 4 期）→ 默认 3 期。若容器标题就是展示值本身
+    （`#pred-amgst-5|地肖+蛇羊`），标签匹配必然失败，所以 mode 号这条路是主要依据。
+    """
+    text = str(module)
+    module_id = text.split("|", 1)[0].lstrip("#")
+    matched = _MODULE_ID_MODE_RE.search(module_id)
+    if matched:
+        mode_id = int(matched.group(1))
+        if mode_id in DISPLAY_WINDOW_BY_MODE_ID:
+            return int(DISPLAY_WINDOW_BY_MODE_ID[mode_id])
+    for label, window in DISPLAY_WINDOW_BY_MODULE_LABEL:
+        if label in text:
+            return int(window)
+    return DEFAULT_DISPLAY_WINDOW
 
 
 def is_pending(text: str) -> bool:
@@ -410,26 +472,54 @@ def row_highlights(row: dict[str, Any]) -> int:
     return max(computed_count, highlight_count(str(row.get("html") or "")))
 
 
+def prediction_body(text: str) -> str:
+    """把一行文本切成「本期预测正文 + 开奖段」，只返回**预测正文**。
+
+    为什么必须切：R5 比的是「本期展示了什么」。行文本的后半段（`开 兔40错` /
+    `开:47猴错`）每期都不一样（开奖号码 + 判定文字），拿整行比较会把「连续 7 期
+    展示同一个候选」永远比成不相等 —— R5 因此整类漏报（线上 twcf888「天地生肖」
+    279-285 连续 7 期 `地肖+蛇羊` 就是这么漏掉的）。
+
+    切割点复用判定锚点 `VERDICT_ANCHOR_RE`（注释见上）：它定位的就是「开奖段起点」，
+    正文里那些**不像开奖段**的「开」（段子里的「开视频 / 开心」）不会被误当切割点。
+    一个锚点都找不到时退回旧口径「第一个 开/開」，保证没有锚点的模板（`开 ;野:…`）
+    仍按原来的位置切割。
+    """
+    anchor = VERDICT_ANCHOR_RE.search(text)
+    if anchor:
+        return text[: anchor.start()]
+    opening = re.search(r"开|開", text)
+    return text[: opening.start()] if opening else text
+
+
 def extract_display_token(text: str, label: str = "") -> str:
-    """取「最后一个期号」到「开/開」之间的展示值（预测内容）。
+    """取「最后一个期号」到「开奖段」之间的展示值（预测内容）。
 
     取值优先级：
-    1. 去掉行内标签（`270期 双波 【蓝波,绿波】 开:…` 里的 `双波`）之后；
-    2. 若剩余文本里有 `【…】/『…』/（…）`，取括号内容作为展示值
+    1. 先按 `prediction_body` 砍掉开奖段（号码 + 判定文字）；
+    2. 去掉行内标签（`270期 双波 【蓝波,绿波】 开:…` 里的 `双波`）之后；
+    3. 若剩余文本里有 `【…】/『…』/（…）`，取括号内容作为展示值
        （这样 R5 比较的是「本期选了什么」，而不是每期都一样的标签）；
-    3. 否则用剩余文本本身。
+    4. 否则用剩余文本本身。
     剩余内容若全是标签/标点（去掉标签后什么都不剩），返回空串跳过 R5。
     """
-    opening = re.search(r"开|開", text)
-    head = text[: opening.start()] if opening else text
+    head = prediction_body(text)
     terms = list(re.finditer(r"\d{2,3}\s*期", head))
     if not terms:
         return ""
     raw = head[terms[-1].end():].strip()
-    raw = re.sub(r"^[::\s]+", "", raw)
+    # 全角冒号 `：` 必须一起去掉：只写 `[::\s]` 时 `285期：内幕大公` 剥不掉冒号，
+    # 后面的标签剥离（`raw.startswith(label)`）随之失配，模块名会被当成展示值。
+    raw = re.sub(r"^[::：\s]+", "", raw)
     if label and raw.startswith(label):
         raw = raw[len(label):].lstrip(":： ")
-    brackets = [part.strip() for part in re.findall(r"[【『（(《]([^】』）)》]*)[】』）)》]", raw)]
+    brackets = [
+        part.strip()
+        for part in re.findall(r"[【『（(《]([^】』）)》]*)[】』）)》]", raw)
+        # `(7.)` / `(5.)` 这类是**序号标记**（twjinniu 七肖中特给每个玩法段编号），
+        # 不是展示值括号；当括号取出来会得到 `7. / 5. / 3. / 9.` 这种恒定串 → 假 R5。
+        if not re.fullmatch(r"\d+\s*\.", part.strip())
+    ]
     joined = " / ".join(part for part in brackets if part)
     if joined:
         return joined[:40]
@@ -437,6 +527,84 @@ def extract_display_token(text: str, label: str = "") -> str:
     if not re.sub(r"[\s:：,，、.。·\-—]", "", without_labels):
         return ""
     return raw[:40]
+
+
+#: 展示值必须「像个预测内容」：含生肖 / 号码 / 波色 / 头尾 / 大小 / 五行 / 天地 / 前后 之类的字符。
+#:
+#: 这条配合 `title_modules` 取代了旧的「出现频率 ≥40% 就当成列头剔除」启发式。那条启发式的
+#: 假设（「真正的相邻 3 期同值不可能在同一模块里占掉这么大比例」）正好和 R5 要抓的缺陷相反：
+#: 面板卡死时就是同一份候选连着 7、8 期不动，频率必然高，于是 R5 反被压掉
+#: （twcf888「天地生肖」279-285 连续 7 期 `地肖+蛇羊`、占该模块 8 行的 7/8，就是这么漏报的）。
+DISPLAY_VALUE_RE = re.compile(
+    r"[鼠牛虎兔龙蛇马羊猴鸡狗猪龍馬雞豬免]|\d|"
+    r"[蓝藍红紅绿綠波单單双雙大小家野天地前後后左右日夜阴阳陰陽金木水火土"
+    r"琴棋书画書畫合半平特头頭尾段黑白]"
+)
+
+#: 「抽取残渣」形态：展示值里还残留开奖段标记、括号、分句符等结构字符。
+#:
+#: 出现这些字符说明这一行的「期号 → 开奖段」没切干净（例如 `#table1799` 的
+#: `285期：欲钱买特码【 开兔40` 只有半个括号、`AAA级大公开;准确率绝对100%;大胆下注!`
+#: 的 `开` 落在宣传语里），此时取出来的串是模板文案而不是本期候选，不能参与 R5
+#: （否则整列恒定 = 假 R5）。
+JUNK_TOKEN_RE = re.compile(r"[开開【\[『「（(《〈；;！!]")
+
+
+def title_modules(by_module_seq: dict[str, list[tuple[str, str]]]) -> set[str]:
+    """挑出「展示值其实是模块列标题 / 标签页名」的 module。
+
+    判据（两个都指向「这个标签每期都一样，是玩法名而不是本期展示内容」）：
+    1. 容器里**只有这一个标签** —— 说明同容器下没有并列玩法名，标签恒定 ⇒ 列标题
+       （`#pred-amgst-483|四头必中`：`285期【四头必中】开 兔40对 1-2-0-4`，
+       真正的候选 `1-2-0-4` 落在开奖段之后，抽取只能回落到模块名）；
+    2. 容器里存在**期号重叠**的另一个标签 —— 同一个期号下同容器挂了两个不同标签，
+       说明它们是并列的玩法名 / 标签页（twcf888 `#pred-amgst-53` 的
+       `三行中特` 与 `精准五行`、twbst528 `.center.f13` 的 `双波⑩码` 与 `六肖十八码`）。
+
+    反例（必须保留、不能当标题剔掉）：twcf888 `#pred-amgst-5` 的 `地肖+蛇羊`
+    （279-285 期）与 `天肖+狗龙`（278 期）—— 容器里确实有两个标签，但期号
+    **不重叠**：这是同一个面板换了一期就换了候选，那个「标签」就是本期展示值，
+    必须照常参与 R5。旧实现「出现频率 ≥40% 就当列头剔除」的启发式把这一类
+    真缺陷一起压掉了（见 `DISPLAY_VALUE_RE` 注释）。
+    """
+    terms_of = {module: {term for term, _ in seq} for module, seq in by_module_seq.items()}
+    modules_of: dict[str, set[str]] = {}
+    for module in by_module_seq:
+        container, sep, label = module.rpartition("|")
+        if sep and label:
+            modules_of.setdefault(container, set()).add(module)
+
+    titles: set[str] = set()
+    for module in by_module_seq:
+        container, sep, label = module.rpartition("|")
+        if not sep or not label:
+            continue
+        # 容器归属不明的行（`containerOf` 没找到 id/class，key 就是 `?|…`）无法区分
+        # 「列标题」与「本期展示值」，按 R4/R8 的同一约定不在这里做标题判定——
+        # twbst528 首页的 `?|地肖+蛇羊` 就是这样一行一个玩法值（同容器 `?` 下挂着 105 个
+        # 模块），把它当标题会把「连续 6 期地肖+蛇羊」的真缺陷压掉。
+        if container == "?":
+            continue
+        my_terms = terms_of[module]
+        peers = [peer for peer in modules_of.get(container, ()) if peer != module]
+        if not peers:
+            titles.add(module)
+            continue
+        if any(my_terms & terms_of[peer] for peer in peers):
+            titles.add(module)
+    return titles
+
+
+def is_display_value(token: str, title_token: str = "") -> bool:
+    """该展示值是否「像预测内容」且不是稳定的列标题 / 抽取残渣（R5 只比较这类值）。"""
+    text = str(token or "").strip()
+    if not text:
+        return False
+    if title_token and text == str(title_token).strip():
+        return False
+    if JUNK_TOKEN_RE.search(text):
+        return False
+    return bool(DISPLAY_VALUE_RE.search(text))
 
 
 def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
@@ -508,28 +676,25 @@ def audit_rows(site_key: str, rows: list[dict[str, Any]]) -> list[Finding]:
     by_module_seq: dict[str, list[tuple[str, str]]] = {}
     for module, term, token in display_seq:
         by_module_seq.setdefault(module, []).append((term, token))
+    title_module_set = title_modules(by_module_seq)
     for module, seq in by_module_seq.items():
-        # 标签降噪：某个 token 在该模块里出现频率 ≥40%（且至少 3 行）时，它是模块名/列头而不是
-        # 展示值，真正的「相邻 3 期同值」不可能在同一模块里占掉这么大比例。
-        # 只在模块有 ≥6 行时启用，避免小样本整块被跳过。
-        label_tokens: set[str] = set()
-        if len(seq) >= 6:
-            counts = collections.Counter(token for _, token in seq if token)
-            threshold = max(3, len(seq) * 0.4)
-            label_tokens = {token for token, count in counts.items() if count >= threshold}
+        _, sep, label = module.rpartition("|")
+        title_token = label if (sep and module in title_module_set) else ""
         run_start = 0
         for index in range(1, len(seq) + 1):
             same = (
                 index < len(seq)
                 and seq[index][1] == seq[run_start][1]
-                and seq[index][1] != ""
-                and seq[index][1] not in label_tokens
+                and is_display_value(seq[index][1], title_token)
             )
             if same:
                 continue
             run_len = index - run_start
             token = seq[run_start][1]
-            if run_len >= 3 and token and token not in label_tokens:
+            # 告警阈值必须与生成侧口径一致（见 DISPLAY_WINDOW_BY_MODULE_LABEL）：
+            # 默认「连续 3 期同值」即告警；mode 5 天地生肖允许连续 3 期（window=4），
+            # 否则会把合规数据报成 R5 噪音。
+            if run_len >= display_window_for_module(module) and is_display_value(token, title_token):
                 terms = ",".join(item[0] for item in seq[run_start:index])
                 findings.append(Finding(site_key, "R5 repeat_run", "warn",
                                         f"{module} 连续 {run_len} 期展示值相同：{token!r}",
@@ -582,6 +747,30 @@ def audit_legends(site_key: str, legends: list[dict[str, Any]]) -> list[Finding]
     return findings
 
 
+def site_urls(site: dict[str, Any], base_url: str = "") -> list[str]:
+    """该站点要扫的全部页面：主 URL + `extra_urls`（去重、保持顺序）。
+
+    `base_url` 非空时（本地预检）逐条把线上域名换成该地址。
+    """
+    raw_urls = [str(site.get("url") or "")]
+    raw_urls.extend(str(item) for item in (site.get("extra_urls") or []))
+    urls: list[str] = []
+    for item in raw_urls:
+        if not item or item in urls:
+            continue
+        urls.append(_rewrite_url(item, base_url) if base_url else item)
+    return urls
+
+
+def _rewrite_url(url: str, base_url: str) -> str:
+    """本地预检：把线上域名换成 --base-url（例如 http://127.0.0.1:3000），保留 path/query。"""
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    base = urlsplit(base_url.rstrip("/"))
+    return urlunsplit((base.scheme, base.netloc, parts.path, parts.query, parts.fragment))
+
+
 def audit_site(
     site: dict[str, Any],
     *,
@@ -591,47 +780,60 @@ def audit_site(
 ) -> SiteReport:
     from playwright.sync_api import sync_playwright
 
-    url = site["url"]
-    if base_url:
-        # 本地预检：把线上域名换成 --base-url（例如 http://127.0.0.1:3000）
-        from urllib.parse import urlsplit, urlunsplit
+    urls = site_urls(site, base_url)
+    report = SiteReport(site=site["key"], label=site["label"], url=urls[0], urls=list(urls))
+    multi = len(urls) > 1
 
-        parts = urlsplit(url)
-        base = urlsplit(base_url.rstrip("/"))
-        url = urlunsplit((base.scheme, base.netloc, parts.path, parts.query, parts.fragment))
-
-    report = SiteReport(site=site["key"], label=site["label"], url=url)
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, headless=headless)
-        page = browser.new_page(viewport={"width": 900, "height": 1200})
-        page.on("pageerror", lambda exc: report.errors.append(str(exc)[:200]))
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=180000)
-            # 「站点数据客户端 + 供应商聚合 payload」的站点首屏可能要几十秒才渲染预测行
-            # （twbst528 线上实测约 39 s），等待窗口太短会只扫到供应商模板行，
-            # 线上审计因此空跑（rows 偏少甚至 0）。默认仍保持历史上的 12 s，
-            # 慢站用 `--wait-ms` 显式加长。
-            page.wait_for_timeout(max(1000, int(wait_ms)))
-            frames = [frame for frame in page.frames]
-        except Exception as exc:  # noqa: BLE001
-            report.errors.append(f"goto failed: {exc}")
-            browser.close()
-            return report
-
-        all_rows: list[dict[str, Any]] = []
-        all_legends: list[dict[str, Any]] = []
-        for frame in frames:
+        for page_url in urls:
+            page_errors: list[str] = []
+            page = browser.new_page(viewport={"width": 900, "height": 1200})
+            page.on("pageerror", lambda exc, bucket=page_errors: bucket.append(str(exc)[:200]))
+            rows: list[dict[str, Any]] = []
+            legends: list[dict[str, Any]] = []
             try:
-                all_rows.extend(frame.evaluate(ROW_SCRIPT) or [])
-                all_legends.extend(frame.evaluate(LEGEND_SCRIPT) or [])
-            except Exception:  # noqa: BLE001 - 跨域 frame 直接跳过
-                continue
-        browser.close()
+                page.goto(page_url, wait_until="domcontentloaded", timeout=180000)
+                # 「站点数据客户端 + 供应商聚合 payload」的站点首屏可能要几十秒才渲染预测行
+                # （twbst528 线上实测约 39 s），等待窗口太短会只扫到供应商模板行，
+                # 线上审计因此空跑（rows 偏少甚至 0）。默认仍保持历史上的 12 s，
+                # 慢站用 `--wait-ms` 显式加长。
+                page.wait_for_timeout(max(1000, int(wait_ms)))
+                frames = [frame for frame in page.frames]
+            except Exception as exc:  # noqa: BLE001
+                page_errors.append(f"goto failed: {exc}")
+                frames = []
+            else:
+                for frame in frames:
+                    try:
+                        rows.extend(frame.evaluate(ROW_SCRIPT) or [])
+                        legends.extend(frame.evaluate(LEGEND_SCRIPT) or [])
+                    except Exception:  # noqa: BLE001 - 跨域 frame 直接跳过
+                        continue
+            finally:
+                page.close()
 
-    report.rows = len(all_rows)
-    report.row_dump = all_rows
-    report.findings.extend(audit_rows(site["key"], all_rows))
-    report.findings.extend(audit_legends(site["key"], all_legends))
+            # 多 URL 站点把页面来源写进错误串；单 URL 站点保持历史输出不变（js_errors 仍是裸消息）。
+            report.errors.extend(
+                f"[{page_url}] {message}" if multi else message for message in page_errors
+            )
+            report.pages.append({"url": page_url, "rows": len(rows), "js_errors": page_errors})
+            report.rows += len(rows)
+            # 每行打上来源页面，`--dump-rows` 与报告里才能按 URL 归因。
+            for row in rows:
+                row["url"] = page_url
+            report.row_dump.extend(rows)
+
+            # 规则判定按页面分组跑：R4/R5/R8 的「同一模块相邻期」只在**本页**成立，
+            # 跨页合并会把首页与文章页的同期号行接成一段，造出假 R5。
+            for finding in audit_rows(site["key"], rows):
+                finding.url = page_url
+                report.findings.append(finding)
+            for finding in audit_legends(site["key"], legends):
+                finding.url = page_url
+                report.findings.append(finding)
+
+        browser.close()
     return report
 
 
@@ -641,7 +843,7 @@ def main() -> int:
     parser.add_argument("--json", dest="json_path", default="")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--base-url", default="", help="本地预检：替换站点域名为该地址（如 http://127.0.0.1:3000）")
-    parser.add_argument("--dump-rows", default="", help="把抓到的每一行（module/text/highlights）写到该 JSON，便于人工复核")
+    parser.add_argument("--dump-rows", default="", help="把抓到的每一行（url/module/label/text/highlights）写到该 JSON，便于人工复核")
     parser.add_argument(
         "--wait-ms",
         type=int,
@@ -672,14 +874,30 @@ def main() -> int:
     text_lines = ["# 预测模块展示规范审计报告", ""]
     for report in reports:
         text_lines.append(f"## {report.label}  ({report.url})")
-        text_lines.append(f"- 扫描行数：{report.rows}")
+        text_lines.append(f"- 扫描行数：{report.rows}（{len(report.pages)} 个页面）")
         if report.errors:
             text_lines.append(f"- JS 报错：{report.errors}")
         if not report.findings:
             text_lines.append("- 未发现违规 ✅")
-        for finding in report.findings:
-            mark = "ERROR" if finding.level == "error" else "warn"
-            text_lines.append(f"- [{mark}] `{finding.rule}` {finding.detail} | 样例：{finding.sample}")
+        # 多 URL 站点按页面分组，明确每条违规来自首页还是文章页；单 URL 站点保持原样。
+        if len(report.pages) > 1:
+            text_lines.append("- 页面明细：")
+            for page in report.pages:
+                text_lines.append(f"  - {page['url']} → 行数 {page['rows']}")
+            for page in report.pages:
+                page_findings = [item for item in report.findings if item.url == page["url"]]
+                if not page_findings:
+                    continue
+                text_lines.append(f"- 来源 {page['url']}：")
+                for finding in page_findings:
+                    mark = "ERROR" if finding.level == "error" else "warn"
+                    text_lines.append(
+                        f"  - [{mark}] `{finding.rule}` {finding.detail} | 样例：{finding.sample}"
+                    )
+        else:
+            for finding in report.findings:
+                mark = "ERROR" if finding.level == "error" else "warn"
+                text_lines.append(f"- [{mark}] `{finding.rule}` {finding.detail} | 样例：{finding.sample}")
         text_lines.append("")
 
     report_path = args.json_path.replace(".json", ".md") if args.json_path else "audit-prediction-display.md"
@@ -694,6 +912,8 @@ def main() -> int:
                     "site": report.site,
                     "label": report.label,
                     "url": report.url,
+                    "urls": report.urls,
+                    "pages": report.pages,
                     "rows": report.rows,
                     "js_errors": report.errors,
                     "findings": [finding.as_dict() for finding in report.findings],
@@ -706,10 +926,13 @@ def main() -> int:
         print(f"JSON 报告已写入 {args.json_path}")
 
     if args.dump_rows:
+        # 多 URL 站点：`row_dump` 带 `url` 字段，人工复核时能分清每一行来自哪个页面。
         dump_payload = {
             report.site: [
                 {
+                    "url": row.get("url", report.url),
                     "module": row.get("module", "?"),
+                    "label": row.get("label", ""),
                     "text": row.get("text", ""),
                     "highlights": row_highlights(row),
                     "verdict": verdict_of(str(row.get("text") or "")),

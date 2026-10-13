@@ -89,9 +89,11 @@ from prediction_generation.diversity import (
     THREE_PERIOD_UNIQUE_MODE_IDS,
     TITLE_UNIQUE_MODE_IDS,
     distinct_tokens_for_content,
+    display_run_at_cap,
     display_token_for_row,
     enforce_prediction_diversity,
     enforce_three_period_uniqueness,
+    parse_array_content,
     replace_text_placeholder,
 )
 from runtime_config import get_config_from_conn
@@ -795,6 +797,36 @@ def _apply_three_period_uniqueness(
         ),
     )
 
+
+def _rotate_tiandi_pair(row_data: dict[str, Any], *, mode_id: int, term: int) -> dict[str, Any]:
+    """天地生肖（mode 5）：按期末尾轮转两肖槽，避免整行一字不变。
+
+    为什么安全：`content` 记的是「分组|全部成员」，平台判定（`hit_checker`）只读**分组标签**；
+    两肖槽是展示维度且恒为分组子集（`predict.mechanisms.format_tiandi_groups`），
+    因此按期轮转成员不改变任何判定口径，也不影响受控台账（签名 = 分组标签）。
+    线上事故（twcf888 279-285 连续 7 期「地肖+蛇羊」）中，分组不变时两肖必然不变，
+    轮转后同一分组的相邻期也会显示不同的两肖组合。
+    """
+    if int(mode_id or 0) != 5:
+        return row_data
+    items = parse_array_content(row_data.get("content"))
+    if not items:
+        return row_data
+    head = str(items[0])
+    if "|" not in head:
+        return row_data
+    _, members_text = head.split("|", 1)
+    members = [member.strip() for member in members_text.split(",") if member.strip()]
+    if len(members) < 2:
+        return row_data
+    start = (max(0, int(term or 0)) - 1) % len(members)
+    updated = dict(row_data)
+    updated["xiao"] = ",".join(
+        members[(start + offset) % len(members)] for offset in range(2)
+    )
+    return updated
+
+
 class _PersistedFutureControl:
     """Internal plan data. It never enters a created row, report, or HTTP response."""
 
@@ -857,6 +889,7 @@ def _plan_persisted_future_control(
     attempt: int = 0,
     rejected_prefix_hashes: set[str] | None = None,
     rejected_signature_hashes: set[str] | None = None,
+    recent_display_tokens: tuple[str, ...] = (),
 ) -> _PersistedFutureControl | None:
     """Build a rule-verified future candidate using only internal control data."""
     if int(lottery_type) != 3 or truth is None:
@@ -892,6 +925,62 @@ def _plan_persisted_future_control(
             f"{year}:{term}:{mechanism_key}"
         ),
     )
+
+    # 连续未中/命中上限（`prediction.simulation.max_consecutive_*`）。
+    # 2026-10-13 修正：这两个配置此前只作用于**同批次内存态**
+    # （`SimulationState()` 每次批次归零，见本模块 generate 循环），跨天等于死配置；
+    # 真正跨天生效的只有 `AccuracyPolicy(window_size=10, minimum_hit_rate=target)`
+    # —— 10 期窗口 @0.5 允许最多 5 连错（线上 mode 5 实测连错 4 期即在此范围内）。
+    # 这里把两个上限接到**跨天台账**（`list_recent_verified_outcomes`）上，
+    # 让配置项与行为一致；展示值连续约束在下文优先级更高。
+    simulation_caps = simulation_config.normalized()
+    trailing_misses = 0
+    for outcome in reversed(list(prior_outcomes)):
+        if bool(outcome):
+            break
+        trailing_misses += 1
+    trailing_hits = 0
+    for outcome in reversed(list(prior_outcomes)):
+        if not bool(outcome):
+            break
+        trailing_hits += 1
+    # 「连续命中上限」只在不破坏滚动准率下限时生效：10 期窗口 @0.6 时窗口内最多 4 期未中，
+    # 若最近的未中数已达上限，强制未中会让窗口跌破下限（`validate_rolling_hit_rate` 会失败）。
+    policy_window = policy.normalized()
+    recent_misses = sum(
+        1 for outcome in list(prior_outcomes)[-(policy_window.window_size - 1):] if not bool(outcome)
+    )
+    policy_room_for_miss = recent_misses < policy_window.maximum_misses
+    if trailing_hits >= simulation_caps.max_consecutive_hits and policy_room_for_miss:
+        target_hit = False
+    elif trailing_misses >= simulation_caps.max_consecutive_misses:
+        target_hit = True
+
+    # 展示值连续约束（`diversity.display_unique_window`：相邻连续 N 期不得全部同值）。
+    # 为什么必须在**受控计划**里解决：二选一玩法要求「本期未中」时只剩一个候选，而
+    # `choose_controlled_labels` 同时被 `forbidden_signature_hashes`（上一期签名）挡住时
+    # 必然无解 → `ControlledCandidateUnavailable` → 静默回落到无约束路径，同值可以无限连下去
+    # （线上 twcf888 mode 5 / web 8 的 279-285 连续 7 期「地肖+蛇羊」即此路径）。
+    # 这里让「换展示值」优先：到顶就把候选锁到另一个标签，并按锁定值反解真实方向，
+    # 使 `target_hit`/`verified_hit` 与最终落库内容始终一致。
+    mode_key = int(config.default_modes_id or 0)
+    display_tokens = tuple(
+        str(token).strip() for token in (recent_display_tokens or ()) if str(token).strip()
+    )
+    candidate_domain = {
+        str(label).strip() for label in (getattr(config, "labels", ()) or ()) if str(label).strip()
+    }
+    display_managed = mode_key in THREE_PERIOD_UNIQUE_MODE_IDS
+    if display_managed and display_tokens and display_run_at_cap(mode_key, display_tokens):
+        alternatives = [label for label in sorted(candidate_domain) if label != display_tokens[0]]
+        if len(alternatives) == 1:
+            forced_label = alternatives[0]
+            target_hit = bool(rule.verify_hit(config, (forced_label,), truth, conn=conn))
+            predicted_labels = (forced_label,)
+    # 二值展示域（天肖/地肖、单/双、大/小这类二选一）：连续窗口本身就是唯一约束，
+    # 不再把「上一期签名」当黑名单——否则「换值」与「必须未中」冲突时受控计划整体失败，
+    # 反而退化成无约束的连续同值。取值 ≥3 的托管玩法维持原有的相邻签名约束。
+    enforce_adjacent_signature = not (display_managed and len(candidate_domain) <= 2)
     same_issue_controls = load_controls_for_issue(
         conn,
         lottery_type_id=int(lottery_type),
@@ -921,7 +1010,9 @@ def _plan_persisted_future_control(
         "forbidden_prefixes": set(),
         "forbidden_signatures": set(),
         "forbidden_signature_hashes": (
-            {str(row["signature_hash"]) for row in adjacent_controls}
+            ({str(row["signature_hash"]) for row in adjacent_controls}
+             if enforce_adjacent_signature
+             else set())
             | set(rejected_signature_hashes or ())
         ),
         "seed": (
@@ -976,6 +1067,7 @@ def _apply_persisted_future_control(
     control_attempt: int = 0,
     rejected_prefix_hashes: set[str] | None = None,
     rejected_signature_hashes: set[str] | None = None,
+    recent_display_tokens: tuple[str, ...] = (),
 ) -> tuple[Any, tuple[str, ...], SimulationResult, _PersistedFutureControl] | None:
     """Apply a persisted rule plan for a verified Taiwan future module."""
     if not is_future or truth is None or simulation_config is None or not callable(getattr(conn, "execute", None)):
@@ -996,6 +1088,7 @@ def _apply_persisted_future_control(
         attempt=control_attempt,
         rejected_prefix_hashes=rejected_prefix_hashes,
         rejected_signature_hashes=rejected_signature_hashes,
+        recent_display_tokens=recent_display_tokens,
     )
     generated_content, _ = _format_prediction_content_from_labels(config, control.labels, conn)
     return (
@@ -1715,6 +1808,7 @@ def _generate_default_mode_row(
     control_attempt: int = 0,
     rejected_prefix_hashes: set[str] | None = None,
     rejected_signature_hashes: set[str] | None = None,
+    recent_display_tokens: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """通用模式：调用 predict() 生成预测内容。"""
     result = predict(
@@ -1740,6 +1834,7 @@ def _generate_default_mode_row(
         control_attempt=control_attempt,
         rejected_prefix_hashes=rejected_prefix_hashes,
         rejected_signature_hashes=rejected_signature_hashes,
+        recent_display_tokens=recent_display_tokens,
     )
     if (
         persisted_control is None
@@ -1808,6 +1903,7 @@ def _generate_single_draw_row(
     control_attempt: int = 0,
     rejected_prefix_hashes: set[str] | None = None,
     rejected_signature_hashes: set[str] | None = None,
+    recent_display_tokens: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """根据 mode_id 分发生成单期预测行。"""
     if mode_id == 65:
@@ -1924,6 +2020,7 @@ def _generate_single_draw_row(
         control_attempt=control_attempt,
         rejected_prefix_hashes=rejected_prefix_hashes,
         rejected_signature_hashes=rejected_signature_hashes,
+        recent_display_tokens=recent_display_tokens,
     )
 
 
@@ -2202,6 +2299,17 @@ def _process_single_module(
 
             rejected_prefix_hashes: set[str] = set()
             rejected_signature_hashes: set[str] = set()
+            # 展示值连续约束的输入：最近 window-1 期的展示值（新→旧，含本批次刚生成的行）。
+            # 受控计划据此在「再写同一个就会连续 window 期」时锁定另一个候选。
+            recent_display_tokens: tuple[str, ...] = ()
+            if int(mode_id) in THREE_PERIOD_UNIQUE_MODE_IDS:
+                recent_display_tokens = tuple(
+                    token
+                    for token in (
+                        display_token_for_row(mode_id, row) for row in (recent_rows or ())
+                    )
+                    if token
+                )
             row_data: dict[str, Any] | None = None
             control_plan: _PersistedFutureControl | None = None
             simulation_should_hit: bool | None = None
@@ -2224,6 +2332,7 @@ def _process_single_module(
                         control_attempt=control_attempt,
                         rejected_prefix_hashes=rejected_prefix_hashes,
                         rejected_signature_hashes=rejected_signature_hashes,
+                        recent_display_tokens=recent_display_tokens,
                     )
                 except _PersistedFutureControlUnavailable as exc:
                     fallback_reason = str(exc)
@@ -2331,6 +2440,12 @@ def _process_single_module(
             diversity_warning = row_data.pop("_diversity_warning", None)
             if diversity_warning:
                 module_report["warnings"].append(str(diversity_warning))
+
+            # 天地生肖两肖槽按期轮转（只影响展示维度，判定与台账均只读分组标签）。
+            if is_future:
+                row_data = _rotate_tiandi_pair(
+                    row_data, mode_id=int(mode_id), term=int(draw["term"])
+                )
 
             stored = _persist_generated_row(
                 conn,

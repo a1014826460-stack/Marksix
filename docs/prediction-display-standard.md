@@ -1283,6 +1283,44 @@ sample: 279期独家幽默：開:？00 独家幽默：在网吧上网中，对�
 
 ---
 
+## 五之十八、天地生肖（mode 5）连续同值：受控计划对二值玩法不可达（2026-10-13）
+
+- 报障：`www.twcf888.com` 预测模块【天地生肖】279-285 连续 7 期同一组合「地肖+蛇羊」。
+- 定性（**不是生成规则错**）：mode 5 候选域只有天肖/地肖两组，分组由**真实特肖所属分组**反解
+  （`domains/prediction/generation_rules.py::_tiandi_group`）。
+  - 要求「命中」时分组必然等于真实分组；要求「未中」时二选一里**只剩另一组**
+    （`domains/prediction/simulation_service.py::_force_miss`）。这 7 期特肖是 鼠/兔/蛇/猪/猴/龙/兔：
+    5 期属天肖且被要求未中 → 全写成「地肖」；另 2 期真实属地肖且要求命中 → 也是「地肖」。
+  - 两肖槽 = 分组在 `fixed_data` 里的前 2 个成员（`predict/mechanisms.py::format_tiandi_groups`，
+    生产顺序「蛇,羊,鸡,狗,鼠,虎」）⇒ 恒为「蛇羊」；两肖 ⊆ 分组且不参与判定 ⇒ 整行一字不差。
+- **真缺陷**：受控计划（`prediction_generation/service.py::_plan_persisted_future_control`）把
+  「上一期签名」列入 `forbidden_signature_hashes`（`load_adjacent_controls`），而二值玩法在
+  「必须未中」时唯一可用候选恰是被禁的那个 → `choose_controlled_labels` 抛
+  `candidate_space_exhausted` → `_PersistedFutureControlUnavailable` → **静默回落到无约束路径**，
+  同值因此可以无限连。另 `prediction.simulation.max_consecutive_misses=3` 只作用于**同批次内存态**
+  （每批 `SimulationState()` 归零），跨天是死配置；跨天真正生效的只有
+  `AccuracyPolicy(window_size=10, minimum_hit_rate=target)` ⇒ 允许最多 5 连错。
+- 修法：
+  1. `prediction_generation/diversity.py`：`THREE_PERIOD_UNIQUE_MODE_IDS` 补入 **5**（此前漏登记，
+     同族的 133/141/144/147/152/155/157/158 早已在内）；新增 `display_run_at_cap()`；
+     按用户口径设 `DISPLAY_UNIQUE_WINDOW_BY_MODE[5] = 4` ⇒ **最多连续 3 期同值，禁止第 4 期**。
+  2. `prediction_generation/service.py`：受控计划到顶时把候选锁到另一分组，并按锁定值反解
+     `target_hit`（台账 / 落库内容 / 判定三者一致）；二值展示域不再用上一期签名当黑名单；
+     连续未中/命中上限接到**跨天台账**（且不得跌破滚动准率下限）；mode 5 未来期两肖槽按 `term`
+     轮转（只影响展示，判定与台账只读分组标签）。
+  3. `scripts/audit-prediction-display.py`：R5 只比「预测正文」（剔除开奖段，复用 `VERDICT_ANCHOR_RE`，
+     否则整行每期都不同 → R5 整类漏报）；站点支持 `extra_urls`（文章页面板此前不在扫描范围）；
+     R5 告警阈值按模块窗口对齐（mode 5 = 4）。
+- 验收：新增 `tests/unit/test_tiandi_mode5_consecutive_display.py`（计划级 16 期序列模拟、二值域不再被
+  相邻签名卡死、两肖轮转、滚动准率不破）与 `tests/unit/test_tiandi_mode5_generation_run_cap.py`
+  （sqlite 端到端 12 期生成 + 台账一致性）；后端 `python -m pytest tests/unit -q` →
+  **1515 passed / 1 failed**（既有 nginx 健康代理契约，与本轮无关）；
+  `audit-prediction-display.py twcf888` → `error=0`，并已能报出该 7 连
+  （首页 `#pred-amgst-5` 与文章页 `/twcf888/amgst/6100` 各一条 R5）。
+- 生效范围：只影响**之后生成的未来期行**；历史行不改写（历史即历史）。
+
+---
+
 ## 六、常见根因速查
 
 | 现象 | 常见根因 | 处理 |
@@ -1292,6 +1330,7 @@ sample: 279期独家幽默：開:？00 独家幽默：在网吧上网中，对�
 | 未开奖期仍显示「中/对/错」 | 判定只看候选命中，没有先判 `isOpened` | 未开奖一律不输出判定，也不高亮 |
 | 命中却没有黄底 | 高亮条件与判定用了两个不同的数据源（本地复算 vs 接口 `is_correct`） | 判定与高亮必须来自**同一套口径**：一般情况下以接口 `is_correct` 为准；当接口口径与**面板展示的候选**不一致时（【天地+②肖】、以及五之十五的【吉美丑凶】【③肖防③码】【前后中特】），由面板本地复算，判定与标黄同时改用本地值 |
 | 全场都是同一个分组（全左肖/全阳肖…） | 生成侧每期只输出一个标签 + 没有相邻期约束 | 把该 mode 加入 `THREE_PERIOD_UNIQUE_MODE_IDS`，并保证候选标签能枚举出两组 |
+| 二选一玩法连续多期同一个分组（如「地肖+蛇羊」连 7 期） | 该 mode 漏登记 `THREE_PERIOD_UNIQUE_MODE_IDS`；且受控计划的「上一期签名不得相同」黑名单与「本期必须未中」冲突 → 计划无解后**静默回落**到无约束路径；两肖槽取分组前 2 个成员，分组不变则整行不变 | 登记该 mode（二值展示域不再把上一期签名当黑名单）；到顶时锁另一分组并按锁定值反解 `target_hit`；两肖槽按 `term` 轮转（见五之十八） |
 | 号码集合类每期前几位固定 | 不是轮转问题，是「热度排名」被跨站/跨期重复计数钉死（见「五之五」） | 加入 `UNORDERED_NUMBER_SET_MODE_IDS`（停用位置轮转 + 一次性展示置换） |
 | 分组说明少一组 | 前端只按「本期恰好抽到哪组」拼说明；或 `fixed_data` 该行被停用 | 用固定分组兜底 + 打开 `fixed_data.status` |
 | 页面出现 `["` `"]` | JS 直接 `d.content.split(',')` 或 `print` 了原始 JSON | 改用 `safeParseJSON` / 正确解析后取标签 |
