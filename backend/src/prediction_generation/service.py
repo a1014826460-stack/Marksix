@@ -665,6 +665,15 @@ def _three_period_alternative_tokens(
     )
 
 
+def _append_dict_content_template(generated: Any, templates: list[Any]) -> None:
+    """把「多列 formatter」返回的 dict 里的正文取出来当模板（去重）。"""
+    if not isinstance(generated, dict):
+        return
+    content = generated.get("content")
+    if isinstance(content, str) and content.strip() and content not in templates:
+        templates.append(content)
+
+
 def _three_period_alternative_content_templates(
     *,
     mode_id: int,
@@ -676,13 +685,26 @@ def _three_period_alternative_content_templates(
     formatter = getattr(config, "content_formatter", None)
     if not callable(formatter) or not alternative_tokens:
         return []
+    tokens = [str(token).strip() for token in alternative_tokens if str(token).strip()]
     templates: list[Any] = []
     try:
         generated = formatter(tuple(alternative_tokens), conn)
     except Exception:  # noqa: BLE001 - formatter 失败时不阻断生成
         return []
     if isinstance(generated, dict):
-        return [generated]
+        # 多列 formatter（mode 5 天地生肖返回 `{content, xiao}`）一次性调用只会给出
+        # **第一个**候选的正文，且正文在 dict 的 `content` 字段里；而
+        # `enforce_three_period_uniqueness` 只能拿字符串正文去替换展示值首项。
+        # 2026-10-13 线上实测：少了这一步，mode 5 在「受控计划被跳过（台账已预约）」
+        # 的兜底路径上换不了分组 → 283-286 连续 4 期「地肖」，用户的连续同值规则失效。
+        _append_dict_content_template(generated, templates)
+        for token in tokens:
+            try:
+                per_token = formatter((token,), conn)
+            except Exception:  # noqa: BLE001 - 单个候选失败不影响其它候选
+                continue
+            _append_dict_content_template(per_token, templates)
+        return templates
     if isinstance(generated, (list, tuple)):
         for item in generated:
             if isinstance(item, str) and item not in templates:

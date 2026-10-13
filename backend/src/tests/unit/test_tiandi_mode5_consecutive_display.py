@@ -196,3 +196,48 @@ def test_pair_rotation_keeps_the_pair_inside_the_group():
     # 非 mode 5 原样返回
     untouched = {"content": content, "xiao": "蛇,羊"}
     assert _rotate_tiandi_pair(untouched, mode_id=14, term=286) is untouched
+
+
+def test_alternative_templates_unwrap_the_dict_formatter_for_mode5():
+    """mode 5 的 formatter 返回 `{content, xiao}`；备选模板必须是**字符串正文**。
+
+    线上实测（2026-10-13）：把整个 dict 当模板时 `display_token_for_row` 读不出标签，
+    兜底路径换不了分组 → 283-286 连续 4 期「地肖」。
+    """
+    from predict.mechanisms import PREDICTION_CONFIGS
+    from prediction_generation.service import _three_period_alternative_content_templates
+
+    templates = _three_period_alternative_content_templates(
+        mode_id=5,
+        config=PREDICTION_CONFIGS["title_5"],
+        conn=None,
+        alternative_tokens=("地肖", "天肖"),
+    )
+    assert templates, "没有生成任何备选正文模板"
+    assert all(isinstance(template, str) for template in templates), templates
+    assert any('["天肖|' in template for template in templates), templates
+    assert any('["地肖|' in template for template in templates), templates
+
+
+def test_fallback_path_flips_mode5_after_three_identical_rows():
+    """受控计划被跳过时的兜底路径也必须换值（复现线上那次重生成的失败形态）。"""
+    from predict.mechanisms import PREDICTION_CONFIGS
+    from prediction_generation.diversity import enforce_three_period_uniqueness
+    from prediction_generation.service import _three_period_alternative_content_templates
+
+    di_xiao = '["地肖|蛇,羊,鸡,狗,鼠,虎"]'
+    templates = _three_period_alternative_content_templates(
+        mode_id=5,
+        config=PREDICTION_CONFIGS["title_5"],
+        conn=None,
+        alternative_tokens=("地肖", "天肖"),
+    )
+    result = enforce_three_period_uniqueness(
+        mode_id=5,
+        row_data={"content": di_xiao, "xiao": "蛇,羊"},
+        recent_rows=[{"content": di_xiao}, {"content": di_xiao}, {"content": di_xiao}],
+        alternative_content_templates=templates,
+    )
+
+    assert "_diversity_warning" not in result, result
+    assert str(result["content"]).startswith('["天肖|'), result["content"]
