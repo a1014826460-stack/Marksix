@@ -782,6 +782,27 @@ def alert_precise_draw_mismatch(
     """精确期号检查全部失败后发送邮件报警（补充已有 error_logs 写入）。"""
     lt_name = LOTTERY_NAMES.get(lottery_type_id, str(lottery_type_id))
 
+    if lottery_type_id == 1:
+        actual = str(actual_period or "").strip()
+        expected = str(expected_period or "").strip()
+        has_period = len(actual) == 7 and actual.isascii() and actual.isdigit()
+        not_advanced = (
+            has_period and len(expected) == 7 and expected.isascii()
+            and expected.isdigit() and int(actual) <= int(expected)
+        )
+        if not has_period or not_advanced:
+            # HK publishes over several minutes. A missing/old response is not
+            # evidence of a wrong period. Keep retries and audit logs intact;
+            # the existing staged timeout alerts cover a persistent outage.
+            # Return before cooldown accounting so a later real mismatch can
+            # still send an email.
+            _alert_logger.info(
+                "HK precise mismatch email deferred: expected=%s actual=%s; "
+                "waiting for publication, persistent delays use timeout alerts",
+                expected, actual or "N/A",
+            )
+            return
+
     alert_key = f"precise_mismatch_{lottery_type_id}"
     if _is_alert_suppressed(alert_key, db_path):
         _alert_logger.info("Precise draw mismatch alert suppressed by cooldown: lt=%s", lt_name)
