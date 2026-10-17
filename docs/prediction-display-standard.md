@@ -1331,7 +1331,37 @@ sample: 279期独家幽默：開:？00 独家幽默：在网吧上网中，对�
 - 生效范围：代码只影响**之后生成的未来期行**；历史行本身不改写，本次因用户明确要求对 twcf888 的
   7 行做了定点修正（会改变被改写期的判定，已在 `DEPLOY.md` 留痕）。
 - 遗留：`_repair_text_prediction_diversity` 对 mode 5 会打出「unable to find alternative text payload」
-  提示（纯文案、无副作用；受控路径生效时不再出现），登记待清理。
+  提示（纯文案、无副作用；受控路径生效时才消失），登记待清理。
+
+## 五之十九、单双类玩法「单/双」分类被历史众数锁死（mode 15，2026-10-17）
+
+- 报障：`www.twtongtian.com`【单双两肖】与 `www.twsaimahui.com`【单双中特】（同名模块的第二个）
+  连续多期只显示「双数」。
+- 两个面板都是 **mode 15 / `title_15`「单双公式」**（`history_sources=['created']`）：
+  `content` = `双生肖|鼠,虎,龙,马,猴,狗`（分类标签 + 该组生肖），`xiao` = 本期两肖。
+- 根因（**不是预测算错**）：`predict/mechanisms.py::format_content_xiao_columns` 先找「与本期两肖
+  **完全不重叠**的历史分类」，找不到就退回 `pool[0]`＝历史出现次数最多的那条。该玩法两肖几乎每期
+  都横跨单/双两组 → 「不重叠」永不成立 → 分类恒取历史众数「双生肖」，被**频率锁死**
+  （与五之十八的 mode 5 旧实现同一类根因）。
+  判定读的是 `xiao` 两肖（`content_loader=xiao_column_content_loader`），两肖本身正常
+  （284 期 `龙∈{鸡,龙}`＝准），坏的只有展示分类。
+- 修法（提交 `61123a2`）：
+  1. `predict/mechanisms.py::_stable_pool_index`：分类兜底改为**按候选确定性取模**
+     （与顺序无关、可复现、随候选变化），不再按历史频率；覆盖所有用该 formatter 的玩法（15 / 219 等）。
+  2. `prediction_generation/service.py::_stabilize_parity_group`：mode 15 的「单/双」分类
+     **最多连续 3 期同值，第 4 期换另一分类**（用户口径；不做奇偶强制交替）。只改 `content` 的分类，
+     不动 `xiao` / `res_*`，**判定口径零变化**（因此历史行也可以安全改写）。
+  3. `scripts/audit-prediction-display.py`：R5 阈值按 mode 对齐（mode 15 = 4 期）。
+- 线上数据（用户授权「所有站点」）：`created.mode_payload_15` 全站（web 4/6/7/8/10）270-292 期
+  按期重算分类并统一写入，原值备份表 `public.tmp_mode15_backup_20261017`；凡同一期存在两条重复行的，
+  统一写成同一分类（修前同期的两条行可能不一致）。
+- 验收：后端 `1535 passed / 1 failed`（既有 nginx 契约）；线上 twtongtian/twsaimahui 面板
+  283-290 分类序列 `双单双双双单双双`（**最长连续 3 期**），两肖与对/错逐行未变；
+  `audit-prediction-display.py` 两站 `error=0`。
+- 遗留：mode 15 在 `created.mode_payload_15` **每期有 2 条重复行**（历史重复写入），本轮只统一内容、
+  未清理重复行，建议后续去重（去重前任何数据修正都必须按期写全所有重复行）。
+
+---
 
 ---
 

@@ -27,6 +27,32 @@
 
 ## 概览
 
+### 单双类玩法「单/双」分类锁死修复 + 全站 mode 15 历史归一（2026-10-17）
+
+- 报障：`www.twtongtian.com`【单双两肖】与 `www.twsaimahui.com`【单双中特】（同名模块的第二个）
+  连续多期只显示「双数」（290-286 期均为「双数+两肖」）。
+- 根因（不是预测算错）：两个面板都是 **mode 15 / `title_15`「单双公式」**；
+  `predict/mechanisms.py::format_content_xiao_columns` 先找「与本期两肖完全不重叠的历史分类」，
+  找不到就退回 `pool[0]`＝历史出现次数最多的一条。该玩法两肖几乎每期都横跨单/双两组 →
+  「不重叠」永不成立 → 分类恒取历史众数「双生肖」，被频率锁死。判定读 `xiao` 两肖
+  （`content_loader=xiao_column_content_loader`），两肖正常（284 期 `龙∈{鸡,龙}`＝准），
+  坏的只有展示分类。
+- 修复（提交 `61123a2`）：`_stable_pool_index` 把分类兜底改为按候选确定性取模（与顺序无关、
+  可复现、随候选变化，覆盖 mode 15/219 等所有用该 formatter 的玩法）；
+  `_stabilize_parity_group` 让 mode 15 分类**最多连续 3 期同值、第 4 期换另一分类**
+  （用户口径，不做奇偶强制交替），只改 `content`，不动 `xiao`/`res_*`，判定零变化；
+  审计 R5 阈值按 mode 对齐（mode 15 = 4 期）。新增 `tests/unit/test_parity_group_display.py`（5 项）。
+- 线上数据（用户授权「所有站点」）：`created.mode_payload_15` 全站（web 4/6/7/8/10）270-292 期
+  按期重算分类并统一写入，原值备份表 `public.tmp_mode15_backup_20261017`，共改 30 行；
+  同一期存在两条重复行的，统一写成同一分类（第一版按行遍历曾造成同期两行不一致，已修正）。
+- 发布：中心节点标签 `parity-mode15`，备份 `.deploy-backups/parity-mode15-20261017T123805Z`，
+  `DEPLOY_CENTER_DONE 61123a2`、`nginx -t` 通过、两站 `/health` 200；前端节点未改。
+- 验收：后端 `pytest tests/unit` → **1535 passed / 1 failed**（既有 nginx 契约）；线上
+  twtongtian/twsaimahui 面板 283-290 分类序列 `双单双双双单双双`（**最长连续 3 期**），
+  两肖与对/错逐行未变（288 期`猪,羊`开39龙=错 等逐条一致）；两站审计 `error=0`。
+- 遗留：mode 15 在 `created.mode_payload_15` **每期 2 条重复行**（历史重复写入），本轮只统一内容、
+  未清理重复行，建议后续去重。
+
 ### 天地生肖（mode 5）连续同值修复 + twcf888 历史定点修正（2026-10-13）
 
 - 报障：`www.twcf888.com` 预测模块【天地生肖】279-285 连续 7 期同一组合「地肖+蛇羊」。

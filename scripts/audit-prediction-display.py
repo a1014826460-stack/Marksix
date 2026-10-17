@@ -358,7 +358,9 @@ DISPLAY_WINDOW_BY_MODULE_LABEL: tuple[tuple[str, int], ...] = (
     ("欲钱解特", 5),
 )
 #: 按 mode id 覆盖（与后端 `DISPLAY_UNIQUE_WINDOW_BY_MODE` 一一对应）。
-DISPLAY_WINDOW_BY_MODE_ID: dict[int, int] = {5: 4, 52: 5, 62: 5}
+#: 15「单双公式」2026-10-17 起：分类（单生肖/双生肖）最多连续 3 期同值、第 4 期换另一分类，
+#: 因此阈值取 4，避免把合规的 3 连报成 R5。
+DISPLAY_WINDOW_BY_MODE_ID: dict[int, int] = {5: 4, 15: 4, 52: 5, 62: 5}
 DEFAULT_DISPLAY_WINDOW = 3
 #: 容器 id 形如 `pred-<group>-<modeId>`（twcf888 等文章站），从中取出 mode id。
 _MODULE_ID_MODE_RE = re.compile(r"(?:^|[-_])pred[-_][A-Za-z0-9]+[-_](\d+)$")
