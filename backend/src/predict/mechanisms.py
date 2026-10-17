@@ -1,3 +1,4 @@
+import hashlib
 import json
 import random
 import re
@@ -486,6 +487,23 @@ def _pipe_right_zodiac_values(content: str) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _stable_pool_index(values: tuple[str, ...], size: int) -> int:
+    """按候选内容做确定性取模（**不**用历史频率）。
+
+    背景（2026-10-13 用户报障）：`format_content_xiao_columns` 在「候选与所有分类都重叠」时
+    退回 `pool[0]`（历史出现次数最多的那条）。mode 15「单双公式」的两肖几乎每期都横跨
+    单/双两组 → 两张分类都不满足「互斥」→ 永远取历史众数「双生肖」，线上 twtongtian
+    『单双两肖』与 twsaimahui『单双中特』连续多期只显示「双数」。这里改成按候选确定性地
+    落到某一分类：同样的候选永远得到同样的分类（可复现），不同候选会落到不同分类。
+    """
+    if size <= 1:
+        return 0
+    # 与候选顺序无关：调用方可能以不同顺序传入同一组候选，必须落到同一分类。
+    payload = ",".join(sorted(str(item) for item in values))
+    digest = hashlib.sha256(payload.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % size
+
+
 def format_content_xiao_columns(table_name: str, xiao_column: str = "xiao", content_column: str = "content"):
     """还原 `content+xiao` 输出结构。
     这类历史表的 content 是分类池，xiao 是最终生肖候选。根据历史样本，xiao 候选
@@ -502,7 +520,8 @@ def format_content_xiao_columns(table_name: str, xiao_column: str = "xiao", cont
                 content = candidate
                 break
         if not content and pool:
-            content = pool[0]
+            # 不能退回 `pool[0]`：那是历史众数，会把展示分类锁死（见 _stable_pool_index 注释）。
+            content = pool[_stable_pool_index(tuple(labels), len(pool))]
         return {
             content_column: content,
             xiao_column: ",".join(labels),

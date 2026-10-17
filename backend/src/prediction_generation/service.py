@@ -849,6 +849,94 @@ def _rotate_tiandi_pair(row_data: dict[str, Any], *, mode_id: int, term: int) ->
     return updated
 
 
+#: 「单/双」分类是**展示维度**的玩法（判定读 `xiao` 两肖，content 的分类只用于面板观感）。
+PARITY_GROUP_MODE_IDS = frozenset({15})
+#: 分类连续同值上限：与 `diversity.display_unique_window` 默认口径一致——
+#: 最多允许连续 3 期相同，禁止第 4 期。
+PARITY_GROUP_WINDOW = 4
+
+
+def _content_group_head(content_value: Any) -> tuple[str, str] | None:
+    """返回 `(分类标签, 完整首项文本)`；不是 `标签|成员` 形态时返回 None。"""
+    items = parse_array_content(content_value)
+    head = str(items[0]) if items else str(content_value or "").strip()
+    label, separator, _rest = head.partition("|")
+    if not separator:
+        return None
+    return label.strip(), head
+
+
+def _recent_parity_group_labels(recent_rows: Any, *, limit: int) -> list[str]:
+    """取最近若干期的分类标签（新→旧）。"""
+    labels: list[str] = []
+    for row in recent_rows or ():
+        if not isinstance(row, dict):
+            continue
+        parsed = _content_group_head(row.get("content"))
+        if parsed is None:
+            continue
+        labels.append(parsed[0])
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _stabilize_parity_group(
+    row_data: dict[str, Any],
+    *,
+    mode_id: int,
+    term: int,
+    table_name: str,
+    conn: Any,
+    recent_rows: Any = None,
+) -> dict[str, Any]:
+    """单双类玩法：分类最多连续 3 期同值，第 4 期必须换另一分类。
+
+    背景（2026-10-13 用户报障）：twtongtian『单双两肖』与 twsaimahui『单双中特』连续多期
+    只显示「双数」。根因是 `format_content_xiao_columns`：两肖几乎总横跨单/双两组 →
+    「与分类互斥」永不成立 → 退回历史最频繁的那条（双生肖），分类遂被锁死。
+
+    口径（用户确认）：**不做奇偶强制交替**，只限制连续同值 —— 最近 3 期已经是同一分类时，
+    本期换成另一分类；否则保持生成器给出的分类。
+
+    安全性：这些玩法的判定只读 `xiao` 两肖（`content_loader=xiao_column_content_loader`），
+    content 的分类是纯展示维度，因此换分类**不改变任何判定口径**。
+    """
+    if int(mode_id or 0) not in PARITY_GROUP_MODE_IDS:
+        return row_data
+    parsed = _content_group_head(row_data.get("content"))
+    if parsed is None:
+        return row_data
+    label, _head = parsed
+
+    required_recent = max(1, PARITY_GROUP_WINDOW - 1)
+    recent_labels = _recent_parity_group_labels(recent_rows, limit=required_recent)
+    if len(recent_labels) < required_recent:
+        return row_data
+    if any(item != label for item in recent_labels):
+        return row_data
+
+    # 到顶：换成另一分类（优先用候选池里出现过的完整正文，保证成员串正确）。
+    try:
+        from predict.mechanisms import _content_category_pool
+
+        pool = _content_category_pool(
+            conn, table_name or f"mode_payload_{int(mode_id)}", "content"
+        )
+    except Exception:  # noqa: BLE001 - 读不到候选池时保持原值
+        pool = []
+    for candidate in pool:
+        candidate_label, separator, _rest = str(candidate).partition("|")
+        if not separator:
+            continue
+        if candidate_label.strip() == label:
+            continue
+        updated = dict(row_data)
+        updated["content"] = str(candidate)
+        return updated
+    return row_data
+
+
 class _PersistedFutureControl:
     """Internal plan data. It never enters a created row, report, or HTTP response."""
 
@@ -2468,6 +2556,16 @@ def _process_single_module(
                 row_data = _rotate_tiandi_pair(
                     row_data, mode_id=int(mode_id), term=int(draw["term"])
                 )
+
+            # 单双类玩法：分类最多连续 3 期同值（第 4 期换另一分类；判定只读两肖）。
+            row_data = _stabilize_parity_group(
+                row_data,
+                mode_id=int(mode_id),
+                term=int(draw["term"]),
+                table_name=table_name,
+                conn=conn,
+                recent_rows=recent_rows,
+            )
 
             stored = _persist_generated_row(
                 conn,
